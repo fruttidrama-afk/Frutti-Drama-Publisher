@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#f3f3f3">
 <title>Entrar al Publisher</title>
 <style>
-:root{--bg:#f3f3f3;--card:#fff;--ink:#050505;--muted:#6b6b6b;--line:#d4d4d4}
+:root{--bg:#f3f3f3;--card:#fff;--ink:#050505;--muted:#6b6b6b;--line:#d4d4d4;--primary:#000;--accent:#b59a64}
 *{box-sizing:border-box}
 body{margin:0;min-height:100dvh;display:grid;place-items:center;background:var(--bg);color:var(--ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;padding:calc(18px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom))}
 .card{width:min(460px,94vw);background:var(--card);border:1px solid var(--line);border-radius:28px;padding:28px;box-shadow:0 24px 70px rgba(0,0,0,.07)}
@@ -15,14 +15,17 @@ p{color:var(--muted);line-height:1.5;margin:0 0 20px}
 input,button{width:100%;min-height:52px;border-radius:14px;font:inherit}
 input{border:1px solid #cfcfcf;background:#fff;padding:0 15px;font-size:18px;outline:none}
 input:focus{border-color:#000;box-shadow:0 0 0 3px rgba(0,0,0,.06)}
-button{border:1px solid #000;background:#000;color:#fff;font-weight:760;margin-top:10px;cursor:pointer}
-button.secondary{background:#fff;color:#000;border-color:#bfbfbf}
+button{border:1px solid var(--primary);background:var(--primary);color:#fff;font-weight:760;margin-top:10px;cursor:pointer}
+button.secondary{background:var(--card);color:var(--primary);border-color:#bfbfbf}
 button:disabled{opacity:.5}
 .msg{min-height:22px;margin-top:14px;color:#555;font-size:14px;line-height:1.4}
+.brand-logo{width:88px;height:88px;object-fit:contain;border-radius:22px;margin:0 0 18px;display:none}.brand-logo.show{display:block}.brand-ref{width:100%;height:130px;object-fit:cover;border-radius:18px;margin:0 0 18px;display:none}.brand-ref.show{display:block}
 </style>
 </head>
 <body>
 <main class="card">
+  <img id="brandRef" class="brand-ref" alt="">
+  <img id="brandLogo" class="brand-logo" alt="">
   <h1 id="name">Publisher</h1>
   <p id="subtitle">Acceso seguro</p>
   <button id="passkey" class="secondary" type="button">Usar passkey / Face ID</button>
@@ -54,7 +57,10 @@ function toB64url(v){
 async function loadInfo(){
   try{
     const info=await request('/auth/public-info');
-    q('#name').textContent=info.publisherName||info.showName||'Publisher';
+    q('#name').textContent=info.showName||info.publisherName||'Publisher';
+    const b=info.brand||{},t=b.theme||{},root=document.documentElement;
+    if(t.background)root.style.setProperty('--bg',t.background);if(t.surface)root.style.setProperty('--card',t.surface);if(t.text)root.style.setProperty('--ink',t.text);if(t.primary)root.style.setProperty('--primary',t.primary);if(t.accent||t.secondary)root.style.setProperty('--accent',t.accent||t.secondary);
+    if(b.logo_url){q('#brandLogo').src=b.logo_url;q('#brandLogo').classList.add('show')}if(b.reference_image_url){q('#brandRef').src=b.reference_image_url;q('#brandRef').classList.add('show')}
     q('#subtitle').textContent=info.passkeysRegistered>0?'Entrá con Face ID/passkey o con tu PIN.':'Todavía no hay una passkey registrada. Entrá con tu PIN y después podés activar Face ID desde Seguridad.';
     if(info.passkeysRegistered===0)q('#passkey').textContent='Face ID todavía no configurado';
   }catch{}
