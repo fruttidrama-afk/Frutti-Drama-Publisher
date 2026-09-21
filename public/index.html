@@ -23,7 +23,7 @@ button,input,textarea{font:inherit}
 h1{font:400 clamp(44px,7vw,76px)/.94 Georgia,"Times New Roman",serif;letter-spacing:-.04em;margin:13px 0 18px}
 .lede{font-size:18px;line-height:1.55;color:#3e3b36;max-width:700px}
 .setup-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:30px 0 55px}
-.setup-card{border:1px solid var(--line);background:var(--surface);padding:22px;min-height:285px;display:flex;flex-direction:column;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.setup-card{border:1px solid var(--line);background:var(--surface);padding:22px;min-height:285px;display:flex;flex-direction:column;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}.setup-actions{display:grid;gap:8px;margin-top:12px}.setup-link{font-size:12px;color:var(--navy);text-decoration:underline;text-underline-offset:3px}.outside{margin-top:10px;padding:10px 11px;background:var(--ivory);border-left:3px solid var(--gold);font-size:12px;line-height:1.45;color:var(--muted)}.outside b{color:var(--ink)}
 .setup-card.done{border-color:#a9bea4;background:var(--greenbg)}
 .num{font-size:11px;font-weight:800;letter-spacing:.16em;color:var(--gold)}
 .setup-card h2{font:400 30px/1.02 Georgia,"Times New Roman",serif;color:var(--navy);margin:18px 0 9px}
@@ -36,7 +36,7 @@ h1{font:400 clamp(44px,7vw,76px)/.94 Georgia,"Times New Roman",serif;letter-spac
 .btn:hover{box-shadow:0 8px 20px rgba(13,49,82,.10);transform:translateY(-1px)}
 textarea{width:100%;min-height:170px;border:1px solid #cfc8ba;background:#fff;padding:13px;resize:vertical;outline:none;line-height:1.45;margin:4px 0 10px}
 textarea:focus{border-color:var(--navy);box-shadow:0 0 0 3px rgba(13,49,82,.07)}
-.ready{display:none;border-top:1px solid #ebe7de;background:var(--ivory);padding:50px 0 70px;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw)}
+.connection-help{border:1px solid var(--line);background:var(--ivory);padding:18px;margin:0 0 28px}.connection-help h3{font:400 27px Georgia,serif;color:var(--navy);margin:0 0 8px}.connection-help p{margin:0;color:var(--muted);line-height:1.5}.connection-help strong{color:var(--ink)}.ready{display:none;border-top:1px solid #ebe7de;background:var(--ivory);padding:50px 0 70px;margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw)}
 .ready.show{display:block}
 .ready-inner{max-width:1120px;margin:auto;padding:0 22px}
 .ready-head{display:flex;justify-content:space-between;align-items:end;gap:20px;margin-bottom:24px}
@@ -70,13 +70,22 @@ textarea:focus{border-color:var(--navy);box-shadow:0 0 0 3px rgba(13,49,82,.07)}
     <p class="lede">Para dejar este Publisher funcionando, solamente conectá tu canal de YouTube, conectá Google Flow y pegá el Show Bible completo.</p>
   </section>
 
+  <div class="connection-help">
+    <h3>Todo se configura desde acá.</h3>
+    <p><strong>No necesitás recordar URLs ni pasos técnicos.</strong> Entrá siempre a este Publisher y seguí las tres tarjetas. Si alguna parte necesita abrir Google en otra pestaña, la propia guía te dice exactamente dónde tocar, qué copiar y cuándo volver.</p>
+  </div>
+
   <section class="setup-grid" id="setupGrid">
     <article class="setup-card" id="youtubeCard">
       <div class="num">01</div>
       <h2>YouTube</h2>
       <p>Conectá el canal donde este Publisher va a subir, programar y publicar los videos.</p>
       <div class="state" id="youtubeState">CHECKING…</div>
-      <a class="btn primary" href="/integrations/youtube" id="youtubeButton">CONNECT YOUTUBE</a>
+      <div class="setup-actions">
+        <a class="btn primary" href="/integrations/youtube" id="youtubeButton">CONNECT YOUTUBE</a>
+        <a class="setup-link" href="/integrations/youtube">Abrir guía paso a paso de YouTube</a>
+      </div>
+      <div class="outside"><b>¿Vas a salir de esta página?</b> Solamente para abrir Google Cloud o elegir tu cuenta de Google. La guía de YouTube contiene todos los links y te indica qué copiar.</div>
     </article>
 
     <article class="setup-card" id="flowCard">
@@ -84,7 +93,11 @@ textarea:focus{border-color:var(--navy);box-shadow:0 0 0 3px rgba(13,49,82,.07)}
       <h2>Google Flow</h2>
       <p>Iniciá sesión en Google Flow y elegí el proyecto que este Publisher va a usar para generar.</p>
       <div class="state" id="flowState">CHECKING…</div>
-      <a class="btn primary" href="/flow/bootstrap" id="flowButton">CONNECT GOOGLE FLOW</a>
+      <div class="setup-actions">
+        <a class="btn primary" href="/flow/bootstrap" id="flowButton">CONNECT GOOGLE FLOW</a>
+        <a class="setup-link" href="/flow/bootstrap">Abrir controlador web de Google Flow</a>
+      </div>
+      <div class="outside"><b>No necesitás abrir Flow por tu cuenta.</b> El Publisher te muestra un navegador remoto dentro de la página para iniciar sesión, hacer clic, escribir y elegir el proyecto.</div>
     </article>
 
     <article class="setup-card" id="bibleCard">
@@ -94,6 +107,7 @@ textarea:focus{border-color:var(--navy);box-shadow:0 0 0 3px rgba(13,49,82,.07)}
       <textarea id="bible" placeholder="Pegá el Show Bible completo…"></textarea>
       <button class="btn primary" id="saveBible">SAVE SHOW BIBLE</button>
       <div class="state" id="bibleState">NOT SAVED</div>
+      <div class="outside"><b>Todo ocurre acá.</b> No hay otra página ni configuración externa para el Show Bible.</div>
     </article>
   </section>
 
