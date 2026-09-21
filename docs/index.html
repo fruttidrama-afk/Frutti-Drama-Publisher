@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Publisher Factory">
-<link rel="icon" type="image/svg+xml" href="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory?asset=logo"><link rel="apple-touch-icon" sizes="180x180" href="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory?asset=icon"><link rel="apple-touch-icon-precomposed" sizes="180x180" href="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory?asset=icon"><link rel="manifest" href="./manifest.webmanifest?v=9">
+<link rel="icon" type="image/svg+xml" href="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory?asset=logo"><link rel="apple-touch-icon" sizes="180x180" href="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory?asset=icon"><link rel="apple-touch-icon-precomposed" sizes="180x180" href="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory?asset=icon"><link rel="manifest" href="./manifest.webmanifest?v=10">
 <title>Publisher Factory</title>
 <style>
 :root{--n:#0d3152;--g:#b59a64;--ink:#1d1d1b;--muted:#68645d;--bg:#f7f6f2;--line:#ded9cf}*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;color:var(--ink);background:#fff}button,input,textarea,select{font:inherit}.hidden{display:none!important}
@@ -269,6 +269,36 @@ function renderRailwayAccounts(){
 function openRailway(){$("#railwayModal").classList.add("open");$("#railwayToken").value="";$("#railwayLabel").value="";$("#railwayError").textContent="";renderRailwayAccounts()}
 $("#railwayTop").onclick=openRailway;$("#railwayHero").onclick=openRailway;$("#railwayStatus").onclick=openRailway;$("#railwayBannerBtn").onclick=openRailway;$("#railwayCancel").onclick=()=>$("#railwayModal").classList.remove("open");$("#addRailwayFromCreate").onclick=openRailway;
 $("#railwaySave").onclick=async()=>{const t=$("#railwayToken").value.trim(),label=$("#railwayLabel").value.trim();if(!t){$("#railwayError").textContent="Pegá tu Railway Account Token.";return}$("#railwaySave").disabled=true;try{const x=await rail("connect",{method:"POST",body:JSON.stringify({token:t,label})});railwayConnections=x.connections||[];selectedRailwayConnectionId=x.connection?.id||selectedRailwayConnectionId;renderRailwayAccounts();renderRailwaySelect();paintRailway(true,railwayConnections.length>1?railwayConnections.length+" accounts":(x.connection?.account_name||x.connection?.account_email||"connected"));$("#railwayToken").value="";$("#railwayLabel").value=""}catch(e){$("#railwayError").textContent=e.message}finally{$("#railwaySave").disabled=false}};
-async function railState(){try{const x=await rail("connections");railwayConnections=x.connections||[];selectedRailwayConnectionId=railwayConnections.find(x=>x.is_default)?.id||railwayConnections[0]?.id||null;renderRailwaySelect();if(railwayConnections.length){const d=railwayConnections.find(x=>x.is_default)||railwayConnections[0];paintRailway(true,railwayConnections.length>1?railwayConnections.length+" accounts":(d.label||d.account_name||d.account_email||"connected"))}else paintRailway(false)}catch{railwayConnections=[];renderRailwaySelect();paintRailway(false)}}
+function paintRailwayLinked(name="existing Publisher"){
+  const status=$("#railwayStatus"),hero=$("#railwayHero"),top=$("#railwayTop"),banner=$("#railwayBanner"),bt=$("#railwayBannerTitle"),bx=$("#railwayBannerText"),bb=$("#railwayBannerBtn");
+  status.textContent="Railway · linked ✓";status.classList.add("ok");
+  hero.textContent="RAILWAY LINKED ✓";hero.classList.add("rail-connected");
+  top.textContent="RAILWAY ✓";top.style.fontWeight="700";
+  banner.classList.add("connected");bt.textContent="Railway linked ✓";
+  bx.textContent=name+" is already deployed on Railway. You only need to add an Account Token when you want to deploy a new Publisher from the Factory.";
+  bb.textContent="MANAGE RAILWAY";bb.classList.remove("primary");bb.classList.add("rail-connected");
+}
+async function railState(){
+  try{
+    const x=await rail("connections");railwayConnections=x.connections||[];
+    selectedRailwayConnectionId=railwayConnections.find(x=>x.is_default)?.id||railwayConnections[0]?.id||null;
+    renderRailwaySelect();
+    if(railwayConnections.length){
+      const d=railwayConnections.find(x=>x.is_default)||railwayConnections[0];
+      paintRailway(true,railwayConnections.length>1?railwayConnections.length+" accounts":(d.label||d.account_name||d.account_email||"connected"));
+      return;
+    }
+    const {data:linked}=await sb.from("publishers").select("name,railway_project_id,railway_domain").neq("status","delete_pending").not("railway_project_id","is",null).limit(1);
+    if(linked?.length){paintRailwayLinked(linked[0].name||"Existing Publisher");return}
+    paintRailway(false);
+  }catch{
+    railwayConnections=[];renderRailwaySelect();
+    try{
+      const {data:linked}=await sb.from("publishers").select("name,railway_project_id,railway_domain").neq("status","delete_pending").not("railway_project_id","is",null).limit(1);
+      if(linked?.length){paintRailwayLinked(linked[0].name||"Existing Publisher");return}
+    }catch{}
+    paintRailway(false)
+  }
+}
 $("#refresh").onclick=()=>Promise.all([list(),railState()]);boot();
 </script></body></html>
