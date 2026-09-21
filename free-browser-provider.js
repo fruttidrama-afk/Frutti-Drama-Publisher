@@ -379,8 +379,26 @@ async function clickRadio(page,re,label){
 }
 async function configureFlow(page){
   await waitFlowReady(page,60000);await ensureSettingsOpen(page);await clickRadio(page,/Video/i,'Video');await clickRadio(page,new RegExp('^'+escapeRe(ASPECT_RATIO)+'$','i'),ASPECT_RATIO);
-  const modelButton=page.getByRole('button',{name:/Select model family/i}).last();if(!(await modelButton.count().catch(()=>0)))throw new Error('FLOW_MODEL_BUTTON_NOT_FOUND');let currentModel=compact(await modelButton.innerText().catch(()=>''),200);
-  if(!modelMatches(currentModel)){await clickInteractive(modelButton);await sleep(300);const opts=page.getByRole('menuitem');let chosen=null,best=-1,tokens=norm(MODEL_INTENT).split(' ').filter(x=>x.length>2);for(let i=0;i<await opts.count().catch(()=>0);i++){const o=opts.nth(i);if(!(await o.isVisible().catch(()=>false)))continue;const txt=compact(await o.innerText().catch(()=>''),180);let score=tokens.filter(t=>norm(txt).includes(t)).length;if(/omni/i.test(MODEL_INTENT)&&/omni/i.test(txt))score+=3;if(/flash/i.test(MODEL_INTENT)&&/flash/i.test(txt))score+=2;if(score>best){best=score;chosen=o}}if(!chosen||best<1)throw new Error('FLOW_MODEL_INTENT_NOT_FOUND:'+MODEL_INTENT);await clickInteractive(chosen);await sleep(450);currentModel=compact(await modelButton.innerText().catch(()=>''),200)}
+  const modelTokens=norm(MODEL_INTENT).split(' ').filter(x=>x.length>2);
+  let modelButton=null,currentModel='';
+  const directModel=page.getByRole('button',{name:/Select model family|Model|Omni|Veo|Flash/i});
+  for(let i=(await directModel.count().catch(()=>0))-1;i>=0;i--){const b=directModel.nth(i);if(!(await b.isVisible().catch(()=>false)))continue;const txt=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||''),220);if(/model|omni|veo|flash/i.test(txt)){modelButton=b;currentModel=txt;break}}
+  if(!modelButton){
+    const buttons=page.locator('button');let scoreBest=-1;
+    for(let i=0;i<await buttons.count().catch(()=>0);i++){const b=buttons.nth(i);if(!(await b.isVisible().catch(()=>false)))continue;const txt=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.getAttribute('title').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||''),240),n=norm(txt);let score=modelTokens.filter(t=>n.includes(t)).length*3;if(/model|omni|veo|flash/.test(n))score+=4;if(/aspect|duration|resolution|output|settings/.test(n))score-=2;if(score>scoreBest){scoreBest=score;modelButton=b;currentModel=txt}}
+    if(scoreBest<3)modelButton=null;
+  }
+  if(modelButton&&!modelMatches(currentModel)){
+    await clickInteractive(modelButton);await sleep(350);
+    const candidates=[];
+    for(const role of ['menuitem','option','radio','button']){
+      const loc=page.getByRole(role);
+      for(let i=0;i<await loc.count().catch(()=>0);i++){const o=loc.nth(i);if(!(await o.isVisible().catch(()=>false)))continue;const txt=compact(((await o.getAttribute('aria-label').catch(()=>''))||'')+' '+((await o.innerText().catch(()=>''))||''),180),n=norm(txt);let score=modelTokens.filter(t=>n.includes(t)).length;if(/omni/i.test(MODEL_INTENT)&&/omni/i.test(txt))score+=3;if(/veo/i.test(MODEL_INTENT)&&/veo/i.test(txt))score+=3;if(/flash/i.test(MODEL_INTENT)&&/flash/i.test(txt))score+=2;if(score>0)candidates.push({o,txt,score})}
+    }
+    candidates.sort((a,b)=>b.score-a.score);const chosen=candidates[0];if(!chosen)throw new Error('FLOW_MODEL_INTENT_NOT_FOUND:'+MODEL_INTENT);await clickInteractive(chosen.o);await sleep(450);currentModel=chosen.txt;
+  }else if(!modelButton){
+    const body=compact(await getBody(page),3000);const line=body.split(/\n|\|/).find(x=>modelMatches(x));if(line)currentModel=compact(line,200);else currentModel=MODEL_INTENT;
+  }
   const resRe=new RegExp(escapeRe(RESOLUTION_INTENT),'i'),resRadio=page.getByRole('radio',{name:resRe}).last();if(await resRadio.count().catch(()=>0)&&await resRadio.isVisible().catch(()=>false)){if((await resRadio.getAttribute('aria-checked').catch(()=>null))!=='true')await clickInteractive(resRadio);await sleep(250)}else{const exact=page.getByText(resRe).last();if(!(await exact.count().catch(()=>0)))throw new Error('FLOW_RESOLUTION_NOT_FOUND:'+RESOLUTION_INTENT);await clickInteractive(exact);await sleep(250)}
   await clickRadio(page,new RegExp('^'+escapeRe(DURATION_LABEL)+'$','i'),DURATION_LABEL);await clickRadio(page,new RegExp('^'+escapeRe(OUTPUT_LABEL)+'$','i'),OUTPUT_LABEL);
   if(CONFIG.characters.length){const ingredients=page.getByRole('radio',{name:/Ingredients/i}).last();if(await ingredients.count().catch(()=>0)&&await ingredients.isVisible().catch(()=>false)){if((await ingredients.getAttribute('aria-checked').catch(()=>null))!=='true')await clickInteractive(ingredients);await sleep(300)}}
