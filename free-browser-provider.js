@@ -721,26 +721,24 @@ async function approveFlowPointConsent(page){
   let lastScan='';
   while(Date.now()<deadline){
     const body=await getBody(page).catch(()=>'');
-    const consent=/quieres que empiece a generar|¿quieres que empiece a generar|cuesta\s*15\s*puntos|costs?\s*15\s*points|start generating\s*1\s*video/i.test(body);
-    if(consent){
-      for(const [label,mode] of [['Aprobar','approve-once'],['Approve','approve-once'],['Aprobar siempre','approve-always'],['Always approve','approve-always'],['Approve always','approve-always']]){
-        const hit=await findConsentControl(page,label);
-        if(hit){
-          await trustedClick(hit.el);await sleep(1200);
-          const after=compact(await getBody(page).catch(()=>''),12000);
-          publish('POINT_CONSENT_APPROVED',{message:label+' via trusted mouse selector='+hit.sel+' text='+hit.txt+' after='+after.slice(-900)});
-          return{approved:true,mode,label};
-        }
+    const labels=[['Aprobar','approve-once'],['Approve','approve-once'],['Aprobar siempre','approve-always'],['Always approve','approve-always'],['Approve always','approve-always']];
+    for(const [label,mode] of labels){
+      const hit=await findConsentControl(page,label);
+      if(hit){
+        await trustedClick(hit.el);await sleep(1200);
+        const after=compact(await getBody(page).catch(()=>''),12000);
+        publish('POINT_CONSENT_APPROVED',{message:label+' via trusted mouse selector='+hit.sel+' text='+hit.txt+' after='+after.slice(-900)});
+        return{approved:true,mode,label};
       }
-      const samples=[];
-      const els=page.locator('button,[role="button"],[tabindex],div,span');
-      for(let i=0;i<Math.min(await els.count().catch(()=>0),450);i++){
-        const el=els.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
-        const txt=compact(await el.innerText().catch(()=>''),100);
-        if(/aprobar|approve|rechazar|reject|15\s*puntos|15\s*points/i.test(txt))samples.push(txt);
-      }
-      lastScan=[...new Set(samples)].slice(-20).join(' | ');
     }
+    const samples=[];
+    const els=page.locator('button,[role="button"],[tabindex],div,span');
+    for(let i=0;i<Math.min(await els.count().catch(()=>0),450);i++){
+      const el=els.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
+      const txt=compact(await el.innerText().catch(()=>''),100);
+      if(/aprobar|approve|rechazar|reject|15\s*puntos|15\s*points/i.test(txt))samples.push(txt);
+    }
+    if(samples.length)lastScan=[...new Set(samples)].slice(-20).join(' | ');
     await sleep(300);
   }
   if(lastScan)publish('POINT_CONSENT_SCAN_FAILED',{message:lastScan});
