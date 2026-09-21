@@ -1143,9 +1143,18 @@ async function openUniqueFreshInventoryResult(page,baselineInv){
     fresh.push({el,sig,i});
   }
   if(fresh.length!==1)return{ready:false,opened:false,signal:`fresh-tile-occurrences:${fresh.length}`};
-  await fresh[0].el.click().catch(()=>{});await sleep(800);
+  const target=fresh[0].el;
+  await target.scrollIntoViewIfNeeded().catch(()=>{});
+  await target.hover().catch(()=>{});
+  const footer=target.locator('flow-tile-hover-footer').first();
+  if(await footer.count().catch(()=>0)&&await footer.isVisible().catch(()=>false)){
+    await footer.click({force:true,timeout:5000}).catch(()=>{});
+  }else{
+    await target.click({force:true,timeout:5000}).catch(()=>{});
+  }
+  await sleep(1000);
   const d=await visibleDownloadButton(page);
-  if(d)return{ready:true,opened:true,signal:'unique-fresh-inventory-tile',signature:fresh[0].sig,index:fresh[0].i};
+  if(d)return{ready:true,opened:true,signal:'unique-fresh-inventory-video-tile',signature:fresh[0].sig,index:fresh[0].i};
   await page.keyboard.press('Escape').catch(()=>{});
   return{ready:false,opened:false,signal:'unique-fresh-tile-no-download'};
 }
