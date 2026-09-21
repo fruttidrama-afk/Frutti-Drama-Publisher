@@ -1,3 +1,3 @@
 publisher-runtime-stable-release
-version=2026-09-21.6
-includes=official-logo-and-reference-assets,reference-led-dashboard,branded-activation,branded-login,branded-youtube-setup,branded-flow-setup,account-scoped-multi-railway,uploaded-logo-pwa,authoritative-factory-config,flow-self-healing,post-setup-success-dashboard
+version=2026-09-21.7
+includes=official-logo-and-reference-assets,branding-persisted-in-runtime,reference-led-dashboard,branded-activation,branded-login,branded-youtube-setup,branded-flow-setup,account-scoped-multi-railway,uploaded-logo-pwa,authoritative-factory-config,flow-semantic-submit-recovery,post-setup-success-dashboard
