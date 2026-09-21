@@ -1086,6 +1086,9 @@ async function downloadResult(page,rendered,localPath){
       await trigger.click();await sleep(500);
       const wanted=CONFIG.generation.download_quality||'1080p Upscaled',opt=page.getByText(new RegExp(escapeRe(wanted),'i')).last();
       if(await opt.count().catch(()=>0)&&await opt.isVisible().catch(()=>false)){const p=page.waitForEvent('download',{timeout:15*60*1000});await opt.click();const dl=await p;await dl.saveAs(localPath);return{method:wanted}}
+      const menuItems=page.locator('flow-menu-item'),visibleItems=[];
+      for(let i=0;i<Math.min(await menuItems.count().catch(()=>0),20);i++){const it=menuItems.nth(i);if(await it.isVisible().catch(()=>false))visibleItems.push(it);}
+      if(visibleItems.length>=3){const p=page.waitForEvent('download',{timeout:15*60*1000});await visibleItems[2].click({force:true,timeout:5000});const dl=await p;await dl.saveAs(localPath);return{method:'recorder-menu-item-3-fallback'}}
       await page.keyboard.press('Escape').catch(()=>{});
     }
     if(rendered.src&&/^https?:/i.test(rendered.src)){const r=await page.context().request.get(rendered.src,{timeout:90000});if(r.ok()){fs.writeFileSync(localPath,await r.body(),{mode:0o600});return{method:'direct-video-url'}}}
@@ -1096,8 +1099,19 @@ async function downloadResult(page,rendered,localPath){
   if(!trigger)throw new Error('UNIQUE_FRESH_TILE_DOWNLOAD_CONTROL_MISSING');
   await trigger.click();await sleep(500);
   const wanted=CONFIG.generation.download_quality||'1080p Upscaled',opt=page.getByText(new RegExp(escapeRe(wanted),'i')).last();
-  if(!(await opt.count().catch(()=>0))||!(await opt.isVisible().catch(()=>false)))throw new Error('UNIQUE_FRESH_TILE_DOWNLOAD_OPTION_MISSING');
-  const p=page.waitForEvent('download',{timeout:15*60*1000});await opt.click();const dl=await p;await dl.saveAs(localPath);return{method:wanted};
+  if(await opt.count().catch(()=>0)&&await opt.isVisible().catch(()=>false)){
+    const p=page.waitForEvent('download',{timeout:15*60*1000});await opt.click();const dl=await p;await dl.saveAs(localPath);return{method:wanted};
+  }
+  const menuItems=page.locator('flow-menu-item');
+  const visibleItems=[];
+  for(let i=0;i<Math.min(await menuItems.count().catch(()=>0),20);i++){const it=menuItems.nth(i);if(await it.isVisible().catch(()=>false))visibleItems.push(it);}
+  if(visibleItems.length>=3){
+    const p=page.waitForEvent('download',{timeout:15*60*1000});
+    await visibleItems[2].click({force:true,timeout:5000});
+    const dl=await p;await dl.saveAs(localPath);
+    return{method:'recorder-menu-item-3-fallback'};
+  }
+  throw new Error('UNIQUE_FRESH_TILE_DOWNLOAD_OPTION_MISSING');
 }
 function validateMp4(localPath){
   const st=fs.statSync(localPath);if(st.size<100000)throw new Error('MP4_TOO_SMALL:'+st.size);const head=fs.readFileSync(localPath).subarray(0,128);if(!head.includes(Buffer.from('ftyp')))throw new Error('MP4_FTYP_MISSING');
@@ -1109,6 +1123,32 @@ function validateMp4(localPath){
 
 async function findGoldenRecoveryAsset(page,allowHistory=true){
   if(!GOLDEN_RECOVERY_TERMS.length)throw new Error('GOLDEN_RECOVERY_TERMS_MISSING');
+
+  // Recorder "muestra 2" proves the non-chat recovery path:
+  // project grid -> first/latest visible video tile -> hover footer -> editor.
+  // This one-time Golden Run recovery is safe because the operator confirmed
+  // the Patagonia render is the latest real generation in this project.
+  const videoTiles=page.locator('flow-grid-tile-container').filter({has:page.locator('flow-video-tile')});
+  const visibleVideoTiles=[];
+  for(let i=0;i<Math.min(await videoTiles.count().catch(()=>0),120);i++){
+    const tile=videoTiles.nth(i);
+    if(await tile.isVisible().catch(()=>false))visibleVideoTiles.push(tile);
+  }
+  if(visibleVideoTiles.length){
+    const tile=visibleVideoTiles[0];
+    await tile.scrollIntoViewIfNeeded().catch(()=>{});
+    await tile.hover().catch(()=>{});
+    const footer=tile.locator('flow-tile-hover-footer').first();
+    if(await footer.count().catch(()=>0)&&await footer.isVisible().catch(()=>false)){
+      await footer.click({force:true,timeout:5000}).catch(()=>{});
+    }else{
+      await tile.click({force:true,timeout:5000}).catch(()=>{});
+    }
+    await sleep(1200);
+    const d=await visibleDownloadButton(page);
+    if(d)return{found:true,matched:['recorder-project-grid','latest-video-tile'],label:'first visible project video tile',source:'project-grid-latest-video'};
+    await page.keyboard.press('Escape').catch(()=>{});await sleep(300);
+  }
 
   // Exact Golden Run recorder path: flow-a2ui-video-option > ... > img with
   // accessible name equal to the generated prompt. Use Playwright's computed
@@ -1402,6 +1442,8 @@ async function runProvider(){
     db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     const migrated=await migrateProfileOnce(db);if(!migrated)return;
+    const goldenRecovery=await recoverGoldenRunIfRequested(db);
+    if(goldenRecovery.needed&&!goldenRecovery.done)return;
     const used=effectiveDailyCount(db);row=productionCandidate(db);
     if(row&&String(row.status)==='generating'){publish('RECOVERY_PICKED',{episode:'E'+row.episode,job_id:row.id,state:String(lifecycle(db,row)?.state||''),used_today:used});await processRow(db,row);return}
     const priorityRetry=isReviewerRetry(row);
