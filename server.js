@@ -271,6 +271,19 @@ function liveFlowConfig(){
 }
 function metaGet(k,f=''){return db.prepare('SELECT value FROM factory_meta WHERE key=?').get(k)?.value??f}
 function metaSet(k,v){db.prepare("INSERT INTO factory_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k,String(v))}
+function activateReadyAutomation(){
+  try{
+    const lf=liveFlowConfig(),ready=Boolean(loadToken())&&Boolean(lf.project_id&&flowAuth()?.ok)&&Boolean(String(CONFIG.content.creative_bible||'').trim());
+    if(!ready)return false;
+    if(metaGet('automation:factoryEnabled','false')!=='true')metaSet('automation:factoryEnabled','true');
+    if(!metaGet('automation:readinessActivatedAt','')){
+      const t=now();metaSet('automation:readinessActivatedAt',t);
+      try{db.prepare("UPDATE factory_items SET nextTry=0,error=NULL,updatedAt=? WHERE status IN ('draft','regen_wait') AND providerRunId IS NULL").run(t)}catch{}
+    }
+    setTimeout(()=>{try{globalThis.__publisherRunProvider?.()}catch{}},450).unref?.();
+    return true;
+  }catch{return false}
+}
 function health(){
  const counts={};for(const r of db.prepare('SELECT status,COUNT(*) n FROM factory_items GROUP BY status').all())counts[r.status]=Number(r.n);
  const p=providerStatus(),beat=p?.at?Date.parse(p.at):0,workerAlive=Boolean(beat&&Date.now()-beat<180000),today=new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),completed=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND status IN ('review','completed') AND COALESCE(generationKind,'automatic')<>'review_retry'").get(today)?.n||0),current=db.prepare("SELECT episode,status,error,lastProgressAt FROM factory_items WHERE status IN ('generating','draft','regen_wait') ORDER BY CASE status WHEN 'generating' THEN 0 ELSE 1 END,episode LIMIT 1").get();
@@ -289,7 +302,7 @@ let archiveBusy=false;
 async function storageTick(){if(archiveBusy)return;archiveBusy=true;try{const rows=db.prepare("SELECT * FROM factory_items WHERE status='review' AND videoPath IS NOT NULL ORDER BY updatedAt DESC").all(),st=storage(),aggressive=st?.free_percent!=null&&st.free_percent<Number(CONFIG.review.archive_below_free_percent||45);for(let i=0;i<rows.length;i++){const r=rows[i];if(!r.reviewVideoId&&(aggressive||i>=Number(CONFIG.review.hot_originals||2))){try{await archiveReviewOriginal(r)}catch(e){db.prepare('UPDATE factory_items SET reviewArchiveError=?,updatedAt=? WHERE id=?').run(String(e.message).slice(0,600),now(),r.id)}}}}finally{archiveBusy=false}}
 setInterval(()=>void storageTick(),5*60*1000).unref?.();setTimeout(()=>void storageTick(),30000).unref?.();
 
-app.get('/api/status',(req,res)=>{const h=health(),youtubeConnected=Boolean(loadToken()),flowConnected=Boolean(h.flow.configured&&h.flow.authenticated),bibleConfigured=Boolean(String(CONFIG.content.creative_bible||'').trim()),ready=youtubeConnected&&flowConnected&&bibleConfigured;if(ready){if(metaGet('automation:factoryEnabled','false')!=='true')metaSet('automation:factoryEnabled','true');if(!metaGet('automation:readinessActivatedAt','')){const t=now();metaSet('automation:readinessActivatedAt',t);try{db.prepare("UPDATE factory_items SET nextTry=0,error=NULL,updatedAt=? WHERE status IN ('draft','regen_wait') AND providerRunId IS NULL").run(t)}catch{};setTimeout(()=>{try{globalThis.__publisherRunProvider?.()}catch{}},400).unref?.()}}res.json({health:health(),brand:brandPublic(),youtube:{oauthConfigured:Boolean(ytSecrets().client_id&&ytSecrets().client_secret),connected:youtubeConnected},flowBootstrap:'/flow/bootstrap',onboarding:{youtube:youtubeConnected,flow:flowConnected,bible:bibleConfigured,ready}})});
+app.get('/api/status',(req,res)=>{const h=health(),youtubeConnected=Boolean(loadToken()),flowConnected=Boolean(h.flow.configured&&h.flow.authenticated),bibleConfigured=Boolean(String(CONFIG.content.creative_bible||'').trim()),ready=youtubeConnected&&flowConnected&&bibleConfigured;if(ready)activateReadyAutomation();res.json({health:health(),brand:brandPublic(),youtube:{oauthConfigured:Boolean(ytSecrets().client_id&&ytSecrets().client_secret),connected:youtubeConnected},flowBootstrap:'/flow/bootstrap',onboarding:{youtube:youtubeConnected,flow:flowConnected,bible:bibleConfigured,ready}})});
 app.get('/api/show-bible',(req,res)=>res.json({creative_bible:String(CONFIG.content.creative_bible||'')}));
 app.post('/api/show-bible',(req,res)=>{const bible=String(req.body?.creative_bible||'').trim().slice(0,80000);if(bible.length<20)return res.status(400).json({error:'The Show Bible needs at least 20 characters.'});CONFIG.content.creative_bible=bible;try{fs.writeFileSync(path.join(DATA_DIR,'publisher-config.json'),JSON.stringify(CONFIG,null,2),{mode:0o600})}catch(e){return res.status(500).json({error:'Could not save Show Bible: '+e.message})}res.json({ok:true,length:bible.length})});
 app.get('/api/config/export',(req,res)=>{const c=structuredClone(CONFIG);res.set('Content-Disposition','attachment; filename="publisher-config.json"');res.type('json').send(JSON.stringify(c,null,2))});
@@ -298,4 +311,4 @@ app.get('/security',(req,res)=>res.sendFile('security.html',{root:'public'}));
 app.use(express.static('public'));
 app.get('/',(req,res)=>res.sendFile('index.html',{root:'public'}));
 
-app.listen(PORT,'0.0.0.0',()=>console.log('Publisher Runtime v1 listening',PORT));
+app.listen(PORT,'0.0.0.0',()=>{console.log('Publisher Runtime v1 listening',PORT);setTimeout(()=>activateReadyAutomation(),1400).unref?.()});
