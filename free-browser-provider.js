@@ -1357,7 +1357,8 @@ async function recoverGoldenRunIfRequested(db){
   if(prior?.status==='completed')return{needed:true,done:true,prior};
   let row=db.prepare('SELECT * FROM factory_items WHERE episode=? LIMIT 1').get(GOLDEN_RECOVERY_EPISODE);
   if(!row)throw new Error('GOLDEN_RECOVERY_TARGET_EPISODE_NOT_FOUND:'+GOLDEN_RECOVERY_EPISODE);
-  if(row.videoPath&&fs.existsSync(row.videoPath)&&String(row.status)==='review'){
+  const forceReplace=String(process.env.PUBLISHER_RECOVERY_FORCE_REPLACE||'false').toLowerCase()==='true';
+  if(!forceReplace&&row.videoPath&&fs.existsSync(row.videoPath)&&String(row.status)==='review'){
     const done={status:'completed',at:now(),episode:row.episode,job_id:row.id,existing:true};
     setMeta(db,metaKey,JSON.stringify(done));return{needed:true,done:true,prior:done};
   }
@@ -1412,6 +1413,9 @@ async function recoverGoldenRunIfRequested(db){
     const recoveredAt=now(),runId='manual-flow-golden-run:'+GOLDEN_RECOVERY_TOKEN;
     const flowResult={provider:PROVIDER,manual_golden_run:true,recovery_token:GOLDEN_RECOVERY_TOKEN,matched_terms:GOLDEN_RECOVERY_TERMS,matched_label:found.label,duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:recoveredAt};
     db.prepare(`UPDATE factory_items SET status='review',videoPath=?,providerRunId=NULL,flowResult=?,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?`).run(localPath,JSON.stringify(flowResult),recoveredAt,recoveredAt,row.id);
+    if(forceReplace){
+      try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Superseded by verified Golden Run recovery from the exact Earth Flow project.',updatedAt=? WHERE itemId=? AND day=?").run(recoveredAt,row.id,artDay())}catch{}
+    }
     const exists=Number(db.prepare('SELECT COUNT(*) n FROM factory_generations WHERE runId=? OR (itemId=? AND day=? AND status=? AND error=?)').get(runId,row.id,artDay(),'review','manual-golden-run')?.n||0);
     if(!exists){
       try{db.prepare(`INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(randomUUID(),row.id,artDay(),sha(runId+':'+row.id),CREDITS_PER_GENERATION,'review',runId,recoveredAt,recoveredAt,'manual-golden-run','automatic')}catch(e){publish('GOLDEN_RECOVERY_ACCOUNTING_WARNING',{message:compact(e?.message||e,300)})}
