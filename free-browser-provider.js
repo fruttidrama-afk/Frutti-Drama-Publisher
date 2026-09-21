@@ -441,9 +441,16 @@ async function configureFlow(page){
     if(!chosen)throw new Error('FLOW_MODEL_INTENT_NOT_FOUND:'+MODEL_INTENT);
     await clickInteractive(chosen.o);await sleep(450);currentModel=chosen.txt;
   }else if(!modelButton){
-    const body=compact(await getBody(page),3000);
+    const body=compact(await getBody(page),5000);
     const line=body.split(/\n|\|/).find(x=>modelMatches(x));
-    currentModel=line?compact(line,200):MODEL_INTENT;
+    if(!line)throw new Error('FLOW_VIDEO_MODEL_NOT_VERIFIED:'+MODEL_INTENT+':'+body.slice(0,700));
+    currentModel=compact(line,200);
+  }
+  if(!modelMatches(currentModel))throw new Error('FLOW_VIDEO_MODEL_MISMATCH:'+MODEL_INTENT+':'+compact(currentModel,220));
+  if(/omni\s+flash/i.test(MODEL_INTENT)&&!/omni\s+flash/i.test(currentModel)){
+    const settingsText=compact(await getBody(page),5000);
+    if(!/omni\s+flash/i.test(settingsText))throw new Error('FLOW_OMNI_FLASH_NOT_ACTIVE:'+compact(currentModel,220));
+    currentModel='Omni Flash';
   }
 
   let resolutionApplied='default';
@@ -495,7 +502,9 @@ async function configureFlow(page){
   for(let i=(await closeButtons.count().catch(()=>0))-1;i>=0;i--){const x=closeButtons.nth(i);if(await x.isVisible().catch(()=>false)){await clickInteractive(x);await sleep(300);break}}
   await page.keyboard.press('Escape').catch(()=>{});
   await sleep(350);
-  return{label:label||'settings-applied',mode:'Video',ratio:ASPECT_RATIO,model:currentModel,resolution:resolutionApplied,duration:durationApplied,count:outputApplied,ingredients:CONFIG.characters.length>0};
+  const applied={label:label||'settings-applied',mode:'Video',ratio:ASPECT_RATIO,model:currentModel,resolution:resolutionApplied,duration:durationApplied,count:outputApplied,ingredients:CONFIG.characters.length>0};
+  publish('FLOW_SETTINGS_APPLIED',{message:JSON.stringify(applied)});
+  return applied;
 }
 async function ingredientCount(page){
   return await page.locator('[aria-label="Ingredient"]').count().catch(()=>0);
@@ -680,7 +689,9 @@ async function clickSubmitExactlyOnce(page){
     if(text)seen.push(text);
   }
   const body=compact(await getBody(page),16000);
-  publish('POST_SEND_SCAN',{message:'buttons='+[...new Set(seen)].slice(-18).join(' | ')+' ; bodyTail='+body.slice(-700)});
+  const unique=[...new Set(seen)],wrongMode=unique.some(x=>/Good response|Bad response|Copy|Flag output|Try again/i.test(x))&&!unique.some(x=>/^Generate$/i.test(x));
+  publish(wrongMode?'WRONG_FLOW_MODE':'POST_SEND_SCAN',{message:'buttons='+unique.slice(-18).join(' | ')+' ; bodyTail='+body.slice(-700)});
+  if(wrongMode)throw new Error('WRONG_FLOW_MODE_TEXT_RESPONSE_AFTER_SEND');
   return'composer-send-direct';
 }
 async function renderAuthGuard(page){
