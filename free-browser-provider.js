@@ -22,7 +22,7 @@ const MIGRATION_OK=path.join(FACTORY_DIR,'free-browser-profile-ready.json');
 const MIGRATION_ATTEMPT=path.join(FACTORY_DIR,'free-browser-profile-attempt.json');
 const LOCK_FILE=path.join(FACTORY_DIR,'free-browser-provider.lock');
 let LOCK_HEARTBEAT=null;
-const LOCK_STALE_MS=3*60*1000;
+const LOCK_STALE_MS=90*1000;
 const GOLDEN_RECOVERY_TOKEN=String(process.env.PUBLISHER_RECOVER_GOLDEN_RUN||'').trim();
 const GOLDEN_RECOVERY_EPISODE=Math.max(1,Number(process.env.PUBLISHER_RECOVERY_TARGET_EPISODE||1));
 const GOLDEN_RECOVERY_TERMS=String(process.env.PUBLISHER_RECOVERY_PROMPT_TERMS||'').split('|').map(x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()).filter(Boolean);
