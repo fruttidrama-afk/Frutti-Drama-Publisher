@@ -927,35 +927,41 @@ async function approveFlowPointConsent(page,permission,baselineInventory,baselin
 }
 async function clickSubmitExactlyOnce(page,baselineInventory,baselineVideos,baselineBusy=0){
   const permissionBefore=await permissionSnapshot(page);
-  let send=page.locator('flow-creative-agent-prompt-box flow-base-prompt-box flow-generate-icon-button button').last();
-  if(!(await send.count().catch(()=>0))||!(await send.isVisible().catch(()=>false))||!(await send.isEnabled().catch(()=>false))){
-    send=page.getByRole('button',{name:/Start generation|Iniciar generación/i}).last();
-  }
-  if(!(await send.count().catch(()=>0))||!(await send.isVisible().catch(()=>false))||!(await send.isEnabled().catch(()=>false)))throw new Error('FLOW_SEND_BUTTON_NOT_READY');
-  const sendLabel=compact(((await send.innerText().catch(()=>''))||'')+' '+((await send.getAttribute('aria-label').catch(()=>''))||''),180);
-  await send.click({force:true,timeout:5000});
-  publish('SUBMIT_SEND_CLICKED',{message:sendLabel||'Flow composer generate button'});
 
-  const deadline=Date.now()+12000;
-  while(Date.now()<deadline){
+  // Muestra 3 exact path: refocus the prompt top row, then click the arrow icon
+  // inside flow-generate-icon-button. Do not use a generic button guess here.
+  const promptTop=page.locator('flow-project-page flow-prompt-box div.prompt-top-row').last();
+  if(await promptTop.count().catch(()=>0)&&await promptTop.isVisible().catch(()=>false)){
+    await promptTop.click({position:{x:Math.max(5,Math.min(40,(await promptTop.boundingBox().catch(()=>({width:80}))).width-5)),y:8}}).catch(()=>{});
+    await sleep(180);
+  }
+
+  let arrow=page.locator('flow-project-page flow-prompt-box flow-generate-icon-button mat-icon').last();
+  if(!(await arrow.count().catch(()=>0))||!(await arrow.isVisible().catch(()=>false))){
+    arrow=page.getByRole('img',{name:/Iniciar generación|Start generation/i}).last();
+  }
+  if(!(await arrow.count().catch(()=>0))||!(await arrow.isVisible().catch(()=>false)))throw new Error('FLOW_GENERATE_ARROW_NOT_FOUND');
+
+  const box=await arrow.boundingBox().catch(()=>null);
+  if(!box)throw new Error('FLOW_GENERATE_ARROW_NO_BOX');
+  await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
+  await page.mouse.down(); await sleep(80); await page.mouse.up();
+  publish('SUBMIT_ARROW_CLICKED',{message:'Recorder-exact flow-generate-icon-button mat-icon / arrow_forward'});
+
+  // Consent is optional because "Always approve" may already be persisted.
+  // Only handle a permission message that appears after this exact click.
+  const consentDeadline=Date.now()+4500;
+  while(Date.now()<consentDeadline){
     await sleep(250);
     const permission=await newPermissionMessage(page,permissionBefore);
     if(permission){
       const consent=await approveFlowPointConsent(page,permission,baselineInventory,baselineVideos,baselineBusy);
-      return'composer-send-'+consent.mode;
-    }
-    const gens=page.getByRole('button',{name:/^Generate$/i});
-    for(let i=(await gens.count().catch(()=>0))-1;i>=0;i--){
-      const g=gens.nth(i);
-      if(await g.isVisible().catch(()=>false)&&await g.isEnabled().catch(()=>false)){
-        await g.click({force:true,timeout:5000});
-        publish('SUBMIT_CONFIRMATION_CLICKED',{message:'Generate'});
-        return'composer-send-confirm-generate';
-      }
+      return'composer-arrow-'+consent.mode;
     }
   }
-  publish('POST_SEND_NO_CONSENT',{message:'No new consent/confirmation appeared; verify actual generation state separately.'});
-  return'composer-send-direct';
+
+  publish('POST_ARROW_NO_CONSENT',{message:'No new permission message appeared after recorder-exact arrow click.'});
+  return'composer-arrow-direct';
 }
 async function renderAuthGuard(page){
   const url=String(page.url()||'');
@@ -975,16 +981,20 @@ async function captureFlowInventory(page){
         const img=el.querySelector('img,[role="img"]');
         return String(img?.getAttribute('aria-label')||img?.getAttribute('alt')||el.getAttribute('aria-label')||el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,1200);
       }).filter(Boolean);
+      const videoTiles=tiles.filter(el=>!!el.querySelector('flow-video-tile'));
+      const videoTileSigs=videoTiles.map(el=>String(el.getAttribute('aria-label')||el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,500)).filter(Boolean);
       return{
         tile_count:tiles.length,
         ordered_signatures:sigs.slice(0,120),
         signatures:[...new Set(sigs)].slice(0,120),
+        video_tile_count:videoTiles.length,
+        video_tile_signatures:videoTileSigs.slice(0,80),
         video_option_count:videoOptions.length,
         video_option_names:videoOptionNames.slice(-40),
         busy:/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation|creating|preparing video|creando video|preparando video/i.test(body)
       };
     });
-  }catch{return{tile_count:0,ordered_signatures:[],signatures:[],video_option_count:0,video_option_names:[],busy:false}}
+  }catch{return{tile_count:0,ordered_signatures:[],signatures:[],video_tile_count:0,video_tile_signatures:[],video_option_count:0,video_option_names:[],busy:false}}
 }
 function inventoryHasNew(current,baseline){
   if(!baseline)return false;
@@ -1045,26 +1055,22 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
 }
 async function waitGenerationStarted(page,baseline,baselineInventory,baselineBusy=0,timeout=90000){
   const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean)),startedAt=Date.now(),deadline=startedAt+timeout;
+  const baseVideoTiles=Number(baselineInventory?.video_tile_count||0);
   let lastEvidence='';
   while(Date.now()<deadline){
     await renderAuthGuard(page);
     const vids=await currentVideos(page);
-    const freshVideo=vids.some(v=>v.src&&!baseSrc.has(v.src));
+    const freshVideo=vids.some(v=>v.src&&!baseSrc.has(v.src)&&Number(v.duration||0)>0);
     const inv=await captureFlowInventory(page);
-    const tileCountIncreased=Number(inv.tile_count||0)>Number(baselineInventory?.tile_count||0);
-    const optionCountIncreased=Number(inv.video_option_count||0)>Number(baselineInventory?.video_option_count||0);
-    const signatureChanged=inventoryHasNew(inv,baselineInventory);
-    const send=page.getByRole('button',{name:/Start generation|Iniciar generación/i}).last();
-    const sendVisible=await send.isVisible().catch(()=>false);
-    const sendDisabled=await send.isDisabled().catch(()=>false);
-    const visibleBusy=await visibleGenerationBusyCount(page);
+    const newVideoTile=Number(inv.video_tile_count||0)>baseVideoTiles;
     const elapsed=Date.now()-startedAt;
-    const controlTransition=elapsed>=1200&&(!sendVisible||sendDisabled)&&visibleBusy>Number(baselineBusy||0);
-    lastEvidence=`freshVideo=${freshVideo}; tileCount=${baselineInventory?.tile_count||0}->${inv.tile_count||0}; videoOptions=${baselineInventory?.video_option_count||0}->${inv.video_option_count||0}; signatureChanged=${signatureChanged}; controlTransition=${controlTransition}; busy=${baselineBusy}->${visibleBusy}; sendVisible=${sendVisible}; sendDisabled=${sendDisabled}; elapsedMs=${elapsed}`;
-    if(freshVideo||tileCountIncreased||optionCountIncreased||signatureChanged||controlTransition)return{started:true,evidence:lastEvidence,videos:vids,inventory:inv};
-    await sleep(900);
+    lastEvidence=`freshPlayableVideo=${freshVideo}; videoTiles=${baseVideoTiles}->${inv.video_tile_count||0}; allTiles=${baselineInventory?.tile_count||0}->${inv.tile_count||0}; elapsedMs=${elapsed}`;
+    if(freshVideo||newVideoTile){
+      return{started:true,evidence:lastEvidence,videos:vids,inventory:inv,render_complete:true};
+    }
+    await sleep(1200);
   }
-  return{started:false,evidence:'No hard Flow generation evidence after submit. '+lastEvidence};
+  return{started:false,evidence:'No real rendered video appeared after the submit boundary. '+lastEvidence};
 }
 function firstFreshRendered(vids,baseline){
   const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean));
@@ -1467,7 +1473,7 @@ async function processRow(db,row){
     const consentMode=/approve-always/i.test(submitMode)?'ALWAYS_APPROVED':(/approve-once|confirm-generate/i.test(submitMode)?'PER_GENERATION':(priorConsent==='ALWAYS_APPROVED'?'ALWAYS_APPROVED':'NO_DIALOG_OBSERVED'));
     setMeta(db,'flow:consentMode',consentMode);
     setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null,automatic_submit_forbidden:true});
-    const started=await waitGenerationStarted(page,baseline,baselineInventory,baselineBusy,/approve/i.test(submitMode)?180000:90000);
+    const started=await waitGenerationStarted(page,baseline,baselineInventory,baselineBusy,12*60*1000);
     if(!started.started){
       const retryAt=Date.now()+30000;
       setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{generation_id:genId,submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,last_error:'No hard Flow generation evidence after submit. Read-only reconciliation required before any new Generate.',retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:true});
@@ -1477,7 +1483,7 @@ async function processRow(db,row){
     }
     const startedAt=now();lc=setLifecycle(db,row,'GENERATION_STARTED',{generation_id:genId,generation_started_at:startedAt,submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,automatic_submit_forbidden:true});
     try{db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)").run(randomUUID(),row.id,artDay(new Date(startedAt)),sha(cp.hash+':'+genId),CREDITS_PER_GENERATION,'running',genId,startedAt,startedAt,reviewerRetry?'review_retry':'automatic')}catch{}
-    setMeta(db,'flow:lastSuccessfulGenerationAt',startedAt);publish('GENERATION_STARTED',{episode:'E'+row.episode,job_id:row.id,generation_id:genId,evidence:started.evidence});return await retrieveExisting(page,row,cp,lc,db);
+    setMeta(db,'flow:lastSuccessfulGenerationAt',startedAt);publish('FLOW_RENDER_CONFIRMED',{episode:'E'+row.episode,job_id:row.id,generation_id:genId,evidence:started.evidence});return await retrieveExisting(page,row,cp,lc,db);
   }finally{await session.close().catch(()=>{})}
 }
 function reconcileAmbiguousNoGeneration(){return false;}
