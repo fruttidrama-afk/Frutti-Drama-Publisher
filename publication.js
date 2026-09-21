@@ -80,6 +80,26 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     await yt.videos.update({part:['snippet','status'],requestBody:{id:item.videoId,snippet:{title:item.title,description:item.description,categoryId:v.snippet?.categoryId||'24',tags:[...(v.snippet?.tags||[]).filter(x=>!String(x).startsWith('publisher-runtime-')),'publisher-runtime-'+item.id]},status:{privacyStatus:'private',publishAt:item.scheduledAt,selfDeclaredMadeForKids:false}}});
   }
 
+  async function auditExistingMetadata(){
+    const provider=(config.publication?.providers||[]).find(x=>x.type==='youtube')||{};
+    const items=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('cancelled','deleted') ORDER BY episode").all();
+    let corrected=0,synced=0;
+    for(const item of items){
+      const row=db.prepare('SELECT hook,story FROM factory_items WHERE id=?').get(item.itemId);
+      if(!row)continue;
+      const copy=buildPublicationCopy({hook:row.hook,story:row.story,hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],showName:config.identity.show_name,maxTitleLength:100});
+      let description=copy.description;while(utf8(description)>4800)description=description.slice(0,-20).trimEnd();
+      const changed=item.title!==copy.title||item.description!==description;
+      if(changed){
+        item.title=copy.title;item.description=description;hist(item,item.status,'Publication metadata realigned with the exact episode story.');save(db,item);corrected++;
+      }
+      if(item.videoId&&loadToken()&&!['published','cancelled','deleted'].includes(String(item.status||''))){
+        try{await stageMetadata(item);synced++}catch{}
+      }
+    }
+    if(corrected||synced)console.log('[PUBLICATION COPY AUDIT]',{corrected,synced});
+  }
+
   async function upload(item){
     if(item.videoId)return;
     if(!item.filePath||!fs.existsSync(item.filePath))throw new Error('Archivo de publicación ausente.');
@@ -147,6 +167,6 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
 
   app.get('/publication/items',(_req,res)=>res.json({items:db.prepare('SELECT * FROM publication_items ORDER BY scheduledAt').all().map(publicItem),scheduler:{alive:true,lastHeartbeat,lastError,indefinite:true}}));
   app.post('/publication/run',(_req,res)=>{setTimeout(()=>void tick(),0);res.status(202).json({ok:true})});
-  const timer=setInterval(()=>void tick(),30000);timer.unref?.();setTimeout(()=>void tick(),1500).unref?.();
+  const timer=setInterval(()=>void tick(),30000);timer.unref?.();setTimeout(()=>void auditExistingMetadata().then(()=>tick()),900).unref?.();
   return{enqueue,tick,status:()=>({alive:true,running,lastHeartbeat,lastError,indefinite:true}),close:()=>clearInterval(timer)};
 }
