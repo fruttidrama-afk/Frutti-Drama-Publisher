@@ -574,7 +574,11 @@ async function waitGenerationStarted(page,baseline,baselineInventory,timeout=900
   }
   return{started:false,evidence:'No post-submit video, tile-count increase, or generation-control transition'};
 }
-function newestRendered(vids,baseline){const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean)),fresh=(vids||[]).filter(v=>v.readyState>=2&&v.duration>0&&((v.src&&!baseSrc.has(v.src))||v.i>=(baseline||[]).length));return fresh.at(-1)||null;}
+function firstFreshRendered(vids,baseline){
+  const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean));
+  const fresh=(vids||[]).filter(v=>v.readyState>=2&&v.duration>0&&v.src&&!baseSrc.has(v.src));
+  return fresh.length===1?fresh[0]:null;
+}
 async function visibleDownloadButton(page){
   const named=page.getByRole('button',{name:/Download|Export|Descargar/i});
   for(let i=(await named.count())-1;i>=0;i--){
@@ -589,6 +593,28 @@ async function visibleDownloadButton(page){
     if(/download|export|descargar|file_download/i.test(txt))return c;
   }
   return null;
+}
+async function openUniqueFreshInventoryResult(page,baselineInv){
+  const tiles=page.locator('flow-grid-tile-container'),count=Math.min(await tiles.count().catch(()=>0),120),baselineCount=Number(baselineInv?.tile_count||0);
+  if(count-baselineCount!==1)return{ready:false,opened:false,signal:`fresh-tile-delta:${count-baselineCount}`};
+  const baselineList=Array.isArray(baselineInv?.ordered_signatures)&&baselineInv.ordered_signatures.length?baselineInv.ordered_signatures:(Array.isArray(baselineInv?.signatures)?baselineInv.signatures:[]);
+  const remaining=new Map();for(const sig of baselineList)remaining.set(sig,(remaining.get(sig)||0)+1);
+  const fresh=[];
+  for(let i=0;i<count;i++){
+    const el=tiles.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
+    const aria=String(await el.getAttribute('aria-label').catch(()=>'')||'').replace(/\s+/g,' ').trim();
+    const inner=String(await el.innerText().catch(()=>'')||'').replace(/\s+/g,' ').trim();
+    const content=String(await el.textContent().catch(()=>'')||'').replace(/\s+/g,' ').trim();
+    const sig=compact(aria||inner||content,220);if(!sig)continue;
+    const left=remaining.get(sig)||0;if(left>0){remaining.set(sig,left-1);continue}
+    fresh.push({el,sig,i});
+  }
+  if(fresh.length!==1)return{ready:false,opened:false,signal:`fresh-tile-occurrences:${fresh.length}`};
+  await fresh[0].el.click().catch(()=>{});await sleep(800);
+  const d=await visibleDownloadButton(page);
+  if(d)return{ready:true,opened:true,signal:'unique-fresh-inventory-tile',signature:fresh[0].sig,index:fresh[0].i};
+  await page.keyboard.press('Escape').catch(()=>{});
+  return{ready:false,opened:false,signal:'unique-fresh-tile-no-download'};
 }
 async function openLatestGeneratedResult(page){
   let d=await visibleDownloadButton(page);
@@ -637,13 +663,25 @@ async function openLatestGeneratedResult(page){
   return{ready:false,opened:false,signal:'no-result-control'};
 }
 async function downloadResult(page,rendered,localPath){
-  if(rendered?.i>=0){const v=page.locator('video').nth(rendered.i);if(await v.isVisible().catch(()=>false))await v.click({position:{x:10,y:10}}).catch(()=>{})}
-  if(!rendered?.uiReady&&!(await visibleDownloadButton(page)))await openLatestGeneratedResult(page);
-  let trigger=await visibleDownloadButton(page);const named=page.getByRole('button',{name:/Download|Export|Descargar/i}).last();
-  if(!trigger)for(let i=(await named.count())-1;i>=0;i--){const c=named.nth(i);if(await c.isVisible().catch(()=>false)){trigger=c;break}}
-  if(trigger){await trigger.click();await sleep(500);const wanted=CONFIG.generation.download_quality||'1080p Upscaled',opt=page.getByText(new RegExp(escapeRe(wanted),'i')).last();if(await opt.count().catch(()=>0)&&await opt.isVisible().catch(()=>false)){const p=page.waitForEvent('download',{timeout:15*60*1000});await opt.click();const dl=await p;await dl.saveAs(localPath);return{method:wanted}}await page.keyboard.press('Escape').catch(()=>{})}
-  if(rendered?.src&&/^https?:/i.test(rendered.src)){const r=await page.context().request.get(rendered.src,{timeout:90000});if(r.ok()){fs.writeFileSync(localPath,await r.body(),{mode:0o600});return{method:'direct-video-url'}}}
-  throw new Error('VIDEO_DOWNLOAD_FAILED');
+  if(rendered?.i>=0){
+    const v=page.locator('video').nth(rendered.i);if(await v.isVisible().catch(()=>false))await v.click({position:{x:10,y:10}}).catch(()=>{});
+    let trigger=await visibleDownloadButton(page);
+    if(trigger){
+      await trigger.click();await sleep(500);
+      const wanted=CONFIG.generation.download_quality||'1080p Upscaled',opt=page.getByText(new RegExp(escapeRe(wanted),'i')).last();
+      if(await opt.count().catch(()=>0)&&await opt.isVisible().catch(()=>false)){const p=page.waitForEvent('download',{timeout:15*60*1000});await opt.click();const dl=await p;await dl.saveAs(localPath);return{method:wanted}}
+      await page.keyboard.press('Escape').catch(()=>{});
+    }
+    if(rendered.src&&/^https?:/i.test(rendered.src)){const r=await page.context().request.get(rendered.src,{timeout:90000});if(r.ok()){fs.writeFileSync(localPath,await r.body(),{mode:0o600});return{method:'direct-video-url'}}}
+    throw new Error('FRESH_VIDEO_DOWNLOAD_FAILED_NO_GENERIC_FALLBACK');
+  }
+  if(!rendered?.uiReady)throw new Error('DOWNLOAD_WITHOUT_UNIQUE_FRESH_EVIDENCE');
+  let trigger=await visibleDownloadButton(page);
+  if(!trigger)throw new Error('UNIQUE_FRESH_TILE_DOWNLOAD_CONTROL_MISSING');
+  await trigger.click();await sleep(500);
+  const wanted=CONFIG.generation.download_quality||'1080p Upscaled',opt=page.getByText(new RegExp(escapeRe(wanted),'i')).last();
+  if(!(await opt.count().catch(()=>0))||!(await opt.isVisible().catch(()=>false)))throw new Error('UNIQUE_FRESH_TILE_DOWNLOAD_OPTION_MISSING');
+  const p=page.waitForEvent('download',{timeout:15*60*1000});await opt.click();const dl=await p;await dl.saveAs(localPath);return{method:wanted};
 }
 function validateMp4(localPath){
   const st=fs.statSync(localPath);if(st.size<100000)throw new Error('MP4_TOO_SMALL:'+st.size);const head=fs.readFileSync(localPath).subarray(0,128);if(!head.includes(Buffer.from('ftyp')))throw new Error('MP4_FTYP_MISSING');
@@ -652,7 +690,7 @@ function validateMp4(localPath){
   const parts=ASPECT_RATIO.split(':').map(Number);if(width>0&&height>0&&parts.length===2&&parts.every(Number.isFinite)){const expected=parts[0]/parts[1],actual=width/height;if(Math.abs(actual-expected)>Math.max(.12,expected*.22))throw new Error('MP4_ASPECT_UNEXPECTED:'+width+'x'+height)}
   return{size:st.size,duration,width,height,codec:String(stream.codec_name||'')};
 }
-async function retrieveExisting(page,row,cp,lc,db){setLifecycle(db,row,'RETRIEVING',{generation_id:lc?.generation_id||row.providerRunId||'',baseline:lc?.baseline||[]});const baseline=Array.isArray(lc?.baseline)?lc.baseline:[],deadline=Date.now()+15*60*1000;let rendered=null,lastVideos=[],uiSignal=null,lastHeartbeat=0;while(Date.now()<deadline){await renderAuthGuard(page);if(Date.now()-lastHeartbeat>10000){lastHeartbeat=Date.now();try{db.prepare('UPDATE factory_items SET lastProgressAt=?,updatedAt=? WHERE id=?').run(now(),now(),row.id);}catch{}}lastVideos=await currentVideos(page);rendered=newestRendered(lastVideos,baseline);if(rendered)break;const text=await getBody(page);if(/failed to generate|generation failed|couldn't generate|no se pudo generar/i.test(text))throw new Error('FLOW_GENERATION_FAILED');const stillBusy=/generating|processing|rendering|creating video|generando|procesando|upscaling/i.test(text);if(!stillBusy){uiSignal=await openLatestGeneratedResult(page);if(uiSignal?.ready){rendered={uiReady:true,signal:uiSignal.signal};break;}}await sleep(2500);}if(!rendered)throw new Error(`RENDER_TIMEOUT:videos=${lastVideos.length}:ui=${uiSignal?.signal||'none'}`);const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);try{fs.unlinkSync(localPath);}catch{}const dl=await downloadResult(page,rendered,localPath),valid=validateMp4(localPath),flowResult={provider:PROVIDER,generation_id:lc?.generation_id||row.providerRunId||'',generation_started_at:lc?.generation_started_at||'',duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:now()};db.prepare(`UPDATE factory_items SET status='review',videoPath=?,flowResult=?,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?`).run(localPath,JSON.stringify(flowResult),now(),now(),row.id);try{db.prepare(`UPDATE factory_generations SET status='review',updatedAt=?,error=NULL WHERE itemId=? AND runId=?`).run(now(),row.id,String(lc?.generation_id||row.providerRunId||''));}catch{}setLifecycle(db,row,'REVIEW_READY',{...lc,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,download_quality:flowResult.download_quality,retrieved_at:now()});setMeta(db,'flow:lastSuccessfulGenerationAt',lc?.generation_started_at||now());setMeta(db,'flow:lastSuccessfulMp4At',now());setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');try{fs.writeFileSync(path.join(FACTORY_DIR,'flow-browser-self-test.json'),JSON.stringify({at:now(),ok:true,stage:'real-production-review-ready',provider:PROVIDER,episode:`T${row.season}E${row.episode}`,mp4_valid:true,duration:valid.duration,width:valid.width,height:valid.height,codec:valid.codec},null,2),{mode:0o600});}catch{}publish('REVIEW_READY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`,factory_url:`/factory/video/${row.id}`});return true;}
+async function retrieveExisting(page,row,cp,lc,db){setLifecycle(db,row,'RETRIEVING',{generation_id:lc?.generation_id||row.providerRunId||'',baseline:lc?.baseline||[],baseline_inventory:lc?.baseline_inventory||null});const baseline=Array.isArray(lc?.baseline)?lc.baseline:[],baselineInventory=lc?.baseline_inventory||null,deadline=Date.now()+15*60*1000;let rendered=null,lastVideos=[],uiSignal=null,lastHeartbeat=0;while(Date.now()<deadline){await renderAuthGuard(page);if(Date.now()-lastHeartbeat>10000){lastHeartbeat=Date.now();try{db.prepare('UPDATE factory_items SET lastProgressAt=?,updatedAt=? WHERE id=?').run(now(),now(),row.id);}catch{}}lastVideos=await currentVideos(page);rendered=firstFreshRendered(lastVideos,baseline);if(rendered)break;const text=await getBody(page);if(/failed to generate|generation failed|couldn't generate|no se pudo generar/i.test(text))throw new Error('FLOW_GENERATION_FAILED');const stillBusy=/generating|processing|rendering|creating video|generando|procesando|upscaling/i.test(text);if(!stillBusy&&baselineInventory){uiSignal=await openUniqueFreshInventoryResult(page,baselineInventory);if(uiSignal?.ready){rendered={uiReady:true,signal:uiSignal.signal};break;}}await sleep(2500);}if(!rendered)throw new Error(`RENDER_TIMEOUT:videos=${lastVideos.length}:ui=${uiSignal?.signal||'none'}`);const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);try{fs.unlinkSync(localPath);}catch{}const dl=await downloadResult(page,rendered,localPath),valid=validateMp4(localPath),flowResult={provider:PROVIDER,generation_id:lc?.generation_id||row.providerRunId||'',generation_started_at:lc?.generation_started_at||'',duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:now()};db.prepare(`UPDATE factory_items SET status='review',videoPath=?,flowResult=?,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?`).run(localPath,JSON.stringify(flowResult),now(),now(),row.id);try{db.prepare(`UPDATE factory_generations SET status='review',updatedAt=?,error=NULL WHERE itemId=? AND runId=?`).run(now(),row.id,String(lc?.generation_id||row.providerRunId||''));}catch{}setLifecycle(db,row,'REVIEW_READY',{...lc,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,download_quality:flowResult.download_quality,retrieved_at:now()});setMeta(db,'flow:lastSuccessfulGenerationAt',lc?.generation_started_at||now());setMeta(db,'flow:lastSuccessfulMp4At',now());setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');try{fs.writeFileSync(path.join(FACTORY_DIR,'flow-browser-self-test.json'),JSON.stringify({at:now(),ok:true,stage:'real-production-review-ready',provider:PROVIDER,episode:`T${row.season}E${row.episode}`,mp4_valid:true,duration:valid.duration,width:valid.width,height:valid.height,codec:valid.codec},null,2),{mode:0o600});}catch{}publish('REVIEW_READY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`,factory_url:`/factory/video/${row.id}`});return true;}
 async function processRow(db,row){
   const cp=preparePromptIfNeeded(db,row);row=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);let lc=lifecycle(db,row);const state=String(lc?.state||'').toUpperCase(),session=await launchLocal(),context=session.context;
   try{
