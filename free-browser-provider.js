@@ -694,11 +694,21 @@ async function preflight(page,row,cp){
 async function currentVideos(page){return await page.locator('video').evaluateAll(vs=>vs.map((v,i)=>({i,src:v.currentSrc||v.src||'',duration:Number(v.duration||0),readyState:Number(v.readyState||0),w:Number(v.videoWidth||0),h:Number(v.videoHeight||0)}))).catch(()=>[]);}
 async function findConsentControl(page,label){
   const target=norm(label);
+  // Prefer the latest exact text occurrence in DOM order. Flow keeps old consent
+  // cards mounted above the current one, so ".last()" is the safest target.
+  const direct=page.getByText(new RegExp('^'+escapeRe(label)+'$','i'));
+  for(let i=(await direct.count().catch(()=>0))-1;i>=0;i--){
+    const el=direct.nth(i);
+    if(!(await el.isVisible().catch(()=>false)))continue;
+    await el.scrollIntoViewIfNeeded().catch(()=>{});
+    const box=await el.boundingBox().catch(()=>null);
+    if(box&&box.width>=20&&box.height>=12)return{el,txt:compact(await el.innerText().catch(()=>label),120),n:target,area:box.width*box.height,box,sel:'text-exact',score:120,order:i};
+  }
   const selectors=['button','[role="button"]','[tabindex]','div','span'];
-  const ranked=[];
+  const ranked=[];let order=0;
   for(const sel of selectors){
-    const loc=page.locator(sel),count=Math.min(await loc.count().catch(()=>0),500);
-    for(let i=0;i<count;i++){
+    const loc=page.locator(sel),count=Math.min(await loc.count().catch(()=>0),700);
+    for(let i=0;i<count;i++,order++){
       const el=loc.nth(i);
       if(!(await el.isVisible().catch(()=>false)))continue;
       const txt=compact((await el.innerText().catch(()=>''))||'',120),n=norm(txt);
@@ -708,16 +718,13 @@ async function findConsentControl(page,label){
       if(!exact&&!suffix)continue;
       if(target==='aprobar'&&/siempre/.test(n))continue;
       if(target==='approve'&&/always/.test(n))continue;
+      await el.scrollIntoViewIfNeeded().catch(()=>{});
       const box=await el.boundingBox().catch(()=>null);if(!box||box.width<20||box.height<12)continue;
-      const vp=page.viewportSize?.()||{width:1024,height:700};
-      // Flow keeps old approval cards mounted far above the viewport. Never click them.
-      if(box.y<0||box.y>vp.height-8||box.x+box.width<0||box.x>vp.width)continue;
       const area=box.width*box.height;
-      ranked.push({el,txt,n,area,box,sel,score:(exact?100:80)-Math.min(40,txt.length)});
+      ranked.push({el,txt,n,area,box,sel,order,score:(exact?100:80)-Math.min(40,txt.length)});
     }
   }
-  // Old approval cards remain in Flow history. Always choose the lowest/latest one.
-  ranked.sort((a,b)=>(b.box?.y||0)-(a.box?.y||0)||b.score-a.score||a.area-b.area);
+  ranked.sort((a,b)=>b.order-a.order||b.score-a.score||a.area-b.area);
   return ranked[0]||null;
 }
 async function approveFlowPointConsent(page){
