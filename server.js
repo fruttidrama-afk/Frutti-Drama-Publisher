@@ -1,20 +1,147 @@
+
+import fs from 'node:fs';
+import path from 'node:path';
 import express from 'express';
-import { CONFIG,PROJECT_ID,PROJECT_NAME } from './runtime-config.js';
-const app=express();
-const PORT=Number(process.env.PORT||8080);
-app.use(express.json());
-app.get('/factory/health',(req,res)=>res.json({
-  ok:true,
-  runtime_version:'publisher-runtime-v1',
-  sandbox:true,
-  publisher_enabled:false,
-  show:CONFIG.identity.show_name,
-  automation_provider:'FreeBrowserProvider',
-  generation_provider:'GoogleFlowProvider',
-  publication_provider:'YouTubeProvider',
-  tinyfish_required:false,
-  flow:{configured:Boolean(PROJECT_ID),project_id:PROJECT_ID||null,project_name:PROJECT_NAME||null},
-  note:'Build sandbox. Production runtime security/review server remains canonical in publisher-runtime/server.js.'
-}));
-app.get('/',(req,res)=>res.type('html').send('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Publisher Runtime v1</title><body style="font-family:system-ui;padding:32px"><h1>Publisher Runtime v1</h1><p>Build sandbox is live. Generation is disabled.</p></body>'));
-app.listen(PORT,'0.0.0.0',()=>console.log('Publisher Runtime build sandbox listening',PORT));
+import { DatabaseSync } from 'node:sqlite';
+import { google } from 'googleapis';
+import {
+  randomBytes,createHash,createHmac,timingSafeEqual,pbkdf2Sync,
+  createCipheriv,createDecipheriv
+} from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import {
+  generateRegistrationOptions,verifyRegistrationResponse,
+  generateAuthenticationOptions,verifyAuthenticationResponse
+} from '@simplewebauthn/server';
+import { CONFIG,PROJECT_ID,PROJECT_NAME,PROJECT_URL,DAILY_LIMIT,TIMEZONE,ideaForEpisode,ensureBacklog } from './runtime-config.js';
+import { installPublication } from './publication.js';
+
+google.options({timeout:90000,retry:false});
+const app=express(),PORT=Number(process.env.PORT||8080);
+const DATA_DIR=path.resolve(process.env.DATA_DIR||'/data'),DIR=path.join(DATA_DIR,'publisher-runtime'),DB_PATH=path.join(DIR,'factory.sqlite');
+const AUTH_PATH=path.join(DIR,'auth.json'),SECRET_PATH=path.join(DIR,'secrets.json'),YT_TOKEN_PATH=path.join(DIR,'youtube-token.json');
+const SESSION_COOKIE='publisher_session',TTL=30*24*60*60*1000;
+fs.mkdirSync(DIR,{recursive:true,mode:0o700});
+const db=new DatabaseSync(DB_PATH,{timeout:5000});
+
+app.use(express.json({limit:'2mb'}));
+app.use(express.urlencoded({extended:false,limit:'256kb'}));
+
+const now=()=>new Date().toISOString();
+const safeEq=(a,b)=>{const A=Buffer.from(String(a)),B=Buffer.from(String(b));return A.length===B.length&&timingSafeEqual(A,B)};
+const master=()=>createHash('sha256').update(String(process.env.PUBLISHER_SESSION_SECRET||'publisher-runtime-local')).digest();
+function seal(v){const iv=randomBytes(12),c=createCipheriv('aes-256-gcm',master(),iv),data=Buffer.concat([c.update(JSON.stringify(v),'utf8'),c.final()]);return{v:1,iv:iv.toString('base64url'),tag:c.getAuthTag().toString('base64url'),data:data.toString('base64url')}}
+function unseal(o){const d=createDecipheriv('aes-256-gcm',master(),Buffer.from(o.iv,'base64url'));d.setAuthTag(Buffer.from(o.tag,'base64url'));return JSON.parse(Buffer.concat([d.update(Buffer.from(o.data,'base64url')),d.final()]).toString('utf8'))}
+function readJson(file,fallback){try{return JSON.parse(fs.readFileSync(file,'utf8'))}catch{return structuredClone(fallback)}}
+function writeJson(file,v){const tmp=file+'.'+randomBytes(5).toString('hex')+'.tmp';fs.writeFileSync(tmp,JSON.stringify(v,null,2),{mode:0o600});fs.renameSync(tmp,file)}
+function authState(){const x=readJson(AUTH_PATH,{pinSalt:null,pinHash:null,webauthnUserID:null,passkeys:[],sessions:[],setupAt:null});x.passkeys=Array.isArray(x.passkeys)?x.passkeys:[];x.sessions=Array.isArray(x.sessions)?x.sessions:[];return x}
+function saveAuth(x){writeJson(AUTH_PATH,x)}
+function secrets(){const x=readJson(SECRET_PATH,null);if(!x)return{};try{return unseal(x)}catch{return{}}}
+function saveSecrets(v){writeJson(SECRET_PATH,seal(v))}
+function setPin(pin){const s=authState(),salt=randomBytes(18).toString('hex');s.pinSalt=salt;s.pinHash=pbkdf2Sync(pin,Buffer.from(salt,'hex'),210000,32,'sha256').toString('hex');s.setupAt=s.setupAt||now();saveAuth(s)}
+function pinOk(pin){const s=authState();if(!s.pinSalt||!s.pinHash)return false;return safeEq(s.pinHash,pbkdf2Sync(String(pin),Buffer.from(s.pinSalt,'hex'),210000,32,'sha256').toString('hex'))}
+function cookie(req){const out={};for(const x of String(req.headers.cookie||'').split(';')){const i=x.indexOf('=');if(i>0)out[x.slice(0,i).trim()]=decodeURIComponent(x.slice(i+1).trim())}return out}
+function sign(v){return createHmac('sha256',master()).update(v).digest('base64url')}
+function sessionParse(req){const t=cookie(req)[SESSION_COOKIE];if(!t)return null;const p=t.split('.');if(p.length!==3)return null;const exp=Number(p[0]);if(!Number.isFinite(exp)||exp<Date.now()||!safeEq(p[2],sign(p[0]+'.'+p[1])))return null;return{id:createHash('sha256').update(p[1]).digest('base64url'),exp,nonce:p[1]}}
+function device(req){const ua=String(req.headers['user-agent']||'');if(/iPhone/i.test(ua))return'iPhone';if(/iPad/i.test(ua))return'iPad';if(/Android/i.test(ua))return /Mobile/i.test(ua)?'Android':'Android tablet';if(/Windows/i.test(ua))return'Windows PC';if(/Macintosh/i.test(ua))return'Mac';return'Browser'}
+function issue(req,res,method='pin'){const exp=Date.now()+TTL,nonce=randomBytes(18).toString('base64url'),payload=String(exp)+'.'+nonce;res.cookie(SESSION_COOKIE,payload+'.'+sign(payload),{httpOnly:true,sameSite:'lax',secure:Boolean(process.env.RAILWAY_ENVIRONMENT),path:'/',maxAge:TTL});const s=authState(),id=createHash('sha256').update(nonce).digest('base64url');s.sessions=(s.sessions||[]).filter(x=>x.expiresAt>Date.now()&&!x.revokedAt);s.sessions.push({id,device:device(req),createdAt:now(),lastSeenAt:now(),expiresAt:exp,method});saveAuth(s)}
+function valid(req){const x=sessionParse(req);if(!x)return false;const s=authState(),r=s.sessions.find(y=>y.id===x.id);if(r?.revokedAt)return false;if(!r){s.sessions.push({id:x.id,device:device(req),createdAt:now(),lastSeenAt:now(),expiresAt:x.exp,method:'existing'});saveAuth(s)}else if(Date.now()-Date.parse(r.lastSeenAt||0)>5*60*1000){r.lastSeenAt=now();saveAuth(s)}return true}
+function configured(){const s=authState();return Boolean(s.pinHash||s.passkeys.length)}
+function htmlReq(req){return req.method==='GET'&&String(req.headers.accept||'').includes('text/html')}
+function secure(req,res,next){if(valid(req))return next();if(htmlReq(req))return res.redirect(configured()?'/login':'/setup');return res.status(401).json({error:'Access required.',login:configured()?'/login':'/setup'})}
+
+const rp=()=>String(process.env.RAILWAY_PUBLIC_DOMAIN||process.env.PUBLISHER_PUBLIC_DOMAIN||'localhost').replace(/^https?:\/\//,'').split('/')[0];
+const origin=req=>String(process.env.PUBLISHER_PUBLIC_URL||(req.protocol+'://'+req.get('host'))).replace(/\/$/,'');
+const regChallenges=new Map(),authChallenges=new Map();
+function passkeysPublic(){return authState().passkeys.map(x=>({id:x.id,name:x.name||'Passkey',createdAt:x.createdAt,lastUsedAt:x.lastUsedAt,deviceType:x.deviceType,backedUp:Boolean(x.backedUp)}))}
+
+app.get('/setup',(req,res)=>{if(configured())return res.redirect('/login');const error=String(req.query.error||'');res.send(`<!doctype html><html lang="es"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta charset="utf-8"><title>Configurar Publisher</title><style>:root{--bg:#f3f3f3;--ink:#050505;--muted:#6d6d6d;--line:#d4d4d4}*{box-sizing:border-box}body{font-family:Inter,-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;background:var(--bg);color:var(--ink);display:grid;place-items:center;min-height:100dvh;margin:0;padding:calc(18px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom))}.c{background:#fff;border:1px solid var(--line);width:min(460px,94vw);padding:28px;border-radius:26px;box-shadow:0 24px 70px rgba(0,0,0,.08)}h1{font-size:34px;letter-spacing:-.05em;margin:0 0 8px}.muted{color:var(--muted);line-height:1.5}.note{background:#f1f1f1;border:1px solid #dedede;border-radius:14px;padding:13px 14px;margin:16px 0;font-size:14px}.err{background:#111;color:#fff;border-radius:12px;padding:11px 13px;margin:12px 0;font-size:13px}.field{margin-top:14px}label{display:block;font-size:12px;font-weight:800;margin-bottom:7px}input,button{width:100%;box-sizing:border-box;padding:14px;border-radius:13px;font:inherit}input{border:1px solid #cfcfcf;background:#fff;outline:none}input:focus{border-color:#000;box-shadow:0 0 0 3px rgba(0,0,0,.06)}button{margin-top:14px;background:#000;color:#fff;border:1px solid #000;font-weight:750;min-height:50px}.loaded{display:none;color:#4f4f4f;font-size:12px;margin-top:8px}.loaded.show{display:block}</style></head><body><form class=c method=post action=/setup><h1>Configurar ${CONFIG.identity.publisher_name}</h1><p class=muted>Este Publisher es una copia de prueba creada por Publisher Factory. No reemplaza ni modifica tu Publisher original.</p><div class=note>Publisher Factory puede abrir esta pantalla con el código de activación ya cargado. Después sólo elegís tu PIN de recuperación y podés registrar una passkey.</div>${error==='invalid'?'<div class=err>El código de activación no coincide. Volvé a abrir este Publisher desde el botón “Configurar Publisher” en Publisher Factory.</div>':''}<div class=field><label>Código de activación</label><input id=token name=token type=password autocomplete=off placeholder="Abrilo desde Publisher Factory para cargarlo automáticamente"><div id=loaded class=loaded>Código cargado automáticamente desde Publisher Factory.</div></div><div class=field><label>PIN de recuperación</label><input name=pin inputmode=numeric pattern="[0-9]{6}" maxlength=6 placeholder="Elegí 6 números" required></div><button>Continuar con la configuración</button></form><script>(()=>{const raw=location.hash.startsWith('#code=')?decodeURIComponent(location.hash.slice(6)):'';if(raw){document.querySelector('#token').value=raw;document.querySelector('#loaded').classList.add('show');history.replaceState(null,'',location.pathname+location.search)}})();</script></body></html>`)});
+app.post('/setup',(req,res)=>{if(configured())return res.redirect('/login');const expected=String(process.env.PUBLISHER_SETUP_TOKEN||''),token=String(req.body.token||''),pin=String(req.body.pin||'');if(!expected||!safeEq(token,expected))return res.redirect('/setup?error=invalid');if(!/^\d{6}$/.test(pin))return res.status(400).send('El PIN debe tener exactamente 6 números.');setPin(pin);issue(req,res,'setup');res.redirect('/security')});
+app.get('/login',(req,res)=>res.sendFile('login.html',{root:'public'}));
+app.get('/auth/public-info',(req,res)=>{const a=authState();res.json({publisherName:CONFIG.identity.publisher_name,showName:CONFIG.identity.show_name,passkeysRegistered:a.passkeys.length})});
+app.post('/auth/pin',(req,res)=>{const pin=String(req.body.pin||'');if(!pinOk(pin))return res.status(401).json({error:'Incorrect PIN.'});issue(req,res,'pin');res.json({ok:true})});
+app.post('/auth/logout',secure,(req,res)=>{const x=sessionParse(req),s=authState();if(x){const r=s.sessions.find(y=>y.id===x.id);if(r)r.revokedAt=now();saveAuth(s)}res.clearCookie(SESSION_COOKIE,{path:'/'});res.json({ok:true})});
+
+app.post('/auth/passkeys/register/options',secure,async(req,res)=>{try{const s=authState();if(!s.webauthnUserID){s.webauthnUserID=randomBytes(32).toString('base64url');saveAuth(s)}const options=await generateRegistrationOptions({rpName:CONFIG.identity.publisher_name,rpID:rp(),userID:Buffer.from(s.webauthnUserID,'base64url'),userName:'publisher-owner',userDisplayName:CONFIG.identity.show_name,attestationType:'none',excludeCredentials:s.passkeys.map(x=>({id:x.id,transports:x.transports||[]})),authenticatorSelection:{residentKey:'required',userVerification:'required'}});const key=sessionParse(req)?.id||randomBytes(12).toString('hex');regChallenges.set(key,{challenge:options.challenge,expires:Date.now()+5*60*1000});res.json({...options,_binding:key})}catch(e){res.status(500).json({error:e.message})}});
+app.post('/auth/passkeys/register/verify',secure,async(req,res)=>{try{const key=String(req.body._binding||sessionParse(req)?.id||''),p=regChallenges.get(key);regChallenges.delete(key);if(!p||p.expires<Date.now())throw new Error('Passkey request expired.');const v=await verifyRegistrationResponse({response:req.body.credential,expectedChallenge:p.challenge,expectedOrigin:origin(req),expectedRPID:rp(),requireUserVerification:true});if(!v.verified||!v.registrationInfo)throw new Error('Passkey verification failed.');const s=authState(),c=v.registrationInfo.credential,existing=s.passkeys.find(x=>x.id===c.id),record={id:c.id,publicKey:Buffer.from(c.publicKey).toString('base64url'),counter:Number(c.counter||0),transports:c.transports||[],deviceType:v.registrationInfo.credentialDeviceType||null,backedUp:Boolean(v.registrationInfo.credentialBackedUp),createdAt:existing?.createdAt||now(),lastUsedAt:null,name:String(req.body.name||('Passkey '+(s.passkeys.length+1))).slice(0,60)};s.passkeys=existing?s.passkeys.map(x=>x.id===record.id?record:x):[...s.passkeys,record];saveAuth(s);res.json({ok:true,passkeys:passkeysPublic()})}catch(e){res.status(400).json({error:e.message})}});
+app.post('/auth/passkeys/options',async(req,res)=>{try{const s=authState();if(!s.passkeys.length)return res.status(409).json({error:'No passkeys registered.'});const o=await generateAuthenticationOptions({rpID:rp(),userVerification:'required',allowCredentials:s.passkeys.map(x=>({id:x.id,transports:x.transports||[]}))}),key=randomBytes(18).toString('base64url');authChallenges.set(key,{challenge:o.challenge,expires:Date.now()+5*60*1000});res.cookie('publisher_webauthn',key,{httpOnly:true,sameSite:'strict',secure:Boolean(process.env.RAILWAY_ENVIRONMENT),maxAge:5*60*1000,path:'/auth/passkeys'});res.json(o)}catch(e){res.status(500).json({error:e.message})}});
+app.post('/auth/passkeys/verify',async(req,res)=>{try{const key=cookie(req).publisher_webauthn,p=authChallenges.get(key);authChallenges.delete(key);if(!p||p.expires<Date.now())throw new Error('Passkey request expired.');const s=authState(),cred=s.passkeys.find(x=>x.id===req.body.credential?.id);if(!cred)throw new Error('Unknown passkey.');const v=await verifyAuthenticationResponse({response:req.body.credential,expectedChallenge:p.challenge,expectedOrigin:origin(req),expectedRPID:rp(),credential:{id:cred.id,publicKey:new Uint8Array(Buffer.from(cred.publicKey,'base64url')),counter:Number(cred.counter||0),transports:cred.transports||[]},requireUserVerification:true});if(!v.verified)throw new Error('Passkey rejected.');cred.counter=Number(v.authenticationInfo?.newCounter??cred.counter);cred.lastUsedAt=now();saveAuth(s);issue(req,res,'passkey');res.json({ok:true})}catch(e){res.status(401).json({error:e.message})}});
+app.get('/auth/passkeys',secure,(req,res)=>res.json({passkeys:passkeysPublic()}));
+app.delete('/auth/passkeys/:id',secure,(req,res)=>{const s=authState(),i=s.passkeys.findIndex(x=>x.id===req.params.id);if(i<0)return res.sendStatus(404);if(s.passkeys.length<=1)return res.status(409).json({error:'Register another passkey before deleting the only one.'});s.passkeys.splice(i,1);saveAuth(s);res.json({ok:true})});
+app.get('/auth/sessions',secure,(req,res)=>{const cur=sessionParse(req)?.id,s=authState();res.json({count:s.sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).length,sessions:s.sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).map(x=>({...x,current:x.id===cur}))})});
+app.delete('/auth/sessions/:id',secure,(req,res)=>{const s=authState(),r=s.sessions.find(x=>x.id===req.params.id);if(!r)return res.sendStatus(404);r.revokedAt=now();saveAuth(s);if(sessionParse(req)?.id===r.id)res.clearCookie(SESSION_COOKIE,{path:'/'});res.json({ok:true,current:r.id===sessionParse(req)?.id})});
+app.post('/auth/pin/change',secure,(req,res)=>{const old=String(req.body.currentPin||''),next=String(req.body.newPin||'');if(!pinOk(old))return res.status(401).json({error:'Current PIN is incorrect.'});if(!/^\d{6}$/.test(next))return res.status(400).json({error:'New PIN must contain six digits.'});setPin(next);res.json({ok:true})});
+
+app.use((req,res,next)=>{
+ if(['/setup','/login','/auth/public-info','/auth/pin','/auth/passkeys/options','/auth/passkeys/verify','/oauth2callback','/factory/health'].includes(req.path))return next();
+ if(req.path.startsWith('/public/'))return next();
+ return secure(req,res,next);
+});
+
+function ytSecrets(){const s=secrets();return s.youtube||{}}
+function saveYtSecrets(v){const s=secrets();s.youtube={...(s.youtube||{}),...v};saveSecrets(s)}
+function loadToken(){try{return unseal(readJson(YT_TOKEN_PATH,null))}catch{return null}}
+function saveToken(v){writeJson(YT_TOKEN_PATH,seal(v))}
+function oauthClient(){const y=ytSecrets();if(!y.client_id||!y.client_secret||!y.redirect_uri)throw new Error('YouTube OAuth app is not configured.');const c=new google.auth.OAuth2(y.client_id,y.client_secret,y.redirect_uri),t=loadToken();if(t)c.setCredentials(t);c.on('tokens',x=>{const old=loadToken()||{};saveToken({...old,...x})});return c}
+function authedClient(){const c=oauthClient();if(!loadToken())throw new Error('YouTube is not connected.');return c}
+function youtubeApi(){return google.youtube({version:'v3',auth:authedClient()})}
+
+const publication=installPublication({app,db,config:CONFIG,youtubeApi,authedClient,loadToken,dataDir:DIR});
+
+app.get('/integrations/youtube',secure,(req,res)=>{const y=ytSecrets(),redirect=origin(req)+'/oauth2callback';res.send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>body{font-family:system-ui;background:#f5f4ef;margin:0;padding:24px}.c{max-width:680px;margin:auto;background:white;padding:24px;border-radius:24px}input,button{width:100%;box-sizing:border-box;padding:13px;border-radius:12px;border:1px solid #ddd;margin:6px 0}button{background:#111;color:white;font-weight:700}code{word-break:break-all}</style><div class=c><a href="/">Back</a><h1>YouTube</h1><p>One-time setup: create/use a Google OAuth Web client and add this exact Authorized redirect URI:</p><code>${redirect}</code><form method=post action=/integrations/youtube><input name=client_id placeholder="Google OAuth Client ID" value="${String(y.client_id||'').replace(/"/g,'&quot;')}"><input name=client_secret type=password placeholder="Google OAuth Client Secret"><button>Save OAuth configuration</button></form><p>${loadToken()?'Channel connected.':'After saving, connect the channel.'}</p><a href="/auth/google">Connect YouTube channel</a></div>`)});
+app.post('/integrations/youtube',secure,(req,res)=>{const client_id=String(req.body.client_id||'').trim(),client_secret=String(req.body.client_secret||'').trim();if(!client_id||!client_secret)return res.status(400).send('Client ID and secret required.');saveYtSecrets({client_id,client_secret,redirect_uri:origin(req)+'/oauth2callback'});res.redirect('/integrations/youtube')});
+app.get('/auth/google',secure,(req,res)=>{try{const state=randomBytes(24).toString('base64url'),y=ytSecrets();saveYtSecrets({oauth_state:state,oauth_state_exp:Date.now()+15*60*1000,redirect_uri:origin(req)+'/oauth2callback'});const c=oauthClient(),url=c.generateAuthUrl({access_type:'offline',prompt:'consent',state,scope:['https://www.googleapis.com/auth/youtube','https://www.googleapis.com/auth/youtube.upload']});res.redirect(url)}catch(e){res.status(400).send(e.message)}});
+app.get('/oauth2callback',async(req,res)=>{try{const y=ytSecrets();if(!req.query.code||!safeEq(String(req.query.state||''),String(y.oauth_state||''))||Number(y.oauth_state_exp||0)<Date.now())throw new Error('OAuth state invalid or expired.');const c=oauthClient(),{tokens}=await c.getToken(String(req.query.code));saveToken(tokens);saveYtSecrets({oauth_state:null,oauth_state_exp:0});res.redirect('/integrations/youtube')}catch(e){res.status(400).send('YouTube OAuth failed: '+e.message)}});
+
+function stream(req,res,file){const st=fs.statSync(file),range=req.headers.range;res.set('Accept-Ranges','bytes');res.set('Content-Type','video/mp4');res.set('Cache-Control','private,no-store');if(!range){res.set('Content-Length',String(st.size));return fs.createReadStream(file).pipe(res)}const m=/^bytes=(\d*)-(\d*)$/.exec(range);if(!m)return res.sendStatus(416);const a=m[1]?Number(m[1]):0,b=m[2]?Number(m[2]):st.size-1;if(a<0||b<a||b>=st.size)return res.sendStatus(416);res.status(206).set('Content-Range','bytes '+a+'-'+b+'/'+st.size).set('Content-Length',String(b-a+1));fs.createReadStream(file,{start:a,end:b}).pipe(res)}
+function ensureCopy(row){
+ if(row.title&&row.description)return row;
+ const provider=(CONFIG.publication.providers||[]).find(x=>x.type==='youtube')||{},tags=(provider.hashtags||[]).join(' '),story=String(row.story||'').replace(/\s+/g,' ').trim(),hook=String(row.hook||'EPISODE').trim();
+ let title=(hook+': '+story+(tags?' '+tags:'')).replace(/[<>]/g,' ').replace(/\s+/g,' ').trim();if(title.length>100)title=title.slice(0,97).trimEnd()+'...';
+ let description=(story+'\n\n'+CONFIG.identity.show_name+(tags?'\n\n'+tags:'')).replace(/[<>]/g,' ').trim();while(Buffer.byteLength(description,'utf8')>4800)description=description.slice(0,-30).trimEnd();
+ db.prepare('UPDATE factory_items SET title=?,description=?,updatedAt=? WHERE id=?').run(title,description,now(),row.id);return{...row,title,description};
+}
+function card(row){row=ensureCopy(row);return{id:row.id,episode:row.episode,hook:row.hook,story:row.story,title:row.title,description:row.description,status:row.status,videoUrl:row.status==='review'&&row.videoPath?'/factory/video/'+encodeURIComponent(row.id):null,archivedOriginal:Boolean(row.reviewVideoId),updatedAt:row.updatedAt,error:row.error}}
+app.get('/factory/cards',(req,res)=>res.json({cards:db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode LIMIT 50").all().map(card)}));
+app.get('/factory/video/:id',(req,res)=>{const r=db.prepare("SELECT videoPath,status FROM factory_items WHERE id=?").get(req.params.id);if(!r||r.status!=='review'||!r.videoPath||!fs.existsSync(r.videoPath))return res.sendStatus(404);stream(req,res,r.videoPath)});
+app.post('/factory/:id/approve',(req,res)=>{try{let r=db.prepare('SELECT * FROM factory_items WHERE id=?').get(req.params.id);if(!r)return res.sendStatus(404);if(r.status!=='review')return res.status(409).json({error:'Already processed.'});r=ensureCopy(r);const item=publication.enqueue(r);if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{};db.prepare("UPDATE factory_items SET status='queued',stockId=?,videoPath=NULL,error=NULL,updatedAt=? WHERE id=?").run(item.id,now(),r.id);ensureBacklog(db);res.json({ok:true,publication:item})}catch(e){res.status(400).json({error:e.message})}});
+app.post('/factory/:id/reject',async(req,res)=>{let r=db.prepare('SELECT * FROM factory_items WHERE id=?').get(req.params.id);if(!r)return res.sendStatus(404);if(r.status!=='review')return res.status(409).json({error:'Already processed.'});if(r.reviewVideoId&&loadToken()){try{await youtubeApi().videos.delete({id:r.reviewVideoId})}catch{}}if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{};const rev=Number(r.revision||0)+1,idea=ideaForEpisode(Number(r.episode)+rev);db.prepare("UPDATE factory_items SET hook=?,story=?,status='regen_wait',revision=?,prompt='',promptHash=NULL,promptGenerationId=NULL,characterHandles='[]',characterRoles='[]',providerRunId=NULL,flowResult=NULL,videoPath=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,error=NULL,nextTry=?,updatedAt=? WHERE id=?").run(idea.hook,idea.story,rev,Date.now()+60000,now(),r.id);res.json({ok:true,regenerating:true})});
+app.post('/factory/enable',(req,res)=>{metaSet('automation:factoryEnabled','true');res.json({ok:true,enabled:true})});
+app.post('/factory/disable',(req,res)=>{metaSet('automation:factoryEnabled','false');res.json({ok:true,enabled:false})});
+app.post('/factory/preflight',(req,res)=>{metaSet('automation:allowSubmit','0');const r=db.prepare("SELECT id,episode,status FROM factory_items WHERE status IN ('draft','regen_wait') ORDER BY episode LIMIT 1").get();res.status(202).json({ok:true,next:r||null,note:'Provider will run preflight only; Generate remains disabled.'})});
+app.post('/factory/test-generation',(req,res)=>{metaSet('automation:factoryEnabled','false');metaSet('automation:allowSubmit','1');res.status(202).json({ok:true,one_test_submit_authorized:true})});
+app.post('/factory/run',(req,res)=>{res.status(202).json({ok:true})});
+
+function storage(){
+ try{const st=fs.statfsSync(DATA_DIR),block=Number(st.bsize||st.frsize||4096),total=Number(st.blocks||0)*block,free=Number(st.bavail??st.bfree??0)*block;return{total_bytes:total,free_bytes:free,used_bytes:total-free,free_percent:total?Math.round(free/total*1000)/10:null}}catch{return null}
+}
+function providerStatus(){return readJson(path.join(process.cwd(),'public','free-browser-status.json'),null)}
+function flowAuth(){return readJson(path.join(DIR,'flow-auth-verified.json'),null)}
+function metaGet(k,f=''){return db.prepare('SELECT value FROM factory_meta WHERE key=?').get(k)?.value??f}
+function metaSet(k,v){db.prepare("INSERT INTO factory_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k,String(v))}
+function health(){
+ const counts={};for(const r of db.prepare('SELECT status,COUNT(*) n FROM factory_items GROUP BY status').all())counts[r.status]=Number(r.n);
+ const p=providerStatus(),beat=p?.at?Date.parse(p.at):0,workerAlive=Boolean(beat&&Date.now()-beat<180000),today=new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),completed=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND status IN ('review','completed')").get(today)?.n||0),current=db.prepare("SELECT episode,status,error,lastProgressAt FROM factory_items WHERE status IN ('generating','draft','regen_wait') ORDER BY CASE status WHEN 'generating' THEN 0 ELSE 1 END,episode LIMIT 1").get();
+ return{ok:true,at:now(),runtime_version:'publisher-runtime-v1',publisher_enabled:metaGet('automation:factoryEnabled','false')==='true',show:CONFIG.identity.show_name,scheduler_alive:true,scheduler:publication.status(),scheduler_no_end_date:true,worker_alive:workerAlive,automation_provider:'FreeBrowserProvider',generation_provider:'GoogleFlowProvider',publication_provider:'YouTubeProvider',tinyfish_required:false,tinyfish_fallback:false,flow:{configured:Boolean(PROJECT_ID),authenticated:Boolean(flowAuth()?.ok),project_id:PROJECT_ID||null,project_name:PROJECT_NAME||null,project_url:PROJECT_URL||null},current_job:current||null,queue:counts,completed_today:completed,daily_target:DAILY_LIMIT,remaining_today:Math.max(0,DAILY_LIMIT-completed),provider_health:p?.state||null,last_generation:db.prepare("SELECT createdAt FROM factory_generations ORDER BY createdAt DESC LIMIT 1").get()?.createdAt||null,last_review_ready:db.prepare("SELECT updatedAt FROM factory_items WHERE status='review' ORDER BY updatedAt DESC LIMIT 1").get()?.updatedAt||null,last_publication:db.prepare("SELECT updatedAt,status,videoId FROM publication_items ORDER BY updatedAt DESC LIMIT 1").get()||null,serial_gate:{enabled:Boolean(CONFIG.content.serialized),gate:CONFIG.content.continuity_gate},storage:storage(),security:{configured:configured(),passkeys:authState().passkeys.length,active_sessions:authState().sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).length}};
+}
+app.get('/factory/health',(req,res)=>res.json(health()));
+
+async function archiveReviewOriginal(row){
+ if(!loadToken()||row.reviewVideoId||!row.videoPath||!fs.existsSync(row.videoPath))return false;
+ const yt=youtubeApi(),m=ensureCopy(row),out=await yt.videos.insert({part:['snippet','status'],requestBody:{snippet:{title:('[REVIEW] E'+row.episode+' '+m.hook).slice(0,100),description:'Private Publisher Runtime review staging.',categoryId:'24',tags:['publisher-review-'+row.id]},status:{privacyStatus:'private',selfDeclaredMadeForKids:false}},media:{mimeType:'video/mp4',body:fs.createReadStream(row.videoPath)}}),videoId=String(out.data?.id||'');if(!videoId)throw new Error('Private staging upload failed.');
+ const original=fs.statSync(row.videoPath).size,tmp=row.videoPath+'.preview.mp4',ff=spawnSync('ffmpeg',['-y','-i',row.videoPath,'-vf','scale=540:-2','-c:v','libx264','-preset','veryfast','-crf','31','-c:a','aac','-b:a','64k','-movflags','+faststart',tmp],{timeout:180000,encoding:'utf8'});
+ if(ff.status===0&&fs.existsSync(tmp)&&fs.statSync(tmp).size<original*.85){fs.renameSync(tmp,row.videoPath)}else try{fs.rmSync(tmp,{force:true})}catch{}
+ const preview=fs.existsSync(row.videoPath)?fs.statSync(row.videoPath).size:0;db.prepare("UPDATE factory_items SET reviewVideoId=?,reviewArchivedAt=?,reviewOriginalSize=?,reviewPreviewSize=?,reviewArchiveError=NULL,updatedAt=? WHERE id=?").run(videoId,now(),original,preview,now(),row.id);return true;
+}
+let archiveBusy=false;
+async function storageTick(){if(archiveBusy)return;archiveBusy=true;try{const rows=db.prepare("SELECT * FROM factory_items WHERE status='review' AND videoPath IS NOT NULL ORDER BY updatedAt DESC").all(),st=storage(),aggressive=st?.free_percent!=null&&st.free_percent<Number(CONFIG.review.archive_below_free_percent||45);for(let i=0;i<rows.length;i++){const r=rows[i];if(!r.reviewVideoId&&(aggressive||i>=Number(CONFIG.review.hot_originals||2))){try{await archiveReviewOriginal(r)}catch(e){db.prepare('UPDATE factory_items SET reviewArchiveError=?,updatedAt=? WHERE id=?').run(String(e.message).slice(0,600),now(),r.id)}}}}finally{archiveBusy=false}}
+setInterval(()=>void storageTick(),5*60*1000).unref?.();setTimeout(()=>void storageTick(),30000).unref?.();
+
+app.get('/api/status',(req,res)=>res.json({health:health(),youtube:{oauthConfigured:Boolean(ytSecrets().client_id&&ytSecrets().client_secret),connected:Boolean(loadToken())},flowBootstrap:'/flow/bootstrap'}));
+app.get('/api/config/export',(req,res)=>{const c=structuredClone(CONFIG);res.set('Content-Disposition','attachment; filename="publisher-config.json"');res.type('json').send(JSON.stringify(c,null,2))});
+
+app.get('/security',(req,res)=>res.sendFile('security.html',{root:'public'}));
+app.use(express.static('public'));
+app.get('/',(req,res)=>res.sendFile('index.html',{root:'public'}));
+
+app.listen(PORT,'0.0.0.0',()=>console.log('Publisher Runtime v1 listening',PORT));
