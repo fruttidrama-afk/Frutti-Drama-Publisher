@@ -21,6 +21,12 @@ const PROFILE_DIR=path.join(FACTORY_DIR,'flow-profile');
 const MIGRATION_OK=path.join(FACTORY_DIR,'free-browser-profile-ready.json');
 const MIGRATION_ATTEMPT=path.join(FACTORY_DIR,'free-browser-profile-attempt.json');
 const LOCK_FILE=path.join(FACTORY_DIR,'free-browser-provider.lock');
+let LOCK_HEARTBEAT=null;
+const LOCK_STALE_MS=3*60*1000;
+const GOLDEN_RECOVERY_TOKEN=String(process.env.PUBLISHER_RECOVER_GOLDEN_RUN||'').trim();
+const GOLDEN_RECOVERY_EPISODE=Math.max(1,Number(process.env.PUBLISHER_RECOVERY_TARGET_EPISODE||1));
+const GOLDEN_RECOVERY_TERMS=String(process.env.PUBLISHER_RECOVERY_PROMPT_TERMS||'').split('|').map(x=>norm(x)).filter(Boolean);
+
 const BOOTSTRAP_LOCK=path.join(FACTORY_DIR,'flow-auth-bootstrap.active.json');
 const STATUS_FILE=path.resolve(process.cwd(),'public','free-browser-status.json');
 const PROVIDER='FreeBrowserProvider';
@@ -147,23 +153,41 @@ function bootstrapOwnsProfile() {
     return path.resolve(lockedProfile)===path.resolve(PROFILE_DIR);
   } catch { return false; }
 }
+function touchLockLease(){
+  try{
+    if(!fs.existsSync(LOCK_FILE))return;
+    const raw=json(fs.readFileSync(LOCK_FILE,'utf8'),{});
+    if(String(raw?.instance_id||'')!==INSTANCE_ID)return;
+    fs.writeFileSync(LOCK_FILE,JSON.stringify({pid:process.pid,instance_id:INSTANCE_ID,at:now(),lease:true}),{mode:0o600});
+  }catch{}
+}
 function acquireLock() {
   try {
     if (bootstrapOwnsProfile()) return false;
     if (fs.existsSync(LOCK_FILE)){
       let stale=false;
       try{
-        const raw=json(fs.readFileSync(LOCK_FILE,'utf8'),{});
         const age=Date.now()-fs.statSync(LOCK_FILE).mtimeMs;
-        stale=String(raw?.instance_id||'')!==INSTANCE_ID||!pidAlive(raw?.pid)||age>30*60*1000;
+        stale=age>LOCK_STALE_MS;
       }catch{stale=true;}
-      if(stale)try{fs.unlinkSync(LOCK_FILE);}catch{}
+      if(!stale)return false;
+      try{fs.unlinkSync(LOCK_FILE);}catch{}
     }
     const fd = fs.openSync(LOCK_FILE, 'wx', 0o600);
-    fs.writeFileSync(fd, JSON.stringify({ pid:process.pid, instance_id:INSTANCE_ID, at:now() })); fs.closeSync(fd); return true;
+    fs.writeFileSync(fd, JSON.stringify({ pid:process.pid, instance_id:INSTANCE_ID, at:now(), lease:true })); fs.closeSync(fd);
+    clearInterval(LOCK_HEARTBEAT);
+    LOCK_HEARTBEAT=setInterval(touchLockLease,30000);LOCK_HEARTBEAT.unref?.();
+    return true;
   } catch { return false; }
 }
-function releaseLock() { try { fs.unlinkSync(LOCK_FILE); } catch {} }
+function releaseLock() {
+  clearInterval(LOCK_HEARTBEAT);LOCK_HEARTBEAT=null;
+  try{
+    if(!fs.existsSync(LOCK_FILE))return;
+    const raw=json(fs.readFileSync(LOCK_FILE,'utf8'),{});
+    if(String(raw?.instance_id||'')===INSTANCE_ID)fs.unlinkSync(LOCK_FILE);
+  }catch{}
+}
 function registry(){return configRegistry();}
 function ensureSchema(db) {
   for (const sql of [
@@ -1009,6 +1033,94 @@ function validateMp4(localPath){
   const parts=ASPECT_RATIO.split(':').map(Number);if(width>0&&height>0&&parts.length===2&&parts.every(Number.isFinite)){const expected=parts[0]/parts[1],actual=width/height;if(Math.abs(actual-expected)>Math.max(.12,expected*.22))throw new Error('MP4_ASPECT_UNEXPECTED:'+width+'x'+height)}
   return{size:st.size,duration,width,height,codec:String(stream.codec_name||'')};
 }
+
+async function findGoldenRecoveryAsset(page){
+  if(!GOLDEN_RECOVERY_TERMS.length)throw new Error('GOLDEN_RECOVERY_TERMS_MISSING');
+  const selectors=['flow-grid-tile-container','img','[role="img"]','[aria-label]','button','[role="button"]'];
+  const candidates=[];
+  const seen=new Set();
+  for(const sel of selectors){
+    const loc=page.locator(sel),count=Math.min(await loc.count().catch(()=>0),1200);
+    for(let i=0;i<count;i++){
+      const el=loc.nth(i);
+      if(!(await el.isVisible().catch(()=>false)))continue;
+      const info=await el.evaluate(node=>{
+        const r=node.getBoundingClientRect();
+        const raw=[
+          node.getAttribute?.('aria-label')||'',
+          node.getAttribute?.('alt')||'',
+          node.getAttribute?.('title')||'',
+          node.innerText||'',
+          node.textContent||''
+        ].join(' ').replace(/\s+/g,' ').trim();
+        return{raw:raw.slice(0,5000),area:r.width*r.height,x:r.x,y:r.y,w:r.width,h:r.height,tag:node.tagName};
+      }).catch(()=>null);
+      if(!info||!info.raw||info.area<3000)continue;
+      const n=norm(info.raw);
+      const matched=GOLDEN_RECOVERY_TERMS.filter(t=>n.includes(t));
+      if(matched.length<Math.min(3,GOLDEN_RECOVERY_TERMS.length))continue;
+      const key=info.raw.slice(0,500);
+      if(seen.has(key))continue;seen.add(key);
+      candidates.push({el,matched,score:matched.length*100000+Math.min(info.area,500000),info});
+    }
+  }
+  candidates.sort((a,b)=>b.score-a.score);
+  for(const cand of candidates.slice(0,24)){
+    const target=cand.el;
+    const interactive=target.locator('xpath=ancestor-or-self::button | ancestor-or-self::*[@role="button"] | ancestor-or-self::flow-grid-tile-container').last();
+    const clickTarget=await interactive.count().catch(()=>0)?interactive:target;
+    await clickTarget.scrollIntoViewIfNeeded().catch(()=>{});
+    await clickTarget.click({force:true,timeout:5000}).catch(async()=>{await target.click({force:true,timeout:5000}).catch(()=>{})});
+    await sleep(1000);
+    const d=await visibleDownloadButton(page);
+    if(d)return{found:true,matched:cand.matched,label:compact(cand.info.raw,700)};
+    await page.keyboard.press('Escape').catch(()=>{});await sleep(300);
+  }
+  return{found:false,candidates:candidates.slice(0,10).map(x=>({matched:x.matched,label:compact(x.info.raw,240)}))};
+}
+async function recoverGoldenRunIfRequested(db){
+  if(!GOLDEN_RECOVERY_TOKEN)return{needed:false,done:false};
+  const metaKey='recovery:golden:'+GOLDEN_RECOVERY_TOKEN;
+  const prior=json(meta(db,metaKey,''),null);
+  if(prior?.status==='completed')return{needed:true,done:true,prior};
+  let row=db.prepare('SELECT * FROM factory_items WHERE episode=? LIMIT 1').get(GOLDEN_RECOVERY_EPISODE);
+  if(!row)throw new Error('GOLDEN_RECOVERY_TARGET_EPISODE_NOT_FOUND:'+GOLDEN_RECOVERY_EPISODE);
+  if(row.videoPath&&fs.existsSync(row.videoPath)&&String(row.status)==='review'){
+    const done={status:'completed',at:now(),episode:row.episode,job_id:row.id,existing:true};
+    setMeta(db,metaKey,JSON.stringify(done));return{needed:true,done:true,prior:done};
+  }
+  publish('GOLDEN_RECOVERY_START',{episode:'E'+row.episode,job_id:row.id});
+  const session=await launchLocal();
+  try{
+    const page=session.page||session.context.pages()[0]||await session.context.newPage();
+    if(!String(page.url()).includes(projectPath()))await page.goto(flowUrl(),{waitUntil:'domcontentloaded',timeout:60000});
+    await waitFlowReady(page,60000);await renderAuthGuard(page);
+    const found=await findGoldenRecoveryAsset(page);
+    if(!found.found){
+      setMeta(db,metaKey,JSON.stringify({status:'pending',at:now(),episode:row.episode,job_id:row.id,last:'asset-not-found',candidates:found.candidates||[]}));
+      publish('GOLDEN_RECOVERY_PENDING',{episode:'E'+row.episode,job_id:row.id,message:'Patagonia Golden Run asset not uniquely found yet; production remains paused.'});
+      return{needed:true,done:false};
+    }
+    const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);
+    try{fs.unlinkSync(localPath);}catch{}
+    const dl=await downloadResult(page,{uiReady:true,signal:'golden-run-prompt-match'},localPath);
+    const valid=validateMp4(localPath);
+    const recoveredAt=now(),runId='manual-flow-golden-run:'+GOLDEN_RECOVERY_TOKEN;
+    const flowResult={provider:PROVIDER,manual_golden_run:true,recovery_token:GOLDEN_RECOVERY_TOKEN,matched_terms:GOLDEN_RECOVERY_TERMS,matched_label:found.label,duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:recoveredAt};
+    db.prepare(`UPDATE factory_items SET status='review',videoPath=?,providerRunId=NULL,flowResult=?,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?`).run(localPath,JSON.stringify(flowResult),recoveredAt,recoveredAt,row.id);
+    const exists=Number(db.prepare('SELECT COUNT(*) n FROM factory_generations WHERE runId=? OR (itemId=? AND day=? AND status=? AND error=?)').get(runId,row.id,artDay(),'review','manual-golden-run')?.n||0);
+    if(!exists){
+      try{db.prepare(`INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(randomUUID(),row.id,artDay(),sha(runId+':'+row.id),CREDITS_PER_GENERATION,'review',runId,recoveredAt,recoveredAt,'manual-golden-run','automatic')}catch(e){publish('GOLDEN_RECOVERY_ACCOUNTING_WARNING',{message:compact(e?.message||e,300)})}
+    }
+    setLifecycle(db,row,'REVIEW_READY',{generation_id:runId,manual_golden_run:true,recovery_token:GOLDEN_RECOVERY_TOKEN,size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,retrieved_at:recoveredAt,automatic_submit_forbidden:true});
+    const done={status:'completed',at:recoveredAt,episode:row.episode,job_id:row.id,run_id:runId,size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`};
+    setMeta(db,metaKey,JSON.stringify(done));
+    setMeta(db,'flow:lastSuccessfulMp4At',recoveredAt);
+    publish('GOLDEN_RECOVERY_REVIEW_READY',{episode:'E'+row.episode,job_id:row.id,size:valid.size,duration:valid.duration,resolution:done.resolution,factory_url:`/factory/video/${row.id}`});
+    return{needed:true,done:true,prior:done};
+  }finally{await session.close().catch(()=>{})}
+}
+
 async function retrieveExisting(page,row,cp,lc,db){setLifecycle(db,row,'RETRIEVING',{generation_id:lc?.generation_id||row.providerRunId||'',baseline:lc?.baseline||[],baseline_inventory:lc?.baseline_inventory||null});const baseline=Array.isArray(lc?.baseline)?lc.baseline:[],baselineInventory=lc?.baseline_inventory||null,deadline=Date.now()+15*60*1000;let rendered=null,lastVideos=[],uiSignal=null,lastHeartbeat=0;while(Date.now()<deadline){await renderAuthGuard(page);if(Date.now()-lastHeartbeat>10000){lastHeartbeat=Date.now();try{db.prepare('UPDATE factory_items SET lastProgressAt=?,updatedAt=? WHERE id=?').run(now(),now(),row.id);}catch{}}lastVideos=await currentVideos(page);rendered=firstFreshRendered(lastVideos,baseline);if(rendered)break;const text=await getBody(page);if(/failed to generate|generation failed|couldn't generate|no se pudo generar/i.test(text))throw new Error('FLOW_GENERATION_FAILED');const stillBusy=/generating|processing|rendering|creating video|generando|procesando|upscaling/i.test(text);if(!stillBusy&&baselineInventory){uiSignal=await openUniqueFreshInventoryResult(page,baselineInventory);if(uiSignal?.ready){rendered={uiReady:true,signal:uiSignal.signal};break;}}await sleep(2500);}if(!rendered)throw new Error(`RENDER_TIMEOUT:videos=${lastVideos.length}:ui=${uiSignal?.signal||'none'}`);const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);try{fs.unlinkSync(localPath);}catch{}const dl=await downloadResult(page,rendered,localPath),valid=validateMp4(localPath),flowResult={provider:PROVIDER,generation_id:lc?.generation_id||row.providerRunId||'',generation_started_at:lc?.generation_started_at||'',duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:now()};db.prepare(`UPDATE factory_items SET status='review',videoPath=?,flowResult=?,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?`).run(localPath,JSON.stringify(flowResult),now(),now(),row.id);try{db.prepare(`UPDATE factory_generations SET status='review',updatedAt=?,error=NULL WHERE itemId=? AND runId=?`).run(now(),row.id,String(lc?.generation_id||row.providerRunId||''));}catch{}setLifecycle(db,row,'REVIEW_READY',{...lc,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,download_quality:flowResult.download_quality,retrieved_at:now()});setMeta(db,'flow:lastSuccessfulGenerationAt',lc?.generation_started_at||now());setMeta(db,'flow:lastSuccessfulMp4At',now());setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');try{fs.writeFileSync(path.join(FACTORY_DIR,'flow-browser-self-test.json'),JSON.stringify({at:now(),ok:true,stage:'real-production-review-ready',provider:PROVIDER,episode:`T${row.season}E${row.episode}`,mp4_valid:true,duration:valid.duration,width:valid.width,height:valid.height,codec:valid.codec},null,2),{mode:0o600});}catch{}publish('REVIEW_READY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`,factory_url:`/factory/video/${row.id}`});return true;}
 async function processRow(db,row){
   const cp=preparePromptIfNeeded(db,row);row=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);let lc=lifecycle(db,row);const state=String(lc?.state||'').toUpperCase(),session=await launchLocal(),context=session.context;
@@ -1103,6 +1215,8 @@ async function runProvider(){
     db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     const migrated=await migrateProfileOnce(db);if(!migrated)return;
+    const goldenRecovery=await recoverGoldenRunIfRequested(db);
+    if(goldenRecovery.needed&&!goldenRecovery.done)return;
     const used=effectiveDailyCount(db);row=productionCandidate(db);
     if(row&&String(row.status)==='generating'){publish('RECOVERY_PICKED',{episode:'E'+row.episode,job_id:row.id,state:String(lifecycle(db,row)?.state||''),used_today:used});await processRow(db,row);return}
     const priorityRetry=isReviewerRetry(row);
