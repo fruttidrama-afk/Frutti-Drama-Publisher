@@ -119,11 +119,17 @@ function normalizeUnconfirmedPreGenerationRows(db){
   try{
     const forceEpisode=Number(process.env.PUBLISHER_FORCE_RESET_EPISODE||0);
     if(forceEpisode>0){
-      const row=db.prepare("SELECT * FROM factory_items WHERE episode=? AND videoPath IS NULL").get(forceEpisode);
-      if(row){
-        db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Forced clean retry: prior attempts produced no retained media.',updatedAt=? WHERE itemId=? AND status='running'").run(now(),row.id);
-        db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=? AND videoPath IS NULL").run(now(),now(),row.id);
-        setLifecycle(db,row,'FORCED_CLEAN_RETRY',{reconciled_at:now(),episode:forceEpisode,evidence:'Operator confirmed no video exists in Flow; retry earliest episode only.'});
+      const resetToken=String(process.env.PUBLISHER_RUNTIME_VERSION||'default');
+      const resetKey='operator:force-reset:'+forceEpisode+':'+resetToken;
+      if(meta(db,resetKey,'')!=='done'){
+        const row=db.prepare("SELECT * FROM factory_items WHERE episode=? AND videoPath IS NULL").get(forceEpisode);
+        if(row){
+          db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Forced clean retry: operator confirmed prior attempts produced no Flow video.',updatedAt=? WHERE itemId=? AND status='running'").run(now(),row.id);
+          db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=? AND videoPath IS NULL").run(now(),now(),row.id);
+          setLifecycle(db,row,'FORCED_CLEAN_RETRY',{reconciled_at:now(),episode:forceEpisode,evidence:'Operator confirmed no automated video exists in Flow; one clean retry authorized.',automatic_submit_forbidden:false});
+          publish('FORCED_CLEAN_RETRY',{episode:'E'+forceEpisode,job_id:row.id,message:'One-shot reset applied; stale retrieval/generation state cleared.'});
+        }
+        setMeta(db,resetKey,'done');
       }
     }
     const rows=db.prepare("SELECT * FROM factory_items WHERE videoPath IS NULL AND status NOT IN ('review','queued','historical','published') AND (reviewFeedback IS NULL OR TRIM(reviewFeedback)='') ORDER BY episode").all();
