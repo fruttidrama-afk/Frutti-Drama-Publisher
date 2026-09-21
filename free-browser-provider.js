@@ -1076,7 +1076,22 @@ async function findGoldenRecoveryAsset(page){
     if(d)return{found:true,matched:cand.matched,label:compact(cand.info.raw,700)};
     await page.keyboard.press('Escape').catch(()=>{});await sleep(300);
   }
-  return{found:false,candidates:candidates.slice(0,10).map(x=>({matched:x.matched,label:compact(x.info.raw,240)}))};
+  const body=compact(await getBody(page).catch(()=>''),12000);
+  const buttons=[];
+  const btns=page.locator('button,[role="button"],[role="tab"]');
+  for(let i=0;i<Math.min(await btns.count().catch(()=>0),180);i++){
+    const b=btns.nth(i);if(!(await b.isVisible().catch(()=>false)))continue;
+    const label=compact(((await b.innerText().catch(()=>''))||'')+' '+((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.getAttribute('title').catch(()=>''))||''),180);
+    if(label)buttons.push(label);
+  }
+  const partial=[];
+  const els=page.locator('img,[role="img"],flow-grid-tile-container,[aria-label]');
+  for(let i=0;i<Math.min(await els.count().catch(()=>0),700);i++){
+    const el=els.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
+    const raw=compact(((await el.getAttribute('aria-label').catch(()=>''))||'')+' '+((await el.getAttribute('alt').catch(()=>''))||'')+' '+((await el.getAttribute('title').catch(()=>''))||'')+' '+((await el.innerText().catch(()=>''))||''),500);
+    if(!raw)continue;const n=norm(raw),matched=GOLDEN_RECOVERY_TERMS.filter(t=>n.includes(t));if(matched.length)partial.push({matched,label:raw});
+  }
+  return{found:false,candidates:candidates.slice(0,10).map(x=>({matched:x.matched,label:compact(x.info.raw,240)})),partial:partial.slice(0,30),buttons:[...new Set(buttons)].slice(0,80),body_has_terms:GOLDEN_RECOVERY_TERMS.map(t=>[t,norm(body).includes(t)]),url:page.url()};
 }
 async function recoverGoldenRunIfRequested(db){
   if(!GOLDEN_RECOVERY_TOKEN)return{needed:false,done:false};
@@ -1098,7 +1113,7 @@ async function recoverGoldenRunIfRequested(db){
     const found=await findGoldenRecoveryAsset(page);
     if(!found.found){
       setMeta(db,metaKey,JSON.stringify({status:'pending',at:now(),episode:row.episode,job_id:row.id,last:'asset-not-found',candidates:found.candidates||[]}));
-      publish('GOLDEN_RECOVERY_PENDING',{episode:'E'+row.episode,job_id:row.id,message:'Patagonia Golden Run asset not uniquely found yet; production remains paused.'});
+      publish('GOLDEN_RECOVERY_PENDING',{episode:'E'+row.episode,job_id:row.id,message:'Patagonia Golden Run asset not uniquely found yet; production remains paused.',url:found.url,body_has_terms:found.body_has_terms,partial:found.partial,buttons:found.buttons});
       return{needed:true,done:false};
     }
     const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);
