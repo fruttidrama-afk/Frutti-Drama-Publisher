@@ -54,14 +54,17 @@ export function buildPublicationCopy({hook,story,hashtags=[],showName='',maxTitl
   let core=sentences.find(s=>s.length<=room)||null;
   if(!core&&sentences.length)core=clauseCandidate(sentences[0],room);
   if(!core){
-    const hookPhrase=normalize(hook||'this episode').toLowerCase().replace(/[.!?]+$/,'');
-    const fallback='The episode centers on '+hookPhrase+'.';
-    core=fallback.length<=room?fallback:'A decisive new development changes the story.';
+    const spanish=/\b(?:el|la|los|las|un|una|que|por|para|con|sin|y|pero|descubre|confronta|enfrenta|muere|muerte|secreto|historia)\b/i.test(cleanStory);
+    const hookPhrase=normalize(hook||(spanish?'este episodio':'this episode')).toLowerCase().replace(/[.!?]+$/,'');
+    const fallback=spanish?'El episodio gira en torno a '+hookPhrase+'.':'The episode centers on '+hookPhrase+'.';
+    const generic=spanish?'Un nuevo giro cambia la historia.':'A decisive new development changes the story.';
+    core=fallback.length<=room?fallback:generic;
   }
   let title=prefix+core;
   if(title.length>maxTitleLength){
     const shorter=sentences.find(s=>s.length<=maxTitleLength);
-    title=shorter||('A decisive new development changes the story.');
+    const spanish=/\b(?:el|la|los|las|un|una|que|por|para|con|sin|y|pero)\b/i.test(cleanStory);
+    title=shorter||(spanish?'Un nuevo giro cambia la historia.':'A decisive new development changes the story.');
   }
   title=validateTitleSentence(title,{maxLength:maxTitleLength});
   const tags=Array.isArray(hashtags)?hashtags.map(normalize).filter(Boolean).join(' '):normalize(hashtags);
