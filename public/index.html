@@ -4,23 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="/brand/logo.svg">
 <title>Publisher Setup</title>
 <style>
-:root{--navy:#0d3152;--gold:#b59a64;--ink:#1d1d1b;--muted:#6e6a63;--ivory:#f7f6f2;--line:#ded9cf;--green:#315d35;--greenbg:#eef4ed}
+:root{--navy:#0d3152;--gold:#b59a64;--ink:#1d1d1b;--muted:#6e6a63;--ivory:#f7f6f2;--surface:#ffffff;--line:#ded9cf;--green:#315d35;--greenbg:#eef4ed}
 *{box-sizing:border-box}
-body{margin:0;background:#fff;color:var(--ink);font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+body{margin:0;background:var(--surface);color:var(--ink);font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
 button,input,textarea{font:inherit}
 .shell{max-width:1120px;margin:auto;padding:22px}
 .brand{display:flex;align-items:center;gap:13px;margin:8px 0 44px}
-.brand-mark{width:70px;height:70px;display:grid;place-items:center;border:4px solid var(--gold);position:relative}
-.brand-mark:before{content:"";position:absolute;inset:9px;background:var(--navy);clip-path:polygon(0 0,67% 10%,100% 0,100% 100%,67% 90%,0 100%)}
+.brand-mark{width:70px;height:70px;display:grid;place-items:center;border:4px solid var(--gold);position:relative}.brand-mark:before{content:"";position:absolute;inset:9px;background:var(--navy);clip-path:polygon(0 0,67% 10%,100% 0,100% 100%,67% 90%,0 100%)}.brand-logo{width:70px;height:70px;object-fit:contain;border-radius:18px;display:none;background:var(--surface)}.brand-logo.show{display:block}.brand-logo.show+.brand-mark{display:none}
 .brand-words{font:400 31px/.86 Georgia,"Times New Roman",serif;color:var(--navy)}
 .eyebrow{font-size:11px;letter-spacing:.24em;color:var(--gold);font-weight:700}
-.hero{max-width:850px;margin-bottom:36px}
+.reference-banner{display:none;position:relative;height:clamp(170px,27vw,310px);margin:0 0 34px;overflow:hidden;border:1px solid color-mix(in srgb,var(--navy) 18%,transparent);background:var(--ivory)}.reference-banner.show{display:block}.reference-banner img{width:100%;height:100%;object-fit:cover}.reference-banner.web img{object-position:top center}.reference-banner:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 45%,color-mix(in srgb,var(--surface) 40%,transparent))}.hero{max-width:850px;margin-bottom:36px}
 h1{font:400 clamp(44px,7vw,76px)/.94 Georgia,"Times New Roman",serif;letter-spacing:-.04em;margin:13px 0 18px}
 .lede{font-size:18px;line-height:1.55;color:#3e3b36;max-width:700px}
 .setup-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:30px 0 55px}
-.setup-card{border:1px solid var(--line);background:#fff;padding:22px;min-height:285px;display:flex;flex-direction:column;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.setup-card{border:1px solid var(--line);background:var(--surface);padding:22px;min-height:285px;display:flex;flex-direction:column;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
 .setup-card.done{border-color:#a9bea4;background:var(--greenbg)}
 .num{font-size:11px;font-weight:800;letter-spacing:.16em;color:var(--gold)}
 .setup-card h2{font:400 30px/1.02 Georgia,"Times New Roman",serif;color:var(--navy);margin:18px 0 9px}
@@ -40,11 +43,11 @@ textarea:focus{border-color:var(--navy);box-shadow:0 0 0 3px rgba(13,49,82,.07)}
 .ready-head h2{font:400 43px Georgia,"Times New Roman",serif;margin:7px 0 0}
 .ready-badge{font-size:12px;background:var(--greenbg);border:1px solid #a9bea4;color:var(--green);padding:10px 12px;font-weight:800}
 .status-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
-.status{background:#fff;border:1px solid var(--line);padding:16px}.label{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:800}.value{font-size:23px;font-weight:800;color:var(--navy);margin:10px 0 3px}
+.status{background:var(--surface);border:1px solid var(--line);padding:16px}.label{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:800}.value{font-size:23px;font-weight:800;color:var(--navy);margin:10px 0 3px}
 .tabs{display:flex;gap:8px;margin:18px 0}.tab.active{background:var(--navy);color:#fff;border-color:var(--navy)}
 .panel{display:none}.panel.active{display:block}
-.review-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.review{background:#fff;border:1px solid var(--line);overflow:hidden}.video{background:#151515;aspect-ratio:9/16;max-height:560px;width:100%;object-fit:contain}.review-body{padding:16px}.review h3{font:400 24px Georgia,serif;color:var(--navy);margin:5px 0}.story{font-size:14px;color:var(--muted);line-height:1.5;margin:9px 0 15px}.review-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.table{background:#fff;border:1px solid var(--line)}.row{display:grid;grid-template-columns:70px 1fr 170px 120px;gap:10px;padding:13px 16px;border-top:1px solid var(--line);align-items:center}.row:first-child{border-top:0}.empty{background:#fff;border:1px solid var(--line);padding:32px;text-align:center;color:var(--muted)}
+.review-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.review{background:var(--surface);border:1px solid var(--line);overflow:hidden}.video{background:#151515;aspect-ratio:9/16;max-height:560px;width:100%;object-fit:contain}.review-body{padding:16px}.review h3{font:400 24px Georgia,serif;color:var(--navy);margin:5px 0}.story{font-size:14px;color:var(--muted);line-height:1.5;margin:9px 0 15px}.review-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.table{background:var(--surface);border:1px solid var(--line)}.row{display:grid;grid-template-columns:70px 1fr 170px 120px;gap:10px;padding:13px 16px;border-top:1px solid var(--line);align-items:center}.row:first-child{border-top:0}.empty{background:var(--surface);border:1px solid var(--line);padding:32px;text-align:center;color:var(--muted)}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#111;color:#fff;padding:12px 16px;display:none;z-index:20}
 .redo-modal{position:fixed;inset:0;background:rgba(13,49,82,.32);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:20px;z-index:100}
 .redo-modal.open{display:flex}
@@ -58,7 +61,8 @@ textarea:focus{border-color:var(--navy);box-shadow:0 0 0 3px rgba(13,49,82,.07)}
 </head>
 <body>
 <main class="shell">
-  <header class="brand"><div class="brand-mark" aria-hidden="true"></div><div class="brand-words">Publisher<br>Factory</div></header>
+  <header class="brand"><img class="brand-logo" id="brandLogo" alt=""><div class="brand-mark" aria-hidden="true"></div><div class="brand-words" id="brandWords">Publisher<br>Factory</div></header>
+  <div class="reference-banner" id="brandReference"><img id="brandReferenceImage" alt="Visual reference"></div>
 
   <section class="hero" id="setupHero">
     <div class="eyebrow">ONE-TIME SETUP</div>
@@ -125,8 +129,15 @@ function toast(x){const t=$('#toast');t.textContent=x;t.style.display='block';se
 async function api(u,o={}){const r=await fetch(u,{headers:{'Content-Type':'application/json',...(o.headers||{})},...o}),j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j}
 function fmt(v){if(!v)return'—';try{return new Intl.DateTimeFormat('es-AR',{dateStyle:'medium',timeStyle:'short'}).format(new Date(v))}catch{return v}}
 function paintCard(id,stateId,done,yes,no){const c=$(id),s=$(stateId);c.classList.toggle('done',done);s.textContent=done?yes:no}
+function applyBrand(b){
+  if(!b)return;const t=b.theme||{},root=document.documentElement;
+  if(t.primary)root.style.setProperty('--navy',t.primary);if(t.accent)root.style.setProperty('--gold',t.accent);if(t.background)root.style.setProperty('--ivory',t.background);if(t.surface)root.style.setProperty('--surface',t.surface);if(t.text)root.style.setProperty('--ink',t.text);
+  const logo=$('#brandLogo'),words=$('#brandWords');if(b.logo_url){logo.src=b.logo_url;logo.classList.add('show');words.textContent=document.title.replace(' · Setup','')||'Publisher'}else logo.classList.remove('show');
+  const ref=$('#brandReference'),im=$('#brandReferenceImage');if(b.reference_image_url){im.src=b.reference_image_url;ref.classList.add('show');ref.classList.toggle('web',b.reference_mode==='web_design')}else ref.classList.remove('show');
+  const meta=document.querySelector('meta[name="theme-color"]');if(meta&&t.primary)meta.content=t.primary;
+}
 async function load(){
-  const s=await api('/api/status'),h=s.health,o=s.onboarding||{};
+  const s=await api('/api/status'),h=s.health,o=s.onboarding||{};applyBrand(s.brand||{});
   document.title=(h.show||'Publisher')+' · Setup';
   paintCard('#youtubeCard','#youtubeState',!!o.youtube,'CONNECTED ✓','NOT CONNECTED');
   paintCard('#flowCard','#flowState',!!o.flow,'CONNECTED ✓','NOT CONNECTED');
