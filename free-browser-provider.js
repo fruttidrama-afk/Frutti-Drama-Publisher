@@ -378,14 +378,30 @@ async function clickRadio(page,re,label){
   throw new Error('FLOW_SETTING_NOT_FOUND:'+label+':'+body);
 }
 async function configureFlow(page){
-  await waitFlowReady(page,60000);await ensureSettingsOpen(page);await clickRadio(page,/Video/i,'Video');await clickRadio(page,new RegExp('^'+escapeRe(ASPECT_RATIO)+'$','i'),ASPECT_RATIO);
+  await waitFlowReady(page,60000);
+  await ensureSettingsOpen(page);
+  await clickRadio(page,/Video/i,'Video');
+  await clickRadio(page,new RegExp('^'+escapeRe(ASPECT_RATIO)+'$','i'),ASPECT_RATIO);
+
   const modelTokens=norm(MODEL_INTENT).split(' ').filter(x=>x.length>2);
   let modelButton=null,currentModel='';
   const directModel=page.getByRole('button',{name:/Select model family|Model|Omni|Veo|Flash/i});
-  for(let i=(await directModel.count().catch(()=>0))-1;i>=0;i--){const b=directModel.nth(i);if(!(await b.isVisible().catch(()=>false)))continue;const txt=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||''),220);if(/model|omni|veo|flash/i.test(txt)){modelButton=b;currentModel=txt;break}}
+  for(let i=(await directModel.count().catch(()=>0))-1;i>=0;i--){
+    const btn=directModel.nth(i);
+    if(!(await btn.isVisible().catch(()=>false)))continue;
+    const txt=compact(((await btn.getAttribute('aria-label').catch(()=>''))||'')+' '+((await btn.innerText().catch(()=>''))||''),220);
+    if(/model|omni|veo|flash/i.test(txt)){modelButton=btn;currentModel=txt;break}
+  }
   if(!modelButton){
     const buttons=page.locator('button');let scoreBest=-1;
-    for(let i=0;i<await buttons.count().catch(()=>0);i++){const b=buttons.nth(i);if(!(await b.isVisible().catch(()=>false)))continue;const txt=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.getAttribute('title').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||''),240),n=norm(txt);let score=modelTokens.filter(t=>n.includes(t)).length*3;if(/model|omni|veo|flash/.test(n))score+=4;if(/aspect|duration|resolution|output|settings/.test(n))score-=2;if(score>scoreBest){scoreBest=score;modelButton=b;currentModel=txt}}
+    for(let i=0;i<await buttons.count().catch(()=>0);i++){
+      const btn=buttons.nth(i);if(!(await btn.isVisible().catch(()=>false)))continue;
+      const txt=compact(((await btn.getAttribute('aria-label').catch(()=>''))||'')+' '+((await btn.getAttribute('title').catch(()=>''))||'')+' '+((await btn.innerText().catch(()=>''))||''),240),n=norm(txt);
+      let score=modelTokens.filter(t=>n.includes(t)).length*3;
+      if(/model|omni|veo|flash/.test(n))score+=4;
+      if(/aspect|duration|resolution|output|settings/.test(n))score-=2;
+      if(score>scoreBest){scoreBest=score;modelButton=btn;currentModel=txt}
+    }
     if(scoreBest<3)modelButton=null;
   }
   if(modelButton&&!modelMatches(currentModel)){
@@ -393,18 +409,51 @@ async function configureFlow(page){
     const candidates=[];
     for(const role of ['menuitem','option','radio','button']){
       const loc=page.getByRole(role);
-      for(let i=0;i<await loc.count().catch(()=>0);i++){const o=loc.nth(i);if(!(await o.isVisible().catch(()=>false)))continue;const txt=compact(((await o.getAttribute('aria-label').catch(()=>''))||'')+' '+((await o.innerText().catch(()=>''))||''),180),n=norm(txt);let score=modelTokens.filter(t=>n.includes(t)).length;if(/omni/i.test(MODEL_INTENT)&&/omni/i.test(txt))score+=3;if(/veo/i.test(MODEL_INTENT)&&/veo/i.test(txt))score+=3;if(/flash/i.test(MODEL_INTENT)&&/flash/i.test(txt))score+=2;if(score>0)candidates.push({o,txt,score})}
+      for(let i=0;i<await loc.count().catch(()=>0);i++){
+        const opt=loc.nth(i);if(!(await opt.isVisible().catch(()=>false)))continue;
+        const txt=compact(((await opt.getAttribute('aria-label').catch(()=>''))||'')+' '+((await opt.innerText().catch(()=>''))||''),180),n=norm(txt);
+        let score=modelTokens.filter(t=>n.includes(t)).length;
+        if(/omni/i.test(MODEL_INTENT)&&/omni/i.test(txt))score+=3;
+        if(/veo/i.test(MODEL_INTENT)&&/veo/i.test(txt))score+=3;
+        if(/flash/i.test(MODEL_INTENT)&&/flash/i.test(txt))score+=2;
+        if(score>0)candidates.push({o:opt,txt,score});
+      }
     }
-    candidates.sort((a,b)=>b.score-a.score);const chosen=candidates[0];if(!chosen)throw new Error('FLOW_MODEL_INTENT_NOT_FOUND:'+MODEL_INTENT);await clickInteractive(chosen.o);await sleep(450);currentModel=chosen.txt;
+    candidates.sort((x,y)=>y.score-x.score);
+    const chosen=candidates[0];
+    if(!chosen)throw new Error('FLOW_MODEL_INTENT_NOT_FOUND:'+MODEL_INTENT);
+    await clickInteractive(chosen.o);await sleep(450);currentModel=chosen.txt;
   }else if(!modelButton){
-    const body=compact(await getBody(page),3000);const line=body.split(/\n|\|/).find(x=>modelMatches(x));if(line)currentModel=compact(line,200);else currentModel=MODEL_INTENT;
+    const body=compact(await getBody(page),3000),line=body.split(/\n|\|/).find(x=>modelMatches(x));
+    currentModel=line?compact(line,200):MODEL_INTENT;
   }
-  let resolutionApplied='default';const resRe=new RegExp(escapeRe(RESOLUTION_INTENT),'i'),resRadio=page.getByRole('radio',{name:resRe}).last();
-  if(await resRadio.count().catch(()=>0)&&await resRadio.isVisible().catch(()=>false)){if((await resRadio.getAttribute('aria-checked').catch(()=>null))!=='true')await clickInteractive(resRadio);await sleep(250);resolutionApplied=RESOLUTION_INTENT}
-  else{const exact=page.getByText(resRe).last();if(await exact.count().catch(()=>0)&&await exact.isVisible().catch(()=>false)){await clickInteractive(exact);await sleep(250);resolutionApplied=RESOLUTION_INTENT}else publish('FLOW_SETTING_DEFAULT',{setting:'resolution',requested:RESOLUTION_INTENT,message:'Resolution control is not exposed by this Flow model; keeping the model default.'})}
-  await clickRadio(page,new RegExp('^'+escapeRe(DURATION_LABEL)+'await clickRadio(page,new RegExp('^'+escapeRe(OUTPUT_LABEL)+'$','i'),OUTPUT_LABEL);
-  if(CONFIG.characters.length){const ingredients=page.getByRole('radio',{name:/Ingredients/i}).last();if(await ingredients.count().catch(()=>0)&&await ingredients.isVisible().catch(()=>false)){if((await ingredients.getAttribute('aria-checked').catch(()=>null))!=='true')await clickInteractive(ingredients);await sleep(300)}}
-  let label='';try{label=compact(await(await settingsButton(page)).innerText(),300)}catch{}await page.keyboard.press('Escape').catch(()=>{});
+
+  let resolutionApplied='default';
+  const resRe=new RegExp(escapeRe(RESOLUTION_INTENT),'i'),resRadio=page.getByRole('radio',{name:resRe}).last();
+  if(await resRadio.count().catch(()=>0)&&await resRadio.isVisible().catch(()=>false)){
+    if((await resRadio.getAttribute('aria-checked').catch(()=>null))!=='true')await clickInteractive(resRadio);
+    await sleep(250);resolutionApplied=RESOLUTION_INTENT;
+  }else{
+    const exact=page.getByText(resRe).last();
+    if(await exact.count().catch(()=>0)&&await exact.isVisible().catch(()=>false)){
+      await clickInteractive(exact);await sleep(250);resolutionApplied=RESOLUTION_INTENT;
+    }else{
+      publish('FLOW_SETTING_DEFAULT',{setting:'resolution',requested:RESOLUTION_INTENT,message:'Resolution control is not exposed by this Flow model; keeping the model default.'});
+    }
+  }
+
+  await clickRadio(page,new RegExp('^'+escapeRe(DURATION_LABEL)+'$','i'),DURATION_LABEL);
+  await clickRadio(page,new RegExp('^'+escapeRe(OUTPUT_LABEL)+'$','i'),OUTPUT_LABEL);
+
+  if(CONFIG.characters.length){
+    const ingredients=page.getByRole('radio',{name:/Ingredients/i}).last();
+    if(await ingredients.count().catch(()=>0)&&await ingredients.isVisible().catch(()=>false)){
+      if((await ingredients.getAttribute('aria-checked').catch(()=>null))!=='true')await clickInteractive(ingredients);
+      await sleep(300);
+    }
+  }
+  let label='';try{label=compact(await(await settingsButton(page)).innerText(),300)}catch{}
+  await page.keyboard.press('Escape').catch(()=>{});
   return{label:label||'settings-applied',mode:'Video',ratio:ASPECT_RATIO,model:currentModel,resolution:resolutionApplied,duration:DURATION_LABEL,count:OUTPUT_LABEL,ingredients:CONFIG.characters.length>0};
 }
 async function ingredientCount(page){
