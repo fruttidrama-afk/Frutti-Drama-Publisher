@@ -112,7 +112,7 @@ function fmt(v){if(!v)return'—';try{return new Intl.DateTimeFormat('es-AR',{da
 function paintCard(id,stateId,done,yes,no){const c=$(id),s=$(stateId);c.classList.toggle('done',done);s.textContent=done?yes:no}
 async function load(){
   const s=await api('/api/status'),h=s.health,o=s.onboarding||{};
-  $('#title').textContent=h.show||'Publisher Setup';
+  document.title=(h.show||'Publisher')+' · Setup';
   paintCard('#youtubeCard','#youtubeState',!!o.youtube,'CONNECTED ✓','NOT CONNECTED');
   paintCard('#flowCard','#flowState',!!o.flow,'CONNECTED ✓','NOT CONNECTED');
   paintCard('#bibleCard','#bibleState',!!o.bible,'SAVED ✓','NOT SAVED');
