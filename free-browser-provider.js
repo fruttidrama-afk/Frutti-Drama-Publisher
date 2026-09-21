@@ -43,7 +43,7 @@ const json = (v, f=null) => { try { return JSON.parse(String(v ?? '')); } catch 
 const now = () => new Date().toISOString();
 const artDay = (d=new Date()) => new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
 function dailyGenerationCount(db, day=artDay()) {
-  return Number(db.prepare('SELECT COUNT(*) n FROM factory_generations WHERE day=? AND credits>0').get(day)?.n||0);
+  return Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND credits>0 AND COALESCE(generationKind,'automatic')<>'review_retry'").get(day)?.n||0);
 }
 function reconcileGenerationCreditAccounting(db){
   try{
@@ -117,7 +117,13 @@ function ensureSchema(db) {
     `ALTER TABLE factory_items ADD COLUMN promptPayloadLength INTEGER`,
     `ALTER TABLE factory_items ADD COLUMN transportPreflight TEXT`,
     `ALTER TABLE factory_items ADD COLUMN runtimeAttemptCount INTEGER NOT NULL DEFAULT 0`,
-    `ALTER TABLE factory_items ADD COLUMN lastProgressAt TEXT`
+    `ALTER TABLE factory_items ADD COLUMN lastProgressAt TEXT`,
+    `ALTER TABLE factory_items ADD COLUMN reviewFeedback TEXT`,
+    `ALTER TABLE factory_items ADD COLUMN retryStrategy TEXT`,
+    `ALTER TABLE factory_items ADD COLUMN reviewRetryToken TEXT`,
+    `ALTER TABLE factory_items ADD COLUMN reviewRetrySubmittedToken TEXT`,
+    `ALTER TABLE factory_items ADD COLUMN reviewContentHash TEXT`,
+    `ALTER TABLE factory_generations ADD COLUMN generationKind TEXT NOT NULL DEFAULT 'automatic'`
   ]) { try { db.exec(sql); } catch {} }
 }
 function checkpoint(row){
@@ -624,7 +630,8 @@ async function processRow(db,row){
     const page=session.page||context.pages()[0]||await context.newPage();if(!String(page.url()).includes(projectPath()))await page.goto(FLOW_URL,{waitUntil:'domcontentloaded',timeout:60000});await waitFlowReady(page,60000);
     if(AFTER_GENERATE.has(state))return await retrieveExisting(page,row,cp,lc,db);
     if(AMBIGUOUS.has(state)){const reconciled=await reconcileAmbiguousGeneric(page,row,lc,db);if(reconciled.mode==='retrieve')return await retrieveExisting(page,row,cp,reconciled.lifecycle,db);return false}
-    const manualSubmit=meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',autoSubmit=runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&dailyGenerationCount(db)<DAILY_PRODUCTION_LIMIT,submitAuthorized=manualSubmit||autoSubmit;
+    const reviewerRetry=isReviewerRetry(row);
+    const manualSubmit=meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',autoSubmit=runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||dailyGenerationCount(db)<DAILY_PRODUCTION_LIMIT),submitAuthorized=manualSubmit||autoSubmit;
     publish('PREFLIGHT',{episode:'E'+row.episode,job_id:row.id});
     const pf=(state==='PREFLIGHT_PASSED'&&row.transportPreflight)?await verifyPreparedState(page,row,cp):await preflight(page,row,cp);
     db.prepare('UPDATE factory_items SET transportPreflight=?,error=NULL,updatedAt=? WHERE id=?').run(JSON.stringify(pf).slice(0,20000),now(),row.id);
@@ -632,11 +639,16 @@ async function processRow(db,row){
     if(!submitAuthorized){const used=dailyGenerationCount(db);setMeta(db,'flow:state',used>=DAILY_PRODUCTION_LIMIT?'ESPERANDO CRÉDITOS':'CONECTADO');setMeta(db,'flow:currentStep',used>=DAILY_PRODUCTION_LIMIT?'daily-limit':'preflight:passed-no-submit');publish(used>=DAILY_PRODUCTION_LIMIT?'DAILY_LIMIT':'PREFLIGHT_READY_NO_SUBMIT',{episode:'E'+row.episode,job_id:row.id,characters:cp.visual,settings:pf.settings});return false}
     if(manualSubmit)setMeta(db,'automation:allowSubmit','0');
     const baseline=await currentVideos(page),baselineInventory=await captureFlowInventory(page),genId='free-'+randomUUID();
-    setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),baseline,baseline_inventory:baselineInventory});db.prepare("UPDATE factory_items SET status='generating',providerRunId=?,error=NULL,updatedAt=? WHERE id=?").run(genId,now(),row.id);
+    if(reviewerRetry){
+      const token=String(row.reviewRetryToken||'');
+      const claimed=db.prepare("UPDATE factory_items SET status='generating',providerRunId=?,reviewRetrySubmittedToken=reviewRetryToken,error=NULL,updatedAt=? WHERE id=? AND reviewRetryToken=? AND (reviewRetrySubmittedToken IS NULL OR reviewRetrySubmittedToken<>reviewRetryToken)").run(genId,now(),row.id,token);
+      if(Number(claimed.changes||0)!==1)throw new Error('REVIEW_RETRY_ALREADY_SUBMITTED');
+    }else db.prepare("UPDATE factory_items SET status='generating',providerRunId=?,error=NULL,updatedAt=? WHERE id=?").run(genId,now(),row.id);
+    setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null});
     const submitMode=await clickSubmitExactlyOnce(page),started=await waitGenerationStarted(page,baseline,90000);
     if(!started.started){setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{generation_id:genId,submit_mode:submitMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,last_error:'Generation start could not be confirmed. Automatic resubmit disabled.'});db.prepare("UPDATE factory_items SET status='generating',error=?,updatedAt=? WHERE id=?").run('SUBMIT_AMBIGUOUS — no automatic resubmit',now(),row.id);throw new Error('SUBMIT_AMBIGUOUS')}
     const startedAt=now();lc=setLifecycle(db,row,'GENERATION_STARTED',{generation_id:genId,generation_started_at:startedAt,submit_mode:submitMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence});
-    try{db.prepare('INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error) VALUES(?,?,?,?,?,?,?,?,?,NULL)').run(randomUUID(),row.id,artDay(new Date(startedAt)),sha(cp.hash+':'+genId),CREDITS_PER_GENERATION,'running',genId,startedAt,startedAt)}catch{}
+    try{db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)").run(randomUUID(),row.id,artDay(new Date(startedAt)),sha(cp.hash+':'+genId),CREDITS_PER_GENERATION,'running',genId,startedAt,startedAt,reviewerRetry?'review_retry':'automatic')}catch{}
     setMeta(db,'flow:lastSuccessfulGenerationAt',startedAt);publish('GENERATION_STARTED',{episode:'E'+row.episode,job_id:row.id,generation_id:genId,evidence:started.evidence});return await retrieveExisting(page,row,cp,lc,db);
   }finally{await session.close().catch(()=>{})}
 }
@@ -644,30 +656,63 @@ function reconcileAmbiguousNoGeneration(){return false;}
 function serialReady(db,row){
   if(!row)return false;if(!CONFIG.content.serialized||Number(row.episode)<=1)return true;
   const prev=db.prepare('SELECT status FROM factory_items WHERE episode<? ORDER BY episode DESC LIMIT 1').get(Number(row.episode));if(!prev)return false;
-  const gate=CONFIG.content.continuity_gate;if(gate==='none')return true;if(gate==='approved'||gate==='published')return['queued','historical','published'].includes(String(prev.status||''));
-  return['review','queued','historical','published'].includes(String(prev.status||''));
+  const gate=CONFIG.content.continuity_gate;if(gate==='none')return true;
+  return['queued','historical','published'].includes(String(prev.status||''));
 }
+function retryTokenOpen(row){
+  const token=String(row?.reviewRetryToken||'').trim(),submitted=String(row?.reviewRetrySubmittedToken||'').trim();
+  return Boolean(token&&token!==submitted);
+}
+function reviewerRetryTokenConsumed(row){
+  const token=String(row?.reviewRetryToken||'').trim(),submitted=String(row?.reviewRetrySubmittedToken||'').trim();
+  return Boolean(token&&token===submitted&&['reuse_prompt','revise_prompt'].includes(String(row?.retryStrategy||''))&&String(row?.reviewFeedback||'').trim().length>=3);
+}
+function isReviewerRetry(row){
+  return !!row&&['reuse_prompt','revise_prompt'].includes(String(row.retryStrategy||''))&&String(row.reviewFeedback||'').trim().length>=3&&['regen_wait','draft'].includes(String(row.status||''))&&retryTokenOpen(row);
+}
+function normalizeConsumedReviewerRetries(db){
+  const rows=db.prepare("SELECT * FROM factory_items WHERE retryStrategy IN ('reuse_prompt','revise_prompt') AND reviewFeedback IS NOT NULL AND reviewRetryToken IS NOT NULL AND reviewRetrySubmittedToken=reviewRetryToken AND status NOT IN ('review','queued','historical','published')").all();
+  for(const row of rows){
+    const lc=lifecycle(db,row)||{},state=String(lc.state||'').toUpperCase();
+    if(AFTER_GENERATE.has(state)||AMBIGUOUS.has(state)){
+      if(String(row.status||'')!=='generating')db.prepare("UPDATE factory_items SET status='generating',nextTry=0,error='REDO already submitted: recovery only; Generate is locked.',updatedAt=? WHERE id=?").run(now(),row.id);
+    }else if(String(row.status||'')!=='manual_hold'){
+      db.prepare("UPDATE factory_items SET status='manual_hold',nextTry=0,error='REDO token already consumed without recoverable generation evidence. A new human REDO is required.',updatedAt=? WHERE id=?").run(now(),row.id);
+      setLifecycle(db,row,'MANUAL_HOLD_CONSUMED_RETRY',{...lc,reviewer_retry:true,retry_token:String(row.reviewRetryToken||''),automatic_submit_forbidden:true,held_at:now()});
+    }
+  }
+}
+function auditRedoState(db){
+  const consumed=Number(db.prepare("SELECT COUNT(*) n FROM factory_items WHERE status IN ('draft','regen_wait') AND reviewRetryToken IS NOT NULL AND reviewRetrySubmittedToken=reviewRetryToken").get()?.n||0);
+  if(consumed)throw new Error('REDO_STATE_INVARIANT_FAILED:'+consumed);
+}
+
 function productionCandidate(db){
   const running=db.prepare("SELECT * FROM factory_items WHERE status='generating' AND nextTry<=? ORDER BY episode LIMIT 1").get(Date.now());if(running)return running;
-  const rows=db.prepare("SELECT * FROM factory_items WHERE status IN ('draft','regen_wait') AND nextTry<=? ORDER BY episode LIMIT 100").all(Date.now());return rows.find(row=>serialReady(db,row))||null;
+  const retries=db.prepare("SELECT * FROM factory_items WHERE status IN ('draft','regen_wait') AND retryStrategy IN ('reuse_prompt','revise_prompt') AND reviewFeedback IS NOT NULL ORDER BY updatedAt,episode LIMIT 100").all();
+  const retry=retries.find(row=>serialReady(db,row)&&isReviewerRetry(row));if(retry)return retry;
+  const rows=db.prepare("SELECT * FROM factory_items WHERE status IN ('draft','regen_wait') AND nextTry<=? AND (reviewFeedback IS NULL OR TRIM(reviewFeedback)='') ORDER BY episode LIMIT 100").all(Date.now());
+  return rows.find(row=>serialReady(db,row))||null;
 }
 async function runProvider(){
   if(bootstrapOwnsProfile()){publish('AUTH_BOOTSTRAP_ACTIVE',{message:'Flow bootstrap owns the persistent browser profile; provider is paused.'});return}
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     const migrated=await migrateProfileOnce(db);if(!migrated)return;
     const used=dailyGenerationCount(db);row=productionCandidate(db);
     if(row&&String(row.status)==='generating'){publish('RECOVERY_PICKED',{episode:'E'+row.episode,job_id:row.id,state:String(lifecycle(db,row)?.state||''),used_today:used});await processRow(db,row);return}
-    if(used>=DAILY_PRODUCTION_LIMIT){if(row&&String(lifecycle(db,row)?.state||'').toUpperCase()!=='PREFLIGHT_PASSED'){publish('NEXT_DAY_PREFLIGHT',{episode:'E'+row.episode,job_id:row.id,message:'Daily target complete; validating next job without Send.'});await processRow(db,row);return}setMeta(db,'flow:state','ESPERANDO CRÉDITOS');setMeta(db,'flow:currentStep','daily-limit');setMeta(db,'flow:message','Daily production complete: '+used+'/'+DAILY_PRODUCTION_LIMIT+'.');publish('DAILY_LIMIT',{used,limit:DAILY_PRODUCTION_LIMIT,day:artDay(),next_episode:row?('E'+row.episode):null});return}
+    const priorityRetry=isReviewerRetry(row);
+    if(used>=DAILY_PRODUCTION_LIMIT&&!priorityRetry){if(row&&String(lifecycle(db,row)?.state||'').toUpperCase()!=='PREFLIGHT_PASSED'){publish('NEXT_DAY_PREFLIGHT',{episode:'E'+row.episode,job_id:row.id,message:'Daily target complete; validating next job without Send.'});await processRow(db,row);return}setMeta(db,'flow:state','ESPERANDO CRÉDITOS');setMeta(db,'flow:currentStep','daily-limit');setMeta(db,'flow:message','Daily production complete: '+used+'/'+DAILY_PRODUCTION_LIMIT+'.');publish('DAILY_LIMIT',{used,limit:DAILY_PRODUCTION_LIMIT,day:artDay(),next_episode:row?('E'+row.episode):null});return}
     if(!row){ensureBacklog(db);row=productionCandidate(db);if(!row){setMeta(db,'flow:state','CONECTADO');setMeta(db,'flow:currentStep','idle');publish('IDLE',{message:'No production candidate yet.'});return}}
-    publish('PRODUCTION_PICKED',{episode:'E'+row.episode,job_id:row.id,used_today:used,remaining_today:DAILY_PRODUCTION_LIMIT-used});await processRow(db,row);
+    publish(priorityRetry?'REVIEW_RETRY_PICKED':'PRODUCTION_PICKED',{episode:'E'+row.episode,job_id:row.id,used_today:used,remaining_today:Math.max(0,DAILY_PRODUCTION_LIMIT-used),daily_limit_bypassed:priorityRetry});await processRow(db,row);
   }catch(err){
     const message=compact(err?.stack||err?.message||err,900);
     try{if(db&&row){const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row,lc=lifecycle(db,fresh)||{},state=String(lc.state||'').toUpperCase(),attempts=Number(fresh.runtimeAttemptCount||0)+1,backoff=Math.min(60*60*1000,60000*Math.pow(2,Math.min(attempts-1,6))),nextTry=Date.now()+backoff;if(/FLOW_GENERATION_FAILED/.test(message)){db.prepare("UPDATE factory_items SET status='failed_after_generate',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=0,updatedAt=? WHERE id=?").run(attempts,now(),message,now(),fresh.id);setLifecycle(db,fresh,'FAILED_AFTER_GENERATE',{last_error:message,attempt_count:attempts})}else if(AFTER_GENERATE.has(state)){db.prepare("UPDATE factory_items SET status='generating',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id);setLifecycle(db,fresh,'RETRIEVAL_PENDING',{...lc,last_error:message,attempt_count:attempts,retry_at:new Date(nextTry).toISOString()})}else if(AMBIGUOUS.has(state)){db.prepare("UPDATE factory_items SET status='generating',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id)}else{db.prepare("UPDATE factory_items SET status='draft',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id);setLifecycle(db,fresh,'FAILED_BEFORE_GENERATE',{last_error:message,attempt_count:attempts,retry_at:new Date(nextTry).toISOString()})}}if(db){setMeta(db,'flow:state',/FLOW_AUTH/.test(message)?'REQUIERE REAUTENTICACIÓN':'ERROR');setMeta(db,'flow:message',message)}}catch{}publish('ERROR',{message,episode:row?('E'+row.episode):null});
   }finally{try{db?.close()}catch{}releaseLock()}
 }
+globalThis.__publisherRunProvider=()=>{void runProvider();};
 setTimeout(()=>{void runProvider()},12000);
-setInterval(()=>{void runProvider()},45*1000).unref();
+setInterval(()=>{void runProvider()},20*1000).unref();
