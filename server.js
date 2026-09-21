@@ -104,7 +104,53 @@ function youtubeApi(){return google.youtube({version:'v3',auth:authedClient()})}
 
 const publication=installPublication({app,db,config:CONFIG,youtubeApi,authedClient,loadToken,dataDir:DIR});
 
-app.get('/integrations/youtube',secure,(req,res)=>{const y=ytSecrets(),redirect=origin(req)+'/oauth2callback';res.send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>body{font-family:system-ui;background:#f5f4ef;margin:0;padding:24px}.c{max-width:680px;margin:auto;background:white;padding:24px;border-radius:24px}input,button{width:100%;box-sizing:border-box;padding:13px;border-radius:12px;border:1px solid #ddd;margin:6px 0}button{background:#111;color:white;font-weight:700}code{word-break:break-all}</style><div class=c><a href="/">Back</a><h1>YouTube</h1><p>One-time setup: create/use a Google OAuth Web client and add this exact Authorized redirect URI:</p><code>${redirect}</code><form method=post action=/integrations/youtube><input name=client_id placeholder="Google OAuth Client ID" value="${String(y.client_id||'').replace(/"/g,'&quot;')}"><input name=client_secret type=password placeholder="Google OAuth Client Secret"><button>Save OAuth configuration</button></form><p>${loadToken()?'Channel connected.':'After saving, connect the channel.'}</p><a href="/auth/google">Connect YouTube channel</a></div>`)});
+app.get('/integrations/youtube',secure,(req,res)=>{const y=ytSecrets(),redirect=origin(req)+'/oauth2callback',configured=Boolean(y.client_id&&y.client_secret),connected=Boolean(loadToken()),esc=x=>String(x||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');res.send(`<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f7f6f2"><title>Conectar YouTube</title>
+<style>
+:root{--navy:#0d3152;--gold:#b59a64;--ink:#1d1d1b;--muted:#6e6a63;--bg:#f7f6f2;--line:#ded9cf;--ok:#315d35;--okbg:#eef4ed}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Arial,Helvetica,sans-serif;padding:calc(18px + env(safe-area-inset-top)) 16px calc(34px + env(safe-area-inset-bottom));-webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:auto}.back{display:inline-flex;color:var(--navy);text-decoration:none;font-weight:700;margin-bottom:20px}.eyebrow{font-size:11px;letter-spacing:.2em;color:var(--gold);font-weight:800}
+h1{font:400 clamp(42px,8vw,64px)/.95 Georgia,serif;margin:10px 0 14px}.lead{font-size:17px;line-height:1.5;color:#47433d;margin:0 0 24px}
+.progress{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px}.pill{padding:10px 12px;border:1px solid var(--line);background:#fff;font-size:12px;font-weight:800}.pill.ok{background:var(--okbg);border-color:#a9bea4;color:var(--ok)}
+.step{background:#fff;border:1px solid var(--line);padding:20px;margin:12px 0}.step-head{display:flex;gap:12px;align-items:flex-start}.num{width:34px;height:34px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-weight:800;flex:0 0 auto}.step h2{font:400 27px/1.05 Georgia,serif;color:var(--navy);margin:2px 0 8px}.step p{color:var(--muted);line-height:1.5;margin:0}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:15px}.btn{min-height:46px;padding:0 15px;border:1px solid var(--gold);background:#fff;color:#725d34;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;font-weight:800;cursor:pointer}.btn.primary{background:var(--navy);border-color:var(--navy);color:#fff}.btn:active{transform:scale(.97)}
+.uri{display:flex;gap:8px;margin-top:13px}.uri code{flex:1;border:1px solid var(--line);background:#faf9f6;padding:12px;word-break:break-all;font-size:12px}.copy{white-space:nowrap}
+form{margin-top:14px;display:grid;gap:10px}input{width:100%;min-height:48px;padding:0 13px;border:1px solid #cfc8ba;background:#fff;font:inherit}.help{font-size:12px;color:var(--muted);margin-top:8px}.done{border-color:#a9bea4;background:var(--okbg)}.done .num{background:var(--ok)}
+.final{margin-top:16px;padding:18px;border:1px solid #a9bea4;background:var(--okbg);display:${connected?'block':'none'}}.final strong{color:var(--ok);font-size:18px}
+details{margin-top:12px}.tiny{font-size:12px;color:var(--muted);line-height:1.5}
+@media(max-width:620px){.progress{grid-template-columns:1fr}.actions .btn{width:100%}.uri{flex-direction:column}.copy{width:100%}}
+</style></head><body><main class="wrap">
+<a class="back" href="/">← Volver al Publisher</a>
+<div class="eyebrow">YOUTUBE · CONFIGURACIÓN GUIADA</div>
+<h1>Conectemos tu canal.</h1>
+<p class="lead">Lo hacés una sola vez. No necesitás entender OAuth: seguí estos pasos en orden y usá los botones.</p>
+<div class="progress"><div class="pill ${configured?'ok':''}">${configured?'✓ Credenciales guardadas':'1 · Falta configurar Google'}</div><div class="pill ${connected?'ok':''}">${connected?'✓ Canal conectado':'2 · Falta conectar el canal'}</div></div>
+
+<section class="step"><div class="step-head"><div class="num">1</div><div><h2>Activá YouTube Data API</h2><p>Abrí Google Cloud con la misma cuenta con la que administrás tu canal. Elegí un proyecto o creá uno y activá <b>YouTube Data API v3</b>.</p></div></div>
+<div class="actions"><a class="btn primary" target="_blank" rel="noopener" href="https://console.cloud.google.com/apis/library/youtube.googleapis.com">ABRIR YOUTUBE DATA API</a></div></section>
+
+<section class="step"><div class="step-head"><div class="num">2</div><div><h2>Creá una credencial OAuth</h2><p>Abrí Credenciales. Tocá <b>Crear credenciales → ID de cliente OAuth</b> y elegí <b>Aplicación web</b>. Si Google te pide configurar primero la pantalla de consentimiento, completá lo básico y volvé a Credenciales.</p></div></div>
+<div class="actions"><a class="btn primary" target="_blank" rel="noopener" href="https://console.cloud.google.com/apis/credentials">ABRIR CREDENCIALES DE GOOGLE</a><a class="btn" target="_blank" rel="noopener" href="https://console.cloud.google.com/auth/overview">ABRIR CONFIGURACIÓN OAUTH</a></div></section>
+
+<section class="step"><div class="step-head"><div class="num">3</div><div><h2>Pegá esta URL en “URI de redireccionamiento autorizado”</h2><p>Google necesita volver exactamente a este Publisher después de que autorices el canal.</p></div></div>
+<div class="uri"><code id="redirect">${esc(redirect)}</code><button class="btn copy" type="button" id="copy">COPIAR URL</button></div>
+<p class="help">En Google Cloud buscá “URI de redireccionamiento autorizados”, tocá <b>Agregar URI</b>, pegá esta dirección y guardá.</p></section>
+
+<section class="step ${configured?'done':''}"><div class="step-head"><div class="num">4</div><div><h2>Pegá aquí el Client ID y el Client Secret</h2><p>Después de crear la credencial, Google te muestra ambos valores. Copialos y pegálos abajo.</p></div></div>
+<form method="post" action="/integrations/youtube">
+<input name="client_id" autocomplete="off" placeholder="Client ID" value="${esc(y.client_id||'')}">
+<input name="client_secret" type="password" autocomplete="new-password" placeholder="${configured?'Client Secret (pegalo de nuevo solo si querés cambiarlo)':'Client Secret'}">
+<button class="btn primary" type="submit">GUARDAR CONFIGURACIÓN</button>
+</form></section>
+
+<section class="step ${connected?'done':''}"><div class="step-head"><div class="num">5</div><div><h2>Conectá el canal</h2><p>${configured?'Ahora sí: tocá el botón, elegí la cuenta de Google del canal y aceptá los permisos.':'Primero completá el paso 4.'}</p></div></div>
+<div class="actions"><a class="btn primary" href="/auth/google" ${configured?'':'style="pointer-events:none;opacity:.45"'}>CONECTAR MI CANAL DE YOUTUBE</a></div></section>
+
+<div class="final"><strong>✓ YouTube ya está conectado.</strong><p class="tiny">Podés volver al Publisher. Esta conexión queda guardada en este runtime.</p><a class="btn primary" href="/">VOLVER AL PUBLISHER</a></div>
+<details><summary>¿Qué estoy haciendo exactamente?</summary><p class="tiny">Publisher usa OAuth 2.0 para subir y administrar videos en el canal que autorices. La contraseña de Google nunca se guarda en Publisher. Google solo entrega tokens de acceso después de que vos aceptás los permisos.</p></details>
+</main>
+<script>
+const copy=document.getElementById('copy');copy.onclick=async()=>{try{await navigator.clipboard.writeText(document.getElementById('redirect').textContent);copy.textContent='COPIADO ✓';setTimeout(()=>copy.textContent='COPIAR URL',1600)}catch{const r=document.createRange();r.selectNodeContents(document.getElementById('redirect'));getSelection().removeAllRanges();getSelection().addRange(r)}};
+</script></body></html>`)});
 app.post('/integrations/youtube',secure,(req,res)=>{const client_id=String(req.body.client_id||'').trim(),client_secret=String(req.body.client_secret||'').trim();if(!client_id||!client_secret)return res.status(400).send('Client ID and secret required.');saveYtSecrets({client_id,client_secret,redirect_uri:origin(req)+'/oauth2callback'});res.redirect('/integrations/youtube')});
 app.get('/auth/google',secure,(req,res)=>{try{const state=randomBytes(24).toString('base64url'),y=ytSecrets();saveYtSecrets({oauth_state:state,oauth_state_exp:Date.now()+15*60*1000,redirect_uri:origin(req)+'/oauth2callback'});const c=oauthClient(),url=c.generateAuthUrl({access_type:'offline',prompt:'consent',state,scope:['https://www.googleapis.com/auth/youtube','https://www.googleapis.com/auth/youtube.upload']});res.redirect(url)}catch(e){res.status(400).send(e.message)}});
 app.get('/oauth2callback',async(req,res)=>{try{const y=ytSecrets();if(!req.query.code||!safeEq(String(req.query.state||''),String(y.oauth_state||''))||Number(y.oauth_state_exp||0)<Date.now())throw new Error('OAuth state invalid or expired.');const c=oauthClient(),{tokens}=await c.getToken(String(req.query.code));saveToken(tokens);saveYtSecrets({oauth_state:null,oauth_state_exp:0});res.redirect('/integrations/youtube')}catch(e){res.status(400).send('YouTube OAuth failed: '+e.message)}});
