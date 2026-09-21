@@ -1113,7 +1113,7 @@ async function recoverGoldenRunIfRequested(db){
     const found=await findGoldenRecoveryAsset(page);
     if(!found.found){
       setMeta(db,metaKey,JSON.stringify({status:'pending',at:now(),episode:row.episode,job_id:row.id,last:'asset-not-found',candidates:found.candidates||[]}));
-      publish('GOLDEN_RECOVERY_PENDING',{episode:'E'+row.episode,job_id:row.id,message:'Patagonia Golden Run asset not uniquely found yet; production remains paused.',url:found.url,body_has_terms:found.body_has_terms,partial:found.partial,buttons:found.buttons});
+      publish('GOLDEN_RECOVERY_PENDING',{episode:'E'+row.episode,job_id:row.id,message:'Patagonia Golden Run asset not uniquely found yet; production remains paused. diag='+compact(JSON.stringify({url:found.url,body_has_terms:found.body_has_terms,partial:(found.partial||[]).slice(0,12),buttons:(found.buttons||[]).slice(0,40)}),5200),url:found.url,body_has_terms:found.body_has_terms,partial:found.partial,buttons:found.buttons});
       return{needed:true,done:false};
     }
     const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);
