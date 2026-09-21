@@ -1356,6 +1356,11 @@ async function processRow(db,row){
     if(AFTER_GENERATE.has(state))return await retrieveExisting(page,row,cp,lc,db);
     if(AMBIGUOUS.has(state)){const reconciled=await reconcileAmbiguousGeneric(page,row,lc,db);if(reconciled.mode==='retrieve')return await retrieveExisting(page,row,cp,reconciled.lifecycle,db);return false}
     const reviewerRetry=isReviewerRetry(row);
+    const otherActive=db.prepare("SELECT id,episode,status FROM factory_items WHERE id<>? AND status='generating' ORDER BY episode LIMIT 1").get(row.id);
+    if(otherActive){
+      publish('SERIAL_GATE_BLOCKED',{episode:'E'+row.episode,job_id:row.id,blocking_episode:'E'+otherActive.episode,blocking_job_id:otherActive.id});
+      return false;
+    }
     const manualSubmit=meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',autoSubmit=runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||effectiveDailyCount(db)<DAILY_PRODUCTION_LIMIT),submitAuthorized=manualSubmit||autoSubmit;
     publish('PREFLIGHT',{episode:'E'+row.episode,job_id:row.id});
     const pf=await preflight(page,row,cp);
@@ -1441,6 +1446,8 @@ async function runProvider(){
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
     db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
+    setMeta(db,'automation:serialFlowMode','true');
+    setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
     const migrated=await migrateProfileOnce(db);if(!migrated)return;
     const goldenRecovery=await recoverGoldenRunIfRequested(db);
     if(goldenRecovery.needed&&!goldenRecovery.done)return;
