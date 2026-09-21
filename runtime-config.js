@@ -238,6 +238,29 @@ export function buildPrompt(db,row,visual=[]){
   }
   return out.trim();
 }
+const EARTH_IN_10_AUTONOMOUS_EPISODES=[
+  {hook:'ICELAND BLACK SAND',story:'A cinematic sunrise on Iceland’s black volcanic coast. Cold Atlantic waves roll across glossy black sand beneath towering basalt sea stacks while pale golden light breaks through low clouds and sea mist.'},
+  {hook:'ZHANGJIAJIE MIST',story:'A cinematic flight-like push through China’s Zhangjiajie sandstone pillars at dawn. Layers of tall quartz-sandstone towers emerge from drifting white mist while soft morning light creates immense atmospheric depth.'},
+  {hook:'UYUNI MIRROR',story:'A cinematic sunrise over Bolivia’s Salar de Uyuni after rain. A perfectly thin sheet of water turns the salt flat into an endless mirror, reflecting pastel clouds and distant mountains with a seamless horizon.'},
+  {hook:'FAROE CLIFFS',story:'A dramatic cinematic view of the Faroe Islands. Deep green sea cliffs fall into the North Atlantic as a narrow waterfall blows sideways in ocean wind beneath moving storm-light and mist.'},
+  {hook:'DOLOMITES DAWN',story:'A cinematic dawn in the Italian Dolomites. Jagged pale-rock peaks catch warm alpenglow above a quiet alpine valley while thin clouds slide naturally across the mountain faces.'},
+  {hook:'LENÇÓIS LAGOONS',story:'A cinematic aerial-style push across Brazil’s Lençóis Maranhenses. Brilliant blue seasonal lagoons sit between sweeping white dunes under clean tropical light, with wind tracing subtle patterns across the sand.'},
+  {hook:'MILFORD SOUND',story:'A cinematic rainy morning in New Zealand’s Milford Sound. Sheer dark cliffs rise from calm water while dozens of temporary waterfalls stream through low clouds and drifting mist.'},
+  {hook:'ATACAMA STARS',story:'A cinematic blue-hour transition in Chile’s Atacama Desert. Rust-colored mountains and salt flats sit beneath an exceptionally clear deepening sky as the first bright stars become visible above the silent landscape.'},
+  {hook:'PLITVICE WATER',story:'A cinematic glide through Croatia’s Plitvice Lakes. Crystal turquoise water spills over moss-covered limestone terraces into layered pools surrounded by dense green forest and soft natural haze.'},
+  {hook:'LOFOTEN LIGHT',story:'A cinematic Arctic sunrise in Norway’s Lofoten Islands. Sharp snow-covered peaks rise directly from calm blue water while warm low-angle light reaches a tiny curve of untouched shoreline.'},
+  {hook:'SOCOTRA DRAGONS',story:'A cinematic golden-hour landscape on Socotra Island, Yemen. Strange dragon’s-blood trees stand across a rocky plateau above a distant turquoise sea, rendered with documentary-level realism.'},
+  {hook:'TORRES DEL PAINE',story:'A cinematic dawn in Torres del Paine, Chile. Granite towers rise beyond a windswept turquoise lake while fast Patagonian clouds reveal brief shafts of warm sunrise light.'}
+];
+function earthIn10Idea(episode){
+  const i=Math.max(0,Number(episode)-4);
+  return EARTH_IN_10_AUTONOMOUS_EPISODES[i%EARTH_IN_10_AUTONOMOUS_EPISODES.length];
+}
+function isEarthIn10(){return /earth\s*in\s*10/i.test(String(SHOW||CONFIG.identity?.show_name||''));}
+function isGenericAutonomousIdea(hook,story){
+  return /^NEXT CHAPTER$/i.test(String(hook||'').trim())||/Continue the configured Creative Bible and canon from the previous accepted beat/i.test(String(story||''));
+}
+
 export function ideaForEpisode(episode){
   const i=Number(episode)-1,initial=CONFIG.content.initial_episodes[i];
   if(initial){
@@ -250,6 +273,10 @@ export function ideaForEpisode(episode){
     if(typeof v==='string')return{hook:'NEW TURN',story:v+' Continuation cycle '+cycle+'. Preserve canon and create a new consequence rather than repeating the previous episode.'};
     return{hook:String(v.hook||'NEW TURN'),story:String(v.story||v.intent||'')+' Continuation cycle '+cycle+'.'};
   }
+  if(isEarthIn10()){
+    const v=earthIn10Idea(episode);
+    return{hook:v.hook,story:v.story};
+  }
   return{hook:'NEXT CHAPTER',story:'Continue the configured Creative Bible and canon from the previous accepted beat. Introduce one new consequential development, resolve one immediate tension, and end with a fresh hook. Do not repeat the previous episode.'};
 }
 export function ensureBacklog(db,minReady=Math.max(9,DAILY_LIMIT*3)){
@@ -260,6 +287,15 @@ export function ensureBacklog(db,minReady=Math.max(9,DAILY_LIMIT*3)){
     const ep=max+k,idea=ideaForEpisode(ep);
     db.prepare("INSERT OR IGNORE INTO factory_items(id,season,episode,hook,story,status,createdAt,updatedAt) VALUES(lower(hex(randomblob(16))),1,?,?,?,?,?,?)")
       .run(ep,idea.hook,idea.story,'draft',t,t);
+  }
+  if(isEarthIn10()){
+    const rows=db.prepare("SELECT id,episode,hook,story,prompt,status FROM factory_items WHERE status='draft' ORDER BY episode").all();
+    for(const row of rows){
+      if(String(row.prompt||'').trim())continue;
+      if(!isGenericAutonomousIdea(row.hook,row.story))continue;
+      const idea=ideaForEpisode(Number(row.episode));
+      db.prepare("UPDATE factory_items SET hook=?,story=?,updatedAt=? WHERE id=?").run(idea.hook,idea.story,t,row.id);
+    }
   }
 }
 export function seedInitial(db){
