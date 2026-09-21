@@ -5,14 +5,13 @@ import { execFileSync, spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { chromium } from 'playwright-core';
 import {
-  CONFIG, SHOW, PROJECT_ID, PROJECT_URL, PROJECT_NAME,
+  CONFIG, SHOW,
   DURATION_SECONDS, DURATION_LABEL, ASPECT_RATIO, OUTPUT_COUNT, OUTPUT_LABEL,
   MODEL_INTENT, RESOLUTION_INTENT, DAILY_LIMIT, CREDIT_PER_GENERATION,
   DAILY_CREDIT_BUDGET, TIMEZONE, registry as configRegistry,
   resolveVisualCharacters, buildPrompt, seedInitial, ensureBacklog
 } from './runtime-config.js';
 
-const FLOW_URL=PROJECT_URL;
 const CHROMIUM_PATH=String(process.env.CHROMIUM_PATH||'/usr/bin/chromium');
 const DATA_DIR=path.resolve(process.env.DATA_DIR||(process.env.RAILWAY_ENVIRONMENT?'/data':'./data'));
 const FACTORY_DIR=path.join(DATA_DIR,'publisher-runtime');
@@ -30,8 +29,18 @@ const DAILY_PRODUCTION_LIMIT=DAILY_LIMIT;
 const CREDITS_PER_GENERATION=CREDIT_PER_GENERATION;
 const DAILY_FLOW_CREDIT_BUDGET=DAILY_CREDIT_BUDGET;
 const PRODUCTION_START_EPISODE=1;
-const escapeRe=v=>String(v??'').replace(/[.*+?^$()|[\]\\]/g,'\\$&');
-function projectPath(){if(!PROJECT_ID)throw new Error('FLOW_PROJECT_NOT_CONFIGURED');return'/project/'+PROJECT_ID}
+const escapeRe=v=>String(v??'').replace(/[.*+?^$()|[\]\\]/g,'\\const escapeRe=v=>String(v??'').replace(/[.*+?^$()|[\]\\]/g,'\\$&');
+function projectPath(){if(!liveProject().id)throw new Error('FLOW_PROJECT_NOT_CONFIGURED');return'/project/'+liveProject().id}');
+function liveProject(){
+  let g={...(CONFIG.generation||{})};
+  try{const p=JSON.parse(fs.readFileSync(path.join(DATA_DIR,'publisher-config.json'),'utf8'));g={...g,...(p.generation||{})}}catch{}
+  try{const v=JSON.parse(fs.readFileSync(path.join(FACTORY_DIR,'flow-auth-verified.json'),'utf8'));if(v?.project_id)g={...g,project_id:v.project_id,project_url:'https://flow.google.com/project/'+v.project_id,project_name:v.project_name||g.project_name}}catch{}
+  const id=String(g.project_id||'').trim(),url=String(g.project_url||(id?'https://flow.google.com/project/'+id:'')).trim(),name=String(g.project_name||CONFIG.identity?.show_name||SHOW||'Flow Project').trim();
+  return{id,url,name};
+}
+function projectPath(){const p=liveProject();if(!p.id)throw new Error('FLOW_PROJECT_NOT_CONFIGURED');return'/project/'+p.id}
+function flowUrl(){const p=liveProject();if(!p.url)throw new Error('FLOW_PROJECT_NOT_CONFIGURED');return p.url}
+function projectName(){return liveProject().name}
 function modelMatches(v){const text=String(v||'');if(!MODEL_INTENT)return true;if(new RegExp(escapeRe(MODEL_INTENT),'i').test(text))return true;if(/omni/i.test(MODEL_INTENT)&&/omni/i.test(text)){if(/flash/i.test(MODEL_INTENT))return/flash/i.test(text);return true}return false}
 const AFTER_GENERATE = new Set(['GENERATION_STARTED','RETRIEVING','RETRIEVAL_PENDING','RETRIEVED','REVIEW_READY']);
 const AMBIGUOUS = new Set(['SUBMIT_BOUNDARY_ENTERED','SUBMIT_AMBIGUOUS']);
@@ -175,9 +184,9 @@ async function classifyPromptTarget(page,editor){
 }
 async function ensureCanonicalProjectTitle(page){
   if(!String(page.url()||'').includes(projectPath()))throw new Error('WRONG_FLOW_PROJECT');const inputs=page.locator('input[aria-label="Editable text"]');let titleInput=null,current='';
-  for(let i=0;i<await inputs.count().catch(()=>0);i++){const el=inputs.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;const b=await el.boundingBox().catch(()=>null);if(!b||b.y>100)continue;titleInput=el;current=String(await el.inputValue().catch(()=>''));break}if(!titleInput)throw new Error('PROJECT_TITLE_CONTROL_NOT_FOUND');if(current.trim()===PROJECT_NAME)return{repaired:false,previous:PROJECT_NAME};
-  const corrupt=current.length>180||/PRODUCTION PROMPT|GENERATION PROMPT|VIDEO FACTORY|PUBLISHER RUNTIME|DURATION \/ FORMAT|ANTI-GLITCH/i.test(current);if(!corrupt)throw new Error('PROJECT_TITLE_UNEXPECTED_VALUE:'+compact(current,120));const previous=compact(current,180);await titleInput.fill(PROJECT_NAME);await titleInput.press('Enter').catch(()=>{});await page.keyboard.press('Tab').catch(()=>{});
-  const deadline=Date.now()+7000;while(Date.now()<deadline){const value=String(await titleInput.inputValue().catch(()=>''));if(value.trim()===PROJECT_NAME){publish('PROJECT_TITLE_REPAIRED',{message:'Flow project title restored to configured publisher project.'});return{repaired:true,previous}}await sleep(250)}throw new Error('PROJECT_TITLE_REPAIR_NOT_CONFIRMED');
+  for(let i=0;i<await inputs.count().catch(()=>0);i++){const el=inputs.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;const b=await el.boundingBox().catch(()=>null);if(!b||b.y>100)continue;titleInput=el;current=String(await el.inputValue().catch(()=>''));break}if(!titleInput)throw new Error('PROJECT_TITLE_CONTROL_NOT_FOUND');if(current.trim()===projectName())return{repaired:false,previous:projectName()};
+  const corrupt=current.length>180||/PRODUCTION PROMPT|GENERATION PROMPT|VIDEO FACTORY|PUBLISHER RUNTIME|DURATION \/ FORMAT|ANTI-GLITCH/i.test(current);if(!corrupt)throw new Error('PROJECT_TITLE_UNEXPECTED_VALUE:'+compact(current,120));const previous=compact(current,180);await titleInput.fill(projectName());await titleInput.press('Enter').catch(()=>{});await page.keyboard.press('Tab').catch(()=>{});
+  const deadline=Date.now()+7000;while(Date.now()<deadline){const value=String(await titleInput.inputValue().catch(()=>''));if(value.trim()===projectName()){publish('PROJECT_TITLE_REPAIRED',{message:'Flow project title restored to configured publisher project.'});return{repaired:true,previous}}await sleep(250)}throw new Error('PROJECT_TITLE_REPAIR_NOT_CONFIRMED');
 }
 async function projectTitleDiagnostic(page){
   try{const rows=await page.evaluate(()=>{const out=[];for(const el of document.querySelectorAll('input,textarea,[contenteditable="true"],button,[role="button"],[role="textbox"],h1,h2,[aria-label]')){const r=el.getBoundingClientRect();if(r.width<4||r.height<4||r.y<0||r.y>220)continue;const text=String((typeof el.value==='string'&&el.value)||el.innerText||el.textContent||'').replace(/\s+/g,' ').trim(),aria=String(el.getAttribute('aria-label')||'').trim(),title=String(el.getAttribute('title')||'').trim();if(!text&&!aria&&!title)continue;out.push({tag:el.tagName.toLowerCase(),text:text.slice(0,180),aria:aria.slice(0,120),title:title.slice(0,120),x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)});if(out.length>=60)break}return out});const diag={at:now(),document_title:compact(await page.title().catch(()=>''),260),url:compact(page.url(),220),candidates:rows};try{fs.writeFileSync(path.join(FACTORY_DIR,'flow-project-title-diagnostic.json'),JSON.stringify(diag,null,2),{mode:0o600})}catch{}publish('PROJECT_TITLE_REPAIR_REQUIRED',{message:'Configured Flow project title could not be verified.',evidence:JSON.stringify(rows.slice(0,8)).slice(0,900)});return diag}catch{return null}
@@ -185,17 +194,17 @@ async function projectTitleDiagnostic(page){
 async function repairProjectTitleIfContaminated(page){
   if(!String(page.url()||'').includes(projectPath()))throw new Error('WRONG_FLOW_PROJECT');const more=page.getByRole('button',{name:/More options for the project/i}).last();if(!(await more.count().catch(()=>0))||!(await more.isVisible().catch(()=>false)))throw new Error('PROJECT_TITLE_CONTEXT_NOT_FOUND');
   const inputs=page.locator('input[aria-label="Editable text"]');let titleInput=null;for(let i=0;i<await inputs.count().catch(()=>0);i++){const el=inputs.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;const b=await el.boundingBox().catch(()=>null);if(!b||b.y>100||b.x>240||b.width>320)continue;titleInput=el;break}if(!titleInput)throw new Error('PROJECT_TITLE_INPUT_NOT_FOUND');
-  const current=String(await titleInput.inputValue().catch(()=>'')).replace(/\s+/g,' ').trim();if(current===PROJECT_NAME)return{repaired:false,before:current,after:PROJECT_NAME};const contaminated=current.length>180||/PRODUCTION PROMPT|GENERATION PROMPT|VIDEO FACTORY|PUBLISHER RUNTIME|DURATION \/ FORMAT|ANTI-GLITCH/i.test(current);if(!contaminated)throw new Error('PROJECT_TITLE_UNEXPECTED_VALUE:'+compact(current,120));
-  await titleInput.fill(PROJECT_NAME);await titleInput.press('Enter').catch(()=>{});await page.keyboard.press('Tab').catch(()=>{});await sleep(1000);const after=String(await titleInput.inputValue().catch(()=>'')).replace(/\s+/g,' ').trim();if(after!==PROJECT_NAME)throw new Error('PROJECT_TITLE_REPAIR_NOT_PERSISTED:'+compact(after,120));publish('PROJECT_TITLE_REPAIRED',{message:'Configured Flow project title restored; no generation submitted.'});return{repaired:true,before:compact(current,180),after};
+  const current=String(await titleInput.inputValue().catch(()=>'')).replace(/\s+/g,' ').trim();if(current===projectName())return{repaired:false,before:current,after:projectName()};const contaminated=current.length>180||/PRODUCTION PROMPT|GENERATION PROMPT|VIDEO FACTORY|PUBLISHER RUNTIME|DURATION \/ FORMAT|ANTI-GLITCH/i.test(current);if(!contaminated)throw new Error('PROJECT_TITLE_UNEXPECTED_VALUE:'+compact(current,120));
+  await titleInput.fill(projectName());await titleInput.press('Enter').catch(()=>{});await page.keyboard.press('Tab').catch(()=>{});await sleep(1000);const after=String(await titleInput.inputValue().catch(()=>'')).replace(/\s+/g,' ').trim();if(after!==projectName())throw new Error('PROJECT_TITLE_REPAIR_NOT_PERSISTED:'+compact(after,120));publish('PROJECT_TITLE_REPAIRED',{message:'Configured Flow project title restored; no generation submitted.'});return{repaired:true,before:compact(current,180),after};
 }
 async function verifyProjectIdentity(page,payload=''){
-  if(!PROJECT_ID||!String(page.url()||'').includes(projectPath()))throw new Error('WRONG_FLOW_PROJECT');const inputs=page.locator('input[aria-label="Editable text"]');let titleInput=null,titleValue='';
+  if(!liveProject().id||!String(page.url()||'').includes(projectPath()))throw new Error('WRONG_FLOW_PROJECT');const inputs=page.locator('input[aria-label="Editable text"]');let titleInput=null,titleValue='';
   for(let i=0;i<await inputs.count().catch(()=>0);i++){const el=inputs.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;const b=await el.boundingBox().catch(()=>null);if(!b||b.y>100)continue;titleInput=el;titleValue=String(await el.inputValue().catch(()=>'')).trim();break}
-  if(!titleInput)throw new Error('PROJECT_TITLE_CONTROL_NOT_FOUND');const prefix=compact(payload,120);if(titleValue!==PROJECT_NAME)throw new Error('PROJECT_TITLE_NOT_CONFIGURED:'+compact(titleValue,120));if(prefix&&titleValue.includes(prefix))throw new Error('PROJECT_TITLE_CONTAMINATED_WITH_PROMPT');
-  return{project:PROJECT_NAME,project_id:PROJECT_ID,title_verified:true,source:'exact-project-title-input',document_title_observed:compact(await page.title().catch(()=>''),300)};
+  if(!titleInput)throw new Error('PROJECT_TITLE_CONTROL_NOT_FOUND');const prefix=compact(payload,120);if(titleValue!==projectName())throw new Error('PROJECT_TITLE_NOT_CONFIGURED:'+compact(titleValue,120));if(prefix&&titleValue.includes(prefix))throw new Error('PROJECT_TITLE_CONTAMINATED_WITH_PROMPT');
+  return{project:projectName(),project_id:liveProject().id,title_verified:true,source:'exact-project-title-input',document_title_observed:compact(await page.title().catch(()=>''),300)};
 }
 async function waitFlowReady(page,timeout=60000){
-  if(!PROJECT_ID)throw new Error('FLOW_PROJECT_NOT_CONFIGURED');const deadline=Date.now()+timeout;
+  if(!liveProject().id)throw new Error('FLOW_PROJECT_NOT_CONFIGURED');const deadline=Date.now()+timeout;
   while(Date.now()<deadline){const url=String(page.url()||'');if(/accounts\.google\.com|signin|ServiceLogin/i.test(url))throw new Error('FLOW_AUTH_REQUIRED');const text=(await getBody(page)).slice(0,12000);if(/verify it'?s you|captcha|security check|email or phone|enter your password/i.test(text))throw new Error('FLOW_AUTH_CHALLENGE');if(url.includes(projectPath())){try{const editor=await promptEditor(page),send=page.getByRole('button',{name:/Start generation/i}).last();if(await editor.isVisible().catch(()=>false)&&await send.isVisible().catch(()=>false))return editor}catch{}}await sleep(500)}throw new Error('FLOW_NOT_READY:'+compact(page.url(),200));
 }
 function cleanChromiumLocks() {
@@ -242,7 +251,7 @@ async function launchLocal() {
     '--disable-background-networking','--disable-component-update','--disable-sync','--disable-extensions','--disable-default-apps',
     '--metrics-recording-only','--no-first-run','--no-default-browser-check','--password-store=basic',
     '--js-flags=--max-old-space-size=160','--window-size=1024,700',
-    FLOW_URL
+    flowUrl()
   ],{env,stdio:['ignore','ignore','pipe']});
   let chromeErr='';chrome.stderr?.on('data',d=>{chromeErr=(chromeErr+String(d)).slice(-3000);});
 
@@ -289,7 +298,7 @@ async function seedPersistentProfile(storage, ua='') {
       try { await p.goto(origin.origin,{waitUntil:'domcontentloaded',timeout:30000}); await p.evaluate(items=>{for(const i of items)localStorage.setItem(i.name,i.value);},origin.localStorage); } catch {}
       try { await p.close(); } catch {}
     }
-    const p = ctx.pages()[0] || await ctx.newPage(); await p.goto(FLOW_URL,{waitUntil:'domcontentloaded',timeout:60000}); await waitFlowReady(p,60000);
+    const p = ctx.pages()[0] || await ctx.newPage(); await p.goto(flowUrl(),{waitUntil:'domcontentloaded',timeout:60000}); await waitFlowReady(p,60000);
   } finally { await ctx.close().catch(()=>{}); }
 }
 async function migrateProfileOnce(db) {
@@ -694,7 +703,7 @@ async function retrieveExisting(page,row,cp,lc,db){setLifecycle(db,row,'RETRIEVI
 async function processRow(db,row){
   const cp=preparePromptIfNeeded(db,row);row=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);let lc=lifecycle(db,row);const state=String(lc?.state||'').toUpperCase(),session=await launchLocal(),context=session.context;
   try{
-    const page=session.page||context.pages()[0]||await context.newPage();if(!String(page.url()).includes(projectPath()))await page.goto(FLOW_URL,{waitUntil:'domcontentloaded',timeout:60000});await waitFlowReady(page,60000);
+    const page=session.page||context.pages()[0]||await context.newPage();if(!String(page.url()).includes(projectPath()))await page.goto(flowUrl(),{waitUntil:'domcontentloaded',timeout:60000});await waitFlowReady(page,60000);
     if(AFTER_GENERATE.has(state))return await retrieveExisting(page,row,cp,lc,db);
     if(AMBIGUOUS.has(state)){const reconciled=await reconcileAmbiguousGeneric(page,row,lc,db);if(reconciled.mode==='retrieve')return await retrieveExisting(page,row,cp,reconciled.lifecycle,db);return false}
     const reviewerRetry=isReviewerRetry(row);
