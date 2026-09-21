@@ -55,7 +55,19 @@ function dailyGenerationCount(db, day=artDay()) {
 }
 function reconcileGenerationCreditAccounting(db){
   try{
-    db.prepare("UPDATE factory_generations SET credits=? WHERE credits>0 AND (runId='manual-flow-demo' OR runId LIKE 'free-%') AND credits<>?").run(CREDITS_PER_GENERATION,CREDITS_PER_GENERATION);
+    db.prepare("UPDATE factory_generations SET credits=? WHERE credits>0 AND status NOT IN ('no_generation','infra_rejected') AND (runId='manual-flow-demo' OR runId LIKE 'free-%') AND credits<>?").run(CREDITS_PER_GENERATION,CREDITS_PER_GENERATION);
+  }catch{}
+  try{
+    const stale=db.prepare("SELECT id,providerRunId,reviewRetryToken,reviewRetrySubmittedToken FROM factory_items WHERE status='generating' AND videoPath IS NULL AND error LIKE '%RENDER_TIMEOUT%'").all();
+    for(const row of stale){
+      const reviewerConsumed=String(row.reviewRetryToken||'')&&String(row.reviewRetryToken||'')===String(row.reviewRetrySubmittedToken||'');
+      if(reviewerConsumed)continue;
+      const run=String(row.providerRunId||'');
+      if(run)db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='No Flow render was produced; released from daily accounting.',updatedAt=? WHERE itemId=? AND runId=? AND status='running'").run(now(),row.id,run);
+      db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
+      setLifecycle(db,row,'RECONCILED_NO_GENERATION',{prior_generation_id:run,reconciled_at:now(),evidence:'Runtime render timeout with zero playable videos and zero fresh Flow tiles; released for a clean submit retry.'});
+      publish('STALE_FALSE_START_RELEASED',{job_id:row.id,message:'False generation start removed from daily accounting; job returned to draft.'});
+    }
   }catch{}
 }
 function ensureProductionPlan(db){
@@ -622,52 +634,39 @@ async function preflight(page,row,cp){
 }
 async function currentVideos(page){return await page.locator('video').evaluateAll(vs=>vs.map((v,i)=>({i,src:v.currentSrc||v.src||'',duration:Number(v.duration||0),readyState:Number(v.readyState||0),w:Number(v.videoWidth||0),h:Number(v.videoHeight||0)}))).catch(()=>[]);}
 async function clickSubmitExactlyOnce(page){
-  const candidates=[];
+  let send=null,sendLabel='';
   const buttons=page.locator('button,[role="button"]');
-  for(let i=0;i<Math.min(await buttons.count().catch(()=>0),120);i++){
-    const b=buttons.nth(i);if(!(await b.isVisible().catch(()=>false))||!(await b.isEnabled().catch(()=>false)))continue;
-    const label=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||'')+' '+((await b.getAttribute('title').catch(()=>''))||''),180),n=norm(label);
-    let score=0;
-    if(/^start generation$/.test(n))score=100;
-    else if(/start generation/.test(n))score=90;
-    else if(/^generate$/.test(n))score=82;
-    else if(/^(generate|create|start) (video|clip|generation)$/.test(n))score=78;
-    else if(/generate/.test(n)&&/video|clip|generation/.test(n))score=68;
-    if(/settings|download|export|ingredient|prompt|clear|history|share|cancel|stop/.test(n))score=0;
-    if(score>0){const box=await b.boundingBox().catch(()=>null);candidates.push({b,label,score,box})}
+  const ranked=[];
+  for(let i=0;i<Math.min(await buttons.count().catch(()=>0),140);i++){
+    const b=buttons.nth(i);
+    if(!(await b.isVisible().catch(()=>false))||!(await b.isEnabled().catch(()=>false)))continue;
+    const text=compact(((await b.innerText().catch(()=>''))||'')+' '+((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.getAttribute('title').catch(()=>''))||''),180);
+    const n=norm(text);let score=0;
+    if(/arrow_forward/.test(text))score=120;
+    else if(/^send$/.test(n)||/^submit$/.test(n))score=115;
+    else if(/send prompt|submit prompt|generate video/.test(n))score=108;
+    else if(/^start generation$/.test(n))score=70;
+    if(/settings|download|export|ingredient|clear|history|share|cancel|stop/.test(n))score=0;
+    if(score)ranked.push({b,text,score});
   }
-  candidates.sort((a,b)=>b.score-a.score||((b.box?.y||0)-(a.box?.y||0)));
-  const first=candidates[0];
-  if(!first)throw new Error('START_GENERATION_BUTTON_NOT_READY');
-  await clickInteractive(first.b);await sleep(700);
+  ranked.sort((a,b)=>b.score-a.score);
+  if(ranked[0]){send=ranked[0].b;sendLabel=ranked[0].text}
+  if(!send)throw new Error('FLOW_SEND_BUTTON_NOT_READY');
+  await clickInteractive(send);
+  publish('SUBMIT_SEND_CLICKED',{message:sendLabel||'composer send'});
+  await sleep(900);
 
-  // Some Flow versions show a second confirmation sheet/dialog. Click exactly one
-  // confirmation only when it is clearly a generation action, never a generic button.
-  const roots=[page.getByRole('dialog'),page.locator('[role="alertdialog"]'),page.locator('body')];
-  for(const root of roots){
-    if(root!==roots[2]&&(!(await root.count().catch(()=>0))||!(await root.last().isVisible().catch(()=>false))))continue;
-    const scope=root===roots[2]?root:root.last(),bs=scope.locator('button,[role="button"]'),conf=[];
-    for(let i=0;i<Math.min(await bs.count().catch(()=>0),60);i++){
-      const b=bs.nth(i);if(!(await b.isVisible().catch(()=>false))||!(await b.isEnabled().catch(()=>false)))continue;
-      if(await b.evaluate(el=>el===document.activeElement).catch(()=>false) && b===first.b)continue;
-      const label=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||'')+' '+((await b.getAttribute('title').catch(()=>''))||''),160),n=norm(label);
-      if(/cancel|back|close|settings|download|export|ingredient|prompt|clear|history|share|stop/.test(n))continue;
-      let score=0;
-      if(/^generate$/.test(n))score=100;
-      else if(/^(generate|create|start) (video|clip|generation)( now)?$/.test(n))score=95;
-      else if(/^confirm (generation|generate)$/.test(n))score=92;
-      else if(/generate/.test(n)&&/video|clip|generation|now/.test(n))score=85;
-      if(score>0)conf.push({b,label,score});
+  const gens=page.getByRole('button',{name:/^Generate$/i});
+  for(let i=(await gens.count().catch(()=>0))-1;i>=0;i--){
+    const g=gens.nth(i);
+    if(await g.isVisible().catch(()=>false)&&await g.isEnabled().catch(()=>false)){
+      await clickInteractive(g);
+      publish('SUBMIT_CONFIRMATION_CLICKED',{message:'Generate'});
+      await sleep(500);
+      return'composer-send-confirm-generate';
     }
-    conf.sort((a,b)=>b.score-a.score);
-    if(conf[0]){
-      // Do not click the same Start generation control a second time.
-      const same=await conf[0].b.evaluate((el,txt)=>String(el.getAttribute('aria-label')||el.innerText||'').trim()===txt,[first.label]).catch(()=>false);
-      if(!same){await clickInteractive(conf[0].b);publish('SUBMIT_CONFIRMATION_CLICKED',{message:conf[0].label});await sleep(450);return'confirmation-'+norm(conf[0].label).replace(/ /g,'-').slice(0,60)}
-    }
-    if(root!==roots[2])break;
   }
-  return'start-generation-direct';
+  return'composer-send-direct';
 }
 async function renderAuthGuard(page){
   const url=String(page.url()||'');
@@ -737,24 +736,20 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
 }
 async function waitGenerationStarted(page,baseline,baselineInventory,timeout=90000){
   const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean)),startedAt=Date.now(),deadline=startedAt+timeout;
-  let transitionedSince=0,lastEvidence='';
+  let lastEvidence='';
   while(Date.now()<deadline){
     await renderAuthGuard(page);
-    const vids=await currentVideos(page),freshVideo=vids.some(v=>v.src&&!baseSrc.has(v.src));
-    const inv=await captureFlowInventory(page),tileCountIncreased=Number(inv.tile_count||0)>Number(baselineInventory?.tile_count||0);
-    const send=page.getByRole('button',{name:/Start generation/i}).last(),sendVisible=await send.isVisible().catch(()=>false),sendDisabled=await send.isDisabled().catch(()=>false);
-    const body=compact(await getBody(page),16000),busyText=/generating|processing|rendering|creating video|generando|procesando|starting generation|initiating|queued|in queue|preparing/i.test(body);
-    const stopControl=await page.getByRole('button',{name:/Stop generation|Cancel generation|Stop|Cancel render/i}).count().catch(()=>0)>0;
+    const vids=await currentVideos(page);
+    const freshVideo=vids.some(v=>v.src&&!baseSrc.has(v.src));
+    const inv=await captureFlowInventory(page);
+    const tileCountIncreased=Number(inv.tile_count||0)>Number(baselineInventory?.tile_count||0);
+    const signatureChanged=inventoryHasNew(inv,baselineInventory);
     const elapsed=Date.now()-startedAt;
-    const transitioned=!sendVisible||sendDisabled;
-    if(transitioned&&!transitionedSince)transitionedSince=Date.now();
-    if(!transitioned)transitionedSince=0;
-    const stableControlTransition=Boolean(transitionedSince&&Date.now()-transitionedSince>=1800);
-    lastEvidence=`freshVideo=${freshVideo}; tileCountIncreased=${tileCountIncreased}; sendVisible=${sendVisible}; sendDisabled=${sendDisabled}; busyText=${busyText}; stopControl=${stopControl}; stableTransition=${stableControlTransition}; elapsedMs=${elapsed}`;
-    if(freshVideo||tileCountIncreased||busyText||stopControl||stableControlTransition)return{started:true,evidence:lastEvidence,videos:vids,inventory:inv};
-    await sleep(800);
+    lastEvidence=`freshVideo=${freshVideo}; tileCount=${baselineInventory?.tile_count||0}->${inv.tile_count||0}; signatureChanged=${signatureChanged}; elapsedMs=${elapsed}`;
+    if(freshVideo||tileCountIncreased||signatureChanged)return{started:true,evidence:lastEvidence,videos:vids,inventory:inv};
+    await sleep(900);
   }
-  return{started:false,evidence:'No post-submit evidence. '+lastEvidence};
+  return{started:false,evidence:'No hard Flow generation evidence after submit. '+lastEvidence};
 }
 function firstFreshRendered(vids,baseline){
   const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean));
