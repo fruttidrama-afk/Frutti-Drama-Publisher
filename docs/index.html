@@ -224,6 +224,9 @@ ${request}
 7. If a screenshot is included in this ZIP, use it as evidence of the issue/request.
 `;
   zip.file("README-FIRST.md",readme);zip.file("publisher-metadata.json",JSON.stringify(meta,null,2));zip.file("publisher-config.json",JSON.stringify(modPublisher.config||{},null,2));zip.file("modification-request.txt",request);
+  const sourceFiles=["server.js","runtime-config.js","runtime-init.js","flow-bootstrap.js","free-browser-provider.js","publication.js","publication-copy.js","public/index.html","Dockerfile","railway.toml","package.json"];
+  for(const path of sourceFiles){try{const r=await fetch("https://raw.githubusercontent.com/fruttidrama-afk/Frutti-Drama-Publisher/main/"+path,{cache:"no-store"});if(r.ok)zip.file("source/"+path,await r.text())}catch{}}
+  for(const [name,url] of [["reference-image",meta.reference_image_url],["official-logo",meta.logo_url]]){if(!url)continue;try{const r=await fetch(url,{cache:"no-store"});if(r.ok){const blob=await r.blob(),ext=(blob.type.split("/")[1]||"bin").replace("svg+xml","svg").replace(/[^a-z0-9]+/gi,"");zip.file("branding/"+name+"."+ext,blob)}}catch{}}
   await sb.from("publisher_modification_requests").insert({publisher_id:modPublisher.id,owner_id:user.id,request,screenshot_url:screenshotUrl});
   const blob=await zip.generateAsync({type:"blob",compression:"DEFLATE",compressionOptions:{level:6}}),file=new File([blob],(modPublisher.name||"publisher").replace(/[^a-z0-9]+/gi,"-").toLowerCase()+"-chatgpt-context.zip",{type:"application/zip"});
   $("#modifyStatus").textContent="Paquete listo ✓";return{blob,file,request}
