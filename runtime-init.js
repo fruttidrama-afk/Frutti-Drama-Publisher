@@ -63,6 +63,11 @@ CREATE TABLE IF NOT EXISTS factory_items(
  reviewOriginalSize INTEGER,
  reviewPreviewSize INTEGER,
  reviewArchiveError TEXT,
+ reviewFeedback TEXT,
+ retryStrategy TEXT,
+ reviewRetryToken TEXT,
+ reviewRetrySubmittedToken TEXT,
+ reviewContentHash TEXT,
  createdAt TEXT NOT NULL,
  updatedAt TEXT NOT NULL
 );
@@ -78,7 +83,8 @@ CREATE TABLE IF NOT EXISTS factory_generations(
  runId TEXT,
  createdAt TEXT NOT NULL,
  updatedAt TEXT NOT NULL,
- error TEXT
+ error TEXT,
+ generationKind TEXT NOT NULL DEFAULT 'automatic'
 );
 CREATE INDEX IF NOT EXISTS factory_generations_day_idx ON factory_generations(day,createdAt);
 CREATE TABLE IF NOT EXISTS factory_alerts(
