@@ -622,11 +622,51 @@ async function preflight(page,row,cp){
 }
 async function currentVideos(page){return await page.locator('video').evaluateAll(vs=>vs.map((v,i)=>({i,src:v.currentSrc||v.src||'',duration:Number(v.duration||0),readyState:Number(v.readyState||0),w:Number(v.videoWidth||0),h:Number(v.videoHeight||0)}))).catch(()=>[]);}
 async function clickSubmitExactlyOnce(page){
-  const send=page.getByRole('button',{name:/Start generation/i}).last();
-  if(!(await send.count().catch(()=>0))||!(await send.isVisible().catch(()=>false))||!(await send.isEnabled().catch(()=>false)))throw new Error('START_GENERATION_BUTTON_NOT_READY');
-  await send.click();await sleep(650);
-  const gens=page.getByRole('button',{name:/^Generate$/i});
-  for(let i=(await gens.count().catch(()=>0))-1;i>=0;i--){const c=gens.nth(i);if(await c.isVisible().catch(()=>false)&&await c.isEnabled().catch(()=>false)){await c.click();return'confirmation-generate';}}
+  const candidates=[];
+  const buttons=page.locator('button,[role="button"]');
+  for(let i=0;i<Math.min(await buttons.count().catch(()=>0),120);i++){
+    const b=buttons.nth(i);if(!(await b.isVisible().catch(()=>false))||!(await b.isEnabled().catch(()=>false)))continue;
+    const label=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||'')+' '+((await b.getAttribute('title').catch(()=>''))||''),180),n=norm(label);
+    let score=0;
+    if(/^start generation$/.test(n))score=100;
+    else if(/start generation/.test(n))score=90;
+    else if(/^generate$/.test(n))score=82;
+    else if(/^(generate|create|start) (video|clip|generation)$/.test(n))score=78;
+    else if(/generate/.test(n)&&/video|clip|generation/.test(n))score=68;
+    if(/settings|download|export|ingredient|prompt|clear|history|share|cancel|stop/.test(n))score=0;
+    if(score>0){const box=await b.boundingBox().catch(()=>null);candidates.push({b,label,score,box})}
+  }
+  candidates.sort((a,b)=>b.score-a.score||((b.box?.y||0)-(a.box?.y||0)));
+  const first=candidates[0];
+  if(!first)throw new Error('START_GENERATION_BUTTON_NOT_READY');
+  await clickInteractive(first.b);await sleep(700);
+
+  // Some Flow versions show a second confirmation sheet/dialog. Click exactly one
+  // confirmation only when it is clearly a generation action, never a generic button.
+  const roots=[page.getByRole('dialog'),page.locator('[role="alertdialog"]'),page.locator('body')];
+  for(const root of roots){
+    if(root!==roots[2]&&(!(await root.count().catch(()=>0))||!(await root.last().isVisible().catch(()=>false))))continue;
+    const scope=root===roots[2]?root:root.last(),bs=scope.locator('button,[role="button"]'),conf=[];
+    for(let i=0;i<Math.min(await bs.count().catch(()=>0),60);i++){
+      const b=bs.nth(i);if(!(await b.isVisible().catch(()=>false))||!(await b.isEnabled().catch(()=>false)))continue;
+      if(await b.evaluate(el=>el===document.activeElement).catch(()=>false) && b===first.b)continue;
+      const label=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||'')+' '+((await b.getAttribute('title').catch(()=>''))||''),160),n=norm(label);
+      if(/cancel|back|close|settings|download|export|ingredient|prompt|clear|history|share|stop/.test(n))continue;
+      let score=0;
+      if(/^generate$/.test(n))score=100;
+      else if(/^(generate|create|start) (video|clip|generation)( now)?$/.test(n))score=95;
+      else if(/^confirm (generation|generate)$/.test(n))score=92;
+      else if(/generate/.test(n)&&/video|clip|generation|now/.test(n))score=85;
+      if(score>0)conf.push({b,label,score});
+    }
+    conf.sort((a,b)=>b.score-a.score);
+    if(conf[0]){
+      // Do not click the same Start generation control a second time.
+      const same=await conf[0].b.evaluate((el,txt)=>String(el.getAttribute('aria-label')||el.innerText||'').trim()===txt,[first.label]).catch(()=>false);
+      if(!same){await clickInteractive(conf[0].b);publish('SUBMIT_CONFIRMATION_CLICKED',{message:conf[0].label});await sleep(450);return'confirmation-'+norm(conf[0].label).replace(/ /g,'-').slice(0,60)}
+    }
+    if(root!==roots[2])break;
+  }
   return'start-generation-direct';
 }
 async function renderAuthGuard(page){
@@ -697,18 +737,24 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
 }
 async function waitGenerationStarted(page,baseline,baselineInventory,timeout=90000){
   const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean)),startedAt=Date.now(),deadline=startedAt+timeout;
+  let transitionedSince=0,lastEvidence='';
   while(Date.now()<deadline){
     await renderAuthGuard(page);
     const vids=await currentVideos(page),freshVideo=vids.some(v=>v.src&&!baseSrc.has(v.src));
     const inv=await captureFlowInventory(page),tileCountIncreased=Number(inv.tile_count||0)>Number(baselineInventory?.tile_count||0);
     const send=page.getByRole('button',{name:/Start generation/i}).last(),sendVisible=await send.isVisible().catch(()=>false),sendDisabled=await send.isDisabled().catch(()=>false);
-    const busyEls=page.locator('text=/Generating|Processing|Rendering|Creating video|Generando|Procesando|Starting generation|Initiating/i');
-    let visibleBusy=0;for(let i=0;i<Math.min(await busyEls.count().catch(()=>0),40);i++)if(await busyEls.nth(i).isVisible().catch(()=>false))visibleBusy++;
-    const elapsed=Date.now()-startedAt,controlTransition=elapsed>=1200&&(!sendVisible||sendDisabled)&&visibleBusy>0;
-    if(freshVideo||tileCountIncreased||controlTransition)return{started:true,evidence:`freshVideo=${freshVideo}; tileCountIncreased=${tileCountIncreased}; controlTransition=${controlTransition}; elapsedMs=${elapsed}`,videos:vids,inventory:inv};
-    await sleep(1000);
+    const body=compact(await getBody(page),16000),busyText=/generating|processing|rendering|creating video|generando|procesando|starting generation|initiating|queued|in queue|preparing/i.test(body);
+    const stopControl=await page.getByRole('button',{name:/Stop generation|Cancel generation|Stop|Cancel render/i}).count().catch(()=>0)>0;
+    const elapsed=Date.now()-startedAt;
+    const transitioned=!sendVisible||sendDisabled;
+    if(transitioned&&!transitionedSince)transitionedSince=Date.now();
+    if(!transitioned)transitionedSince=0;
+    const stableControlTransition=Boolean(transitionedSince&&Date.now()-transitionedSince>=1800);
+    lastEvidence=`freshVideo=${freshVideo}; tileCountIncreased=${tileCountIncreased}; sendVisible=${sendVisible}; sendDisabled=${sendDisabled}; busyText=${busyText}; stopControl=${stopControl}; stableTransition=${stableControlTransition}; elapsedMs=${elapsed}`;
+    if(freshVideo||tileCountIncreased||busyText||stopControl||stableControlTransition)return{started:true,evidence:lastEvidence,videos:vids,inventory:inv};
+    await sleep(800);
   }
-  return{started:false,evidence:'No post-submit video, tile-count increase, or generation-control transition'};
+  return{started:false,evidence:'No post-submit evidence. '+lastEvidence};
 }
 function firstFreshRendered(vids,baseline){
   const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean));
