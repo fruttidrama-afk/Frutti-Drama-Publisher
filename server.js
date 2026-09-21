@@ -15,6 +15,7 @@ import {
 } from '@simplewebauthn/server';
 import { CONFIG,PROJECT_ID,PROJECT_NAME,PROJECT_URL,DAILY_LIMIT,TIMEZONE,ideaForEpisode,ensureBacklog } from './runtime-config.js';
 import { installPublication } from './publication.js';
+import { buildPublicationCopy } from './publication-copy.js';
 
 google.options({timeout:90000,retry:false});
 const app=express(),PORT=Number(process.env.PORT||8080);
@@ -23,6 +24,14 @@ const AUTH_PATH=path.join(DIR,'auth.json'),SECRET_PATH=path.join(DIR,'secrets.js
 const SESSION_COOKIE='publisher_session',TTL=30*24*60*60*1000;
 fs.mkdirSync(DIR,{recursive:true,mode:0o700});
 const db=new DatabaseSync(DB_PATH,{timeout:5000});
+for(const sql of [
+  "ALTER TABLE factory_items ADD COLUMN reviewFeedback TEXT",
+  "ALTER TABLE factory_items ADD COLUMN retryStrategy TEXT",
+  "ALTER TABLE factory_items ADD COLUMN reviewRetryToken TEXT",
+  "ALTER TABLE factory_items ADD COLUMN reviewRetrySubmittedToken TEXT",
+  "ALTER TABLE factory_items ADD COLUMN reviewContentHash TEXT",
+  "ALTER TABLE factory_generations ADD COLUMN generationKind TEXT NOT NULL DEFAULT 'automatic'"
+]){try{db.exec(sql)}catch{}}
 
 app.use(express.json({limit:'2mb'}));
 app.use(express.urlencoded({extended:false,limit:'256kb'}));
@@ -95,17 +104,65 @@ app.get('/oauth2callback',async(req,res)=>{try{const y=ytSecrets();if(!req.query
 
 function stream(req,res,file){const st=fs.statSync(file),range=req.headers.range;res.set('Accept-Ranges','bytes');res.set('Content-Type','video/mp4');res.set('Cache-Control','private,no-store');if(!range){res.set('Content-Length',String(st.size));return fs.createReadStream(file).pipe(res)}const m=/^bytes=(\d*)-(\d*)$/.exec(range);if(!m)return res.sendStatus(416);const a=m[1]?Number(m[1]):0,b=m[2]?Number(m[2]):st.size-1;if(a<0||b<a||b>=st.size)return res.sendStatus(416);res.status(206).set('Content-Range','bytes '+a+'-'+b+'/'+st.size).set('Content-Length',String(b-a+1));fs.createReadStream(file,{start:a,end:b}).pipe(res)}
 function ensureCopy(row){
- if(row.title&&row.description)return row;
- const provider=(CONFIG.publication.providers||[]).find(x=>x.type==='youtube')||{},tags=(provider.hashtags||[]).join(' '),story=String(row.story||'').replace(/\s+/g,' ').trim(),hook=String(row.hook||'EPISODE').trim();
- let title=(hook+': '+story+(tags?' '+tags:'')).replace(/[<>]/g,' ').replace(/\s+/g,' ').trim();if(title.length>100)title=title.slice(0,97).trimEnd()+'...';
- let description=(story+'\n\n'+CONFIG.identity.show_name+(tags?'\n\n'+tags:'')).replace(/[<>]/g,' ').trim();while(Buffer.byteLength(description,'utf8')>4800)description=description.slice(0,-30).trimEnd();
- db.prepare('UPDATE factory_items SET title=?,description=?,updatedAt=? WHERE id=?').run(title,description,now(),row.id);return{...row,title,description};
+ const provider=(CONFIG.publication.providers||[]).find(x=>x.type==='youtube')||{};
+ const copy=buildPublicationCopy({
+   hook:row.hook,
+   story:row.story,
+   hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+   showName:CONFIG.identity.show_name,
+   maxTitleLength:100
+ });
+ let description=copy.description;
+ while(Buffer.byteLength(description,'utf8')>4800)description=description.slice(0,-30).trimEnd();
+ if(row.title!==copy.title||row.description!==description){
+   db.prepare('UPDATE factory_items SET title=?,description=?,updatedAt=? WHERE id=?').run(copy.title,description,now(),row.id);
+ }
+ return{...row,title:copy.title,description};
+}
+function classifyReviewFeedback(value){
+ const t=String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+ const promptSignals=[
+   /dialog|speaker|habla|dice|voice|voz|linea|frase|texto/,
+   /historia|story|accion|orden|beat|escena|falt|deberia|no hizo|no mostro|no dijo/,
+   /personaje equivocado|wrong character|falta personaje|extra character|continuidad|canon|ubicacion|apariencia|reference/,
+   /camara|duracion|tono|luz|lighting/
+ ];
+ if(promptSignals.some(x=>x.test(t)))return'revise_prompt';
+ const stochastic=[
+   /glitch|artifact|artefact|render|deform|flicker|blur|borros|pixel|frame|freeze|congel/,
+   /lip sync|desincron|audio corrido|audio desfas|mano rara|brazo raro|pierna rara|extra limb|cara rara|duplicado|clon/
+ ];
+ if(stochastic.some(x=>x.test(t)))return'reuse_prompt';
+ return'revise_prompt';
 }
 function card(row){row=ensureCopy(row);return{id:row.id,episode:row.episode,hook:row.hook,story:row.story,title:row.title,description:row.description,status:row.status,videoUrl:row.status==='review'&&row.videoPath?'/factory/video/'+encodeURIComponent(row.id):null,archivedOriginal:Boolean(row.reviewVideoId),updatedAt:row.updatedAt,error:row.error}}
 app.get('/factory/cards',(req,res)=>res.json({cards:db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode LIMIT 50").all().map(card)}));
 app.get('/factory/video/:id',(req,res)=>{const r=db.prepare("SELECT videoPath,status FROM factory_items WHERE id=?").get(req.params.id);if(!r||r.status!=='review'||!r.videoPath||!fs.existsSync(r.videoPath))return res.sendStatus(404);stream(req,res,r.videoPath)});
 app.post('/factory/:id/approve',(req,res)=>{try{let r=db.prepare('SELECT * FROM factory_items WHERE id=?').get(req.params.id);if(!r)return res.sendStatus(404);if(r.status!=='review')return res.status(409).json({error:'Already processed.'});r=ensureCopy(r);const item=publication.enqueue(r);if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{};db.prepare("UPDATE factory_items SET status='queued',stockId=?,videoPath=NULL,error=NULL,updatedAt=? WHERE id=?").run(item.id,now(),r.id);ensureBacklog(db);res.json({ok:true,publication:item})}catch(e){res.status(400).json({error:e.message})}});
-app.post('/factory/:id/reject',async(req,res)=>{let r=db.prepare('SELECT * FROM factory_items WHERE id=?').get(req.params.id);if(!r)return res.sendStatus(404);if(r.status!=='review')return res.status(409).json({error:'Already processed.'});if(r.reviewVideoId&&loadToken()){try{await youtubeApi().videos.delete({id:r.reviewVideoId})}catch{}}if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{};const rev=Number(r.revision||0)+1,idea=ideaForEpisode(Number(r.episode)+rev);db.prepare("UPDATE factory_items SET hook=?,story=?,status='regen_wait',revision=?,prompt='',promptHash=NULL,promptGenerationId=NULL,characterHandles='[]',characterRoles='[]',providerRunId=NULL,flowResult=NULL,videoPath=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,error=NULL,nextTry=?,updatedAt=? WHERE id=?").run(idea.hook,idea.story,rev,Date.now()+60000,now(),r.id);res.json({ok:true,regenerating:true})});
+app.post('/factory/:id/reject',async(req,res)=>{
+ let r=db.prepare('SELECT * FROM factory_items WHERE id=?').get(req.params.id);
+ if(!r)return res.sendStatus(404);
+ if(r.status!=='review')return res.status(409).json({error:'Already processed.'});
+ const feedback=String(req.body?.feedback||'').replace(/[\u0000-\u001f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,1200);
+ if(feedback.length<3)return res.status(400).json({error:'Explain briefly what went wrong before REDO.'});
+ const strategy=classifyReviewFeedback(feedback),token=randomBytes(24).toString('hex'),rev=Number(r.revision||0)+1,stamp=now();
+ if(r.reviewVideoId&&loadToken()){try{await youtubeApi().videos.delete({id:r.reviewVideoId})}catch{}}
+ if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{}
+ if(strategy==='revise_prompt'){
+   db.prepare("UPDATE factory_items SET status='regen_wait',revision=?,reviewFeedback=?,retryStrategy=?,reviewRetryToken=?,reviewRetrySubmittedToken=NULL,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,transportPreflight=NULL,providerRunId=NULL,flowResult=NULL,videoPath=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewContentHash=NULL,error='Human REDO requested: prompt correction required.',nextTry=0,updatedAt=? WHERE id=?")
+     .run(rev,feedback,strategy,token,stamp,r.id);
+ }else{
+   db.prepare("UPDATE factory_items SET status='regen_wait',revision=?,reviewFeedback=?,retryStrategy=?,reviewRetryToken=?,reviewRetrySubmittedToken=NULL,transportPreflight=NULL,providerRunId=NULL,flowResult=NULL,videoPath=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewContentHash=NULL,error='Human REDO requested: reuse the same prompt for one new render.',nextTry=0,updatedAt=? WHERE id=?")
+     .run(rev,feedback,strategy,token,stamp,r.id);
+ }
+ metaSet('flow:generationLifecycle:'+r.id,JSON.stringify({
+   state:'RETRY_REQUESTED',generation_id:null,generation_started_at:null,submit_boundary_at:null,
+   baseline:[],baseline_inventory:null,reviewer_retry:true,retry_token:token,retry_strategy:strategy,
+   review_feedback:feedback,retry_requested_at:stamp,exactly_one_submit:true
+ }));
+ res.json({ok:true,regenerating:true,retryStrategy:strategy,retryToken:token});
+ setTimeout(()=>{try{globalThis.__publisherRunProvider?.()}catch{}},50).unref?.();
+});
 app.post('/factory/enable',(req,res)=>{metaSet('automation:factoryEnabled','true');res.json({ok:true,enabled:true})});
 app.post('/factory/disable',(req,res)=>{metaSet('automation:factoryEnabled','false');res.json({ok:true,enabled:false})});
 app.post('/factory/preflight',(req,res)=>{metaSet('automation:allowSubmit','0');const r=db.prepare("SELECT id,episode,status FROM factory_items WHERE status IN ('draft','regen_wait') ORDER BY episode LIMIT 1").get();res.status(202).json({ok:true,next:r||null,note:'Provider will run preflight only; Generate remains disabled.'})});
