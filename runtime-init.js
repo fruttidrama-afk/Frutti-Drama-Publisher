@@ -7,6 +7,21 @@ import { CONFIG, seedInitial, ensureBacklog } from './runtime-config.js';
 const DATA_DIR=path.resolve(process.env.DATA_DIR||'/data');
 const DIR=path.join(DATA_DIR,'publisher-runtime');
 const DB_PATH=path.join(DIR,'factory.sqlite');
+const INSTANCE_MARKER=path.join(DATA_DIR,'publisher-instance.json');
+const INSTANCE_ID=String(process.env.PUBLISHER_INSTANCE_ID||'').trim();
+const RESET_ON_CHANGE=String(process.env.PUBLISHER_RESET_ON_INSTANCE_CHANGE||'false').toLowerCase()==='true';
+
+if(INSTANCE_ID&&RESET_ON_CHANGE){
+  let previous=null;
+  try{previous=JSON.parse(fs.readFileSync(INSTANCE_MARKER,'utf8'))?.id||null}catch{}
+  if(previous&&previous!==INSTANCE_ID){
+    fs.rmSync(DIR,{recursive:true,force:true});
+  }
+  if(previous!==INSTANCE_ID){
+    fs.writeFileSync(INSTANCE_MARKER,JSON.stringify({id:INSTANCE_ID,initializedAt:new Date().toISOString()},null,2),{mode:0o600});
+  }
+}
+
 fs.mkdirSync(path.join(DIR,'generated'),{recursive:true,mode:0o700});
 fs.mkdirSync(path.join(DIR,'flow-profile'),{recursive:true,mode:0o700});
 const db=new DatabaseSync(DB_PATH,{timeout:5000});
@@ -104,7 +119,7 @@ put('runtime:show',CONFIG.identity.show_name);
 put('automation:provider','FreeBrowserProvider');
 put('automation:tinyfishRequired','false');
 put('automation:tinyfishFallback','disabled');
-put('automation:factoryEnabled','true');
+put('automation:factoryEnabled',String(process.env.PUBLISHER_ENABLED||'false').toLowerCase()==='true'?'true':'false');
 put('automation:noEndDate','true');
 put('automation:planner',CONFIG.content.serialized?'serial-config-v1':'independent-config-v1');
 seedInitial(db);
