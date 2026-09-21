@@ -196,9 +196,12 @@ app.get('/oauth2callback',async(req,res)=>{try{const y=ytSecrets();if(!req.query
 function stream(req,res,file){const st=fs.statSync(file),range=req.headers.range;res.set('Accept-Ranges','bytes');res.set('Content-Type','video/mp4');res.set('Cache-Control','private,no-store');if(!range){res.set('Content-Length',String(st.size));return fs.createReadStream(file).pipe(res)}const m=/^bytes=(\d*)-(\d*)$/.exec(range);if(!m)return res.sendStatus(416);const a=m[1]?Number(m[1]):0,b=m[2]?Number(m[2]):st.size-1;if(a<0||b<a||b>=st.size)return res.sendStatus(416);res.status(206).set('Content-Range','bytes '+a+'-'+b+'/'+st.size).set('Content-Length',String(b-a+1));fs.createReadStream(file,{start:a,end:b}).pipe(res)}
 function ensureCopy(row){
  const provider=(CONFIG.publication.providers||[]).find(x=>x.type==='youtube')||{};
+ let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
  const copy=buildPublicationCopy({
    hook:row.hook,
    story:row.story,
+   prompt:row.prompt,
+   contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],
    hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
    showName:CONFIG.identity.show_name,
    maxTitleLength:100
@@ -285,10 +288,18 @@ function activateReadyAutomation(){
     return true;
   }catch{return false}
 }
+function activeDailyTarget(){
+ const base=Math.max(1,Number(DAILY_LIMIT||1));
+ const overrideDay=String(process.env.PUBLISHER_DAILY_LIMIT_OVERRIDE_DAY||'').trim();
+ const overrideCount=Math.max(base,Number(process.env.PUBLISHER_DAILY_LIMIT_OVERRIDE_COUNT||0)||0);
+ const today=new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ return overrideDay===today&&overrideCount>base?overrideCount:base;
+}
 function health(){
  const counts={};for(const r of db.prepare('SELECT status,COUNT(*) n FROM factory_items GROUP BY status').all())counts[r.status]=Number(r.n);
  const p=providerStatus(),beat=p?.at?Date.parse(p.at):0,workerAlive=Boolean(beat&&Date.now()-beat<180000),today=new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),completed=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND status IN ('review','completed') AND COALESCE(generationKind,'automatic')<>'review_retry'").get(today)?.n||0),current=db.prepare("SELECT episode,status,error,lastProgressAt FROM factory_items WHERE status IN ('generating','draft','regen_wait') ORDER BY CASE status WHEN 'generating' THEN 0 ELSE 1 END,episode LIMIT 1").get();
- return{ok:true,at:now(),runtime_version:'publisher-runtime-v1',publisher_enabled:metaGet('automation:factoryEnabled','false')==='true',show:CONFIG.identity.show_name,scheduler_alive:true,scheduler:publication.status(),scheduler_no_end_date:true,worker_alive:workerAlive,automation_provider:'FreeBrowserProvider',generation_provider:'GoogleFlowProvider',publication_provider:'YouTubeProvider',tinyfish_required:false,tinyfish_fallback:false,flow:(()=>{const lf=liveFlowConfig();return{configured:Boolean(lf.project_id),authenticated:Boolean(flowAuth()?.ok),project_id:lf.project_id||null,project_name:lf.project_name||null,project_url:lf.project_url||null}})(),current_job:current||null,queue:counts,completed_today:completed,daily_target:DAILY_LIMIT,remaining_today:Math.max(0,DAILY_LIMIT-completed),provider_health:p?.state||null,last_generation:db.prepare("SELECT createdAt FROM factory_generations ORDER BY createdAt DESC LIMIT 1").get()?.createdAt||null,last_review_ready:db.prepare("SELECT updatedAt FROM factory_items WHERE status='review' ORDER BY updatedAt DESC LIMIT 1").get()?.updatedAt||null,last_publication:db.prepare("SELECT updatedAt,status,videoId FROM publication_items ORDER BY updatedAt DESC LIMIT 1").get()||null,serial_gate:{enabled:Boolean(CONFIG.content.serialized),gate:CONFIG.content.continuity_gate},storage:storage(),security:{configured:configured(),passkeys:authState().passkeys.length,active_sessions:authState().sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).length}};
+ const dailyTarget=activeDailyTarget();
+ return{ok:true,at:now(),runtime_version:'publisher-runtime-v1',publisher_enabled:metaGet('automation:factoryEnabled','false')==='true',show:CONFIG.identity.show_name,scheduler_alive:true,scheduler:publication.status(),scheduler_no_end_date:true,worker_alive:workerAlive,automation_provider:'FreeBrowserProvider',generation_provider:'GoogleFlowProvider',publication_provider:'YouTubeProvider',tinyfish_required:false,tinyfish_fallback:false,flow:(()=>{const lf=liveFlowConfig();return{configured:Boolean(lf.project_id),authenticated:Boolean(flowAuth()?.ok),project_id:lf.project_id||null,project_name:lf.project_name||null,project_url:lf.project_url||null}})(),current_job:current||null,queue:counts,completed_today:completed,daily_target:dailyTarget,remaining_today:Math.max(0,dailyTarget-completed),daily_override_active:dailyTarget!==DAILY_LIMIT,provider_health:p?.state||null,last_generation:db.prepare("SELECT createdAt FROM factory_generations ORDER BY createdAt DESC LIMIT 1").get()?.createdAt||null,last_review_ready:db.prepare("SELECT updatedAt FROM factory_items WHERE status='review' ORDER BY updatedAt DESC LIMIT 1").get()?.updatedAt||null,last_publication:db.prepare("SELECT updatedAt,status,videoId FROM publication_items ORDER BY updatedAt DESC LIMIT 1").get()||null,serial_gate:{enabled:Boolean(CONFIG.content.serialized),gate:CONFIG.content.continuity_gate},storage:storage(),security:{configured:configured(),passkeys:authState().passkeys.length,active_sessions:authState().sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).length}};
 }
 app.get('/factory/health',(req,res)=>res.json(health()));
 
