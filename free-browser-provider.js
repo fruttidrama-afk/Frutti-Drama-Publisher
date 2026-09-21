@@ -72,6 +72,9 @@ function reconcileGenerationCreditAccounting(db){
       publish('STALE_FALSE_START_RELEASED',{job_id:row.id,message:'False generation start removed from daily accounting; job returned to draft.'});
     }
   }catch{}
+  try{
+    db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE videoPath IS NULL AND error LIKE '%WRONG_FLOW_MODE_TEXT_RESPONSE_AFTER_SEND%'").run(now(),now());
+  }catch{}
 }
 function ensureProductionPlan(db){
   seedInitial(db);ensureBacklog(db);setMeta(db,'automation:productionPlanVersion','publisher-runtime-v1');if(!meta(db,'automation:factoryEnabled',''))setMeta(db,'automation:factoryEnabled',String(process.env.PUBLISHER_ENABLED||'false').toLowerCase()==='true'?'true':'false');setMeta(db,'automation:freeFactoryEnabled','1');if(!meta(db,'flow:state',''))setMeta(db,'flow:state','CONECTADO');setMeta(db,'flow:message','Publisher Runtime v1 active; daily target '+DAILY_PRODUCTION_LIMIT+'.');
@@ -645,10 +648,54 @@ async function preflight(page,row,cp){
   await clearComposer(page);const settings=await configureFlow(page),attachments=[];for(const name of cp.visual)attachments.push(await attachCharacter(page,name));const count=await ingredientCount(page);if(count!==cp.visual.length)throw new Error('CHARACTER_INGREDIENT_TOTAL_FAILED:'+count+':'+cp.visual.length);const promptGuard=await fillPrompt(page,cp);return{provider:PROVIDER,payload_retrieved:true,prompt_verified:true,first_fragment_seen:true,last_fragment_seen:true,visual_assets_ready:true,auth_required:false,duration:DURATION_LABEL,ratio:ASPECT_RATIO,model:settings.model,resolution:RESOLUTION_INTENT,output_count:OUTPUT_COUNT,characters:cp.visual,attachments,ingredient_count:count,prompt_target:promptGuard.target,project_guard:promptGuard.projectGuard,settings,at:now()};
 }
 async function currentVideos(page){return await page.locator('video').evaluateAll(vs=>vs.map((v,i)=>({i,src:v.currentSrc||v.src||'',duration:Number(v.duration||0),readyState:Number(v.readyState||0),w:Number(v.videoWidth||0),h:Number(v.videoHeight||0)}))).catch(()=>[]);}
+async function approveFlowPointConsent(page){
+  const deadline=Date.now()+12000;
+  while(Date.now()<deadline){
+    const body=await getBody(page).catch(()=>'');
+    const consent=/quieres que empiece a generar|¿quieres que empiece a generar|cuesta\s*15\s*puntos|costs?\s*15\s*points|start generating\s*1\s*video/i.test(body);
+    const alwaysLabels=['Aprobar siempre','Always approve','Approve always'];
+    for(const label of alwaysLabels){
+      const exact=await visibleExact(page,label).catch(()=>null);
+      if(exact){
+        await clickInteractive(exact);
+        publish('POINT_CONSENT_APPROVED',{message:label});
+        await sleep(700);
+        return{approved:true,mode:'approve-always',label};
+      }
+      const role=page.getByRole('button',{name:new RegExp('^'+escapeRe(label)+'$','i')}).last();
+      if(await role.count().catch(()=>0)&&await role.isVisible().catch(()=>false)){
+        await clickInteractive(role);
+        publish('POINT_CONSENT_APPROVED',{message:label});
+        await sleep(700);
+        return{approved:true,mode:'approve-always',label};
+      }
+    }
+    if(consent){
+      for(const label of ['Aprobar','Approve']){
+        const exact=await visibleExact(page,label).catch(()=>null);
+        if(exact){
+          await clickInteractive(exact);
+          publish('POINT_CONSENT_APPROVED',{message:label});
+          await sleep(700);
+          return{approved:true,mode:'approve-once',label};
+        }
+        const role=page.getByRole('button',{name:new RegExp('^'+escapeRe(label)+'$','i')}).last();
+        if(await role.count().catch(()=>0)&&await role.isVisible().catch(()=>false)){
+          await clickInteractive(role);
+          publish('POINT_CONSENT_APPROVED',{message:label});
+          await sleep(700);
+          return{approved:true,mode:'approve-once',label};
+        }
+      }
+    }
+    await sleep(250);
+  }
+  return{approved:false,mode:null,label:null};
+}
 async function clickSubmitExactlyOnce(page){
   let send=null,sendLabel='';
   const buttons=page.locator('button,[role="button"]'),ranked=[];
-  for(let i=0;i<Math.min(await buttons.count().catch(()=>0),140);i++){
+  for(let i=0;i<Math.min(await buttons.count().catch(()=>0),180);i++){
     const b=buttons.nth(i);
     if(!(await b.isVisible().catch(()=>false))||!(await b.isEnabled().catch(()=>false)))continue;
     const text=compact(((await b.innerText().catch(()=>''))||'')+' '+((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.getAttribute('title').catch(()=>''))||''),180);
@@ -657,7 +704,7 @@ async function clickSubmitExactlyOnce(page){
     else if(/^send$/.test(n)||/^submit$/.test(n))score=115;
     else if(/send prompt|submit prompt|generate video/.test(n))score=108;
     else if(/^start generation$/.test(n))score=70;
-    if(/settings|download|export|ingredient|clear|history|share|cancel|stop/.test(n))score=0;
+    if(/settings|download|export|ingredient|clear|history|share|cancel|stop|aprobar|approve|rechazar|reject/.test(n))score=0;
     if(score)ranked.push({b,text,score});
   }
   ranked.sort((a,b)=>b.score-a.score);
@@ -665,6 +712,9 @@ async function clickSubmitExactlyOnce(page){
   if(!send)throw new Error('FLOW_SEND_BUTTON_NOT_READY');
   await clickInteractive(send);
   publish('SUBMIT_SEND_CLICKED',{message:sendLabel||'composer send'});
+
+  const consent=await approveFlowPointConsent(page);
+  if(consent.approved)return'composer-send-'+consent.mode;
 
   const deadline=Date.now()+6000;
   while(Date.now()<deadline){
@@ -682,16 +732,11 @@ async function clickSubmitExactlyOnce(page){
     }
   }
 
-  const seen=[];
-  for(let i=0;i<Math.min(await buttons.count().catch(()=>0),80);i++){
-    const b=buttons.nth(i);if(!(await b.isVisible().catch(()=>false)))continue;
-    const text=compact(((await b.innerText().catch(()=>''))||'')+' '+((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.getAttribute('title').catch(()=>''))||''),90);
-    if(text)seen.push(text);
+  const body=await getBody(page).catch(()=>'');
+  if(/Aprobar siempre|Aprobar|Always approve|Approve always|costs?\s*15\s*points|cuesta\s*15\s*puntos/i.test(body)){
+    throw new Error('FLOW_POINT_CONSENT_VISIBLE_BUT_NOT_CLICKED');
   }
-  const body=compact(await getBody(page),16000);
-  const unique=[...new Set(seen)],wrongMode=unique.some(x=>/Good response|Bad response|Copy|Flag output|Try again/i.test(x))&&!unique.some(x=>/^Generate$/i.test(x));
-  publish(wrongMode?'WRONG_FLOW_MODE':'POST_SEND_SCAN',{message:'buttons='+unique.slice(-18).join(' | ')+' ; bodyTail='+body.slice(-700)});
-  if(wrongMode)throw new Error('WRONG_FLOW_MODE_TEXT_RESPONSE_AFTER_SEND');
+  publish('POST_SEND_SCAN',{message:'No explicit confirmation control detected after send.'});
   return'composer-send-direct';
 }
 async function renderAuthGuard(page){
@@ -958,11 +1003,15 @@ function auditRedoState(db){
 }
 
 function productionCandidate(db){
-  const running=db.prepare("SELECT * FROM factory_items WHERE status='generating' AND nextTry<=? ORDER BY episode LIMIT 1").get(Date.now());if(running)return running;
-  const retries=db.prepare("SELECT * FROM factory_items WHERE status IN ('draft','regen_wait') AND retryStrategy IN ('reuse_prompt','revise_prompt') AND reviewFeedback IS NOT NULL ORDER BY updatedAt,episode LIMIT 100").all();
-  const retry=retries.find(row=>serialReady(db,row)&&isReviewerRetry(row));if(retry)return retry;
-  const rows=db.prepare("SELECT * FROM factory_items WHERE status IN ('draft','regen_wait') AND nextTry<=? AND (reviewFeedback IS NULL OR TRIM(reviewFeedback)='') ORDER BY episode LIMIT 100").all(Date.now());
-  return rows.find(row=>serialReady(db,row))||null;
+  const blocker=db.prepare("SELECT * FROM factory_items WHERE status NOT IN ('review','queued','historical','published') ORDER BY episode LIMIT 1").get();
+  if(!blocker)return null;
+  const due=Number(blocker.nextTry||0)<=Date.now();
+  if(String(blocker.status)==='generating')return due?blocker:null;
+  if(!['draft','regen_wait'].includes(String(blocker.status||'')))return null;
+  if(!due)return null;
+  if(isReviewerRetry(blocker))return blocker;
+  if(String(blocker.reviewFeedback||'').trim())return null;
+  return blocker;
 }
 async function runProvider(){
   if(bootstrapOwnsProfile()){publish('AUTH_BOOTSTRAP_ACTIVE',{message:'Flow bootstrap owns the persistent browser profile; provider is paused.'});return}
