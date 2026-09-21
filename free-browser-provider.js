@@ -68,15 +68,24 @@ function ensureConfirmedGenerationAccounting(db){
       if(!AFTER_GENERATE.has(state))continue;
       const runId=String(lc.generation_id||row.providerRunId||'').trim();
       if(!runId||/^manual-flow-golden-run:/.test(runId))continue;
-      const exists=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE itemId=? AND runId=?").get(row.id,runId)?.n||0);
-      if(exists)continue;
+      const existing=db.prepare("SELECT id,credits,status,generationKind FROM factory_generations WHERE itemId=? AND runId=? LIMIT 1").get(row.id,runId);
       const startedAt=String(lc.generation_started_at||lc.reconciled_at||row.lastProgressAt||now());
       const day=artDay(new Date(startedAt));
       const status=String(row.status)==='review'?'review':'running';
+      if(existing){
+        if(Number(existing.credits||0)<=0 || ['no_generation','infra_rejected'].includes(String(existing.status||''))){
+          try{
+            db.prepare("UPDATE factory_generations SET day=?,credits=?,status=?,error=NULL,generationKind='automatic',updatedAt=? WHERE id=?")
+              .run(day,CREDITS_PER_GENERATION,status,now(),existing.id);
+            publish('GENERATION_ACCOUNTING_REPAIRED',{episode:'E'+row.episode,job_id:row.id,run_id:runId,status,mode:'reactivated-existing'});
+          }catch(e){publish('GENERATION_ACCOUNTING_REPAIR_WARNING',{episode:'E'+row.episode,message:compact(e?.message||e,300)})}
+        }
+        continue;
+      }
       try{
         db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)")
           .run(randomUUID(),row.id,day,sha(String(row.promptHash||'')+':'+runId),CREDITS_PER_GENERATION,status,runId,startedAt,now(),'automatic');
-        publish('GENERATION_ACCOUNTING_REPAIRED',{episode:'E'+row.episode,job_id:row.id,run_id:runId,status});
+        publish('GENERATION_ACCOUNTING_REPAIRED',{episode:'E'+row.episode,job_id:row.id,run_id:runId,status,mode:'inserted'});
       }catch(e){publish('GENERATION_ACCOUNTING_REPAIR_WARNING',{episode:'E'+row.episode,message:compact(e?.message||e,300)})}
     }
   }catch(e){publish('GENERATION_ACCOUNTING_REPAIR_WARNING',{message:compact(e?.message||e,300)})}
