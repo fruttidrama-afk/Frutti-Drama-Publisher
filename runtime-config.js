@@ -32,7 +32,7 @@ export function loadConfig(){
       creative_bible:clean(content.creative_bible,80000),
       canon:clean(content.canon,80000),
       episode_structure:clean(content.episode_structure||'hook → development → payoff',4000),
-      continuity_gate:clean(content.continuity_gate||(content.serialized!==false?'review_ready':'none'),40),
+      continuity_gate:clean(content.continuity_gate||(content.serialized!==false?'approved':'none'),40),
       initial_episodes:Array.isArray(content.initial_episodes)?content.initial_episodes.slice(0,500):[],
       autonomous_seed_ideas:Array.isArray(content.autonomous_seed_ideas)?content.autonomous_seed_ideas.slice(0,200):[]
     },
@@ -158,6 +158,12 @@ export function buildPrompt(db,row,visual=[]){
     'HOOK: '+row.hook,
     'EPISODE INTENT: '+row.story,
     'Render this exact narrative intent. Treat the operator/story input as semantic intent, not final dialogue or copy. Do not invent contradictory canon.',
+    ...(String(row.retryStrategy||'')==='revise_prompt'&&String(row.reviewFeedback||'').trim()?[
+      '',
+      'HUMAN REDO CORRECTION',
+      'The reviewer rejected the previous render for this specific reason: '+String(row.reviewFeedback||'').replace(/[\u0000-\u001f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,1200)+'.',
+      'Correct exactly this failure while preserving the same episode story, canon, characters and all unrelated constraints. Never mention the review inside the video.'
+    ]:[]),
     '',
     'BEATS / TIMING',
     'Structure: '+(CONFIG.content.episode_structure||'hook → development → payoff')+'.',
