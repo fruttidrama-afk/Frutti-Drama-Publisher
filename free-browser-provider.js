@@ -356,7 +356,7 @@ async function clickRadio(page,re,label){
   for(let i=(await radios.count().catch(()=>0))-1;i>=0;i--){
     const r=radios.nth(i);if(!(await r.isVisible().catch(()=>false)))continue;
     const checked=await r.getAttribute('aria-checked').catch(()=>null);
-    if(checked!=='true')await r.click();
+    if(checked!=='true')await clickInteractive(r);
     await sleep(300);
     const after=await r.getAttribute('aria-checked').catch(()=>null);
     if(after==='true'||after===null)return true;
