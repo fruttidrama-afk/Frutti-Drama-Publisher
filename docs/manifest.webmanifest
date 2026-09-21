@@ -1,22 +1,22 @@
 {
   "name": "Publisher Factory",
   "short_name": "Publisher Factory",
-  "start_url": "./?pwa=8",
+  "start_url": "./?pwa=9",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f8f7f3",
   "theme_color": "#ffffff",
   "icons": [
     {
-      "src": "./app-icon.svg?v=8",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory?asset=icon",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./app-icon.svg?v=8",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory?asset=icon",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ]
