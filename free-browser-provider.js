@@ -1076,6 +1076,43 @@ async function findGoldenRecoveryAsset(page){
     if(d)return{found:true,matched:cand.matched,label:compact(cand.info.raw,700)};
     await page.keyboard.press('Escape').catch(()=>{});await sleep(300);
   }
+  // Golden Run recorder showed the rendered option inside the chat. The visible
+  // bubble may expose the prompt as ordinary text instead of an aria-label, so
+  // correlate the whole bubble and then click its media child.
+  const chatContainers=page.locator('flow-chat-bubble,flow-a2ui-message-renderer,flow-a2ui-video-option,article,section');
+  const chatMatches=[];
+  for(let i=0;i<Math.min(await chatContainers.count().catch(()=>0),320);i++){
+    const el=chatContainers.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
+    const raw=compact(await el.innerText().catch(()=>''),6000);if(!raw)continue;
+    const n=norm(raw),matched=GOLDEN_RECOVERY_TERMS.filter(t=>n.includes(t));
+    if(matched.length<Math.min(3,GOLDEN_RECOVERY_TERMS.length))continue;
+    const media=el.locator('flow-a2ui-video-option,img,video,[role="img"],canvas,button');
+    if(!(await media.count().catch(()=>0)))continue;
+    chatMatches.push({el,media,matched,label:compact(raw,700),score:matched.length});
+  }
+  chatMatches.sort((a,b)=>b.score-a.score);
+  for(const hit of chatMatches.slice(0,12)){
+    let clicked=false;
+    const count=Math.min(await hit.media.count().catch(()=>0),30);
+    for(let j=count-1;j>=0;j--){
+      const m=hit.media.nth(j);if(!(await m.isVisible().catch(()=>false)))continue;
+      const box=await m.boundingBox().catch(()=>null);if(!box||box.width<60||box.height<50)continue;
+      await m.scrollIntoViewIfNeeded().catch(()=>{});
+      await m.click({force:true,timeout:4000}).catch(()=>{});
+      await sleep(900);
+      const d=await visibleDownloadButton(page);
+      if(d)return{found:true,matched:hit.matched,label:hit.label,source:'chat-bubble'};
+      await page.keyboard.press('Escape').catch(()=>{});await sleep(250);
+      clicked=true;
+    }
+    if(!clicked){
+      await hit.el.click({force:true,timeout:4000}).catch(()=>{});await sleep(900);
+      const d=await visibleDownloadButton(page);
+      if(d)return{found:true,matched:hit.matched,label:hit.label,source:'chat-container'};
+      await page.keyboard.press('Escape').catch(()=>{});await sleep(250);
+    }
+  }
+
   const body=compact(await getBody(page).catch(()=>''),12000);
   const buttons=[];
   const btns=page.locator('button,[role="button"],[role="tab"]');
