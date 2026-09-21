@@ -447,9 +447,9 @@ async function configureFlow(page){
     currentModel=compact(line,200);
   }
   if(!modelMatches(currentModel))throw new Error('FLOW_VIDEO_MODEL_MISMATCH:'+MODEL_INTENT+':'+compact(currentModel,220));
-  if(/omni\s+flash/i.test(MODEL_INTENT)&&!/omni\s+flash/i.test(currentModel)){
+  if(/omni/i.test(MODEL_INTENT)&&/flash/i.test(MODEL_INTENT)&&!(/omni/i.test(currentModel)&&/flash/i.test(currentModel))){
     const settingsText=compact(await getBody(page),5000);
-    if(!/omni\s+flash/i.test(settingsText))throw new Error('FLOW_OMNI_FLASH_NOT_ACTIVE:'+compact(currentModel,220));
+    if(!(/omni/i.test(settingsText)&&/flash/i.test(settingsText)))throw new Error('FLOW_OMNI_FLASH_NOT_ACTIVE:'+compact(currentModel,220));
     currentModel='Omni Flash';
   }
 
