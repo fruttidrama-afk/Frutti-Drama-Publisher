@@ -1129,7 +1129,9 @@ async function visibleDownloadButton(page){
 }
 async function openUniqueFreshInventoryResult(page,baselineInv){
   const tiles=page.locator('flow-grid-tile-container'),count=Math.min(await tiles.count().catch(()=>0),120),baselineCount=Number(baselineInv?.tile_count||0);
-  if(count-baselineCount!==1)return{ready:false,opened:false,signal:`fresh-tile-delta:${count-baselineCount}`};
+  // Do not require count-baseline===1 after a reload. Flow can virtualize the grid
+  // so one new tile can replace one old mounted tile and total DOM count stays equal.
+  // Signature multiset correlation is the durable criterion.
   const baselineList=Array.isArray(baselineInv?.ordered_signatures)&&baselineInv.ordered_signatures.length?baselineInv.ordered_signatures:(Array.isArray(baselineInv?.signatures)?baselineInv.signatures:[]);
   const remaining=new Map();for(const sig of baselineList)remaining.set(sig,(remaining.get(sig)||0)+1);
   const fresh=[];
@@ -1142,7 +1144,7 @@ async function openUniqueFreshInventoryResult(page,baselineInv){
     const left=remaining.get(sig)||0;if(left>0){remaining.set(sig,left-1);continue}
     fresh.push({el,sig,i});
   }
-  if(fresh.length!==1)return{ready:false,opened:false,signal:`fresh-tile-occurrences:${fresh.length}`};
+  if(fresh.length!==1)return{ready:false,opened:false,signal:`fresh-tile-occurrences:${fresh.length};dom-delta:${count-baselineCount}`};
   const target=fresh[0].el;
   await target.scrollIntoViewIfNeeded().catch(()=>{});
   await target.hover().catch(()=>{});
