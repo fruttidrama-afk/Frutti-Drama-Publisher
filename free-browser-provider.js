@@ -338,8 +338,19 @@ async function settingsButton(page) {
 }
 async function ensureSettingsOpen(page){
   const visibleSetting=async()=>{
-    const radio=page.getByRole('radio',{name:/Video/i}).last();if(await radio.count().catch(()=>0)&&await radio.isVisible().catch(()=>false))return true;
-    const ratio=page.getByText(new RegExp('^'+escapeRe(ASPECT_RATIO)+'
+    const radio=page.getByRole('radio',{name:/Video/i}).last();
+    if(await radio.count().catch(()=>0)&&await radio.isVisible().catch(()=>false))return true;
+    const ratio=page.getByText(new RegExp('^'+escapeRe(ASPECT_RATIO)+'$','i')).last();
+    if(await ratio.count().catch(()=>0)&&await ratio.isVisible().catch(()=>false))return true;
+    return false;
+  };
+  if(await visibleSetting())return;
+  const b=await settingsButton(page);
+  await b.click();
+  const deadline=Date.now()+6500;
+  while(Date.now()<deadline){if(await visibleSetting())return;await sleep(180)}
+  throw new Error('FLOW_SETTINGS_MENU_NOT_OPEN:'+compact(await b.innerText().catch(()=>''),180));
+}
 async function clickRadio(page,re,label){
   const r=page.getByRole('radio',{name:re}).last();
   if(!(await r.count().catch(()=>0))||!(await r.isVisible().catch(()=>false)))throw new Error('FLOW_SETTING_NOT_FOUND:'+label);
