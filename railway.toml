@@ -1,0 +1,19 @@
+[build]
+watchPatterns = [
+  "Dockerfile",
+  "package.json",
+  "server.js",
+  "runtime-config.js",
+  "runtime-init.js",
+  "free-browser-provider.js",
+  "flow-bootstrap.js",
+  "publication.js",
+  "publication-copy.js",
+  "public/**",
+  "railway.toml"
+]
+
+[deploy]
+healthcheckPath = "/factory/health"
+healthcheckTimeout = 300
+restartPolicyType = "ALWAYS"
