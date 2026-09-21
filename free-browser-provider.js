@@ -395,7 +395,8 @@ async function configureFlow(page){
   if(!modelButton){
     const buttons=page.locator('button');let scoreBest=-1;
     for(let i=0;i<await buttons.count().catch(()=>0);i++){
-      const btn=buttons.nth(i);if(!(await btn.isVisible().catch(()=>false)))continue;
+      const btn=buttons.nth(i);
+      if(!(await btn.isVisible().catch(()=>false)))continue;
       const txt=compact(((await btn.getAttribute('aria-label').catch(()=>''))||'')+' '+((await btn.getAttribute('title').catch(()=>''))||'')+' '+((await btn.innerText().catch(()=>''))||''),240),n=norm(txt);
       let score=modelTokens.filter(t=>n.includes(t)).length*3;
       if(/model|omni|veo|flash/.test(n))score+=4;
@@ -410,7 +411,8 @@ async function configureFlow(page){
     for(const role of ['menuitem','option','radio','button']){
       const loc=page.getByRole(role);
       for(let i=0;i<await loc.count().catch(()=>0);i++){
-        const opt=loc.nth(i);if(!(await opt.isVisible().catch(()=>false)))continue;
+        const opt=loc.nth(i);
+        if(!(await opt.isVisible().catch(()=>false)))continue;
         const txt=compact(((await opt.getAttribute('aria-label').catch(()=>''))||'')+' '+((await opt.innerText().catch(()=>''))||''),180),n=norm(txt);
         let score=modelTokens.filter(t=>n.includes(t)).length;
         if(/omni/i.test(MODEL_INTENT)&&/omni/i.test(txt))score+=3;
@@ -424,12 +426,14 @@ async function configureFlow(page){
     if(!chosen)throw new Error('FLOW_MODEL_INTENT_NOT_FOUND:'+MODEL_INTENT);
     await clickInteractive(chosen.o);await sleep(450);currentModel=chosen.txt;
   }else if(!modelButton){
-    const body=compact(await getBody(page),3000),line=body.split(/\n|\|/).find(x=>modelMatches(x));
+    const body=compact(await getBody(page),3000);
+    const line=body.split(/\n|\|/).find(x=>modelMatches(x));
     currentModel=line?compact(line,200):MODEL_INTENT;
   }
 
   let resolutionApplied='default';
-  const resRe=new RegExp(escapeRe(RESOLUTION_INTENT),'i'),resRadio=page.getByRole('radio',{name:resRe}).last();
+  const resRe=new RegExp(escapeRe(RESOLUTION_INTENT),'i');
+  const resRadio=page.getByRole('radio',{name:resRe}).last();
   if(await resRadio.count().catch(()=>0)&&await resRadio.isVisible().catch(()=>false)){
     if((await resRadio.getAttribute('aria-checked').catch(()=>null))!=='true')await clickInteractive(resRadio);
     await sleep(250);resolutionApplied=RESOLUTION_INTENT;
@@ -443,14 +447,33 @@ async function configureFlow(page){
   }
 
   let durationApplied='prompt-enforced';
-  try{await clickRadio(page,new RegExp('^'+escapeRe(DURATION_LABEL)+'
+  try{
+    await clickRadio(page,new RegExp('^'+escapeRe(DURATION_LABEL)+'$','i'),DURATION_LABEL);
+    durationApplied=DURATION_LABEL;
+  }catch(e){
+    if(!String(e?.message||e).startsWith('FLOW_SETTING_NOT_FOUND:'))throw e;
+    publish('FLOW_SETTING_DEFAULT',{setting:'duration',requested:DURATION_LABEL,message:'Duration control is not exposed by this Flow model; exact duration remains enforced in the generation prompt.'});
+  }
+
+  let outputApplied='default';
+  try{
+    await clickRadio(page,new RegExp('^'+escapeRe(OUTPUT_LABEL)+'$','i'),OUTPUT_LABEL);
+    outputApplied=OUTPUT_LABEL;
+  }catch(e){
+    if(!String(e?.message||e).startsWith('FLOW_SETTING_NOT_FOUND:'))throw e;
+    publish('FLOW_SETTING_DEFAULT',{setting:'output_count',requested:OUTPUT_LABEL,message:'Output-count control is not exposed by this Flow model; keeping the model default.'});
+  }
+
+  if(CONFIG.characters.length){
     const ingredients=page.getByRole('radio',{name:/Ingredients/i}).last();
     if(await ingredients.count().catch(()=>0)&&await ingredients.isVisible().catch(()=>false)){
       if((await ingredients.getAttribute('aria-checked').catch(()=>null))!=='true')await clickInteractive(ingredients);
       await sleep(300);
     }
   }
-  let label='';try{label=compact(await(await settingsButton(page)).innerText(),300)}catch{}
+
+  let label='';
+  try{label=compact(await(await settingsButton(page)).innerText(),300)}catch{}
   await page.keyboard.press('Escape').catch(()=>{});
   return{label:label||'settings-applied',mode:'Video',ratio:ASPECT_RATIO,model:currentModel,resolution:resolutionApplied,duration:durationApplied,count:outputApplied,ingredients:CONFIG.characters.length>0};
 }
