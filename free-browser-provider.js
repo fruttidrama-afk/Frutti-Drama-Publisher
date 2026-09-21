@@ -352,12 +352,30 @@ async function ensureSettingsOpen(page){
   throw new Error('FLOW_SETTINGS_MENU_NOT_OPEN:'+compact(await b.innerText().catch(()=>''),180));
 }
 async function clickRadio(page,re,label){
-  const r=page.getByRole('radio',{name:re}).last();
-  if(!(await r.count().catch(()=>0))||!(await r.isVisible().catch(()=>false)))throw new Error('FLOW_SETTING_NOT_FOUND:'+label);
-  if((await r.getAttribute('aria-checked').catch(()=>null))!=='true')await r.click();
-  await sleep(350);
-  if((await r.getAttribute('aria-checked').catch(()=>null))!=='true')throw new Error('FLOW_SETTING_NOT_CONFIRMED:'+label);
-  return true;
+  const radios=page.getByRole('radio',{name:re});
+  for(let i=(await radios.count().catch(()=>0))-1;i>=0;i--){
+    const r=radios.nth(i);if(!(await r.isVisible().catch(()=>false)))continue;
+    const checked=await r.getAttribute('aria-checked').catch(()=>null);
+    if(checked!=='true')await r.click();
+    await sleep(300);
+    const after=await r.getAttribute('aria-checked').catch(()=>null);
+    if(after==='true'||after===null)return true;
+  }
+  const roles=['button','option','menuitem','tab'];
+  for(const role of roles){
+    const loc=page.getByRole(role,{name:re});
+    for(let i=(await loc.count().catch(()=>0))-1;i>=0;i--){
+      const el=loc.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
+      await clickInteractive(el);await sleep(320);return true;
+    }
+  }
+  const exact=page.getByText(re);
+  for(let i=(await exact.count().catch(()=>0))-1;i>=0;i--){
+    const el=exact.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
+    await clickInteractive(el);await sleep(320);return true;
+  }
+  const body=compact(await getBody(page),1200);
+  throw new Error('FLOW_SETTING_NOT_FOUND:'+label+':'+body);
 }
 async function configureFlow(page){
   await waitFlowReady(page,60000);await ensureSettingsOpen(page);await clickRadio(page,/Video/i,'Video');await clickRadio(page,new RegExp('^'+escapeRe(ASPECT_RATIO)+'$','i'),ASPECT_RATIO);
