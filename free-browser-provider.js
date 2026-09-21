@@ -638,8 +638,7 @@ async function preflight(page,row,cp){
 async function currentVideos(page){return await page.locator('video').evaluateAll(vs=>vs.map((v,i)=>({i,src:v.currentSrc||v.src||'',duration:Number(v.duration||0),readyState:Number(v.readyState||0),w:Number(v.videoWidth||0),h:Number(v.videoHeight||0)}))).catch(()=>[]);}
 async function clickSubmitExactlyOnce(page){
   let send=null,sendLabel='';
-  const buttons=page.locator('button,[role="button"]');
-  const ranked=[];
+  const buttons=page.locator('button,[role="button"]'),ranked=[];
   for(let i=0;i<Math.min(await buttons.count().catch(()=>0),140);i++){
     const b=buttons.nth(i);
     if(!(await b.isVisible().catch(()=>false))||!(await b.isEnabled().catch(()=>false)))continue;
@@ -657,18 +656,31 @@ async function clickSubmitExactlyOnce(page){
   if(!send)throw new Error('FLOW_SEND_BUTTON_NOT_READY');
   await clickInteractive(send);
   publish('SUBMIT_SEND_CLICKED',{message:sendLabel||'composer send'});
-  await sleep(900);
 
-  const gens=page.getByRole('button',{name:/^Generate$/i});
-  for(let i=(await gens.count().catch(()=>0))-1;i>=0;i--){
-    const g=gens.nth(i);
-    if(await g.isVisible().catch(()=>false)&&await g.isEnabled().catch(()=>false)){
-      await clickInteractive(g);
-      publish('SUBMIT_CONFIRMATION_CLICKED',{message:'Generate'});
-      await sleep(500);
-      return'composer-send-confirm-generate';
+  const deadline=Date.now()+6000;
+  while(Date.now()<deadline){
+    await sleep(300);
+    const gens=page.getByRole('button',{name:/^Generate$/i});
+    for(let i=(await gens.count().catch(()=>0))-1;i>=0;i--){
+      const g=gens.nth(i);
+      if(await g.isVisible().catch(()=>false)&&await g.isEnabled().catch(()=>false)){
+        await clickInteractive(g);publish('SUBMIT_CONFIRMATION_CLICKED',{message:'Generate button'});await sleep(500);return'composer-send-confirm-generate';
+      }
+    }
+    const exact=await visibleExact(page,'Generate').catch(()=>null);
+    if(exact){
+      try{await clickInteractive(exact);publish('SUBMIT_CONFIRMATION_CLICKED',{message:'Generate text control'});await sleep(500);return'composer-send-confirm-generate-text'}catch{}
     }
   }
+
+  const seen=[];
+  for(let i=0;i<Math.min(await buttons.count().catch(()=>0),80);i++){
+    const b=buttons.nth(i);if(!(await b.isVisible().catch(()=>false)))continue;
+    const text=compact(((await b.innerText().catch(()=>''))||'')+' '+((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.getAttribute('title').catch(()=>''))||''),90);
+    if(text)seen.push(text);
+  }
+  const body=compact(await getBody(page),16000);
+  publish('POST_SEND_SCAN',{message:'buttons='+[...new Set(seen)].slice(-18).join(' | ')+' ; bodyTail='+body.slice(-700)});
   return'composer-send-direct';
 }
 async function renderAuthGuard(page){
