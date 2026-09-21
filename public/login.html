@@ -60,7 +60,7 @@ async function loadInfo(){
     q('#name').textContent=info.showName||info.publisherName||'Publisher';
     const b=info.brand||{},t=b.theme||{},root=document.documentElement;
     if(t.background)root.style.setProperty('--bg',t.background);if(t.surface)root.style.setProperty('--card',t.surface);if(t.text)root.style.setProperty('--ink',t.text);if(t.primary)root.style.setProperty('--primary',t.primary);if(t.accent||t.secondary)root.style.setProperty('--accent',t.accent||t.secondary);
-    if(b.logo_url){q('#brandLogo').src=b.logo_url;q('#brandLogo').classList.add('show')}if(b.reference_image_url){q('#brandRef').src=b.reference_image_url;q('#brandRef').classList.add('show')}
+    if(b.logo_url){q('#brandLogo').src=b.logo_url;q('#brandLogo').classList.add('show')}if(b.reference_image_url){q('#brandRef').src=b.reference_image_url;q('#brandRef').classList.add('show');document.body.style.backgroundImage='linear-gradient(180deg,rgba(0,0,0,.38),rgba(0,0,0,.72)),url("'+String(b.reference_image_url).replace(/"/g,'%22')+'")'}
     q('#subtitle').textContent=info.passkeysRegistered>0?'Entrá con Face ID/passkey o con tu PIN.':'Todavía no hay una passkey registrada. Entrá con tu PIN y después podés activar Face ID desde Seguridad.';
     if(info.passkeysRegistered===0)q('#passkey').textContent='Face ID todavía no configurado';
   }catch{}
