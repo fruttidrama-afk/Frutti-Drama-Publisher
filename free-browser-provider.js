@@ -11,6 +11,7 @@ import {
   DAILY_CREDIT_BUDGET, TIMEZONE, registry as configRegistry,
   resolveVisualCharacters, buildPrompt, seedInitial, ensureBacklog
 } from './runtime-config.js';
+import { buildPublicationCopy } from './publication-copy.js';
 
 const CHROMIUM_PATH=String(process.env.CHROMIUM_PATH||'/usr/bin/chromium');
 const DATA_DIR=path.resolve(process.env.DATA_DIR||(process.env.RAILWAY_ENVIRONMENT?'/data':'./data'));
@@ -32,7 +33,7 @@ const BOOTSTRAP_LOCK=path.join(FACTORY_DIR,'flow-auth-bootstrap.active.json');
 const STATUS_FILE=path.resolve(process.cwd(),'public','free-browser-status.json');
 const PROVIDER='FreeBrowserProvider';
 const INSTANCE_ID=randomUUID();
-const DAILY_PRODUCTION_LIMIT=DAILY_LIMIT;
+const BASE_DAILY_PRODUCTION_LIMIT=DAILY_LIMIT;
 const CREDITS_PER_GENERATION=CREDIT_PER_GENERATION;
 const DAILY_FLOW_CREDIT_BUDGET=DAILY_CREDIT_BUDGET;
 const PRODUCTION_START_EPISODE=1;
@@ -118,6 +119,12 @@ const norm = v => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,''
 const json = (v, f=null) => { try { return JSON.parse(String(v ?? '')); } catch { return f; } };
 const now = () => new Date().toISOString();
 const artDay = (d=new Date()) => new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
+function dailyProductionLimit(day=artDay()){
+  const base=Math.max(1,Number(BASE_DAILY_PRODUCTION_LIMIT||1));
+  const overrideDay=String(process.env.PUBLISHER_DAILY_LIMIT_OVERRIDE_DAY||'').trim();
+  const overrideCount=Math.max(base,Number(process.env.PUBLISHER_DAILY_LIMIT_OVERRIDE_COUNT||0)||0);
+  return overrideDay===day&&overrideCount>base?overrideCount:base;
+}
 function dailyGenerationCount(db, day=artDay()) {
   return Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND credits>0 AND COALESCE(generationKind,'automatic')<>'review_retry'").get(day)?.n||0);
 }
@@ -211,7 +218,7 @@ function normalizeUnconfirmedPreGenerationRows(db){
   }catch(e){publish('UNCONFIRMED_RESET_WARNING',{message:compact(e?.message||e,300)})}
 }
 function ensureProductionPlan(db){
-  seedInitial(db);ensureBacklog(db);setMeta(db,'automation:productionPlanVersion','publisher-runtime-v1');if(!meta(db,'automation:factoryEnabled',''))setMeta(db,'automation:factoryEnabled',String(process.env.PUBLISHER_ENABLED||'false').toLowerCase()==='true'?'true':'false');setMeta(db,'automation:freeFactoryEnabled','1');if(!meta(db,'flow:state',''))setMeta(db,'flow:state','CONECTADO');setMeta(db,'flow:message','Publisher Runtime v1 active; daily target '+DAILY_PRODUCTION_LIMIT+'.');
+  seedInitial(db);ensureBacklog(db);setMeta(db,'automation:productionPlanVersion','publisher-runtime-v1');if(!meta(db,'automation:factoryEnabled',''))setMeta(db,'automation:factoryEnabled',String(process.env.PUBLISHER_ENABLED||'false').toLowerCase()==='true'?'true':'false');setMeta(db,'automation:freeFactoryEnabled','1');if(!meta(db,'flow:state',''))setMeta(db,'flow:state','CONECTADO');setMeta(db,'flow:message','Publisher Runtime v1 active; daily target '+dailyProductionLimit()+'.');
 }
 function dbOpen() { return new DatabaseSync(DB_PATH, { timeout:5000 }); }
 function meta(db, key, fallback='') { return db.prepare('SELECT value FROM factory_meta WHERE key=?').get(key)?.value ?? fallback; }
@@ -316,6 +323,34 @@ function preparePromptIfNeeded(db,row){
   let cp=checkpoint(row);if(cp)return cp;const visual=matchingCharacters(row),prompt=buildLocalPrompt(db,row,visual),hash=sha(prompt),r=registry(),roles=visual.map(name=>({name,role:'ON_SCREEN',visual:true})),handles=visual.map(name=>r.characters.find(c=>String(c.name)===String(name))?.mention||('@'+name));
   db.prepare("UPDATE factory_items SET prompt=?,promptHash=?,promptGenerationId=?,characterHandles=?,characterRoles=?,promptPayloadHash=?,promptPayloadLength=?,status='draft',providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?").run(prompt,hash,'runtime-prompt-v1-'+randomUUID(),JSON.stringify(handles),JSON.stringify(roles),hash,Buffer.byteLength(prompt,'utf8'),now(),row.id);
   cp=checkpoint(db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id));if(!cp)throw new Error('RUNTIME_PROMPT_CHECKPOINT_FAILED');return cp;
+}
+
+function reviewMetadata(row,flowResult={}){
+  const provider=(CONFIG.publication?.providers||[]).find(x=>x.type==='youtube')||{};
+  const terms=Array.isArray(flowResult?.matched_terms)?flowResult.matched_terms:[];
+  const copy=buildPublicationCopy({
+    hook:row.hook,
+    story:row.story,
+    prompt:row.prompt,
+    contextTerms:terms,
+    hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+    showName:CONFIG.identity?.show_name||SHOW,
+    maxTitleLength:100
+  });
+  let description=String(copy.description||'');
+  while(Buffer.byteLength(description,'utf8')>4800)description=description.slice(0,-30).trimEnd();
+  return{title:String(copy.title||'').slice(0,100),description};
+}
+function persistReviewMetadata(db,row,flowResult={}){
+  try{
+    const m=reviewMetadata(row,flowResult);
+    db.prepare('UPDATE factory_items SET title=?,description=?,updatedAt=? WHERE id=?').run(m.title,m.description,now(),row.id);
+    publish('REVIEW_METADATA_READY',{episode:'E'+row.episode,job_id:row.id,title:m.title});
+    return m;
+  }catch(e){
+    publish('REVIEW_METADATA_WARNING',{episode:'E'+row.episode,job_id:row.id,message:compact(e?.message||e,400)});
+    return null;
+  }
 }
 async function getBody(page) { return await page.locator('body').innerText().catch(()=> ''); }
 
@@ -1418,6 +1453,7 @@ async function recoverGoldenRunIfRequested(db){
     const valid=validateMp4(localPath);
     const recoveredAt=now(),runId='manual-flow-golden-run:'+GOLDEN_RECOVERY_TOKEN;
     const flowResult={provider:PROVIDER,manual_golden_run:true,recovery_token:GOLDEN_RECOVERY_TOKEN,matched_terms:GOLDEN_RECOVERY_TERMS,matched_label:found.label,duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:recoveredAt};
+    persistReviewMetadata(db,row,flowResult);
     db.prepare(`UPDATE factory_items SET status='review',videoPath=?,providerRunId=NULL,flowResult=?,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?`).run(localPath,JSON.stringify(flowResult),recoveredAt,recoveredAt,row.id);
     if(forceReplace){
       try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Superseded by verified Golden Run recovery from the exact Earth Flow project.',updatedAt=? WHERE itemId=? AND day=?").run(recoveredAt,row.id,artDay())}catch{}
@@ -1435,7 +1471,7 @@ async function recoverGoldenRunIfRequested(db){
   }finally{await session.close().catch(()=>{})}
 }
 
-async function retrieveExisting(page,row,cp,lc,db){setLifecycle(db,row,'RETRIEVING',{generation_id:lc?.generation_id||row.providerRunId||'',baseline:lc?.baseline||[],baseline_inventory:lc?.baseline_inventory||null});const baseline=Array.isArray(lc?.baseline)?lc.baseline:[],baselineInventory=lc?.baseline_inventory||null,deadline=Date.now()+15*60*1000;let rendered=null,lastVideos=[],uiSignal=null,lastHeartbeat=0;while(Date.now()<deadline){await renderAuthGuard(page);if(Date.now()-lastHeartbeat>10000){lastHeartbeat=Date.now();try{db.prepare('UPDATE factory_items SET lastProgressAt=?,updatedAt=? WHERE id=?').run(now(),now(),row.id);}catch{}}lastVideos=await currentVideos(page);rendered=firstFreshRendered(lastVideos,baseline);if(rendered)break;const text=await getBody(page);if(/failed to generate|generation failed|couldn't generate|no se pudo generar/i.test(text))throw new Error('FLOW_GENERATION_FAILED');const stillBusy=/generating|processing|rendering|creating video|generando|procesando|upscaling/i.test(text);if(!stillBusy&&baselineInventory){uiSignal=await openUniqueFreshInventoryResult(page,baselineInventory);if(uiSignal?.ready){rendered={uiReady:true,signal:uiSignal.signal};break;}}await sleep(2500);}if(!rendered)throw new Error(`RENDER_TIMEOUT:videos=${lastVideos.length}:ui=${uiSignal?.signal||'none'}`);const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);try{fs.unlinkSync(localPath);}catch{}const dl=await downloadResult(page,rendered,localPath),valid=validateMp4(localPath),flowResult={provider:PROVIDER,generation_id:lc?.generation_id||row.providerRunId||'',generation_started_at:lc?.generation_started_at||'',duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:now()};db.prepare(`UPDATE factory_items SET status='review',videoPath=?,flowResult=?,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?`).run(localPath,JSON.stringify(flowResult),now(),now(),row.id);try{db.prepare(`UPDATE factory_generations SET status='review',updatedAt=?,error=NULL WHERE itemId=? AND runId=?`).run(now(),row.id,String(lc?.generation_id||row.providerRunId||''));}catch{}setLifecycle(db,row,'REVIEW_READY',{...lc,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,download_quality:flowResult.download_quality,retrieved_at:now()});setMeta(db,'flow:lastSuccessfulGenerationAt',lc?.generation_started_at||now());setMeta(db,'flow:lastSuccessfulMp4At',now());setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');try{fs.writeFileSync(path.join(FACTORY_DIR,'flow-browser-self-test.json'),JSON.stringify({at:now(),ok:true,stage:'real-production-review-ready',provider:PROVIDER,episode:`T${row.season}E${row.episode}`,mp4_valid:true,duration:valid.duration,width:valid.width,height:valid.height,codec:valid.codec},null,2),{mode:0o600});}catch{}publish('REVIEW_READY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`,factory_url:`/factory/video/${row.id}`});return true;}
+async function retrieveExisting(page,row,cp,lc,db){setLifecycle(db,row,'RETRIEVING',{generation_id:lc?.generation_id||row.providerRunId||'',baseline:lc?.baseline||[],baseline_inventory:lc?.baseline_inventory||null});const baseline=Array.isArray(lc?.baseline)?lc.baseline:[],baselineInventory=lc?.baseline_inventory||null,deadline=Date.now()+15*60*1000;let rendered=null,lastVideos=[],uiSignal=null,lastHeartbeat=0;while(Date.now()<deadline){await renderAuthGuard(page);if(Date.now()-lastHeartbeat>10000){lastHeartbeat=Date.now();try{db.prepare('UPDATE factory_items SET lastProgressAt=?,updatedAt=? WHERE id=?').run(now(),now(),row.id);}catch{}}lastVideos=await currentVideos(page);rendered=firstFreshRendered(lastVideos,baseline);if(rendered)break;const text=await getBody(page);if(/failed to generate|generation failed|couldn't generate|no se pudo generar/i.test(text))throw new Error('FLOW_GENERATION_FAILED');const stillBusy=/generating|processing|rendering|creating video|generando|procesando|upscaling/i.test(text);if(!stillBusy&&baselineInventory){uiSignal=await openUniqueFreshInventoryResult(page,baselineInventory);if(uiSignal?.ready){rendered={uiReady:true,signal:uiSignal.signal};break;}}await sleep(2500);}if(!rendered)throw new Error(`RENDER_TIMEOUT:videos=${lastVideos.length}:ui=${uiSignal?.signal||'none'}`);const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);try{fs.unlinkSync(localPath);}catch{}const dl=await downloadResult(page,rendered,localPath),valid=validateMp4(localPath),flowResult={provider:PROVIDER,generation_id:lc?.generation_id||row.providerRunId||'',generation_started_at:lc?.generation_started_at||'',duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:now()};persistReviewMetadata(db,row,flowResult);db.prepare(`UPDATE factory_items SET status='review',videoPath=?,flowResult=?,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?`).run(localPath,JSON.stringify(flowResult),now(),now(),row.id);try{db.prepare(`UPDATE factory_generations SET status='review',updatedAt=?,error=NULL WHERE itemId=? AND runId=?`).run(now(),row.id,String(lc?.generation_id||row.providerRunId||''));}catch{}setLifecycle(db,row,'REVIEW_READY',{...lc,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,download_quality:flowResult.download_quality,retrieved_at:now()});setMeta(db,'flow:lastSuccessfulGenerationAt',lc?.generation_started_at||now());setMeta(db,'flow:lastSuccessfulMp4At',now());setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');try{fs.writeFileSync(path.join(FACTORY_DIR,'flow-browser-self-test.json'),JSON.stringify({at:now(),ok:true,stage:'real-production-review-ready',provider:PROVIDER,episode:`T${row.season}E${row.episode}`,mp4_valid:true,duration:valid.duration,width:valid.width,height:valid.height,codec:valid.codec},null,2),{mode:0o600});}catch{}publish('REVIEW_READY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`,factory_url:`/factory/video/${row.id}`});return true;}
 async function processRow(db,row){
   const cp=preparePromptIfNeeded(db,row);row=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);let lc=lifecycle(db,row);const state=String(lc?.state||'').toUpperCase(),session=await launchLocal(),context=session.context;
   try{
@@ -1454,12 +1490,12 @@ async function processRow(db,row){
       return false;
     }
     const envEnabled=String(process.env.PUBLISHER_ENABLED||'true').toLowerCase()!=='false';
-    const manualSubmit=envEnabled&&meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',autoSubmit=envEnabled&&runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||effectiveDailyCount(db)<DAILY_PRODUCTION_LIMIT),submitAuthorized=manualSubmit||autoSubmit;
+    const manualSubmit=envEnabled&&meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',autoSubmit=envEnabled&&runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||effectiveDailyCount(db)<dailyProductionLimit()),submitAuthorized=manualSubmit||autoSubmit;
     publish('PREFLIGHT',{episode:'E'+row.episode,job_id:row.id});
     const pf=await preflight(page,row,cp);
     db.prepare('UPDATE factory_items SET transportPreflight=?,error=NULL,updatedAt=? WHERE id=?').run(JSON.stringify(pf).slice(0,20000),now(),row.id);
     setLifecycle(db,row,'PREFLIGHT_PASSED',{preflight_at:now(),settings:pf.settings,characters:cp.visual,prompt_hash:cp.hash,prepared_state_verified:Boolean(pf.prepared_state_verified)});
-    if(!submitAuthorized){const used=effectiveDailyCount(db);setMeta(db,'flow:state',used>=DAILY_PRODUCTION_LIMIT?'ESPERANDO CRÉDITOS':'CONECTADO');setMeta(db,'flow:currentStep',used>=DAILY_PRODUCTION_LIMIT?'daily-limit':'preflight:passed-no-submit');publish(used>=DAILY_PRODUCTION_LIMIT?'DAILY_LIMIT':'PREFLIGHT_READY_NO_SUBMIT',{episode:'E'+row.episode,job_id:row.id,characters:cp.visual,settings:pf.settings});return false}
+    if(!submitAuthorized){const used=effectiveDailyCount(db);setMeta(db,'flow:state',used>=dailyProductionLimit()?'ESPERANDO CRÉDITOS':'CONECTADO');setMeta(db,'flow:currentStep',used>=dailyProductionLimit()?'daily-limit':'preflight:passed-no-submit');publish(used>=dailyProductionLimit()?'DAILY_LIMIT':'PREFLIGHT_READY_NO_SUBMIT',{episode:'E'+row.episode,job_id:row.id,characters:cp.visual,settings:pf.settings});return false}
     if(manualSubmit)setMeta(db,'automation:allowSubmit','0');
     const baseline=await currentVideos(page),baselineInventory=await captureFlowInventory(page),baselineBusy=await visibleGenerationBusyCount(page),genId='free-'+randomUUID();
     if(reviewerRetry){
@@ -1547,9 +1583,9 @@ async function runProvider(){
     const used=effectiveDailyCount(db);row=productionCandidate(db);
     if(row&&String(row.status)==='generating'){publish('RECOVERY_PICKED',{episode:'E'+row.episode,job_id:row.id,state:String(lifecycle(db,row)?.state||''),used_today:used});await processRow(db,row);return}
     const priorityRetry=isReviewerRetry(row);
-    if(used>=DAILY_PRODUCTION_LIMIT&&!priorityRetry){if(row&&String(lifecycle(db,row)?.state||'').toUpperCase()!=='PREFLIGHT_PASSED'){publish('NEXT_DAY_PREFLIGHT',{episode:'E'+row.episode,job_id:row.id,message:'Daily target complete; validating next job without Send.'});await processRow(db,row);return}setMeta(db,'flow:state','ESPERANDO CRÉDITOS');setMeta(db,'flow:currentStep','daily-limit');setMeta(db,'flow:message','Daily production complete: '+used+'/'+DAILY_PRODUCTION_LIMIT+'.');publish('DAILY_LIMIT',{used,limit:DAILY_PRODUCTION_LIMIT,day:artDay(),next_episode:row?('E'+row.episode):null});return}
+    if(used>=dailyProductionLimit()&&!priorityRetry){if(row&&String(lifecycle(db,row)?.state||'').toUpperCase()!=='PREFLIGHT_PASSED'){publish('NEXT_DAY_PREFLIGHT',{episode:'E'+row.episode,job_id:row.id,message:'Daily target complete; validating next job without Send.'});await processRow(db,row);return}setMeta(db,'flow:state','ESPERANDO CRÉDITOS');setMeta(db,'flow:currentStep','daily-limit');setMeta(db,'flow:message','Daily production complete: '+used+'/'+dailyProductionLimit()+'.');publish('DAILY_LIMIT',{used,limit:dailyProductionLimit(),day:artDay(),next_episode:row?('E'+row.episode):null});return}
     if(!row){ensureBacklog(db);row=productionCandidate(db);if(!row){const blocker=db.prepare("SELECT episode,status,nextTry,error FROM factory_items WHERE status NOT IN ('review','queued','historical','published') ORDER BY episode LIMIT 1").get();setMeta(db,'flow:state','CONECTADO');setMeta(db,'flow:currentStep','idle');publish('IDLE',{message:blocker?('Head-of-line E'+blocker.episode+' status='+blocker.status+' nextTry='+blocker.nextTry+' error='+compact(blocker.error||'',180)):'No production candidate yet.'});return}}
-    publish(priorityRetry?'REVIEW_RETRY_PICKED':'PRODUCTION_PICKED',{episode:'E'+row.episode,job_id:row.id,used_today:used,remaining_today:Math.max(0,DAILY_PRODUCTION_LIMIT-used),daily_limit_bypassed:priorityRetry});await processRow(db,row);
+    publish(priorityRetry?'REVIEW_RETRY_PICKED':'PRODUCTION_PICKED',{episode:'E'+row.episode,job_id:row.id,used_today:used,remaining_today:Math.max(0,dailyProductionLimit()-used),daily_limit_bypassed:priorityRetry});await processRow(db,row);
   }catch(err){
     const message=compact(err?.stack||err?.message||err,900);
     try{if(db&&row){const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row,lc=lifecycle(db,fresh)||{},state=String(lc.state||'').toUpperCase(),attempts=Number(fresh.runtimeAttemptCount||0)+1,beforeGenerate=!AFTER_GENERATE.has(state)&&!AMBIGUOUS.has(state),baseBackoff=beforeGenerate?10000:60000,capBackoff=beforeGenerate?5*60*1000:60*60*1000,backoff=Math.min(capBackoff,baseBackoff*Math.pow(2,Math.min(attempts-1,6))),nextTry=Date.now()+backoff;if(/FLOW_GENERATION_FAILED/.test(message)){db.prepare("UPDATE factory_items SET status='failed_after_generate',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=0,updatedAt=? WHERE id=?").run(attempts,now(),message,now(),fresh.id);setLifecycle(db,fresh,'FAILED_AFTER_GENERATE',{last_error:message,attempt_count:attempts})}else if(AFTER_GENERATE.has(state)){db.prepare("UPDATE factory_items SET status='generating',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id);setLifecycle(db,fresh,'RETRIEVAL_PENDING',{...lc,last_error:message,attempt_count:attempts,retry_at:new Date(nextTry).toISOString()})}else if(AMBIGUOUS.has(state)){db.prepare("UPDATE factory_items SET status='generating',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id)}else if(reviewerRetryTokenConsumed(fresh)){
