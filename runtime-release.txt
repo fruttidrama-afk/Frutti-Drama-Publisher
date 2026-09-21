@@ -1,3 +1,3 @@
 publisher-runtime-stable-release
 version=2026-09-21.2
-includes=health-gated-deploys,stable-watch-pattern,branded-setup,uploaded-logo-pwa,flow-self-healing,overlay-safe-controls,automatic-generation-retry,post-setup-success-dashboard
+includes=health-gated-deploys,stable-watch-pattern,branded-setup,uploaded-logo-pwa,flow-self-healing,fast-preflight-retry,overlay-safe-settings,semantic-model-detection
