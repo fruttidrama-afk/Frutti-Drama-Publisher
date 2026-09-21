@@ -415,7 +415,7 @@ async function clearComposer(page){
 async function composerAdd(page) {
   const named=page.getByRole('button',{name:/Add ingredients to the prompt box/i}).last();
   if(!(await named.count().catch(()=>0))||!(await named.isVisible().catch(()=>false)))throw new Error('ADD_INGREDIENTS_BUTTON_NOT_FOUND');
-  await named.click();await sleep(550);
+  await clickInteractive(named);await sleep(550);
 }
 async function visibleAddToPromptButton(page){
   const deadline=Date.now()+4000;
@@ -438,7 +438,7 @@ async function attachCharacter(page,name){
 
   const tab=page.getByRole('tab',{name:/Characters/i}).last();
   if(await tab.count().catch(()=>0)&&await tab.isVisible().catch(()=>false)){
-    await tab.click();
+    await clickInteractive(tab);
   }else{
     const chars=await visibleExact(page,'Characters');
     if(!chars)throw new Error('CHARACTERS_PICKER_NOT_FOUND');
@@ -457,10 +457,10 @@ async function attachCharacter(page,name){
 
   const selectedText=compact(await candidate.innerText().catch(()=>''),120);
   if(norm(selectedText)!==norm(name))throw new Error(`CHARACTER_EXACT_MATCH_FAILED:${name}:${selectedText}`);
-  await candidate.click();await sleep(700);
+  await clickInteractive(candidate);await sleep(700);
 
   const add=await visibleAddToPromptButton(page);
-  if(add){await add.click().catch(()=>{});await sleep(650);}
+  if(add){await clickInteractive(add).catch(()=>{});await sleep(650);}
   await page.keyboard.press('Escape').catch(()=>{});
   await sleep(300);
 
