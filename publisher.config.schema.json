@@ -92,7 +92,8 @@
             "approved",
             "published",
             "none"
-          ]
+          ],
+          "default": "approved"
         }
       }
     },
