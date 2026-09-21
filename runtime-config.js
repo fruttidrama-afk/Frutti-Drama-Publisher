@@ -45,6 +45,26 @@ export function loadConfig(){
       target_audience:clean(identity.target_audience||'general',120),
       content_category:clean(identity.content_category||'entertainment',120)
     },
+    branding:{
+      reference_mode:clean(c.branding?.reference_mode||'',40)||null,
+      reference_image_url:clean(c.branding?.reference_image_url||'',2000)||null,
+      logo_url:clean(c.branding?.logo_url||'',2000)||null,
+      logo_source:clean(c.branding?.logo_source||'',40)||null,
+      icon_180_url:clean(c.branding?.icon_180_url||'',2000)||null,
+      icon_192_url:clean(c.branding?.icon_192_url||'',2000)||null,
+      icon_512_url:clean(c.branding?.icon_512_url||'',2000)||null,
+      maskable_icon_url:clean(c.branding?.maskable_icon_url||c.branding?.icon_512_url||'',2000)||null,
+      safe_area_ratio:Math.max(.5,Math.min(.95,Number(c.branding?.safe_area_ratio||.8))),
+      tagline:clean(c.branding?.tagline||identity.description||'',500),
+      theme:{
+        primary:clean(c.branding?.theme?.primary||'#0d3152',40),
+        secondary:clean(c.branding?.theme?.secondary||'#b59a64',40),
+        accent:clean(c.branding?.theme?.accent||c.branding?.theme?.secondary||'#b59a64',40),
+        background:clean(c.branding?.theme?.background||'#f7f6f2',40),
+        surface:clean(c.branding?.theme?.surface||'#ffffff',40),
+        text:clean(c.branding?.theme?.text||'#1d1d1b',40)
+      }
+    },
     content:{
       videos_per_day:Math.max(1,Math.min(20,Number(content.videos_per_day||1))),
       serialized:content.serialized!==false,
