@@ -229,6 +229,17 @@
         },
         "external_reality_reconciliation": {
           "const": true
+        },
+        "redo_exactly_once": {
+          "const": true
+        },
+        "redo_token_persistent": {
+          "const": true
+        },
+        "render_identity_binding": {
+          "enum": [
+            "unique-post-baseline-result"
+          ]
         }
       }
     },
@@ -259,6 +270,12 @@
           "type": "number",
           "minimum": 1,
           "maximum": 95
+        },
+        "redo_requires_feedback": {
+          "const": true
+        },
+        "redo_returns_to_review": {
+          "const": true
         }
       }
     },
