@@ -87,7 +87,8 @@ async function ensureExpectedFlowProject(page){
     const href=String(await a.getAttribute('href').catch(()=>'')||'');
     if(text||href)seen.push({i,text:compact(text,180),href:compact(href,220)});
     const lines=text.split(/\n+/).map(x=>x.trim()).filter(Boolean);
-    if(lines.some(x=>x===expected)||norm(text)===norm(expected))matches.push({i,card,a,href,text});
+    const nt=norm(text),ne=norm(expected);
+    if(lines.some(x=>norm(x)===ne)||nt===ne||nt.startsWith(ne+' '))matches.push({i,card,a,href,text});
   }
   if(matches.length!==1){
     publish('FLOW_EXPECTED_PROJECT_NOT_FOUND',{message:'Expected project "'+expected+'" not uniquely found. Visible cards='+JSON.stringify(seen.slice(0,20))});
@@ -1442,7 +1443,8 @@ async function processRow(db,row){
       publish('SERIAL_GATE_BLOCKED',{episode:'E'+row.episode,job_id:row.id,blocking_episode:'E'+otherActive.episode,blocking_job_id:otherActive.id});
       return false;
     }
-    const manualSubmit=meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',autoSubmit=runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||effectiveDailyCount(db)<DAILY_PRODUCTION_LIMIT),submitAuthorized=manualSubmit||autoSubmit;
+    const envEnabled=String(process.env.PUBLISHER_ENABLED||'true').toLowerCase()!=='false';
+    const manualSubmit=envEnabled&&meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',autoSubmit=envEnabled&&runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||effectiveDailyCount(db)<DAILY_PRODUCTION_LIMIT),submitAuthorized=manualSubmit||autoSubmit;
     publish('PREFLIGHT',{episode:'E'+row.episode,job_id:row.id});
     const pf=await preflight(page,row,cp);
     db.prepare('UPDATE factory_items SET transportPreflight=?,error=NULL,updatedAt=? WHERE id=?').run(JSON.stringify(pf).slice(0,20000),now(),row.id);
