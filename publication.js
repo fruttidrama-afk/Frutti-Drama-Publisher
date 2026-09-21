@@ -77,7 +77,28 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     const v=(await yt.videos.list({part:['snippet','status'],id:[item.videoId]})).data.items?.[0];
     if(!v||!channel||v.snippet?.channelId!==channel)throw new Error('El video privado de staging no pertenece al canal conectado.');
     if(v.status?.privacyStatus!=='private')throw new Error('El staging dejó de ser privado; se bloqueó la programación.');
-    await yt.videos.update({part:['snippet','status'],requestBody:{id:item.videoId,snippet:{title:item.title,description:item.description,categoryId:v.snippet?.categoryId||'24',tags:[...(v.snippet?.tags||[]).filter(x=>!String(x).startsWith('publisher-runtime-')),'publisher-runtime-'+item.id]},status:{privacyStatus:'private',publishAt:item.scheduledAt,selfDeclaredMadeForKids:false}}});
+    await yt.videos.update({part:['snippet','status'],requestBody:{id:item.videoId,snippet:{title:item.title,description:item.description,categoryId:v.snippet?.categoryId||'24',tags:[...(v.snippet?.tags||[]).filter(x=>!String(x).startsWith('publisher-runtime-')),'publisher-runtime-'+item.id]},status:{privacyStatus:'private',publishAt:item.scheduledAt,selfDeclaredMadeForKids:false,containsSyntheticMedia:true}}});
+  }
+
+  async function ensureAiDisclosure(item){
+    if(!item?.videoId||item.aiDisclosureSyncedAt)return;
+    const yt=youtubeApi();
+    const current=(await yt.videos.list({part:['status'],id:[item.videoId]})).data.items?.[0];
+    if(!current)throw new Error('YouTube video not found for AI disclosure.');
+    const st=current.status||{};
+    const next={
+      privacyStatus:st.privacyStatus||'private',
+      license:st.license||'youtube',
+      embeddable:st.embeddable!==false,
+      publicStatsViewable:st.publicStatsViewable!==false,
+      selfDeclaredMadeForKids:st.selfDeclaredMadeForKids===true,
+      containsSyntheticMedia:true
+    };
+    if(next.privacyStatus==='private'&&st.publishAt)next.publishAt=st.publishAt;
+    await yt.videos.update({part:['status'],requestBody:{id:item.videoId,status:next}});
+    item.aiDisclosureSyncedAt=new Date().toISOString();
+    hist(item,item.status||'queued','YouTube AI/synthetic-content disclosure enabled.');
+    save(db,item);
   }
 
   async function auditExistingMetadata(){
@@ -93,8 +114,11 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       if(changed){
         item.title=copy.title;item.description=description;hist(item,item.status,'Publication metadata realigned with the exact episode story.');save(db,item);corrected++;
       }
-      if(item.videoId&&loadToken()&&!['published','cancelled','deleted'].includes(String(item.status||''))){
-        try{await stageMetadata(item);synced++}catch{}
+      if(item.videoId&&loadToken()){
+        try{await ensureAiDisclosure(item)}catch{}
+        if(!['published','cancelled','deleted'].includes(String(item.status||''))){
+          try{await stageMetadata(item);synced++}catch{}
+        }
       }
     }
     if(corrected||synced)console.log('[PUBLICATION COPY AUDIT]',{corrected,synced});
@@ -104,7 +128,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     if(item.videoId)return;
     if(!item.filePath||!fs.existsSync(item.filePath))throw new Error('Archivo de publicación ausente.');
     if(!item.resumableSession){
-      const r=await request('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Content-Length':String(item.fileSize),'X-Upload-Content-Type':'video/mp4'},body:JSON.stringify({snippet:{title:item.title,description:item.description,categoryId:'24',tags:['publisher-runtime-'+item.id]},status:{privacyStatus:'private',publishAt:item.scheduledAt,selfDeclaredMadeForKids:false}})});
+      const r=await request('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Content-Length':String(item.fileSize),'X-Upload-Content-Type':'video/mp4'},body:JSON.stringify({snippet:{title:item.title,description:item.description,categoryId:'24',tags:['publisher-runtime-'+item.id]},status:{privacyStatus:'private',publishAt:item.scheduledAt,selfDeclaredMadeForKids:false,containsSyntheticMedia:true}})});
       if(!r.ok)throw new Error('YouTube resumable init failed ('+r.status+').');
       const session=r.headers.get('location');if(!session||new URL(session).hostname!=='www.googleapis.com')throw new Error('YouTube returned an invalid resumable session.');
       item.resumableSession=session;hist(item,'uploading','Resumable session persisted before bytes.');save(db,item);
@@ -147,6 +171,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       for(const item of items){
         if(item.retryAt>Date.now())continue;
         try{
+          if(item.videoId&&!item.aiDisclosureSyncedAt)await ensureAiDisclosure(item);
           if(item.status==='scheduled'){if(Date.now()>=Date.parse(item.scheduledAt)-60000)await verify(item);continue}
           if(Date.now()<Date.parse(item.uploadAt))continue;
           if(!loadToken())throw new Error('YOUTUBE_AUTH_REQUIRED');
