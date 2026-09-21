@@ -66,7 +66,7 @@ export function loadConfig(){
       }
     },
     content:{
-      videos_per_day:Math.max(1,Math.min(20,Number(content.videos_per_day||1))),
+      videos_per_day:Math.max(1,Math.min(20,Number(process.env.PUBLISHER_VIDEOS_PER_DAY||content.videos_per_day||1))),
       serialized:content.serialized!==false,
       dialogue:content.dialogue!==false,
       voice_language:clean(content.voice_language||identity.language||'es-419',40),
