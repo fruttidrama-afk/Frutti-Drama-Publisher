@@ -709,6 +709,9 @@ async function findConsentControl(page,label){
       if(target==='aprobar'&&/siempre/.test(n))continue;
       if(target==='approve'&&/always/.test(n))continue;
       const box=await el.boundingBox().catch(()=>null);if(!box||box.width<20||box.height<12)continue;
+      const vp=page.viewportSize?.()||{width:1024,height:700};
+      // Flow keeps old approval cards mounted far above the viewport. Never click them.
+      if(box.y<0||box.y>vp.height-8||box.x+box.width<0||box.x>vp.width)continue;
       const area=box.width*box.height;
       ranked.push({el,txt,n,area,box,sel,score:(exact?100:80)-Math.min(40,txt.length)});
     }
