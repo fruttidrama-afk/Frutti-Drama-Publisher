@@ -29,8 +29,7 @@ const DAILY_PRODUCTION_LIMIT=DAILY_LIMIT;
 const CREDITS_PER_GENERATION=CREDIT_PER_GENERATION;
 const DAILY_FLOW_CREDIT_BUDGET=DAILY_CREDIT_BUDGET;
 const PRODUCTION_START_EPISODE=1;
-const escapeRe=v=>String(v??'').replace(/[.*+?^$()|[\]\\]/g,'\\const escapeRe=v=>String(v??'').replace(/[.*+?^$()|[\]\\]/g,'\\$&');
-function projectPath(){if(!liveProject().id)throw new Error('FLOW_PROJECT_NOT_CONFIGURED');return'/project/'+liveProject().id}');
+const escapeRe=v=>String(v??'').replace(/[.*+?^$()|[\]\\]/g,'\\$&');
 function liveProject(){
   let g={...(CONFIG.generation||{})};
   try{const p=JSON.parse(fs.readFileSync(path.join(DATA_DIR,'publisher-config.json'),'utf8'));g={...g,...(p.generation||{})}}catch{}
