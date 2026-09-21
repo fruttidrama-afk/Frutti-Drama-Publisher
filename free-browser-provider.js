@@ -762,15 +762,11 @@ async function approveFlowPointConsent(page){
     for(const [label,mode] of labels){
       const hit=await findConsentControl(page,label);
       if(hit){
-        await trustedClick(hit.el);await sleep(800);
-        let still=await findConsentControl(page,label).catch(()=>null);
-        if(still&&Math.abs((still.box?.y||0)-(hit.box?.y||0))<32){
-          try{await still.el.click({force:true,timeout:3000})}catch{}
-          await sleep(700);
-          still=await findConsentControl(page,label).catch(()=>null);
-        }
+        await trustedClick(hit.el);
+        await sleep(1200);
+        const still=await findConsentControl(page,label).catch(()=>null);
         const after=compact(await getBody(page).catch(()=>''),12000);
-        publish('POINT_CONSENT_APPROVED',{message:label+' latestY='+Math.round(hit.box?.y||0)+' selector='+hit.sel+' text='+hit.txt+' remainingLatestY='+(still?Math.round(still.box?.y||0):'none')+' after='+after.slice(-900)});
+        publish('POINT_CONSENT_APPROVED',{message:label+' SINGLE_CLICK latestY='+Math.round(hit.box?.y||0)+' selector='+hit.sel+' text='+hit.txt+' remaining='+(still?'visible':'gone')+' after='+after.slice(-900)});
         return{approved:true,mode,label};
       }
     }
@@ -847,13 +843,28 @@ async function captureFlowInventory(page){
       const tiles=[...document.querySelectorAll('flow-grid-tile-container')].filter(el=>{const r=el.getBoundingClientRect();return r.width>20&&r.height>20;});
       const sigs=tiles.map(el=>String(el.getAttribute('aria-label')||el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,220)).filter(Boolean);
       const body=String(document.body?.innerText||'').replace(/\s+/g,' ').trim();
-      return{tile_count:tiles.length,ordered_signatures:sigs.slice(0,120),signatures:[...new Set(sigs)].slice(0,120),busy:/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation/i.test(body)};
+      const videoOptions=[...document.querySelectorAll('flow-a2ui-video-option')].filter(el=>{const r=el.getBoundingClientRect();return r.width>20&&r.height>20;});
+      const videoOptionNames=videoOptions.map(el=>{
+        const img=el.querySelector('img,[role="img"]');
+        return String(img?.getAttribute('aria-label')||img?.getAttribute('alt')||el.getAttribute('aria-label')||el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,1200);
+      }).filter(Boolean);
+      return{
+        tile_count:tiles.length,
+        ordered_signatures:sigs.slice(0,120),
+        signatures:[...new Set(sigs)].slice(0,120),
+        video_option_count:videoOptions.length,
+        video_option_names:videoOptionNames.slice(-40),
+        busy:/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation|creating|preparing video|creando video|preparando video/i.test(body)
+      };
     });
-  }catch{return{tile_count:0,ordered_signatures:[],signatures:[],busy:false}}
+  }catch{return{tile_count:0,ordered_signatures:[],signatures:[],video_option_count:0,video_option_names:[],busy:false}}
 }
 function inventoryHasNew(current,baseline){
   if(!baseline)return false;
   if(Number(current?.tile_count||0)>Number(baseline?.tile_count||0))return true;
+  if(Number(current?.video_option_count||0)>Number(baseline?.video_option_count||0))return true;
+  const beforeNames=new Set(Array.isArray(baseline?.video_option_names)?baseline.video_option_names:[]);
+  if((Array.isArray(current?.video_option_names)?current.video_option_names:[]).some(x=>!beforeNames.has(x)))return true;
   const before=new Set(Array.isArray(baseline?.signatures)?baseline.signatures:[]);
   return (Array.isArray(current?.signatures)?current.signatures:[]).some(x=>!before.has(x));
 }
@@ -888,9 +899,9 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
         return{mode:'wait'};
       }
       const retryAt=Date.now()+60000;
-      db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run(retryAt,now(),now(),row.id);
-      setLifecycle(db,row,'RECONCILED_NO_GENERATION',{prior_generation_id:String(lc?.generation_id||row.providerRunId||''),submit_boundary_at:String(lc?.submit_boundary_at||''),reconciled_at:now(),evidence:`No new Flow result after ${Math.round(age/1000)}s; inventory unchanged at ${currentInv.tile_count} tiles.`,retry_at:new Date(retryAt).toISOString()});
-      publish('AMBIGUOUS_RECONCILED_NO_GENERATION',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Automatic generation showed no result; retry may occur after backoff.'});
+      db.prepare("UPDATE factory_items SET status='generating',error=?,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run('SUBMIT_AMBIGUOUS — inventory unchanged is not proof of no generation; Generate remains locked.',retryAt,now(),now(),row.id);
+      setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{...lc,reconciled_at:now(),evidence:`Inventory unchanged after ${Math.round(age/1000)}s; this is insufficient to prove no generation.`,retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:true,last_inventory:currentInv});
+      publish('AMBIGUOUS_STILL_LOCKED',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'No unique result yet. Generate stays locked; reconciliation will continue.'});
       return{mode:'wait'};
     }
   }
@@ -909,10 +920,12 @@ async function waitGenerationStarted(page,baseline,baselineInventory,timeout=900
     const freshVideo=vids.some(v=>v.src&&!baseSrc.has(v.src));
     const inv=await captureFlowInventory(page);
     const tileCountIncreased=Number(inv.tile_count||0)>Number(baselineInventory?.tile_count||0);
+    const optionCountIncreased=Number(inv.video_option_count||0)>Number(baselineInventory?.video_option_count||0);
     const signatureChanged=inventoryHasNew(inv,baselineInventory);
+    const busy=Boolean(inv.busy);
     const elapsed=Date.now()-startedAt;
-    lastEvidence=`freshVideo=${freshVideo}; tileCount=${baselineInventory?.tile_count||0}->${inv.tile_count||0}; signatureChanged=${signatureChanged}; elapsedMs=${elapsed}`;
-    if(freshVideo||tileCountIncreased||signatureChanged)return{started:true,evidence:lastEvidence,videos:vids,inventory:inv};
+    lastEvidence=`freshVideo=${freshVideo}; tileCount=${baselineInventory?.tile_count||0}->${inv.tile_count||0}; videoOptions=${baselineInventory?.video_option_count||0}->${inv.video_option_count||0}; signatureChanged=${signatureChanged}; busy=${busy}; elapsedMs=${elapsed}`;
+    if(freshVideo||tileCountIncreased||optionCountIncreased||signatureChanged||busy)return{started:true,evidence:lastEvidence,videos:vids,inventory:inv};
     await sleep(900);
   }
   return{started:false,evidence:'No hard Flow generation evidence after submit. '+lastEvidence};
@@ -1036,6 +1049,24 @@ function validateMp4(localPath){
 
 async function findGoldenRecoveryAsset(page,allowHistory=true){
   if(!GOLDEN_RECOVERY_TERMS.length)throw new Error('GOLDEN_RECOVERY_TERMS_MISSING');
+
+  // Exact Golden Run recorder path: flow-a2ui-video-option > ... > img with
+  // accessible name equal to the generated prompt. Use Playwright's computed
+  // accessible name rather than brittle Material IDs/XPath.
+  const goldenImgs=page.getByRole('img',{name:/patagonia/i});
+  for(let i=(await goldenImgs.count().catch(()=>0))-1;i>=0;i--){
+    const img=goldenImgs.nth(i);if(!(await img.isVisible().catch(()=>false)))continue;
+    const acc=compact(await img.getAttribute('aria-label').catch(()=>''),1600);
+    const alt=compact(await img.getAttribute('alt').catch(()=>''),1600);
+    const raw=norm((acc||'')+' '+(alt||''));
+    if(!(raw.includes('glacial lake')||raw.includes('sunrise')||raw.includes('turquoise')))continue;
+    await img.scrollIntoViewIfNeeded().catch(()=>{});
+    await img.click({force:true,timeout:5000}).catch(()=>{});
+    await sleep(1200);
+    const d=await visibleDownloadButton(page);
+    if(d)return{found:true,matched:['patagonia','recorder-accessible-name'],label:compact(acc||alt,700),source:'recorder-role-img'};
+    await page.keyboard.press('Escape').catch(()=>{});await sleep(300);
+  }
   const selectors=['flow-grid-tile-container','img','[role="img"]','[aria-label]','button','[role="button"]'];
   const candidates=[];
   const seen=new Set();
