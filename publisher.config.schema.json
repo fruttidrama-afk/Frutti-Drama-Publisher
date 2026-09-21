@@ -1,0 +1,355 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://publisher-factory.local/schemas/publisher-config-v1.json",
+  "title": "Publisher Config V1",
+  "type": "object",
+  "required": [
+    "runtime_version",
+    "identity",
+    "content",
+    "generation",
+    "automation",
+    "review",
+    "schedule",
+    "publication",
+    "security"
+  ],
+  "properties": {
+    "runtime_version": {
+      "const": "publisher-runtime-v1"
+    },
+    "identity": {
+      "type": "object",
+      "required": [
+        "publisher_name",
+        "show_name",
+        "language",
+        "timezone"
+      ],
+      "properties": {
+        "publisher_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "show_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "language": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "target_audience": {
+          "type": "string"
+        },
+        "content_category": {
+          "type": "string"
+        }
+      }
+    },
+    "content": {
+      "type": "object",
+      "required": [
+        "serialized",
+        "videos_per_day",
+        "creative_bible"
+      ],
+      "properties": {
+        "serialized": {
+          "type": "boolean"
+        },
+        "videos_per_day": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "creative_bible": {
+          "type": "string"
+        },
+        "episode_structure": {
+          "type": "string"
+        },
+        "dialogue": {
+          "type": "boolean"
+        },
+        "voice_language": {
+          "type": "string"
+        },
+        "visual_style": {
+          "type": "string"
+        },
+        "continuity_gate": {
+          "enum": [
+            "review_ready",
+            "approved",
+            "published",
+            "none"
+          ]
+        }
+      }
+    },
+    "characters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "role_rules"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "flow_saved_name": {
+            "type": "string"
+          },
+          "mention": {
+            "type": "string"
+          },
+          "role_rules": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "ON_SCREEN",
+                "OFF_SCREEN",
+                "MENTIONED",
+                "WRITTEN_REFERENCE",
+                "DECEASED_REFERENCE",
+                "PHOTO",
+                "FLASHBACK",
+                "VOICE_ONLY",
+                "PROP_REFERENCE"
+              ]
+            }
+          },
+          "visual_rules": {
+            "type": "string"
+          },
+          "voice_rules": {
+            "type": "string"
+          },
+          "canon_metadata": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "generation": {
+      "type": "object",
+      "required": [
+        "provider",
+        "model_intent",
+        "duration_seconds",
+        "aspect_ratio",
+        "output_count"
+      ],
+      "properties": {
+        "provider": {
+          "const": "google-flow"
+        },
+        "project_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model_intent": {
+          "type": "string"
+        },
+        "resolution_intent": {
+          "type": "string"
+        },
+        "download_quality": {
+          "type": "string"
+        },
+        "duration_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "aspect_ratio": {
+          "type": "string"
+        },
+        "output_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "credits_per_generation": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "daily_credit_budget": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "automation": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "const": "free-browser-provider"
+        },
+        "persistent_profile": {
+          "const": true
+        },
+        "tinyfish_required": {
+          "const": false
+        },
+        "semantic_field_safety": {
+          "const": true
+        },
+        "external_reality_reconciliation": {
+          "const": true
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "review",
+            "auto_publish"
+          ]
+        },
+        "archive_provider": {
+          "enum": [
+            "youtube-private-staging",
+            "local-only"
+          ]
+        },
+        "hot_originals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "archive_below_free_percent": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 95
+        }
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "required": [
+        "timezone",
+        "indefinite"
+      ],
+      "properties": {
+        "timezone": {
+          "type": "string"
+        },
+        "indefinite": {
+          "const": true
+        },
+        "generation_strategy": {
+          "enum": [
+            "sequential",
+            "parallel"
+          ]
+        },
+        "posting_times": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "upload_lead_minutes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "publication": {
+      "type": "object",
+      "required": [
+        "providers"
+      ],
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "enum": [
+                  "youtube"
+                ]
+              },
+              "privacy_before_publish": {
+                "enum": [
+                  "private",
+                  "unlisted"
+                ]
+              },
+              "playlist_strategy": {
+                "type": "string"
+              },
+              "title_rules": {
+                "type": "string"
+              },
+              "description_rules": {
+                "type": "string"
+              },
+              "hashtags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "properties": {
+        "passkeys": {
+          "const": true
+        },
+        "recovery_pin": {
+          "type": "boolean"
+        },
+        "session_management": {
+          "const": true
+        }
+      }
+    }
+  }
+}
