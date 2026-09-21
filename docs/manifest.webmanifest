@@ -1,0 +1,23 @@
+{
+  "name": "Publisher Factory",
+  "short_name": "Publisher Factory",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#faf9f6",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory?asset=icon",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory?asset=icon",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
