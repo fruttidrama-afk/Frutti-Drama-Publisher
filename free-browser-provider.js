@@ -53,22 +53,7 @@ const artDay = (d=new Date()) => new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZ
 function dailyGenerationCount(db, day=artDay()) {
   return Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND credits>0 AND COALESCE(generationKind,'automatic')<>'review_retry'").get(day)?.n||0);
 }
-function approvedSubmitCount(db,day=artDay()){
-  const stored=Number(meta(db,'flow:approvedSubmits:'+day,'0')||0);
-  const overrideDay=String(process.env.PUBLISHER_APPROVALS_OVERRIDE_DAY||'').trim();
-  const overrideCount=overrideDay===day?Number(process.env.PUBLISHER_APPROVALS_OVERRIDE_COUNT||0):0;
-  return Math.max(stored,Number.isFinite(overrideCount)?overrideCount:0);
-}
-function effectiveDailyCount(db,day=artDay()){return Math.max(dailyGenerationCount(db,day),approvedSubmitCount(db,day))}
-function markApprovedSubmit(db,row,genId,submitMode,startedAt){
-  const day=artDay(new Date(startedAt)),marker='flow:approvedSubmitRun:'+genId;
-  if(meta(db,marker,'')!=='1'){
-    setMeta(db,marker,'1');
-    setMeta(db,'flow:approvedSubmits:'+day,String(approvedSubmitCount(db,day)+1));
-  }
-  try{db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)").run(randomUUID(),row.id,day,sha(String(row.promptHash||'')+':'+genId),CREDITS_PER_GENERATION,'running',genId,startedAt,startedAt,'automatic')}catch{}
-  return setLifecycle(db,row,'GENERATION_STARTED',{generation_id:genId,generation_started_at:startedAt,submit_mode:submitMode,evidence:'Explicit 15-point Flow consent accepted; generation spend authorized.'});
-}
+function effectiveDailyCount(db,day=artDay()){return dailyGenerationCount(db,day)}
 function reconcileGenerationCreditAccounting(db){
   try{
     db.prepare("UPDATE factory_generations SET credits=? WHERE credits>0 AND status NOT IN ('no_generation','infra_rejected') AND (runId='manual-flow-demo' OR runId LIKE 'free-%') AND credits<>?").run(CREDITS_PER_GENERATION,CREDITS_PER_GENERATION);
@@ -94,25 +79,28 @@ function reconcileGenerationCreditAccounting(db){
 }
 function normalizeUnconfirmedPreGenerationRows(db){
   try{
+    const forceEpisode=Number(process.env.PUBLISHER_FORCE_RESET_EPISODE||0);
+    if(forceEpisode>0){
+      const row=db.prepare("SELECT * FROM factory_items WHERE episode=? AND videoPath IS NULL").get(forceEpisode);
+      if(row){
+        db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Forced clean retry: prior attempts produced no retained media.',updatedAt=? WHERE itemId=? AND status='running'").run(now(),row.id);
+        db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=? AND videoPath IS NULL").run(now(),now(),row.id);
+        setLifecycle(db,row,'FORCED_CLEAN_RETRY',{reconciled_at:now(),episode:forceEpisode,evidence:'Operator confirmed no video exists in Flow; retry earliest episode only.'});
+      }
+    }
     const rows=db.prepare("SELECT * FROM factory_items WHERE videoPath IS NULL AND status NOT IN ('review','queued','historical','published') AND (reviewFeedback IS NULL OR TRIM(reviewFeedback)='') ORDER BY episode").all();
-    let repaired=0,recovered=0;
+    let repaired=0;
     for(const row of rows){
       const lc=lifecycle(db,row)||{},state=String(lc.state||'').toUpperCase();
-      if(AFTER_GENERATE.has(state)||AMBIGUOUS.has(state))continue;
+      if(AFTER_GENERATE.has(state))continue;
       const confirmed=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE itemId=? AND credits>0 AND status NOT IN ('no_generation','infra_rejected')").get(row.id)?.n||0);
       if(confirmed>0)continue;
-      if(/approve/i.test(String(lc.submit_mode||''))&&lc.generation_id){
-        const startedAt=String(lc.generation_started_at||lc.submit_boundary_at||now());
-        markApprovedSubmit(db,row,String(lc.generation_id),String(lc.submit_mode),startedAt);
-        db.prepare("UPDATE factory_items SET status='generating',error=NULL,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
-        recovered++;continue;
-      }
       if(String(row.status||'')==='draft'&&Number(row.nextTry||0)<=Date.now())continue;
+      if(AMBIGUOUS.has(state)&&Date.now()-Date.parse(String(lc.submit_boundary_at||0))<180000)continue;
       db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
-      setLifecycle(db,row,'UNCONFIRMED_ATTEMPT_RESET',{reconciled_at:now(),automatic_submit_forbidden:false,evidence:'No confirmed positive-credit Flow generation exists for this episode.'});
+      setLifecycle(db,row,'UNCONFIRMED_ATTEMPT_RESET',{reconciled_at:now(),automatic_submit_forbidden:false,evidence:'No hard Flow generation evidence or retained media exists.'});
       repaired++;
     }
-    if(recovered)publish('APPROVED_SUBMIT_RECOVERED',{message:'Recovered '+recovered+' consent-approved generation(s) without resubmitting.'});
     if(repaired)publish('UNCONFIRMED_ATTEMPTS_RESET',{message:'Reset '+repaired+' pre-generation attempt(s); strict episode ordering will retry the earliest episode only.'});
   }catch(e){publish('UNCONFIRMED_RESET_WARNING',{message:compact(e?.message||e,300)})}
 }
@@ -378,6 +366,22 @@ async function visibleExact(page,text) {
   const loc=page.getByText(text,{exact:true}); for(let i=(await loc.count())-1;i>=0;i--){const c=loc.nth(i);if(await c.isVisible().catch(()=>false))return c;} return null;
 }
 async function clickInteractive(locator) { await locator.evaluate(el=>{const t=el.closest('button,[role="button"],[role="option"],[role="menuitem"],[role="radio"],[role="tab"]')||el;if(typeof t.click==='function')t.click();else t.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));}); }
+async function trustedClick(locator){
+  try{
+    await locator.scrollIntoViewIfNeeded().catch(()=>{});
+    const box=await locator.boundingBox().catch(()=>null);
+    if(box){
+      const page=locator.page();
+      await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
+      await page.mouse.down();
+      await sleep(80);
+      await page.mouse.up();
+      return true;
+    }
+  }catch{}
+  await locator.click({timeout:4000}).catch(async()=>{await clickInteractive(locator)});
+  return true;
+}
 async function settingsButton(page) {
   const direct=page.getByRole('button',{name:/Settings trigger|Settings|Generation settings|Video settings/i}).last();
   if(await direct.count().catch(()=>0)&&await direct.isVisible().catch(()=>false))return direct;
@@ -689,43 +693,33 @@ async function preflight(page,row,cp){
 }
 async function currentVideos(page){return await page.locator('video').evaluateAll(vs=>vs.map((v,i)=>({i,src:v.currentSrc||v.src||'',duration:Number(v.duration||0),readyState:Number(v.readyState||0),w:Number(v.videoWidth||0),h:Number(v.videoHeight||0)}))).catch(()=>[]);}
 async function approveFlowPointConsent(page){
-  const deadline=Date.now()+12000;
+  const deadline=Date.now()+15000;
   while(Date.now()<deadline){
     const body=await getBody(page).catch(()=>'');
     const consent=/quieres que empiece a generar|¿quieres que empiece a generar|cuesta\s*15\s*puntos|costs?\s*15\s*points|start generating\s*1\s*video/i.test(body);
-    const alwaysLabels=['Aprobar siempre','Always approve','Approve always'];
-    for(const label of alwaysLabels){
+    const tryLabel=async(label,mode)=>{
+      const role=page.getByRole('button',{name:new RegExp('^'+escapeRe(label)+'$','i')}).last();
+      if(await role.count().catch(()=>0)&&await role.isVisible().catch(()=>false)&&await role.isEnabled().catch(()=>false)){
+        await trustedClick(role);await sleep(900);
+        const after=compact(await getBody(page).catch(()=>''),9000);
+        publish('POINT_CONSENT_APPROVED',{message:label+' via trusted mouse; after='+after.slice(-700)});
+        return{approved:true,mode,label};
+      }
       const exact=await visibleExact(page,label).catch(()=>null);
       if(exact){
-        await clickInteractive(exact);
-        publish('POINT_CONSENT_APPROVED',{message:label});
-        await sleep(700);
-        return{approved:true,mode:'approve-always',label};
+        await trustedClick(exact);await sleep(900);
+        const after=compact(await getBody(page).catch(()=>''),9000);
+        publish('POINT_CONSENT_APPROVED',{message:label+' via trusted mouse; after='+after.slice(-700)});
+        return{approved:true,mode,label};
       }
-      const role=page.getByRole('button',{name:new RegExp('^'+escapeRe(label)+'$','i')}).last();
-      if(await role.count().catch(()=>0)&&await role.isVisible().catch(()=>false)){
-        await clickInteractive(role);
-        publish('POINT_CONSENT_APPROVED',{message:label});
-        await sleep(700);
-        return{approved:true,mode:'approve-always',label};
-      }
+      return null;
+    };
+    for(const label of ['Aprobar siempre','Always approve','Approve always']){
+      const hit=await tryLabel(label,'approve-always');if(hit)return hit;
     }
     if(consent){
       for(const label of ['Aprobar','Approve']){
-        const exact=await visibleExact(page,label).catch(()=>null);
-        if(exact){
-          await clickInteractive(exact);
-          publish('POINT_CONSENT_APPROVED',{message:label});
-          await sleep(700);
-          return{approved:true,mode:'approve-once',label};
-        }
-        const role=page.getByRole('button',{name:new RegExp('^'+escapeRe(label)+'$','i')}).last();
-        if(await role.count().catch(()=>0)&&await role.isVisible().catch(()=>false)){
-          await clickInteractive(role);
-          publish('POINT_CONSENT_APPROVED',{message:label});
-          await sleep(700);
-          return{approved:true,mode:'approve-once',label};
-        }
+        const hit=await tryLabel(label,'approve-once');if(hit)return hit;
       }
     }
     await sleep(250);
@@ -1001,16 +995,8 @@ async function processRow(db,row){
     }else db.prepare("UPDATE factory_items SET status='generating',providerRunId=?,error=NULL,updatedAt=? WHERE id=?").run(genId,now(),row.id);
     setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null});
     const submitMode=await clickSubmitExactlyOnce(page);
-    if(/approve/i.test(submitMode)){
-      const startedAt=now();lc=markApprovedSubmit(db,row,genId,submitMode,startedAt);
-      lc={...lc,baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null};
-      setLifecycle(db,row,'GENERATION_STARTED',lc);
-      setMeta(db,'flow:lastSuccessfulGenerationAt',startedAt);
-      publish('GENERATION_STARTED',{episode:'E'+row.episode,job_id:row.id,generation_id:genId,evidence:'Explicit Flow 15-point consent accepted'});
-      return await retrieveExisting(page,row,cp,lc,db);
-    }
-    const started=await waitGenerationStarted(page,baseline,baselineInventory,90000);
-    if(!started.started){setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{generation_id:genId,submit_mode:submitMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,last_error:'Generation start could not be confirmed. Automatic resubmit disabled.'});db.prepare("UPDATE factory_items SET status='generating',error=?,updatedAt=? WHERE id=?").run('SUBMIT_AMBIGUOUS — no automatic resubmit',now(),row.id);throw new Error('SUBMIT_AMBIGUOUS')}
+    const started=await waitGenerationStarted(page,baseline,baselineInventory,/approve/i.test(submitMode)?180000:90000);
+    if(!started.started){const retryAt=Date.now()+30000;setLifecycle(db,row,'UNCONFIRMED_AFTER_CONSENT',{generation_id:genId,submit_mode:submitMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,last_error:'No hard Flow generation evidence after consent.',retry_at:new Date(retryAt).toISOString()});db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=?,nextTry=?,updatedAt=? WHERE id=?").run('No hard Flow generation evidence after consent; retrying same episode only.',retryAt,now(),row.id);publish('GENERATION_NOT_CONFIRMED',{episode:'E'+row.episode,job_id:row.id,message:'No tile/video appeared after consent. Same episode will retry; later episodes remain blocked.'});return false}
     const startedAt=now();lc=setLifecycle(db,row,'GENERATION_STARTED',{generation_id:genId,generation_started_at:startedAt,submit_mode:submitMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence});
     try{db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)").run(randomUUID(),row.id,artDay(new Date(startedAt)),sha(cp.hash+':'+genId),CREDITS_PER_GENERATION,'running',genId,startedAt,startedAt,reviewerRetry?'review_retry':'automatic')}catch{}
     setMeta(db,'flow:lastSuccessfulGenerationAt',startedAt);publish('GENERATION_STARTED',{episode:'E'+row.episode,job_id:row.id,generation_id:genId,evidence:started.evidence});return await retrieveExisting(page,row,cp,lc,db);
