@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { buildPublicationCopy } from './publication-copy.js';
 
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const now=()=>new Date().toISOString();
@@ -31,15 +32,16 @@ function nextSlot(db,config){
 }
 function metadata(row,config){
   const provider=(config.publication?.providers||[]).find(x=>x.type==='youtube')||{};
-  const suffix=(Array.isArray(provider.hashtags)?provider.hashtags:[]).filter(Boolean).join(' ');
-  const hook=String(row.hook||'NEW EPISODE').trim(),show=config.identity.show_name;
-  const story=String(row.story||'').replace(/\s+/g,' ').trim();
-  let title=(hook+': '+story+(suffix?' '+suffix:'')).replace(/[<>]/g,' ').replace(/\s+/g,' ').trim();
-  if(title.length>100){const reserve=suffix?(' '+suffix).length:0;title=(hook+': '+story).slice(0,Math.max(20,100-reserve-1)).trimEnd()+(suffix?' '+suffix:'');title=title.slice(0,100).trimEnd()}
-  let description=(story+'\n\n'+show+(suffix?'\n\n'+suffix:'')).replace(/[<>]/g,' ').trim();
+  const copy=buildPublicationCopy({
+    hook:row.hook,
+    story:row.story,
+    hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+    showName:config.identity.show_name,
+    maxTitleLength:100
+  });
+  let description=copy.description;
   while(utf8(description)>4800)description=description.slice(0,-20).trimEnd();
-  if(!title)throw new Error('YouTube title is empty.');
-  return{title,description};
+  return{title:copy.title,description};
 }
 function publicItem(r){return{...r,history:JSON.parse(r.history||'[]'),resumableSession:undefined,filePath:r.filePath?true:false}}
 function hist(row,status,message=''){const h=JSON.parse(row.history||'[]');h.push({status,at:now(),message});row.history=JSON.stringify(h.slice(-120));row.status=status;row.updatedAt=now()}
