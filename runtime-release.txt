@@ -1,0 +1,3 @@
+publisher-runtime-stable-release
+version=2026-09-21.1
+includes=health-gated-deploys,stable-watch-pattern,branded-setup,uploaded-logo-pwa,flow-self-healing,fast-preflight-retry
