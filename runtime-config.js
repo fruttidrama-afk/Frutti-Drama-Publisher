@@ -9,9 +9,31 @@ function clean(v,n=80000){return String(v??'').trim().slice(0,n)}
 function envConfig(){try{return JSON.parse(String(process.env.PUBLISHER_CONFIG_JSON||'{}'))}catch{return{}}}
 
 export function loadConfig(){
-  let c=envConfig();
-  if(fs.existsSync(PERSISTED)){try{const p=JSON.parse(fs.readFileSync(PERSISTED,'utf8'));c={...c,...p}}catch{}}
-  const identity=c.identity||{},content=c.content||{},generation=c.generation||{},review=c.review||{},schedule=c.schedule||{};
+  const env=envConfig();let persisted={};
+  if(fs.existsSync(PERSISTED)){try{persisted=JSON.parse(fs.readFileSync(PERSISTED,'utf8'))||{}}catch{}}
+  // Factory/environment config is authoritative for creative, branding and policy fields.
+  // Persisted runtime state is authoritative only for connection data learned during setup
+  // (especially the Google Flow project identifiers). This lets redeploys update a Publisher
+  // automatically without erasing its authenticated Flow connection.
+  const envGen=env.generation||{},persistedGen=persisted.generation||{};
+  const generation={...persistedGen,...envGen,
+    project_id:envGen.project_id||persistedGen.project_id||null,
+    project_url:envGen.project_url||persistedGen.project_url||null,
+    project_name:envGen.project_name||persistedGen.project_name||null
+  };
+  const c={...persisted,...env,
+    identity:{...(persisted.identity||{}),...(env.identity||{})},
+    branding:{...(persisted.branding||{}),...(env.branding||{})},
+    content:{...(persisted.content||{}),...(env.content||{})},
+    characters:Array.isArray(env.characters)?env.characters:(persisted.characters||[]),
+    generation,
+    automation:{...(persisted.automation||{}),...(env.automation||{})},
+    review:{...(persisted.review||{}),...(env.review||{})},
+    schedule:{...(persisted.schedule||{}),...(env.schedule||{})},
+    publication:env.publication||persisted.publication,
+    security:{...(persisted.security||{}),...(env.security||{})}
+  };
+  const identity=c.identity||{},content=c.content||{},review=c.review||{},schedule=c.schedule||{};
   const out={
     runtime_version:'publisher-runtime-v1',
     identity:{
