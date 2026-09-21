@@ -64,6 +64,8 @@ function reconcileGenerationCreditAccounting(db){
   try{
     const stale=db.prepare("SELECT id,providerRunId,reviewRetryToken,reviewRetrySubmittedToken FROM factory_items WHERE status='generating' AND videoPath IS NULL AND error LIKE '%RENDER_TIMEOUT%'").all();
     for(const row of stale){
+      const lc=lifecycle(db,row)||{},state=String(lc.state||'').toUpperCase();
+      if(AFTER_GENERATE.has(state)||AMBIGUOUS.has(state))continue;
       const reviewerConsumed=String(row.reviewRetryToken||'')&&String(row.reviewRetryToken||'')===String(row.reviewRetrySubmittedToken||'');
       if(reviewerConsumed)continue;
       const run=String(row.providerRunId||'');
@@ -96,7 +98,7 @@ function normalizeUnconfirmedPreGenerationRows(db){
       const confirmed=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE itemId=? AND credits>0 AND status NOT IN ('no_generation','infra_rejected')").get(row.id)?.n||0);
       if(confirmed>0)continue;
       if(String(row.status||'')==='draft'&&Number(row.nextTry||0)<=Date.now())continue;
-      if(AMBIGUOUS.has(state)&&Date.now()-Date.parse(String(lc.submit_boundary_at||0))<180000)continue;
+      if(AMBIGUOUS.has(state))continue;
       db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
       setLifecycle(db,row,'UNCONFIRMED_ATTEMPT_RESET',{reconciled_at:now(),automatic_submit_forbidden:false,evidence:'No hard Flow generation evidence or retained media exists.'});
       repaired++;
@@ -732,7 +734,7 @@ async function approveFlowPointConsent(page){
   let lastScan='';
   while(Date.now()<deadline){
     const body=await getBody(page).catch(()=>'');
-    const labels=[['Aprobar','approve-once'],['Approve','approve-once'],['Aprobar siempre','approve-always'],['Always approve','approve-always'],['Approve always','approve-always']];
+    const labels=[['Aprobar siempre','approve-always'],['Always approve','approve-always'],['Approve always','approve-always'],['Aprobar','approve-once'],['Approve','approve-once']];
     for(const [label,mode] of labels){
       const hit=await findConsentControl(page,label);
       if(hit){
@@ -772,7 +774,7 @@ async function clickSubmitExactlyOnce(page){
     if(/arrow_forward/.test(text))score=120;
     else if(/^send$/.test(n)||/^submit$/.test(n))score=115;
     else if(/send prompt|submit prompt|generate video/.test(n))score=108;
-    else if(/^start generation$/.test(n))score=70;
+    else if(/^(start generation|iniciar generacion)$/.test(n))score=125;
     if(/settings|download|export|ingredient|clear|history|share|cancel|stop|aprobar|approve|rechazar|reject/.test(n))score=0;
     if(score)ranked.push({b,text,score});
   }
@@ -1030,9 +1032,19 @@ async function processRow(db,row){
     }else db.prepare("UPDATE factory_items SET status='generating',providerRunId=?,error=NULL,updatedAt=? WHERE id=?").run(genId,now(),row.id);
     setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null});
     const submitMode=await clickSubmitExactlyOnce(page);
+    const priorConsent=meta(db,'flow:consentMode','UNKNOWN');
+    const consentMode=/approve-always/i.test(submitMode)?'ALWAYS_APPROVED':(/approve-once|confirm-generate/i.test(submitMode)?'PER_GENERATION':(priorConsent==='ALWAYS_APPROVED'?'ALWAYS_APPROVED':'NO_DIALOG_OBSERVED'));
+    setMeta(db,'flow:consentMode',consentMode);
+    setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null,automatic_submit_forbidden:true});
     const started=await waitGenerationStarted(page,baseline,baselineInventory,/approve/i.test(submitMode)?180000:90000);
-    if(!started.started){const retryAt=Date.now()+30000;setLifecycle(db,row,'UNCONFIRMED_AFTER_CONSENT',{generation_id:genId,submit_mode:submitMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,last_error:'No hard Flow generation evidence after consent.',retry_at:new Date(retryAt).toISOString()});db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=?,nextTry=?,updatedAt=? WHERE id=?").run('No hard Flow generation evidence after consent; retrying same episode only.',retryAt,now(),row.id);publish('GENERATION_NOT_CONFIRMED',{episode:'E'+row.episode,job_id:row.id,message:'No tile/video appeared after consent. Same episode will retry; later episodes remain blocked.'});return false}
-    const startedAt=now();lc=setLifecycle(db,row,'GENERATION_STARTED',{generation_id:genId,generation_started_at:startedAt,submit_mode:submitMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence});
+    if(!started.started){
+      const retryAt=Date.now()+30000;
+      setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{generation_id:genId,submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,last_error:'No hard Flow generation evidence after submit. Read-only reconciliation required before any new Generate.',retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:true});
+      db.prepare("UPDATE factory_items SET status='generating',error=?,nextTry=?,updatedAt=? WHERE id=?").run('SUBMIT_AMBIGUOUS — reconciliation pending; Generate is locked.',retryAt,now(),row.id);
+      publish('SUBMIT_AMBIGUOUS',{episode:'E'+row.episode,job_id:row.id,message:'Submit boundary crossed without hard start evidence. Reconcile only; do not click Generate again.'});
+      return false
+    }
+    const startedAt=now();lc=setLifecycle(db,row,'GENERATION_STARTED',{generation_id:genId,generation_started_at:startedAt,submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,automatic_submit_forbidden:true});
     try{db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)").run(randomUUID(),row.id,artDay(new Date(startedAt)),sha(cp.hash+':'+genId),CREDITS_PER_GENERATION,'running',genId,startedAt,startedAt,reviewerRetry?'review_retry':'automatic')}catch{}
     setMeta(db,'flow:lastSuccessfulGenerationAt',startedAt);publish('GENERATION_STARTED',{episode:'E'+row.episode,job_id:row.id,generation_id:genId,evidence:started.evidence});return await retrieveExisting(page,row,cp,lc,db);
   }finally{await session.close().catch(()=>{})}
