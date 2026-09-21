@@ -774,82 +774,107 @@ async function findConsentControl(page,label){
   ranked.sort((a,b)=>b.order-a.order||b.score-a.score||a.area-b.area);
   return ranked[0]||null;
 }
-async function approveFlowPointConsent(page){
-  const deadline=Date.now()+45000;
-  let lastScan='';
-  while(Date.now()<deadline){
-    const body=await getBody(page).catch(()=>'');
-    const labels=[['Aprobar siempre','approve-always'],['Always approve','approve-always'],['Approve always','approve-always'],['Aprobar','approve-once'],['Approve','approve-once']];
-    for(const [label,mode] of labels){
-      const hit=await findConsentControl(page,label);
-      if(hit){
-        await trustedClick(hit.el);
-        await sleep(1200);
-        const still=await findConsentControl(page,label).catch(()=>null);
-        const after=compact(await getBody(page).catch(()=>''),12000);
-        publish('POINT_CONSENT_APPROVED',{message:label+' SINGLE_CLICK latestY='+Math.round(hit.box?.y||0)+' selector='+hit.sel+' text='+hit.txt+' remaining='+(still?'visible':'gone')+' after='+after.slice(-900)});
-        return{approved:true,mode,label};
-      }
-    }
-    const samples=[];
-    const els=page.locator('button,[role="button"],[tabindex],div,span');
-    for(let i=0;i<Math.min(await els.count().catch(()=>0),450);i++){
-      const el=els.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
-      const txt=compact(await el.innerText().catch(()=>''),100);
-      if(/aprobar|approve|rechazar|reject|15\s*puntos|15\s*points/i.test(txt))samples.push(txt);
-    }
-    if(samples.length)lastScan=[...new Set(samples)].slice(-20).join(' | ');
-    await sleep(300);
+async function permissionSnapshot(page){
+  const loc=page.locator('flow-permission-message');
+  const items=[];
+  for(let i=0;i<Math.min(await loc.count().catch(()=>0),80);i++){
+    const el=loc.nth(i);
+    if(!(await el.isVisible().catch(()=>false)))continue;
+    const box=await el.boundingBox().catch(()=>null);
+    if(!box)continue;
+    const text=compact(await el.innerText().catch(()=>''),700);
+    items.push({i,y:box.y,text,norm:norm(text)});
   }
-  if(lastScan)publish('POINT_CONSENT_SCAN_FAILED',{message:lastScan});
-  return{approved:false,mode:null,label:null};
+  return{count:items.length,maxY:items.length?Math.max(...items.map(x=>x.y)):-1,items};
 }
-async function clickSubmitExactlyOnce(page){
-  let send=null,sendLabel='';
-  const buttons=page.locator('button,[role="button"]'),ranked=[];
-  for(let i=0;i<Math.min(await buttons.count().catch(()=>0),180);i++){
-    const b=buttons.nth(i);
-    if(!(await b.isVisible().catch(()=>false))||!(await b.isEnabled().catch(()=>false)))continue;
-    const text=compact(((await b.innerText().catch(()=>''))||'')+' '+((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.getAttribute('title').catch(()=>''))||''),180);
-    const n=norm(text);let score=0;
-    if(/arrow_forward/.test(text))score=120;
-    else if(/^send$/.test(n)||/^submit$/.test(n))score=115;
-    else if(/send prompt|submit prompt|generate video/.test(n))score=108;
-    else if(/^(start generation|iniciar generacion)$/.test(n))score=125;
-    if(/settings|download|export|ingredient|clear|history|share|cancel|stop|aprobar|approve|rechazar|reject/.test(n))score=0;
-    if(score)ranked.push({b,text,score});
+async function newPermissionMessage(page,before){
+  const loc=page.locator('flow-permission-message');
+  const candidates=[];
+  for(let i=0;i<Math.min(await loc.count().catch(()=>0),80);i++){
+    const el=loc.nth(i);
+    if(!(await el.isVisible().catch(()=>false)))continue;
+    const box=await el.boundingBox().catch(()=>null);if(!box)continue;
+    const text=compact(await el.innerText().catch(()=>''),900),n=norm(text);
+    if(!/approve|aprobar|15\s*points|15\s*puntos/.test(n))continue;
+    const isNew=i>=Number(before?.count||0)||box.y>Number(before?.maxY??-1)+8;
+    if(isNew)candidates.push({el,i,box,text,n});
   }
-  ranked.sort((a,b)=>b.score-a.score);
-  if(ranked[0]){send=ranked[0].b;sendLabel=ranked[0].text}
-  if(!send)throw new Error('FLOW_SEND_BUTTON_NOT_READY');
-  await clickInteractive(send);
-  publish('SUBMIT_SEND_CLICKED',{message:sendLabel||'composer send'});
+  candidates.sort((a,b)=>b.box.y-a.box.y||b.i-a.i);
+  return candidates[0]||null;
+}
+async function generationTransitionVisible(page,baselineInventory,baselineVideos){
+  const inv=await captureFlowInventory(page);
+  const vids=await currentVideos(page);
+  const baseSrc=new Set((baselineVideos||[]).map(v=>v.src).filter(Boolean));
+  const freshVideo=vids.some(v=>v.src&&!baseSrc.has(v.src));
+  const freshInventory=inventoryHasNew(inv,baselineInventory);
+  const send=page.getByRole('button',{name:/Start generation|Iniciar generación/i}).last();
+  const sendVisible=await send.isVisible().catch(()=>false);
+  const sendDisabled=await send.isDisabled().catch(()=>false);
+  const busy=Boolean(inv.busy);
+  return{started:Boolean(freshVideo||freshInventory||busy||sendDisabled||!sendVisible),freshVideo,freshInventory,busy,sendVisible,sendDisabled,inventory:inv,videos:vids};
+}
+async function approveFlowPointConsent(page,permission,baselineInventory,baselineVideos){
+  if(!permission)return{approved:false,mode:null,label:null};
+  const labels=[['Aprobar siempre','approve-always'],['Always approve','approve-always'],['Approve always','approve-always'],['Aprobar','approve-once'],['Approve','approve-once']];
+  for(const [label,mode] of labels){
+    const exact=permission.el.getByText(new RegExp('^'+escapeRe(label)+'$','i'));
+    for(let i=(await exact.count().catch(()=>0))-1;i>=0;i--){
+      const hit=exact.nth(i);
+      if(!(await hit.isVisible().catch(()=>false)))continue;
+      await hit.scrollIntoViewIfNeeded().catch(()=>{});
+      await hit.click({force:true,timeout:5000});
+      const deadline=Date.now()+8000;
+      while(Date.now()<deadline){
+        await sleep(250);
+        const stillVisible=await hit.isVisible().catch(()=>false);
+        const transition=await generationTransitionVisible(page,baselineInventory,baselineVideos);
+        if(!stillVisible||transition.started){
+          publish('POINT_CONSENT_CONFIRMED',{message:label+' accepted; controlGone='+(!stillVisible)+' transition='+JSON.stringify({freshVideo:transition.freshVideo,freshInventory:transition.freshInventory,busy:transition.busy,sendVisible:transition.sendVisible,sendDisabled:transition.sendDisabled})});
+          return{approved:true,mode,label};
+        }
+      }
+      publish('POINT_CONSENT_NOT_ACCEPTED',{message:label+' remained actionable and no generation transition followed.'});
+      throw new Error('FLOW_CONSENT_CLICK_NOT_ACCEPTED:'+label);
+    }
+  }
+  throw new Error('FLOW_PERMISSION_MESSAGE_WITHOUT_APPROVAL_CONTROL:'+compact(permission.text,300));
+}
+async function clickSubmitExactlyOnce(page,baselineInventory,baselineVideos){
+  const permissionBefore=await permissionSnapshot(page);
+  let send=page.locator('flow-creative-agent-prompt-box flow-base-prompt-box flow-generate-icon-button button').last();
+  if(!(await send.count().catch(()=>0))||!(await send.isVisible().catch(()=>false))||!(await send.isEnabled().catch(()=>false))){
+    send=page.getByRole('button',{name:/Start generation|Iniciar generación/i}).last();
+  }
+  if(!(await send.count().catch(()=>0))||!(await send.isVisible().catch(()=>false))||!(await send.isEnabled().catch(()=>false)))throw new Error('FLOW_SEND_BUTTON_NOT_READY');
+  const sendLabel=compact(((await send.innerText().catch(()=>''))||'')+' '+((await send.getAttribute('aria-label').catch(()=>''))||''),180);
+  await send.click({force:true,timeout:5000});
+  publish('SUBMIT_SEND_CLICKED',{message:sendLabel||'Flow composer generate button'});
 
-  const consent=await approveFlowPointConsent(page);
-  if(consent.approved)return'composer-send-'+consent.mode;
-
-  const deadline=Date.now()+6000;
+  const deadline=Date.now()+12000;
   while(Date.now()<deadline){
-    await sleep(300);
+    await sleep(250);
+    const transition=await generationTransitionVisible(page,baselineInventory,baselineVideos);
+    if(transition.started){
+      publish('SUBMIT_DIRECT_GENERATION_CONFIRMED',{message:JSON.stringify({freshVideo:transition.freshVideo,freshInventory:transition.freshInventory,busy:transition.busy,sendVisible:transition.sendVisible,sendDisabled:transition.sendDisabled})});
+      return'composer-send-direct';
+    }
+    const permission=await newPermissionMessage(page,permissionBefore);
+    if(permission){
+      const consent=await approveFlowPointConsent(page,permission,baselineInventory,baselineVideos);
+      return'composer-send-'+consent.mode;
+    }
     const gens=page.getByRole('button',{name:/^Generate$/i});
     for(let i=(await gens.count().catch(()=>0))-1;i>=0;i--){
       const g=gens.nth(i);
       if(await g.isVisible().catch(()=>false)&&await g.isEnabled().catch(()=>false)){
-        await clickInteractive(g);publish('SUBMIT_CONFIRMATION_CLICKED',{message:'Generate button'});await sleep(500);return'composer-send-confirm-generate';
+        await g.click({force:true,timeout:5000});
+        publish('SUBMIT_CONFIRMATION_CLICKED',{message:'Generate'});
+        return'composer-send-confirm-generate';
       }
     }
-    const exact=await visibleExact(page,'Generate').catch(()=>null);
-    if(exact){
-      try{await clickInteractive(exact);publish('SUBMIT_CONFIRMATION_CLICKED',{message:'Generate text control'});await sleep(500);return'composer-send-confirm-generate-text'}catch{}
-    }
   }
-
-  const body=await getBody(page).catch(()=>'');
-  if(/Aprobar siempre|Aprobar|Always approve|Approve always|costs?\s*15\s*points|cuesta\s*15\s*puntos/i.test(body)){
-    throw new Error('FLOW_POINT_CONSENT_VISIBLE_BUT_NOT_CLICKED');
-  }
-  publish('POST_SEND_SCAN',{message:'No explicit confirmation control detected after send.'});
-  return'composer-send-direct';
+  throw new Error('FLOW_SEND_NO_NEW_CONSENT_OR_GENERATION_TRANSITION');
 }
 async function renderAuthGuard(page){
   const url=String(page.url()||'');
@@ -1296,7 +1321,7 @@ async function processRow(db,row){
       if(Number(claimed.changes||0)!==1)throw new Error('REVIEW_RETRY_ALREADY_SUBMITTED');
     }else db.prepare("UPDATE factory_items SET status='generating',providerRunId=?,error=NULL,updatedAt=? WHERE id=?").run(genId,now(),row.id);
     setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null});
-    const submitMode=await clickSubmitExactlyOnce(page);
+    const submitMode=await clickSubmitExactlyOnce(page,baselineInventory,baseline);
     const priorConsent=meta(db,'flow:consentMode','UNKNOWN');
     const consentMode=/approve-always/i.test(submitMode)?'ALWAYS_APPROVED':(/approve-once|confirm-generate/i.test(submitMode)?'PER_GENERATION':(priorConsent==='ALWAYS_APPROVED'?'ALWAYS_APPROVED':'NO_DIALOG_OBSERVED'));
     setMeta(db,'flow:consentMode',consentMode);
@@ -1368,8 +1393,6 @@ async function runProvider(){
     db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     const migrated=await migrateProfileOnce(db);if(!migrated)return;
-    const goldenRecovery=await recoverGoldenRunIfRequested(db);
-    if(goldenRecovery.needed&&!goldenRecovery.done)return;
     const used=effectiveDailyCount(db);row=productionCandidate(db);
     if(row&&String(row.status)==='generating'){publish('RECOVERY_PICKED',{episode:'E'+row.episode,job_id:row.id,state:String(lifecycle(db,row)?.state||''),used_today:used});await processRow(db,row);return}
     const priorityRetry=isReviewerRetry(row);
