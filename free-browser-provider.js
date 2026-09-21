@@ -714,12 +714,12 @@ async function approveFlowPointConsent(page){
       }
       return null;
     };
-    for(const label of ['Aprobar siempre','Always approve','Approve always']){
-      const hit=await tryLabel(label,'approve-always');if(hit)return hit;
-    }
     if(consent){
       for(const label of ['Aprobar','Approve']){
         const hit=await tryLabel(label,'approve-once');if(hit)return hit;
+      }
+      for(const label of ['Aprobar siempre','Always approve','Approve always']){
+        const hit=await tryLabel(label,'approve-always');if(hit)return hit;
       }
     }
     await sleep(250);
