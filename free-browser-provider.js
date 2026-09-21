@@ -24,6 +24,7 @@ const LOCK_FILE=path.join(FACTORY_DIR,'free-browser-provider.lock');
 let LOCK_HEARTBEAT=null;
 const LOCK_STALE_MS=90*1000;
 const GOLDEN_RECOVERY_TOKEN=String(process.env.PUBLISHER_RECOVER_GOLDEN_RUN||'').trim();
+const EXPECTED_FLOW_PROJECT_NAME=String(process.env.PUBLISHER_EXPECTED_FLOW_PROJECT_NAME||'').trim();
 const GOLDEN_RECOVERY_EPISODE=Math.max(1,Number(process.env.PUBLISHER_RECOVERY_TARGET_EPISODE||1));
 const GOLDEN_RECOVERY_TERMS=String(process.env.PUBLISHER_RECOVERY_PROMPT_TERMS||'').split('|').map(x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()).filter(Boolean);
 
@@ -46,6 +47,66 @@ function liveProject(){
 function projectPath(){const p=liveProject();if(!p.id)throw new Error('FLOW_PROJECT_NOT_CONFIGURED');return'/project/'+p.id}
 function flowUrl(){const p=liveProject();if(!p.url)throw new Error('FLOW_PROJECT_NOT_CONFIGURED');return p.url}
 function projectName(){return liveProject().name}
+
+async function visibleTopProjectTitle(page){
+  const inputs=page.locator('input[aria-label="Editable text"]');
+  for(let i=0;i<Math.min(await inputs.count().catch(()=>0),20);i++){
+    const el=inputs.nth(i); if(!(await el.isVisible().catch(()=>false)))continue;
+    const b=await el.boundingBox().catch(()=>null); if(!b||b.y>120)continue;
+    return String(await el.inputValue().catch(()=>'')).trim();
+  }
+  return '';
+}
+function persistResolvedProject(id,name){
+  const file=path.join(FACTORY_DIR,'flow-auth-verified.json');
+  let v={};try{v=JSON.parse(fs.readFileSync(file,'utf8'))||{}}catch{}
+  const next={...v,ok:true,project_id:id,project_url:'https://flow.google.com/project/'+id,project_name:name,verified_at:now()};
+  fs.writeFileSync(file,JSON.stringify(next,null,2),{mode:0o600});
+}
+async function ensureExpectedFlowProject(page){
+  const expected=EXPECTED_FLOW_PROJECT_NAME;
+  if(!expected)return liveProject();
+  const currentUrl=String(page.url()||'');
+  const m=currentUrl.match(/\/project\/([a-zA-Z0-9-]+)/);
+  if(m){
+    const title=await visibleTopProjectTitle(page);
+    if(title===expected){
+      persistResolvedProject(m[1],expected);
+      publish('FLOW_PROJECT_VERIFIED',{project_name:expected,project_id:m[1],message:'Exact expected Flow project verified.'});
+      return{id:m[1],url:'https://flow.google.com/project/'+m[1],name:expected};
+    }
+  }
+  await page.goto('https://flow.google.com/',{waitUntil:'domcontentloaded',timeout:60000});
+  await sleep(2200);
+  const cards=page.locator('flow-project-card');
+  const seen=[],matches=[];
+  for(let i=0;i<Math.min(await cards.count().catch(()=>0),60);i++){
+    const card=cards.nth(i); if(!(await card.isVisible().catch(()=>false)))continue;
+    const text=compact(await card.innerText().catch(()=>''),500);
+    const a=card.locator('a[href*="/project/"]').first();
+    const href=String(await a.getAttribute('href').catch(()=>'')||'');
+    if(text||href)seen.push({i,text:compact(text,180),href:compact(href,220)});
+    const lines=text.split(/\n+/).map(x=>x.trim()).filter(Boolean);
+    if(lines.some(x=>x===expected)||norm(text)===norm(expected))matches.push({i,card,a,href,text});
+  }
+  if(matches.length!==1){
+    publish('FLOW_EXPECTED_PROJECT_NOT_FOUND',{message:'Expected project "'+expected+'" not uniquely found. Visible cards='+JSON.stringify(seen.slice(0,20))});
+    throw new Error('FLOW_EXPECTED_PROJECT_NOT_FOUND:'+expected+':matches='+matches.length);
+  }
+  const chosen=matches[0];
+  const href=chosen.href;
+  if(!href)throw new Error('FLOW_EXPECTED_PROJECT_LINK_MISSING:'+expected);
+  const absolute=href.startsWith('http')?href:'https://flow.google.com'+href;
+  await page.goto(absolute,{waitUntil:'domcontentloaded',timeout:60000});
+  await sleep(1600);
+  const url=String(page.url()||''),mm=url.match(/\/project\/([a-zA-Z0-9-]+)/);
+  if(!mm)throw new Error('FLOW_EXPECTED_PROJECT_NAVIGATION_FAILED:'+expected);
+  const title=await visibleTopProjectTitle(page);
+  if(title!==expected)throw new Error('FLOW_EXPECTED_PROJECT_TITLE_MISMATCH:'+compact(title,120));
+  persistResolvedProject(mm[1],expected);
+  publish('FLOW_PROJECT_RESOLVED',{project_name:expected,project_id:mm[1],message:'Resolved exact Flow project from project grid by name.'});
+  return{id:mm[1],url:'https://flow.google.com/project/'+mm[1],name:expected};
+}
 function modelMatches(v){const text=String(v||'');if(!MODEL_INTENT)return true;if(new RegExp(escapeRe(MODEL_INTENT),'i').test(text))return true;if(/omni/i.test(MODEL_INTENT)&&/omni/i.test(text)){if(/flash/i.test(MODEL_INTENT))return/flash/i.test(text);return true}return false}
 const AFTER_GENERATE = new Set(['GENERATION_STARTED','RETRIEVING','RETRIEVAL_PENDING','RETRIEVED','REVIEW_READY']);
 const AMBIGUOUS = new Set(['SUBMIT_BOUNDARY_ENTERED','SUBMIT_AMBIGUOUS']);
@@ -818,7 +879,13 @@ async function newPermissionMessage(page,before){
   candidates.sort((a,b)=>b.box.y-a.box.y||b.i-a.i);
   return candidates[0]||null;
 }
-async function generationTransitionVisible(page,baselineInventory,baselineVideos){
+async function visibleGenerationBusyCount(page){
+  const busy=page.locator('text=/Generating|Processing|Rendering|Creating video|Generando|Procesando|Starting generation|Initiating|Creando video|Preparando video/i');
+  let n=0;
+  for(let i=0;i<Math.min(await busy.count().catch(()=>0),80);i++)if(await busy.nth(i).isVisible().catch(()=>false))n++;
+  return n;
+}
+async function generationTransitionVisible(page,baselineInventory,baselineVideos,baselineBusy=0){
   const inv=await captureFlowInventory(page);
   const vids=await currentVideos(page);
   const baseSrc=new Set((baselineVideos||[]).map(v=>v.src).filter(Boolean));
@@ -827,10 +894,11 @@ async function generationTransitionVisible(page,baselineInventory,baselineVideos
   const send=page.getByRole('button',{name:/Start generation|Iniciar generación/i}).last();
   const sendVisible=await send.isVisible().catch(()=>false);
   const sendDisabled=await send.isDisabled().catch(()=>false);
-  const busy=Boolean(inv.busy);
-  return{started:Boolean(freshVideo||freshInventory||busy||sendDisabled||!sendVisible),freshVideo,freshInventory,busy,sendVisible,sendDisabled,inventory:inv,videos:vids};
+  const visibleBusy=await visibleGenerationBusyCount(page);
+  const controlTransition=(!sendVisible||sendDisabled)&&visibleBusy>Number(baselineBusy||0);
+  return{started:Boolean(freshVideo||freshInventory||controlTransition),freshVideo,freshInventory,controlTransition,visibleBusy,sendVisible,sendDisabled,inventory:inv,videos:vids};
 }
-async function approveFlowPointConsent(page,permission,baselineInventory,baselineVideos){
+async function approveFlowPointConsent(page,permission,baselineInventory,baselineVideos,baselineBusy=0){
   if(!permission)return{approved:false,mode:null,label:null};
   const labels=[['Aprobar siempre','approve-always'],['Always approve','approve-always'],['Approve always','approve-always'],['Aprobar','approve-once'],['Approve','approve-once']];
   for(const [label,mode] of labels){
@@ -844,7 +912,7 @@ async function approveFlowPointConsent(page,permission,baselineInventory,baselin
       while(Date.now()<deadline){
         await sleep(250);
         const stillVisible=await hit.isVisible().catch(()=>false);
-        const transition=await generationTransitionVisible(page,baselineInventory,baselineVideos);
+        const transition=await generationTransitionVisible(page,baselineInventory,baselineVideos,baselineBusy);
         if(!stillVisible||transition.started){
           publish('POINT_CONSENT_CONFIRMED',{message:label+' accepted; controlGone='+(!stillVisible)+' transition='+JSON.stringify({freshVideo:transition.freshVideo,freshInventory:transition.freshInventory,busy:transition.busy,sendVisible:transition.sendVisible,sendDisabled:transition.sendDisabled})});
           return{approved:true,mode,label};
@@ -856,7 +924,7 @@ async function approveFlowPointConsent(page,permission,baselineInventory,baselin
   }
   throw new Error('FLOW_PERMISSION_MESSAGE_WITHOUT_APPROVAL_CONTROL:'+compact(permission.text,300));
 }
-async function clickSubmitExactlyOnce(page,baselineInventory,baselineVideos){
+async function clickSubmitExactlyOnce(page,baselineInventory,baselineVideos,baselineBusy=0){
   const permissionBefore=await permissionSnapshot(page);
   let send=page.locator('flow-creative-agent-prompt-box flow-base-prompt-box flow-generate-icon-button button').last();
   if(!(await send.count().catch(()=>0))||!(await send.isVisible().catch(()=>false))||!(await send.isEnabled().catch(()=>false))){
@@ -870,14 +938,9 @@ async function clickSubmitExactlyOnce(page,baselineInventory,baselineVideos){
   const deadline=Date.now()+12000;
   while(Date.now()<deadline){
     await sleep(250);
-    const transition=await generationTransitionVisible(page,baselineInventory,baselineVideos);
-    if(transition.started){
-      publish('SUBMIT_DIRECT_GENERATION_CONFIRMED',{message:JSON.stringify({freshVideo:transition.freshVideo,freshInventory:transition.freshInventory,busy:transition.busy,sendVisible:transition.sendVisible,sendDisabled:transition.sendDisabled})});
-      return'composer-send-direct';
-    }
     const permission=await newPermissionMessage(page,permissionBefore);
     if(permission){
-      const consent=await approveFlowPointConsent(page,permission,baselineInventory,baselineVideos);
+      const consent=await approveFlowPointConsent(page,permission,baselineInventory,baselineVideos,baselineBusy);
       return'composer-send-'+consent.mode;
     }
     const gens=page.getByRole('button',{name:/^Generate$/i});
@@ -890,7 +953,8 @@ async function clickSubmitExactlyOnce(page,baselineInventory,baselineVideos){
       }
     }
   }
-  throw new Error('FLOW_SEND_NO_NEW_CONSENT_OR_GENERATION_TRANSITION');
+  publish('POST_SEND_NO_CONSENT',{message:'No new consent/confirmation appeared; verify actual generation state separately.'});
+  return'composer-send-direct';
 }
 async function renderAuthGuard(page){
   const url=String(page.url()||'');
@@ -978,7 +1042,7 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
   publish('SUBMIT_AMBIGUOUS',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Read-only Flow reconciliation pending. No Generate will be clicked.'});
   return{mode:'wait'};
 }
-async function waitGenerationStarted(page,baseline,baselineInventory,timeout=90000){
+async function waitGenerationStarted(page,baseline,baselineInventory,baselineBusy=0,timeout=90000){
   const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean)),startedAt=Date.now(),deadline=startedAt+timeout;
   let lastEvidence='';
   while(Date.now()<deadline){
@@ -989,10 +1053,14 @@ async function waitGenerationStarted(page,baseline,baselineInventory,timeout=900
     const tileCountIncreased=Number(inv.tile_count||0)>Number(baselineInventory?.tile_count||0);
     const optionCountIncreased=Number(inv.video_option_count||0)>Number(baselineInventory?.video_option_count||0);
     const signatureChanged=inventoryHasNew(inv,baselineInventory);
-    const busy=Boolean(inv.busy);
+    const send=page.getByRole('button',{name:/Start generation|Iniciar generación/i}).last();
+    const sendVisible=await send.isVisible().catch(()=>false);
+    const sendDisabled=await send.isDisabled().catch(()=>false);
+    const visibleBusy=await visibleGenerationBusyCount(page);
     const elapsed=Date.now()-startedAt;
-    lastEvidence=`freshVideo=${freshVideo}; tileCount=${baselineInventory?.tile_count||0}->${inv.tile_count||0}; videoOptions=${baselineInventory?.video_option_count||0}->${inv.video_option_count||0}; signatureChanged=${signatureChanged}; busy=${busy}; elapsedMs=${elapsed}`;
-    if(freshVideo||tileCountIncreased||optionCountIncreased||signatureChanged||busy)return{started:true,evidence:lastEvidence,videos:vids,inventory:inv};
+    const controlTransition=elapsed>=1200&&(!sendVisible||sendDisabled)&&visibleBusy>Number(baselineBusy||0);
+    lastEvidence=`freshVideo=${freshVideo}; tileCount=${baselineInventory?.tile_count||0}->${inv.tile_count||0}; videoOptions=${baselineInventory?.video_option_count||0}->${inv.video_option_count||0}; signatureChanged=${signatureChanged}; controlTransition=${controlTransition}; busy=${baselineBusy}->${visibleBusy}; sendVisible=${sendVisible}; sendDisabled=${sendDisabled}; elapsedMs=${elapsed}`;
+    if(freshVideo||tileCountIncreased||optionCountIncreased||signatureChanged||controlTransition)return{started:true,evidence:lastEvidence,videos:vids,inventory:inv};
     await sleep(900);
   }
   return{started:false,evidence:'No hard Flow generation evidence after submit. '+lastEvidence};
@@ -1296,6 +1364,7 @@ async function recoverGoldenRunIfRequested(db){
   const session=await launchLocal();
   try{
     const page=session.page||session.context.pages()[0]||await session.context.newPage();
+    await ensureExpectedFlowProject(page);
     if(!String(page.url()).includes(projectPath()))await page.goto(flowUrl(),{waitUntil:'domcontentloaded',timeout:60000});
     await waitFlowReady(page,60000);await renderAuthGuard(page);
     let found=await findGoldenRecoveryAsset(page);
@@ -1359,7 +1428,12 @@ async function retrieveExisting(page,row,cp,lc,db){setLifecycle(db,row,'RETRIEVI
 async function processRow(db,row){
   const cp=preparePromptIfNeeded(db,row);row=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);let lc=lifecycle(db,row);const state=String(lc?.state||'').toUpperCase(),session=await launchLocal(),context=session.context;
   try{
-    const page=session.page||context.pages()[0]||await context.newPage();if(!String(page.url()).includes(projectPath()))await page.goto(flowUrl(),{waitUntil:'domcontentloaded',timeout:60000});await waitFlowReady(page,60000);
+    const page=session.page||context.pages()[0]||await context.newPage();
+    await ensureExpectedFlowProject(page);
+    if(!String(page.url()).includes(projectPath()))await page.goto(flowUrl(),{waitUntil:'domcontentloaded',timeout:60000});
+    await waitFlowReady(page,60000);
+    const verifiedTitle=await visibleTopProjectTitle(page);
+    if(EXPECTED_FLOW_PROJECT_NAME&&verifiedTitle!==EXPECTED_FLOW_PROJECT_NAME)throw new Error('FLOW_TARGET_PROJECT_NOT_VERIFIED:'+compact(verifiedTitle,120));
     if(AFTER_GENERATE.has(state))return await retrieveExisting(page,row,cp,lc,db);
     if(AMBIGUOUS.has(state)){const reconciled=await reconcileAmbiguousGeneric(page,row,lc,db);if(reconciled.mode==='retrieve')return await retrieveExisting(page,row,cp,reconciled.lifecycle,db);return false}
     const reviewerRetry=isReviewerRetry(row);
@@ -1375,19 +1449,19 @@ async function processRow(db,row){
     setLifecycle(db,row,'PREFLIGHT_PASSED',{preflight_at:now(),settings:pf.settings,characters:cp.visual,prompt_hash:cp.hash,prepared_state_verified:Boolean(pf.prepared_state_verified)});
     if(!submitAuthorized){const used=effectiveDailyCount(db);setMeta(db,'flow:state',used>=DAILY_PRODUCTION_LIMIT?'ESPERANDO CRÉDITOS':'CONECTADO');setMeta(db,'flow:currentStep',used>=DAILY_PRODUCTION_LIMIT?'daily-limit':'preflight:passed-no-submit');publish(used>=DAILY_PRODUCTION_LIMIT?'DAILY_LIMIT':'PREFLIGHT_READY_NO_SUBMIT',{episode:'E'+row.episode,job_id:row.id,characters:cp.visual,settings:pf.settings});return false}
     if(manualSubmit)setMeta(db,'automation:allowSubmit','0');
-    const baseline=await currentVideos(page),baselineInventory=await captureFlowInventory(page),genId='free-'+randomUUID();
+    const baseline=await currentVideos(page),baselineInventory=await captureFlowInventory(page),baselineBusy=await visibleGenerationBusyCount(page),genId='free-'+randomUUID();
     if(reviewerRetry){
       const token=String(row.reviewRetryToken||'');
       const claimed=db.prepare("UPDATE factory_items SET status='generating',providerRunId=?,reviewRetrySubmittedToken=reviewRetryToken,error=NULL,updatedAt=? WHERE id=? AND reviewRetryToken=? AND (reviewRetrySubmittedToken IS NULL OR reviewRetrySubmittedToken<>reviewRetryToken)").run(genId,now(),row.id,token);
       if(Number(claimed.changes||0)!==1)throw new Error('REVIEW_RETRY_ALREADY_SUBMITTED');
     }else db.prepare("UPDATE factory_items SET status='generating',providerRunId=?,error=NULL,updatedAt=? WHERE id=?").run(genId,now(),row.id);
     setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null});
-    const submitMode=await clickSubmitExactlyOnce(page,baselineInventory,baseline);
+    const submitMode=await clickSubmitExactlyOnce(page,baselineInventory,baseline,baselineBusy);
     const priorConsent=meta(db,'flow:consentMode','UNKNOWN');
     const consentMode=/approve-always/i.test(submitMode)?'ALWAYS_APPROVED':(/approve-once|confirm-generate/i.test(submitMode)?'PER_GENERATION':(priorConsent==='ALWAYS_APPROVED'?'ALWAYS_APPROVED':'NO_DIALOG_OBSERVED'));
     setMeta(db,'flow:consentMode',consentMode);
     setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null,automatic_submit_forbidden:true});
-    const started=await waitGenerationStarted(page,baseline,baselineInventory,/approve/i.test(submitMode)?180000:90000);
+    const started=await waitGenerationStarted(page,baseline,baselineInventory,baselineBusy,/approve/i.test(submitMode)?180000:90000);
     if(!started.started){
       const retryAt=Date.now()+30000;
       setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{generation_id:genId,submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,last_error:'No hard Flow generation evidence after submit. Read-only reconciliation required before any new Generate.',retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:true});
