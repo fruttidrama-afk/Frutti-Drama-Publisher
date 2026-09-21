@@ -16,7 +16,20 @@ const VIEW={width:1024,height:700};
 const DEBUG_PORT=9334;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const compact=(v,n=500)=>String(v??'').replace(/\s+/g,' ').trim().slice(0,n);
-let xvfb=null,chrome=null;
+let xvfb=null,chrome=null,demoActive=false,demoStartedAt=null,demoStep=0;
+async function demoState(action,extra={}){
+  if(!demoActive)return;
+  try{
+    const x=await page(),p=x.page;
+    const url=String(p?.url?.()||''),title=compact(await p?.title?.().catch(()=>''),180),body=compact(await p?.locator('body').innerText().catch(()=>''),5000);
+    demoStep++;
+    console.log('[FLOW SOP DEMO] '+JSON.stringify({step:demoStep,at:new Date().toISOString(),action,url,title,body_tail:body.slice(-1600),...extra}));
+    await x.browser.close().catch(()=>{});
+  }catch(e){
+    demoStep++;
+    console.log('[FLOW SOP DEMO] '+JSON.stringify({step:demoStep,at:new Date().toISOString(),action,error:compact(e?.message||e,400),...extra}));
+  }
+}
 
 fs.mkdirSync(PROFILE_DIR,{recursive:true,mode:0o700});
 
@@ -139,6 +152,8 @@ ${message?'<div class="notice ok">'+h(message)+'</div>':''}
 ${error?'<div class="notice err"><b>No se pudo completar la acción.</b><br>'+h(error)+'</div>':''}
 ${verified?'<div class="success"><b>✓ Google Flow ya fue verificado.</b><br>Proyecto: '+h(verified.project_name||verified.project_id||'detectado')+'<br><a class="btn primary" href="/">VOLVER AL PUBLISHER</a></div>':''}
 <div class="bar">
+<form method="post" action="/flow/bootstrap/demo-start"><button type="submit">● START SOP RECORDING</button></form>
+<form method="post" action="/flow/bootstrap/demo-stop"><button type="submit">■ STOP SOP RECORDING</button></form>
 <form method="post" action="/flow/bootstrap/start-page"><button class="primary" type="submit">1 · ABRIR GOOGLE</button></form>
 <form method="post" action="/flow/bootstrap/project-page"><button class="primary" type="submit">3 · ABRIR GOOGLE FLOW</button></form>
 <form method="get" action="/flow/bootstrap"><button type="submit">ACTUALIZAR NAVEGADOR</button></form>
@@ -167,6 +182,8 @@ if(!globalThis.__publisherFlowBootstrapInstalled){
  express.application.listen=function(...args){
   const app=this;
   app.get('/flow/bootstrap',(req,res)=>res.type('html').send(pageHtml(String(req.query.msg||''),String(req.query.error||''))));
+  app.post('/flow/bootstrap/demo-start',async(_req,res)=>{demoActive=true;demoStartedAt=new Date().toISOString();demoStep=0;console.log('[FLOW SOP DEMO] '+JSON.stringify({step:0,at:demoStartedAt,action:'DEMO_START'}));await demoState('INITIAL_STATE');go(res,'Grabación SOP iniciada. Hacé una generación manual completa; voy a registrar cada clic y cambio de estado.')});
+  app.post('/flow/bootstrap/demo-stop',async(_req,res)=>{await demoState('FINAL_STATE');console.log('[FLOW SOP DEMO] '+JSON.stringify({step:demoStep+1,at:new Date().toISOString(),action:'DEMO_STOP',started_at:demoStartedAt}));demoActive=false;go(res,'Grabación SOP detenida. Ya quedaron registrados los pasos de la demostración.')});
   app.post('/flow/bootstrap/start-page',async(_req,res)=>{try{await start();go(res,'Google está abierto. Usá la pantalla remota de abajo para iniciar sesión.')}catch(e){go(res,'',e?.message||e)}});
   app.post('/flow/bootstrap/project-page',async(_req,res)=>{try{await navigate(PROJECT_ID?PROJECT_URL:'https://flow.google.com/');go(res,'Google Flow está abierto. Elegí o creá un proyecto en la pantalla remota.')}catch(e){go(res,'',e?.message||e)}});
   app.get('/flow/bootstrap/screen.png',async(_req,res)=>{try{if(!pids().length||!windowId()){res.status(409).type('image/svg+xml').send('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="700"><rect width="100%" height="100%" fill="#eee"/><text x="512" y="350" text-anchor="middle" font-family="Arial" font-size="30" fill="#555">Navegador cerrado</text></svg>');return}const png=shot();res.set('Cache-Control','no-store, max-age=0');res.type('png').send(png)}catch(e){res.status(500).type('text').send(compact(e?.message||e,500))}});
@@ -192,12 +209,12 @@ stage.addEventListener('click',async e=>{if(clickBusy)return;const r=stage.getBo
   }catch(e){res.status(500).type('html').send('<!doctype html><html><body style="font-family:Arial;padding:20px">Error: '+h(e?.message||e)+'<br><a href="/flow/bootstrap/view">Volver</a></body></html>')}});
   app.post('/flow/bootstrap/type-view',async(req,res)=>{try{
     const text=String(req.body?.text??'');if(!text||text.length>20000)throw new Error('Escribí algo primero.');
-    await start();await insertText(text);await sleep(180);res.redirect('/flow/bootstrap/view');
+    await start();await demoState('BEFORE_TYPE',{length:text.length});await insertText(text);await sleep(180);await demoState('AFTER_TYPE',{length:text.length});res.redirect('/flow/bootstrap/view');
   }catch(e){res.status(500).type('html').send('<!doctype html><html><body style="font-family:Arial;padding:20px">Error: '+h(e?.message||e)+'<br><a href="/flow/bootstrap/view">Volver</a></body></html>')}});
   app.post('/flow/bootstrap/key-view',async(req,res)=>{try{
     await start();const key=String(req.body?.key||'');if(!['Tab','Return','BackSpace','Escape','Up','Down','Left','Right'].includes(key))throw new Error('Tecla no permitida.');
     const w=windowId();if(w)spawnSync('xdotool',['windowactivate','--sync',w],{env:env(),timeout:3000});
-    spawnSync('xdotool',['key','--clearmodifiers',key],{env:env(),timeout:3000});await sleep(120);res.redirect('/flow/bootstrap/view');
+    await demoState('BEFORE_KEY',{key});spawnSync('xdotool',['key','--clearmodifiers',key],{env:env(),timeout:3000});await sleep(180);await demoState('AFTER_KEY',{key});res.redirect('/flow/bootstrap/view');
   }catch(e){res.status(500).type('html').send('<!doctype html><html><body style="font-family:Arial;padding:20px">Error: '+h(e?.message||e)+'<br><a href="/flow/bootstrap/view">Volver</a></body></html>')}});
   app.post('/flow/bootstrap/click-page',async(req,res)=>{try{await start();const w=windowId();if(!w)throw new Error('No hay ventana de Chrome.');const x=Math.max(0,Math.min(VIEW.width-1,Number(req.body?.['screen.x'])||0)),y=Math.max(0,Math.min(VIEW.height-1,Number(req.body?.['screen.y'])||0));spawnSync('xdotool',['windowactivate','--sync',w],{env:env(),timeout:3000});spawnSync('xdotool',['mousemove','--window',w,String(Math.round(x)),String(Math.round(y)),'click','1'],{env:env(),timeout:3000});await sleep(300);go(res,'Clic enviado al navegador remoto.')}catch(e){go(res,'',e?.message||e)}});
   app.post('/flow/bootstrap/type-page',async(req,res)=>{try{const text=String(req.body?.text??'');if(!text||text.length>20000)throw new Error('Escribí algo primero.');await start();await insertText(text);await sleep(250);go(res,'Texto enviado y borrado del formulario local.')}catch(e){go(res,'',e?.message||e)}});
