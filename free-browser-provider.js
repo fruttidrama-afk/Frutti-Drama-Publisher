@@ -713,7 +713,8 @@ async function findConsentControl(page,label){
       ranked.push({el,txt,n,area,box,sel,score:(exact?100:80)-Math.min(40,txt.length)});
     }
   }
-  ranked.sort((a,b)=>b.score-a.score||a.area-b.area);
+  // Old approval cards remain in Flow history. Always choose the lowest/latest one.
+  ranked.sort((a,b)=>(b.box?.y||0)-(a.box?.y||0)||b.score-a.score||a.area-b.area);
   return ranked[0]||null;
 }
 async function approveFlowPointConsent(page){
@@ -725,9 +726,15 @@ async function approveFlowPointConsent(page){
     for(const [label,mode] of labels){
       const hit=await findConsentControl(page,label);
       if(hit){
-        await trustedClick(hit.el);await sleep(1200);
+        await trustedClick(hit.el);await sleep(800);
+        let still=await findConsentControl(page,label).catch(()=>null);
+        if(still&&Math.abs((still.box?.y||0)-(hit.box?.y||0))<32){
+          try{await still.el.click({force:true,timeout:3000})}catch{}
+          await sleep(700);
+          still=await findConsentControl(page,label).catch(()=>null);
+        }
         const after=compact(await getBody(page).catch(()=>''),12000);
-        publish('POINT_CONSENT_APPROVED',{message:label+' via trusted mouse selector='+hit.sel+' text='+hit.txt+' after='+after.slice(-900)});
+        publish('POINT_CONSENT_APPROVED',{message:label+' latestY='+Math.round(hit.box?.y||0)+' selector='+hit.sel+' text='+hit.txt+' remainingLatestY='+(still?Math.round(still.box?.y||0):'none')+' after='+after.slice(-900)});
         return{approved:true,mode,label};
       }
     }
