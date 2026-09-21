@@ -1034,7 +1034,7 @@ function validateMp4(localPath){
   return{size:st.size,duration,width,height,codec:String(stream.codec_name||'')};
 }
 
-async function findGoldenRecoveryAsset(page){
+async function findGoldenRecoveryAsset(page,allowHistory=true){
   if(!GOLDEN_RECOVERY_TERMS.length)throw new Error('GOLDEN_RECOVERY_TERMS_MISSING');
   const selectors=['flow-grid-tile-container','img','[role="img"]','[aria-label]','button','[role="button"]'];
   const candidates=[];
@@ -1113,6 +1113,19 @@ async function findGoldenRecoveryAsset(page){
     }
   }
 
+  if(allowHistory){
+    const history=page.getByRole('button',{name:/Open session history|Session history|Historial de sesiones/i}).last();
+    if(await history.count().catch(()=>0)&&await history.isVisible().catch(()=>false)){
+      await history.click().catch(()=>{});await sleep(1000);
+      const retry=await findGoldenRecoveryAsset(page,false);
+      if(retry?.found)return{...retry,source:'session-history/'+String(retry.source||'scan')};
+      const tags=await page.evaluate(()=>[...new Set([...document.querySelectorAll('*')].map(e=>e.tagName.toLowerCase()).filter(x=>/session|history/.test(x)))].slice(0,80)).catch(()=>[]);
+      retry.history_tags=tags;
+      retry.history_body=compact(await getBody(page).catch(()=>''),7000);
+      return retry;
+    }
+  }
+
   const body=compact(await getBody(page).catch(()=>''),12000);
   const buttons=[];
   const btns=page.locator('button,[role="button"],[role="tab"]');
@@ -1150,7 +1163,7 @@ async function recoverGoldenRunIfRequested(db){
     const found=await findGoldenRecoveryAsset(page);
     if(!found.found){
       setMeta(db,metaKey,JSON.stringify({status:'pending',at:now(),episode:row.episode,job_id:row.id,last:'asset-not-found',candidates:found.candidates||[]}));
-      publish('GOLDEN_RECOVERY_PENDING',{episode:'E'+row.episode,job_id:row.id,message:'Patagonia Golden Run asset not uniquely found yet; production remains paused. diag='+compact(JSON.stringify({url:found.url,body_has_terms:found.body_has_terms,partial:(found.partial||[]).slice(0,12),buttons:(found.buttons||[]).slice(0,40)}),5200),url:found.url,body_has_terms:found.body_has_terms,partial:found.partial,buttons:found.buttons});
+      publish('GOLDEN_RECOVERY_PENDING',{episode:'E'+row.episode,job_id:row.id,message:'Patagonia Golden Run asset not uniquely found yet; production remains paused. diag='+compact(JSON.stringify({url:found.url,body_has_terms:found.body_has_terms,partial:(found.partial||[]).slice(0,12),buttons:(found.buttons||[]).slice(0,40),history_tags:found.history_tags||[],history_body:compact(found.history_body||'',2200)}),7200),url:found.url,body_has_terms:found.body_has_terms,partial:found.partial,buttons:found.buttons});
       return{needed:true,done:false};
     }
     const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);
