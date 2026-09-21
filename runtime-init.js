@@ -14,7 +14,7 @@ const RESET_ON_CHANGE=String(process.env.PUBLISHER_RESET_ON_INSTANCE_CHANGE||'fa
 if(INSTANCE_ID&&RESET_ON_CHANGE){
   let previous=null;
   try{previous=JSON.parse(fs.readFileSync(INSTANCE_MARKER,'utf8'))?.id||null}catch{}
-  if(previous&&previous!==INSTANCE_ID){
+  if(previous!==INSTANCE_ID){
     fs.rmSync(DIR,{recursive:true,force:true});
   }
   if(previous!==INSTANCE_ID){
