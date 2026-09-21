@@ -485,8 +485,14 @@ async function preflight(page,row,cp){
   await clearComposer(page);const settings=await configureFlow(page),attachments=[];for(const name of cp.visual)attachments.push(await attachCharacter(page,name));const count=await ingredientCount(page);if(count!==cp.visual.length)throw new Error('CHARACTER_INGREDIENT_TOTAL_FAILED:'+count+':'+cp.visual.length);const promptGuard=await fillPrompt(page,cp);return{provider:PROVIDER,payload_retrieved:true,prompt_verified:true,first_fragment_seen:true,last_fragment_seen:true,visual_assets_ready:true,auth_required:false,duration:DURATION_LABEL,ratio:ASPECT_RATIO,model:settings.model,resolution:RESOLUTION_INTENT,output_count:OUTPUT_COUNT,characters:cp.visual,attachments,ingredient_count:count,prompt_target:promptGuard.target,project_guard:promptGuard.projectGuard,settings,at:now()};
 }
 async function currentVideos(page){return await page.locator('video').evaluateAll(vs=>vs.map((v,i)=>({i,src:v.currentSrc||v.src||'',duration:Number(v.duration||0),readyState:Number(v.readyState||0),w:Number(v.videoWidth||0),h:Number(v.videoHeight||0)}))).catch(()=>[]);}
-async function findSendButton(page){const editor=await waitFlowReady(page,30000),er=await editor.boundingBox(),buttons=page.locator('button');let best=null,bestScore=-Infinity;for(let i=0;i<await buttons.count();i++){const c=buttons.nth(i);if(!(await c.isVisible().catch(()=>false))||!(await c.isEnabled().catch(()=>false)))continue;const box=await c.boundingBox();if(!box)continue;const txt=compact((await c.innerText().catch(()=>''))+' '+(await c.getAttribute('aria-label').catch(()=>''))+' '+(await c.getAttribute('title').catch(()=>'')),160);let score=0;if(/send|submit|arrow_forward|create/i.test(txt))score+=10000;if(er){const dy=Math.abs((box.y+box.height/2)-(er.y+er.height/2)),right=box.x>=er.x+er.width*0.55;score+=(right?2000:0)-dy;}if(/add|settings|video|download|export/i.test(txt))score-=5000;if(score>bestScore){bestScore=score;best=c;}}if(!best||bestScore<1000)throw new Error('SEND_BUTTON_NOT_FOUND');return best;}
-async function clickSubmitExactlyOnce(page){const send=await findSendButton(page);await send.click();await sleep(1000);const gens=page.getByRole('button',{name:/^Generate$/i});for(let i=(await gens.count())-1;i>=0;i--){const c=gens.nth(i);if(await c.isVisible().catch(()=>false)){await c.click();return'confirmation-generate';}}return'send-direct';}
+async function clickSubmitExactlyOnce(page){
+  const send=page.getByRole('button',{name:/Start generation/i}).last();
+  if(!(await send.count().catch(()=>0))||!(await send.isVisible().catch(()=>false))||!(await send.isEnabled().catch(()=>false)))throw new Error('START_GENERATION_BUTTON_NOT_READY');
+  await send.click();await sleep(650);
+  const gens=page.getByRole('button',{name:/^Generate$/i});
+  for(let i=(await gens.count().catch(()=>0))-1;i>=0;i--){const c=gens.nth(i);if(await c.isVisible().catch(()=>false)&&await c.isEnabled().catch(()=>false)){await c.click();return'confirmation-generate';}}
+  return'start-generation-direct';
+}
 async function renderAuthGuard(page){
   const url=String(page.url()||'');
   if(/accounts\.google\.com|signin|ServiceLogin/i.test(url))throw new Error('FLOW_AUTH_REQUIRED_DURING_RENDER');
@@ -500,9 +506,9 @@ async function captureFlowInventory(page){
       const tiles=[...document.querySelectorAll('flow-grid-tile-container')].filter(el=>{const r=el.getBoundingClientRect();return r.width>20&&r.height>20;});
       const sigs=tiles.map(el=>String(el.getAttribute('aria-label')||el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,220)).filter(Boolean);
       const body=String(document.body?.innerText||'').replace(/\s+/g,' ').trim();
-      return{tile_count:tiles.length,signatures:[...new Set(sigs)].slice(0,120),busy:/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation/i.test(body)};
+      return{tile_count:tiles.length,ordered_signatures:sigs.slice(0,120),signatures:[...new Set(sigs)].slice(0,120),busy:/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation/i.test(body)};
     });
-  }catch{return{tile_count:0,signatures:[],busy:false}}
+  }catch{return{tile_count:0,ordered_signatures:[],signatures:[],busy:false}}
 }
 function inventoryHasNew(current,baseline){
   if(!baseline)return false;
@@ -531,10 +537,19 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
     const sameCount=Number(currentInv.tile_count||0)===Number(baselineInv.tile_count||0);
     const sameSigs=before.length===after.length&&before.every(x=>after.includes(x));
     if(sameCount&&sameSigs&&!busy){
+      if(reviewerRetryTokenConsumed(row)){
+        db.prepare("UPDATE factory_items SET status='manual_hold',providerRunId=NULL,error=?,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(
+          'REDO was submitted but Flow did not confirm a result. Token stays consumed; automatic resubmit is forbidden.',
+          now(),now(),row.id
+        );
+        setLifecycle(db,row,'MANUAL_HOLD_SUBMIT_NOT_CONFIRMED',{...lc,reconciled_at:now(),automatic_submit_forbidden:true,reviewer_retry:true,retry_token:String(row.reviewRetryToken||'')});
+        publish('REVIEW_RETRY_NOT_CONFIRMED_HOLD',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'REDO token consumed; no automatic second Generate.'});
+        return{mode:'wait'};
+      }
       const retryAt=Date.now()+60000;
       db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run(retryAt,now(),now(),row.id);
       setLifecycle(db,row,'RECONCILED_NO_GENERATION',{prior_generation_id:String(lc?.generation_id||row.providerRunId||''),submit_boundary_at:String(lc?.submit_boundary_at||''),reconciled_at:now(),evidence:`No new Flow result after ${Math.round(age/1000)}s; inventory unchanged at ${currentInv.tile_count} tiles.`,retry_at:new Date(retryAt).toISOString()});
-      publish('AMBIGUOUS_RECONCILED_NO_GENERATION',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Flow inventory unchanged; safe pre-submit retry will be allowed after backoff.'});
+      publish('AMBIGUOUS_RECONCILED_NO_GENERATION',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Automatic generation showed no result; retry may occur after backoff.'});
       return{mode:'wait'};
     }
   }
@@ -544,7 +559,21 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
   publish('SUBMIT_AMBIGUOUS',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Read-only Flow reconciliation pending. No Generate will be clicked.'});
   return{mode:'wait'};
 }
-async function waitGenerationStarted(page,baseline,timeout=90000){const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean)),deadline=Date.now()+timeout;while(Date.now()<deadline){await renderAuthGuard(page);const text=await getBody(page),vids=await currentVideos(page),status=/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation/i.test(text),fresh=vids.some(v=>v.src&&!baseSrc.has(v.src))||vids.length>(baseline||[]).length;if(status||fresh)return{started:true,evidence:`status=${status}; videos=${(baseline||[]).length}->${vids.length}`,videos:vids};await sleep(1000);}return{started:false,evidence:'No new generation signal within timeout'};}
+async function waitGenerationStarted(page,baseline,baselineInventory,timeout=90000){
+  const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean)),startedAt=Date.now(),deadline=startedAt+timeout;
+  while(Date.now()<deadline){
+    await renderAuthGuard(page);
+    const vids=await currentVideos(page),freshVideo=vids.some(v=>v.src&&!baseSrc.has(v.src));
+    const inv=await captureFlowInventory(page),tileCountIncreased=Number(inv.tile_count||0)>Number(baselineInventory?.tile_count||0);
+    const send=page.getByRole('button',{name:/Start generation/i}).last(),sendVisible=await send.isVisible().catch(()=>false),sendDisabled=await send.isDisabled().catch(()=>false);
+    const busyEls=page.locator('text=/Generating|Processing|Rendering|Creating video|Generando|Procesando|Starting generation|Initiating/i');
+    let visibleBusy=0;for(let i=0;i<Math.min(await busyEls.count().catch(()=>0),40);i++)if(await busyEls.nth(i).isVisible().catch(()=>false))visibleBusy++;
+    const elapsed=Date.now()-startedAt,controlTransition=elapsed>=1200&&(!sendVisible||sendDisabled)&&visibleBusy>0;
+    if(freshVideo||tileCountIncreased||controlTransition)return{started:true,evidence:`freshVideo=${freshVideo}; tileCountIncreased=${tileCountIncreased}; controlTransition=${controlTransition}; elapsedMs=${elapsed}`,videos:vids,inventory:inv};
+    await sleep(1000);
+  }
+  return{started:false,evidence:'No post-submit video, tile-count increase, or generation-control transition'};
+}
 function newestRendered(vids,baseline){const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean)),fresh=(vids||[]).filter(v=>v.readyState>=2&&v.duration>0&&((v.src&&!baseSrc.has(v.src))||v.i>=(baseline||[]).length));return fresh.at(-1)||null;}
 async function visibleDownloadButton(page){
   const named=page.getByRole('button',{name:/Download|Export|Descargar/i});
@@ -633,7 +662,7 @@ async function processRow(db,row){
     const reviewerRetry=isReviewerRetry(row);
     const manualSubmit=meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',autoSubmit=runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||dailyGenerationCount(db)<DAILY_PRODUCTION_LIMIT),submitAuthorized=manualSubmit||autoSubmit;
     publish('PREFLIGHT',{episode:'E'+row.episode,job_id:row.id});
-    const pf=(state==='PREFLIGHT_PASSED'&&row.transportPreflight)?await verifyPreparedState(page,row,cp):await preflight(page,row,cp);
+    const pf=await preflight(page,row,cp);
     db.prepare('UPDATE factory_items SET transportPreflight=?,error=NULL,updatedAt=? WHERE id=?').run(JSON.stringify(pf).slice(0,20000),now(),row.id);
     setLifecycle(db,row,'PREFLIGHT_PASSED',{preflight_at:now(),settings:pf.settings,characters:cp.visual,prompt_hash:cp.hash,prepared_state_verified:Boolean(pf.prepared_state_verified)});
     if(!submitAuthorized){const used=dailyGenerationCount(db);setMeta(db,'flow:state',used>=DAILY_PRODUCTION_LIMIT?'ESPERANDO CRÉDITOS':'CONECTADO');setMeta(db,'flow:currentStep',used>=DAILY_PRODUCTION_LIMIT?'daily-limit':'preflight:passed-no-submit');publish(used>=DAILY_PRODUCTION_LIMIT?'DAILY_LIMIT':'PREFLIGHT_READY_NO_SUBMIT',{episode:'E'+row.episode,job_id:row.id,characters:cp.visual,settings:pf.settings});return false}
@@ -645,7 +674,7 @@ async function processRow(db,row){
       if(Number(claimed.changes||0)!==1)throw new Error('REVIEW_RETRY_ALREADY_SUBMITTED');
     }else db.prepare("UPDATE factory_items SET status='generating',providerRunId=?,error=NULL,updatedAt=? WHERE id=?").run(genId,now(),row.id);
     setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null});
-    const submitMode=await clickSubmitExactlyOnce(page),started=await waitGenerationStarted(page,baseline,90000);
+    const submitMode=await clickSubmitExactlyOnce(page),started=await waitGenerationStarted(page,baseline,baselineInventory,90000);
     if(!started.started){setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{generation_id:genId,submit_mode:submitMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,last_error:'Generation start could not be confirmed. Automatic resubmit disabled.'});db.prepare("UPDATE factory_items SET status='generating',error=?,updatedAt=? WHERE id=?").run('SUBMIT_AMBIGUOUS — no automatic resubmit',now(),row.id);throw new Error('SUBMIT_AMBIGUOUS')}
     const startedAt=now();lc=setLifecycle(db,row,'GENERATION_STARTED',{generation_id:genId,generation_started_at:startedAt,submit_mode:submitMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence});
     try{db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)").run(randomUUID(),row.id,artDay(new Date(startedAt)),sha(cp.hash+':'+genId),CREDITS_PER_GENERATION,'running',genId,startedAt,startedAt,reviewerRetry?'review_retry':'automatic')}catch{}
