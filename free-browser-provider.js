@@ -474,7 +474,12 @@ async function configureFlow(page){
 
   let label='';
   try{label=compact(await(await settingsButton(page)).innerText(),300)}catch{}
+  const save=page.getByRole('button',{name:/^Save$/i}).last();
+  if(await save.count().catch(()=>0)&&await save.isVisible().catch(()=>false)){await clickInteractive(save);await sleep(500)}
+  const closeButtons=page.getByRole('button',{name:/^close$|close settings|cerrar/i});
+  for(let i=(await closeButtons.count().catch(()=>0))-1;i>=0;i--){const x=closeButtons.nth(i);if(await x.isVisible().catch(()=>false)){await clickInteractive(x);await sleep(300);break}}
   await page.keyboard.press('Escape').catch(()=>{});
+  await sleep(350);
   return{label:label||'settings-applied',mode:'Video',ratio:ASPECT_RATIO,model:currentModel,resolution:resolutionApplied,duration:durationApplied,count:outputApplied,ingredients:CONFIG.characters.length>0};
 }
 async function ingredientCount(page){
