@@ -372,6 +372,87 @@
           "const": true
         }
       }
+    },
+    "branding": {
+      "type": "object",
+      "properties": {
+        "reference_mode": {
+          "enum": [
+            "web_design",
+            "show_reference"
+          ]
+        },
+        "reference_image_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "logo_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "logo_source": {
+          "enum": [
+            "uploaded",
+            "generated"
+          ]
+        },
+        "icon_180_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "icon_192_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "icon_512_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "maskable_icon_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "safe_area_ratio": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 0.9
+        },
+        "theme": {
+          "type": "object",
+          "properties": {
+            "primary": {
+              "type": "string"
+            },
+            "secondary": {
+              "type": "string"
+            },
+            "accent": {
+              "type": "string"
+            },
+            "background": {
+              "type": "string"
+            },
+            "surface": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        }
+      }
     }
   }
 }
