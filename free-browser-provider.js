@@ -1160,10 +1160,41 @@ async function recoverGoldenRunIfRequested(db){
     const page=session.page||session.context.pages()[0]||await session.context.newPage();
     if(!String(page.url()).includes(projectPath()))await page.goto(flowUrl(),{waitUntil:'domcontentloaded',timeout:60000});
     await waitFlowReady(page,60000);await renderAuthGuard(page);
-    const found=await findGoldenRecoveryAsset(page);
+    let found=await findGoldenRecoveryAsset(page);
+    let searchedProjects=[];
     if(!found.found){
-      setMeta(db,metaKey,JSON.stringify({status:'pending',at:now(),episode:row.episode,job_id:row.id,last:'asset-not-found',candidates:found.candidates||[]}));
-      publish('GOLDEN_RECOVERY_PENDING',{episode:'E'+row.episode,job_id:row.id,message:'Patagonia Golden Run asset not uniquely found yet; production remains paused. diag='+compact(JSON.stringify({url:found.url,body_has_terms:found.body_has_terms,partial:(found.partial||[]).slice(0,12),buttons:(found.buttons||[]).slice(0,40),history_tags:found.history_tags||[],history_body:compact(found.history_body||'',2200)}),7200),url:found.url,body_has_terms:found.body_has_terms,partial:found.partial,buttons:found.buttons});
+      // The Chrome Recorder Golden Run began at Flow home and selected the
+      // third project card. Browser session history is not guaranteed to sync
+      // across profiles, so search project cards directly, prioritizing card #3.
+      try{
+        await page.goto('https://flow.google.com/',{waitUntil:'domcontentloaded',timeout:60000});await sleep(2500);
+        const cards=page.locator('flow-project-card');
+        const discovered=[];
+        for(let i=0;i<Math.min(await cards.count().catch(()=>0),30);i++){
+          const card=cards.nth(i);if(!(await card.isVisible().catch(()=>false)))continue;
+          const a=card.locator('a[href*="/project/"]').first();
+          const href=String(await a.getAttribute('href').catch(()=>'')||'');
+          const text=compact(await card.innerText().catch(()=>''),500);
+          const img=card.locator('img').first();
+          const alt=compact((await img.getAttribute('alt').catch(()=>''))||'',220);
+          if(href)discovered.push({i,href,text,alt});
+        }
+        const order=[...discovered.filter(x=>x.i===2),...discovered.filter(x=>x.i!==2)];
+        for(const p of order){
+          const absolute=p.href.startsWith('http')?p.href:'https://flow.google.com'+p.href;
+          searchedProjects.push({index:p.i,href:p.href,text:p.text,alt:p.alt});
+          await page.goto(absolute,{waitUntil:'domcontentloaded',timeout:60000}).catch(()=>{});await sleep(2500);
+          try{await waitFlowReady(page,25000)}catch{}
+          const attempt=await findGoldenRecoveryAsset(page,true);
+          if(attempt?.found){found={...attempt,project_href:p.href,project_index:p.i,project_text:p.text};break}
+        }
+      }catch(e){
+        searchedProjects.push({error:compact(e?.message||e,300)});
+      }
+    }
+    if(!found.found){
+      setMeta(db,metaKey,JSON.stringify({status:'pending',at:now(),episode:row.episode,job_id:row.id,last:'asset-not-found',candidates:found.candidates||[],searched_projects:searchedProjects}));
+      publish('GOLDEN_RECOVERY_PENDING',{episode:'E'+row.episode,job_id:row.id,message:'Patagonia Golden Run asset not uniquely found yet; production remains paused. diag='+compact(JSON.stringify({url:found.url,body_has_terms:found.body_has_terms,partial:(found.partial||[]).slice(0,12),buttons:(found.buttons||[]).slice(0,40),history_tags:found.history_tags||[],history_body:compact(found.history_body||'',2200),searched_projects:searchedProjects}),9000),url:found.url,body_has_terms:found.body_has_terms,partial:found.partial,buttons:found.buttons});
       return{needed:true,done:false};
     }
     const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);
