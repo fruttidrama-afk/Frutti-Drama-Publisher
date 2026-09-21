@@ -692,38 +692,58 @@ async function preflight(page,row,cp){
   await clearComposer(page);const settings=await configureFlow(page),attachments=[];for(const name of cp.visual)attachments.push(await attachCharacter(page,name));const count=await ingredientCount(page);if(count!==cp.visual.length)throw new Error('CHARACTER_INGREDIENT_TOTAL_FAILED:'+count+':'+cp.visual.length);const promptGuard=await fillPrompt(page,cp);return{provider:PROVIDER,payload_retrieved:true,prompt_verified:true,first_fragment_seen:true,last_fragment_seen:true,visual_assets_ready:true,auth_required:false,duration:DURATION_LABEL,ratio:ASPECT_RATIO,model:settings.model,resolution:RESOLUTION_INTENT,output_count:OUTPUT_COUNT,characters:cp.visual,attachments,ingredient_count:count,prompt_target:promptGuard.target,project_guard:promptGuard.projectGuard,settings,at:now()};
 }
 async function currentVideos(page){return await page.locator('video').evaluateAll(vs=>vs.map((v,i)=>({i,src:v.currentSrc||v.src||'',duration:Number(v.duration||0),readyState:Number(v.readyState||0),w:Number(v.videoWidth||0),h:Number(v.videoHeight||0)}))).catch(()=>[]);}
+async function findConsentControl(page,label){
+  const target=norm(label);
+  const selectors=['button','[role="button"]','[tabindex]','div','span'];
+  const ranked=[];
+  for(const sel of selectors){
+    const loc=page.locator(sel),count=Math.min(await loc.count().catch(()=>0),500);
+    for(let i=0;i<count;i++){
+      const el=loc.nth(i);
+      if(!(await el.isVisible().catch(()=>false)))continue;
+      const txt=compact((await el.innerText().catch(()=>''))||'',120),n=norm(txt);
+      if(!n)continue;
+      const exact=n===target;
+      const suffix=n.endsWith(' '+target);
+      if(!exact&&!suffix)continue;
+      if(target==='aprobar'&&/siempre/.test(n))continue;
+      if(target==='approve'&&/always/.test(n))continue;
+      const box=await el.boundingBox().catch(()=>null);if(!box||box.width<20||box.height<12)continue;
+      const area=box.width*box.height;
+      ranked.push({el,txt,n,area,box,sel,score:(exact?100:80)-Math.min(40,txt.length)});
+    }
+  }
+  ranked.sort((a,b)=>b.score-a.score||a.area-b.area);
+  return ranked[0]||null;
+}
 async function approveFlowPointConsent(page){
-  const deadline=Date.now()+15000;
+  const deadline=Date.now()+45000;
+  let lastScan='';
   while(Date.now()<deadline){
     const body=await getBody(page).catch(()=>'');
     const consent=/quieres que empiece a generar|¿quieres que empiece a generar|cuesta\s*15\s*puntos|costs?\s*15\s*points|start generating\s*1\s*video/i.test(body);
-    const tryLabel=async(label,mode)=>{
-      const role=page.getByRole('button',{name:new RegExp('^'+escapeRe(label)+'$','i')}).last();
-      if(await role.count().catch(()=>0)&&await role.isVisible().catch(()=>false)&&await role.isEnabled().catch(()=>false)){
-        await trustedClick(role);await sleep(900);
-        const after=compact(await getBody(page).catch(()=>''),9000);
-        publish('POINT_CONSENT_APPROVED',{message:label+' via trusted mouse; after='+after.slice(-700)});
-        return{approved:true,mode,label};
-      }
-      const exact=await visibleExact(page,label).catch(()=>null);
-      if(exact){
-        await trustedClick(exact);await sleep(900);
-        const after=compact(await getBody(page).catch(()=>''),9000);
-        publish('POINT_CONSENT_APPROVED',{message:label+' via trusted mouse; after='+after.slice(-700)});
-        return{approved:true,mode,label};
-      }
-      return null;
-    };
     if(consent){
-      for(const label of ['Aprobar','Approve']){
-        const hit=await tryLabel(label,'approve-once');if(hit)return hit;
+      for(const [label,mode] of [['Aprobar','approve-once'],['Approve','approve-once'],['Aprobar siempre','approve-always'],['Always approve','approve-always'],['Approve always','approve-always']]){
+        const hit=await findConsentControl(page,label);
+        if(hit){
+          await trustedClick(hit.el);await sleep(1200);
+          const after=compact(await getBody(page).catch(()=>''),12000);
+          publish('POINT_CONSENT_APPROVED',{message:label+' via trusted mouse selector='+hit.sel+' text='+hit.txt+' after='+after.slice(-900)});
+          return{approved:true,mode,label};
+        }
       }
-      for(const label of ['Aprobar siempre','Always approve','Approve always']){
-        const hit=await tryLabel(label,'approve-always');if(hit)return hit;
+      const samples=[];
+      const els=page.locator('button,[role="button"],[tabindex],div,span');
+      for(let i=0;i<Math.min(await els.count().catch(()=>0),450);i++){
+        const el=els.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
+        const txt=compact(await el.innerText().catch(()=>''),100);
+        if(/aprobar|approve|rechazar|reject|15\s*puntos|15\s*points/i.test(txt))samples.push(txt);
       }
+      lastScan=[...new Set(samples)].slice(-20).join(' | ');
     }
-    await sleep(250);
+    await sleep(300);
   }
+  if(lastScan)publish('POINT_CONSENT_SCAN_FAILED',{message:lastScan});
   return{approved:false,mode:null,label:null};
 }
 async function clickSubmitExactlyOnce(page){
