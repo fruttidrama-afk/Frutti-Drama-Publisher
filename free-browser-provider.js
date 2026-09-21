@@ -53,6 +53,22 @@ const artDay = (d=new Date()) => new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZ
 function dailyGenerationCount(db, day=artDay()) {
   return Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND credits>0 AND COALESCE(generationKind,'automatic')<>'review_retry'").get(day)?.n||0);
 }
+function approvedSubmitCount(db,day=artDay()){
+  const stored=Number(meta(db,'flow:approvedSubmits:'+day,'0')||0);
+  const overrideDay=String(process.env.PUBLISHER_APPROVALS_OVERRIDE_DAY||'').trim();
+  const overrideCount=overrideDay===day?Number(process.env.PUBLISHER_APPROVALS_OVERRIDE_COUNT||0):0;
+  return Math.max(stored,Number.isFinite(overrideCount)?overrideCount:0);
+}
+function effectiveDailyCount(db,day=artDay()){return Math.max(dailyGenerationCount(db,day),approvedSubmitCount(db,day))}
+function markApprovedSubmit(db,row,genId,submitMode,startedAt){
+  const day=artDay(new Date(startedAt)),marker='flow:approvedSubmitRun:'+genId;
+  if(meta(db,marker,'')!=='1'){
+    setMeta(db,marker,'1');
+    setMeta(db,'flow:approvedSubmits:'+day,String(approvedSubmitCount(db,day)+1));
+  }
+  try{db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)").run(randomUUID(),row.id,day,sha(String(row.promptHash||'')+':'+genId),CREDITS_PER_GENERATION,'running',genId,startedAt,startedAt,'automatic')}catch{}
+  return setLifecycle(db,row,'GENERATION_STARTED',{generation_id:genId,generation_started_at:startedAt,submit_mode:submitMode,evidence:'Explicit 15-point Flow consent accepted; generation spend authorized.'});
+}
 function reconcileGenerationCreditAccounting(db){
   try{
     db.prepare("UPDATE factory_generations SET credits=? WHERE credits>0 AND status NOT IN ('no_generation','infra_rejected') AND (runId='manual-flow-demo' OR runId LIKE 'free-%') AND credits<>?").run(CREDITS_PER_GENERATION,CREDITS_PER_GENERATION);
@@ -79,15 +95,24 @@ function reconcileGenerationCreditAccounting(db){
 function normalizeUnconfirmedPreGenerationRows(db){
   try{
     const rows=db.prepare("SELECT * FROM factory_items WHERE videoPath IS NULL AND status NOT IN ('review','queued','historical','published') AND (reviewFeedback IS NULL OR TRIM(reviewFeedback)='') ORDER BY episode").all();
-    let repaired=0;
+    let repaired=0,recovered=0;
     for(const row of rows){
+      const lc=lifecycle(db,row)||{},state=String(lc.state||'').toUpperCase();
+      if(AFTER_GENERATE.has(state)||AMBIGUOUS.has(state))continue;
       const confirmed=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE itemId=? AND credits>0 AND status NOT IN ('no_generation','infra_rejected')").get(row.id)?.n||0);
       if(confirmed>0)continue;
+      if(/approve/i.test(String(lc.submit_mode||''))&&lc.generation_id){
+        const startedAt=String(lc.generation_started_at||lc.submit_boundary_at||now());
+        markApprovedSubmit(db,row,String(lc.generation_id),String(lc.submit_mode),startedAt);
+        db.prepare("UPDATE factory_items SET status='generating',error=NULL,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
+        recovered++;continue;
+      }
       if(String(row.status||'')==='draft'&&Number(row.nextTry||0)<=Date.now())continue;
       db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
       setLifecycle(db,row,'UNCONFIRMED_ATTEMPT_RESET',{reconciled_at:now(),automatic_submit_forbidden:false,evidence:'No confirmed positive-credit Flow generation exists for this episode.'});
       repaired++;
     }
+    if(recovered)publish('APPROVED_SUBMIT_RECOVERED',{message:'Recovered '+recovered+' consent-approved generation(s) without resubmitting.'});
     if(repaired)publish('UNCONFIRMED_ATTEMPTS_RESET',{message:'Reset '+repaired+' pre-generation attempt(s); strict episode ordering will retry the earliest episode only.'});
   }catch(e){publish('UNCONFIRMED_RESET_WARNING',{message:compact(e?.message||e,300)})}
 }
@@ -961,12 +986,12 @@ async function processRow(db,row){
     if(AFTER_GENERATE.has(state))return await retrieveExisting(page,row,cp,lc,db);
     if(AMBIGUOUS.has(state)){const reconciled=await reconcileAmbiguousGeneric(page,row,lc,db);if(reconciled.mode==='retrieve')return await retrieveExisting(page,row,cp,reconciled.lifecycle,db);return false}
     const reviewerRetry=isReviewerRetry(row);
-    const manualSubmit=meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',autoSubmit=runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||dailyGenerationCount(db)<DAILY_PRODUCTION_LIMIT),submitAuthorized=manualSubmit||autoSubmit;
+    const manualSubmit=meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',autoSubmit=runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||effectiveDailyCount(db)<DAILY_PRODUCTION_LIMIT),submitAuthorized=manualSubmit||autoSubmit;
     publish('PREFLIGHT',{episode:'E'+row.episode,job_id:row.id});
     const pf=await preflight(page,row,cp);
     db.prepare('UPDATE factory_items SET transportPreflight=?,error=NULL,updatedAt=? WHERE id=?').run(JSON.stringify(pf).slice(0,20000),now(),row.id);
     setLifecycle(db,row,'PREFLIGHT_PASSED',{preflight_at:now(),settings:pf.settings,characters:cp.visual,prompt_hash:cp.hash,prepared_state_verified:Boolean(pf.prepared_state_verified)});
-    if(!submitAuthorized){const used=dailyGenerationCount(db);setMeta(db,'flow:state',used>=DAILY_PRODUCTION_LIMIT?'ESPERANDO CRÉDITOS':'CONECTADO');setMeta(db,'flow:currentStep',used>=DAILY_PRODUCTION_LIMIT?'daily-limit':'preflight:passed-no-submit');publish(used>=DAILY_PRODUCTION_LIMIT?'DAILY_LIMIT':'PREFLIGHT_READY_NO_SUBMIT',{episode:'E'+row.episode,job_id:row.id,characters:cp.visual,settings:pf.settings});return false}
+    if(!submitAuthorized){const used=effectiveDailyCount(db);setMeta(db,'flow:state',used>=DAILY_PRODUCTION_LIMIT?'ESPERANDO CRÉDITOS':'CONECTADO');setMeta(db,'flow:currentStep',used>=DAILY_PRODUCTION_LIMIT?'daily-limit':'preflight:passed-no-submit');publish(used>=DAILY_PRODUCTION_LIMIT?'DAILY_LIMIT':'PREFLIGHT_READY_NO_SUBMIT',{episode:'E'+row.episode,job_id:row.id,characters:cp.visual,settings:pf.settings});return false}
     if(manualSubmit)setMeta(db,'automation:allowSubmit','0');
     const baseline=await currentVideos(page),baselineInventory=await captureFlowInventory(page),genId='free-'+randomUUID();
     if(reviewerRetry){
@@ -975,7 +1000,16 @@ async function processRow(db,row){
       if(Number(claimed.changes||0)!==1)throw new Error('REVIEW_RETRY_ALREADY_SUBMITTED');
     }else db.prepare("UPDATE factory_items SET status='generating',providerRunId=?,error=NULL,updatedAt=? WHERE id=?").run(genId,now(),row.id);
     setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null});
-    const submitMode=await clickSubmitExactlyOnce(page),started=await waitGenerationStarted(page,baseline,baselineInventory,90000);
+    const submitMode=await clickSubmitExactlyOnce(page);
+    if(/approve/i.test(submitMode)){
+      const startedAt=now();lc=markApprovedSubmit(db,row,genId,submitMode,startedAt);
+      lc={...lc,baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null};
+      setLifecycle(db,row,'GENERATION_STARTED',lc);
+      setMeta(db,'flow:lastSuccessfulGenerationAt',startedAt);
+      publish('GENERATION_STARTED',{episode:'E'+row.episode,job_id:row.id,generation_id:genId,evidence:'Explicit Flow 15-point consent accepted'});
+      return await retrieveExisting(page,row,cp,lc,db);
+    }
+    const started=await waitGenerationStarted(page,baseline,baselineInventory,90000);
     if(!started.started){setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{generation_id:genId,submit_mode:submitMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,last_error:'Generation start could not be confirmed. Automatic resubmit disabled.'});db.prepare("UPDATE factory_items SET status='generating',error=?,updatedAt=? WHERE id=?").run('SUBMIT_AMBIGUOUS — no automatic resubmit',now(),row.id);throw new Error('SUBMIT_AMBIGUOUS')}
     const startedAt=now();lc=setLifecycle(db,row,'GENERATION_STARTED',{generation_id:genId,generation_started_at:startedAt,submit_mode:submitMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence});
     try{db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)").run(randomUUID(),row.id,artDay(new Date(startedAt)),sha(cp.hash+':'+genId),CREDITS_PER_GENERATION,'running',genId,startedAt,startedAt,reviewerRetry?'review_retry':'automatic')}catch{}
@@ -1036,7 +1070,7 @@ async function runProvider(){
     db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     const migrated=await migrateProfileOnce(db);if(!migrated)return;
-    const used=dailyGenerationCount(db);row=productionCandidate(db);
+    const used=effectiveDailyCount(db);row=productionCandidate(db);
     if(row&&String(row.status)==='generating'){publish('RECOVERY_PICKED',{episode:'E'+row.episode,job_id:row.id,state:String(lifecycle(db,row)?.state||''),used_today:used});await processRow(db,row);return}
     const priorityRetry=isReviewerRetry(row);
     if(used>=DAILY_PRODUCTION_LIMIT&&!priorityRetry){if(row&&String(lifecycle(db,row)?.state||'').toUpperCase()!=='PREFLIGHT_PASSED'){publish('NEXT_DAY_PREFLIGHT',{episode:'E'+row.episode,job_id:row.id,message:'Daily target complete; validating next job without Send.'});await processRow(db,row);return}setMeta(db,'flow:state','ESPERANDO CRÉDITOS');setMeta(db,'flow:currentStep','daily-limit');setMeta(db,'flow:message','Daily production complete: '+used+'/'+DAILY_PRODUCTION_LIMIT+'.');publish('DAILY_LIMIT',{used,limit:DAILY_PRODUCTION_LIMIT,day:artDay(),next_episode:row?('E'+row.episode):null});return}
