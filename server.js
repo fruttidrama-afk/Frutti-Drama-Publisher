@@ -157,8 +157,8 @@ form{margin-top:14px;display:grid;gap:10px}input[type=text],input[type=password]
 <label class="check"><input type="checkbox" data-guide="test"> Ya agregué mi email</label></article>
 
 <article class="step"><div class="step-head"><div class="num">4</div><div><h2>Creá el cliente OAuth</h2><p>Esta es la credencial que conecta Google con este Publisher.</p></div></div>
-<div class="actions"><a class="btn primary" target="_blank" rel="noopener" href="${links.clients}">ABRIR CLIENTS / CREDENCIALES</a><a class="btn" target="_blank" rel="noopener" href="${links.credentials}">ABRIR CREDENCIALES CLÁSICAS</a></div>
-<div class="choice"><div class="choice-title">Qué elegir</div><ul><li>Tocá <b>Create client</b> o <b>Create credentials → OAuth client ID</b>.</li><li>En <b>Application type</b>, elegí <strong>Web application</strong>.</li><li>En <b>Name</b>, podés escribir <strong>${esc(show)} Publisher</strong>.</li><li>Dejá <b>Authorized JavaScript origins</b> vacío.</li></ul></div>
+<div class="actions"><a class="btn primary" target="_blank" rel="noopener" href="${links.clients}">ABRIR CREDENCIALES OAUTH</a></div>
+<div class="choice"><div class="choice-title">Qué elegir</div><ul><li>Tocá <b>Create client</b>.</li><li>En <b>Application type</b>, elegí <strong>Web application</strong>.</li><li>En <b>Name</b>, podés escribir <strong>${esc(show)} Publisher</strong>.</li><li>Dejá <b>Authorized JavaScript origins</b> vacío.</li></ul></div>
 <div class="screen-cue"><b>Ahora viene la parte más importante:</b><p>En <b>Authorized redirect URIs</b> tocá <b>Add URI</b> y pegá exactamente la dirección de abajo. Si falta una letra, Google no va a poder volver al Publisher.</p></div>
 <div class="uri"><code id="redirect">${esc(redirect)}</code><button class="btn copy" type="button" id="copy">COPIAR URL</button></div>
 <div class="choice"><ul><li>Tocá <b>Create</b>.</li><li>Google te va a mostrar un <b>Client ID</b> y un <b>Client Secret</b>. No cierres esa pantalla todavía.</li></ul></div>
