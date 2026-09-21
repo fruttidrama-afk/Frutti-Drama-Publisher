@@ -349,6 +349,10 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "contains_synthetic_media": {
+                "const": true,
+                "description": "Always disclose AI-generated or meaningfully altered synthetic media to YouTube."
               }
             }
           }
