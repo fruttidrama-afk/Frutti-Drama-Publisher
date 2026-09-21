@@ -1,3 +1,3 @@
 publisher-runtime-stable-release
-version=2026-09-21.5
-includes=health-gated-deploys,stable-watch-pattern,branded-activation,branded-login,branded-youtube-setup,branded-flow-setup,uploaded-logo-pwa,flow-self-healing,overlay-safe-settings,semantic-model-detection,nonblocking-model-default-resolution,automatic-generation-retry,single-provider-loop,post-setup-success-dashboard
+version=2026-09-21.6
+includes=health-gated-deploys,stable-watch-pattern,branded-activation,branded-login,branded-youtube-setup,branded-flow-setup,uploaded-logo-pwa,flow-self-healing,overlay-safe-settings,semantic-model-detection,nonblocking-hidden-controls,automatic-generation-retry,single-provider-loop,post-setup-success-dashboard
