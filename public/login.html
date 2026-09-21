@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f3f3f3">
+<title>Entrar al Publisher</title>
+<style>
+:root{--bg:#f3f3f3;--card:#fff;--ink:#050505;--muted:#6b6b6b;--line:#d4d4d4}
+*{box-sizing:border-box}
+body{margin:0;min-height:100dvh;display:grid;place-items:center;background:var(--bg);color:var(--ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;padding:calc(18px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom))}
+.card{width:min(460px,94vw);background:var(--card);border:1px solid var(--line);border-radius:28px;padding:28px;box-shadow:0 24px 70px rgba(0,0,0,.07)}
+h1{font-size:36px;line-height:1;letter-spacing:-.055em;margin:0 0 10px}
+p{color:var(--muted);line-height:1.5;margin:0 0 20px}
+input,button{width:100%;min-height:52px;border-radius:14px;font:inherit}
+input{border:1px solid #cfcfcf;background:#fff;padding:0 15px;font-size:18px;outline:none}
+input:focus{border-color:#000;box-shadow:0 0 0 3px rgba(0,0,0,.06)}
+button{border:1px solid #000;background:#000;color:#fff;font-weight:760;margin-top:10px;cursor:pointer}
+button.secondary{background:#fff;color:#000;border-color:#bfbfbf}
+button:disabled{opacity:.5}
+.msg{min-height:22px;margin-top:14px;color:#555;font-size:14px;line-height:1.4}
+</style>
+</head>
+<body>
+<main class="card">
+  <h1 id="name">Publisher</h1>
+  <p id="subtitle">Acceso seguro</p>
+  <button id="passkey" class="secondary" type="button">Usar passkey / Face ID</button>
+  <input id="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="PIN de recuperación" aria-label="PIN de recuperación">
+  <button id="pinButton" type="button">Entrar con PIN</button>
+  <div id="msg" class="msg" role="status" aria-live="polite"></div>
+</main>
+<script>
+const q=s=>document.querySelector(s);
+const msg=q('#msg');
+async function request(url,options={}){
+  const r=await fetch(url,{headers:{'Content-Type':'application/json',...(options.headers||{})},...options});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(data.error||'No se pudo completar la acción.');
+  return data;
+}
+function fromB64url(v){
+  const s=String(v).replace(/-/g,'+').replace(/_/g,'/');
+  const padded=s+'='.repeat((4-s.length%4)%4);
+  const raw=atob(padded),out=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);
+  return out;
+}
+function toB64url(v){
+  let s='';
+  for(const x of new Uint8Array(v))s+=String.fromCharCode(x);
+  return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+async function loadInfo(){
+  try{
+    const info=await request('/auth/public-info');
+    q('#name').textContent=info.publisherName||info.showName||'Publisher';
+    q('#subtitle').textContent=info.passkeysRegistered>0?'Entrá con Face ID/passkey o con tu PIN.':'Todavía no hay una passkey registrada. Entrá con tu PIN y después podés activar Face ID desde Seguridad.';
+    if(info.passkeysRegistered===0)q('#passkey').textContent='Face ID todavía no configurado';
+  }catch{}
+}
+async function pinLogin(){
+  const pin=q('#pin').value.trim();
+  if(!/^\d{6}$/.test(pin)){msg.textContent='Ingresá los 6 números de tu PIN.';return}
+  const b=q('#pinButton');b.disabled=true;msg.textContent='Verificando…';
+  try{await request('/auth/pin',{method:'POST',body:JSON.stringify({pin})});location.replace('/')}
+  catch(e){msg.textContent=e.message;b.disabled=false}
+}
+async function passkeyLogin(){
+  const b=q('#passkey');b.disabled=true;msg.textContent='Preparando Face ID / passkey…';
+  try{
+    const o=await request('/auth/passkeys/options',{method:'POST',body:'{}'});
+    o.challenge=fromB64url(o.challenge);
+    o.allowCredentials=(o.allowCredentials||[]).map(x=>({...x,id:fromB64url(x.id)}));
+    const c=await navigator.credentials.get({publicKey:o});
+    if(!c)throw new Error('No se seleccionó una passkey.');
+    const credential={id:c.id,rawId:toB64url(c.rawId),type:c.type,clientExtensionResults:c.getClientExtensionResults?.()||{},response:{authenticatorData:toB64url(c.response.authenticatorData),clientDataJSON:toB64url(c.response.clientDataJSON),signature:toB64url(c.response.signature),userHandle:c.response.userHandle?toB64url(c.response.userHandle):null}};
+    await request('/auth/passkeys/verify',{method:'POST',body:JSON.stringify({credential})});
+    location.replace('/');
+  }catch(e){msg.textContent=e.message;b.disabled=false}
+}
+q('#pinButton').addEventListener('click',pinLogin);
+q('#passkey').addEventListener('click',passkeyLogin);
+q('#pin').addEventListener('keydown',e=>{if(e.key==='Enter')pinLogin()});
+loadInfo();
+</script>
+</body></html>
