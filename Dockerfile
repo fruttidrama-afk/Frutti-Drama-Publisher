@@ -10,12 +10,13 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 COPY package.json ./
 RUN npm install --omit=dev
-COPY runtime-config.js runtime-init.js free-browser-provider.js flow-bootstrap.js server.js publication.js ./
+COPY runtime-config.js runtime-init.js free-browser-provider.js flow-bootstrap.js server.js publication.js publication-copy.js ./
 RUN node --check runtime-config.js \
   && node --check runtime-init.js \
   && node --check free-browser-provider.js \
   && node --check flow-bootstrap.js \
   && node --check publication.js \
+  && node --check publication-copy.js \
   && node --check server.js
 COPY public ./public
 ENV NODE_ENV=production
