@@ -10,7 +10,7 @@ function envConfig(){try{return JSON.parse(String(process.env.PUBLISHER_CONFIG_J
 
 export function loadConfig(){
   let c=envConfig();
-  if(fs.existsSync(PERSISTED)){try{const p=JSON.parse(fs.readFileSync(PERSISTED,'utf8'));c={...p,...c}}catch{}}
+  if(fs.existsSync(PERSISTED)){try{const p=JSON.parse(fs.readFileSync(PERSISTED,'utf8'));c={...c,...p}}catch{}}
   const identity=c.identity||{},content=c.content||{},generation=c.generation||{},review=c.review||{},schedule=c.schedule||{};
   const out={
     runtime_version:'publisher-runtime-v1',
