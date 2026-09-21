@@ -32,9 +32,12 @@ function nextSlot(db,config){
 }
 function metadata(row,config){
   const provider=(config.publication?.providers||[]).find(x=>x.type==='youtube')||{};
+  let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
   const copy=buildPublicationCopy({
     hook:row.hook,
     story:row.story,
+    prompt:row.prompt,
+    contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],
     hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
     showName:config.identity.show_name,
     maxTitleLength:100
@@ -106,9 +109,10 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     const items=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('cancelled','deleted') ORDER BY episode").all();
     let corrected=0,synced=0;
     for(const item of items){
-      const row=db.prepare('SELECT hook,story FROM factory_items WHERE id=?').get(item.itemId);
+      const row=db.prepare('SELECT hook,story,prompt,flowResult FROM factory_items WHERE id=?').get(item.itemId);
       if(!row)continue;
-      const copy=buildPublicationCopy({hook:row.hook,story:row.story,hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],showName:config.identity.show_name,maxTitleLength:100});
+      let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
+      const copy=buildPublicationCopy({hook:row.hook,story:row.story,prompt:row.prompt,contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],showName:config.identity.show_name,maxTitleLength:100});
       let description=copy.description;while(utf8(description)>4800)description=description.slice(0,-20).trimEnd();
       const changed=item.title!==copy.title||item.description!==description;
       if(changed){
