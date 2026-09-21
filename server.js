@@ -276,10 +276,9 @@ function activateReadyAutomation(){
     const lf=liveFlowConfig(),ready=Boolean(loadToken())&&Boolean(lf.project_id&&flowAuth()?.ok)&&Boolean(String(CONFIG.content.creative_bible||'').trim());
     if(!ready)return false;
     if(metaGet('automation:factoryEnabled','false')!=='true')metaSet('automation:factoryEnabled','true');
-    if(!metaGet('automation:readinessActivatedAt','')){
-      const t=now();metaSet('automation:readinessActivatedAt',t);
-      try{db.prepare("UPDATE factory_items SET nextTry=0,error=NULL,updatedAt=? WHERE status IN ('draft','regen_wait') AND providerRunId IS NULL").run(t)}catch{}
-    }
+    const t=now();
+    if(!metaGet('automation:readinessActivatedAt',''))metaSet('automation:readinessActivatedAt',t);
+    try{db.prepare("UPDATE factory_items SET nextTry=0,error=NULL,updatedAt=? WHERE status IN ('draft','regen_wait') AND providerRunId IS NULL").run(t)}catch{}
     setTimeout(()=>{try{globalThis.__publisherRunProvider?.()}catch{}},450).unref?.();
     return true;
   }catch{return false}
