@@ -58,6 +58,9 @@ function reconcileGenerationCreditAccounting(db){
     db.prepare("UPDATE factory_generations SET credits=? WHERE credits>0 AND status NOT IN ('no_generation','infra_rejected') AND (runId='manual-flow-demo' OR runId LIKE 'free-%') AND credits<>?").run(CREDITS_PER_GENERATION,CREDITS_PER_GENERATION);
   }catch{}
   try{
+    db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Superseded run produced no retained media; released from daily accounting.',updatedAt=? WHERE status='running' AND credits>0 AND runId LIKE 'free-%' AND EXISTS (SELECT 1 FROM factory_items i WHERE i.id=factory_generations.itemId AND i.videoPath IS NULL AND (i.providerRunId IS NULL OR i.providerRunId<>factory_generations.runId))").run(now());
+  }catch{}
+  try{
     const stale=db.prepare("SELECT id,providerRunId,reviewRetryToken,reviewRetrySubmittedToken FROM factory_items WHERE status='generating' AND videoPath IS NULL AND error LIKE '%RENDER_TIMEOUT%'").all();
     for(const row of stale){
       const reviewerConsumed=String(row.reviewRetryToken||'')&&String(row.reviewRetryToken||'')===String(row.reviewRetrySubmittedToken||'');
