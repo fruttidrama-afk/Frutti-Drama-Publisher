@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS publication_items(
  updatedAt TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS publication_status_idx ON publication_items(status,retryAt,scheduledAt);
-);
+`);
 for(const sql of [
   "ALTER TABLE factory_items ADD COLUMN creativePackageHash TEXT",
   "ALTER TABLE factory_items ADD COLUMN creativePackageId TEXT"
