@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
+import { isReviewStorageUri, readReviewRange, deleteReviewObject } from './review-storage.js';
 import { buildPublicationCopy } from './publication-copy.js';
 
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -99,8 +100,14 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     const {title,description}=metadata(row,config),scheduledAt=nextSlot(db,config),uploadAt=new Date(new Date(scheduledAt).getTime()-Number(config.schedule.upload_lead_minutes||0)*60000).toISOString(),id=randomUUID();
     let filePath=null,fileSize=0,videoId=row.reviewVideoId||null;
     if(!videoId){
-      if(!row.videoPath||!fs.existsSync(row.videoPath))throw new Error('El MP4 aprobado no está disponible.');
-      filePath=path.join(publicationDir,id+'.mp4');fs.copyFileSync(row.videoPath,filePath);fileSize=fs.statSync(filePath).size;
+      if(isReviewStorageUri(row.remoteUrl)){
+        filePath=String(row.remoteUrl);
+        fileSize=Number(row.reviewOriginalSize||0)||Number((()=>{try{return JSON.parse(row.flowResult||'{}')?.size||0}catch{return 0}})());
+        if(!fileSize)throw new Error('El MP4 aprobado en cloud storage no tiene tamaño verificable.');
+      }else{
+        if(!row.videoPath||!fs.existsSync(row.videoPath))throw new Error('El MP4 aprobado no está disponible.');
+        filePath=path.join(publicationDir,id+'.mp4');fs.copyFileSync(row.videoPath,filePath);fileSize=fs.statSync(filePath).size;
+      }
     }else fileSize=Number(row.reviewOriginalSize||0);
     const item={id,itemId:row.id,episode:Number(row.episode),title,description,scheduledAt,uploadAt,status:'queued',filePath,fileSize,videoId,resumableSession:null,playlistId:null,attempts:0,retryAt:0,error:null,history:JSON.stringify([{status:'queued',at:now(),message:'Approved for publication.'}]),createdAt:now(),updatedAt:now()};
     db.prepare('INSERT INTO publication_items(id,itemId,episode,title,description,scheduledAt,uploadAt,status,filePath,fileSize,videoId,resumableSession,playlistId,attempts,retryAt,error,history,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
@@ -200,7 +207,9 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
 
   async function upload(item){
     if(item.videoId)return;
-    if(!item.filePath||!fs.existsSync(item.filePath))throw new Error('Archivo de publicación ausente.');
+    if(!item.filePath)throw new Error('Archivo de publicación ausente.');
+    const cloudSource=isReviewStorageUri(item.filePath);
+    if(!cloudSource&&!fs.existsSync(item.filePath))throw new Error('Archivo de publicación ausente.');
     if(!item.resumableSession){
       const r=await request('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Content-Length':String(item.fileSize),'X-Upload-Content-Type':'video/mp4'},body:JSON.stringify({snippet:{title:item.title,description:item.description,categoryId:'24',tags:['publisher-runtime-'+item.id]},status:{privacyStatus:'private',publishAt:item.scheduledAt,selfDeclaredMadeForKids:false,containsSyntheticMedia:true}})});
       if(!r.ok)throw new Error('YouTube resumable init failed ('+r.status+').');
@@ -214,8 +223,13 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       if(r.status!==308)throw new Error('Upload interrupted ('+r.status+').');
       const range=r.headers.get('range'),offset=range?Number(range.match(/-(\d+)$/)?.[1])+1:0;
       if(!Number.isSafeInteger(offset)||offset>=item.fileSize)throw new Error('Invalid resumable progress.');
-      const end=Math.min(offset+8*1024*1024,item.fileSize),buf=Buffer.alloc(end-offset),fd=fs.openSync(item.filePath,'r');
-      try{const n=fs.readSync(fd,buf,0,buf.length,offset);if(n!==buf.length)throw new Error('Incomplete local media.')}finally{fs.closeSync(fd)}
+      const end=Math.min(offset+8*1024*1024,item.fileSize);
+      let buf;
+      if(cloudSource)buf=await readReviewRange(item.filePath,offset,end-1);
+      else{
+        buf=Buffer.alloc(end-offset);const fd=fs.openSync(item.filePath,'r');
+        try{const n=fs.readSync(fd,buf,0,buf.length,offset);if(n!==buf.length)throw new Error('Incomplete local media.')}finally{fs.closeSync(fd)}
+      }
       r=await request(item.resumableSession,{method:'PUT',headers:{'Content-Type':'video/mp4','Content-Length':String(buf.length),'Content-Range':'bytes '+offset+'-'+(end-1)+'/'+item.fileSize},body:buf});
     }
   }
@@ -227,7 +241,11 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     if(v.status?.privacyStatus==='public'){hist(item,'published','YouTube confirms PUBLIC.');save(db,item)}
     else if(v.status?.privacyStatus==='private'&&Date.parse(v.status?.publishAt)===Date.parse(item.scheduledAt)){hist(item,'scheduled','YouTube confirms private scheduled publication.');save(db,item)}
     else throw new Error('YouTube did not confirm the intended schedule.');
-    if(['scheduled','published'].includes(item.status)&&item.filePath){try{fs.rmSync(item.filePath,{force:true})}catch{}item.filePath=null;save(db,item)}
+    if(['scheduled','published'].includes(item.status)&&item.filePath){
+      if(isReviewStorageUri(item.filePath)){try{await deleteReviewObject(item.filePath)}catch{}}
+      else try{fs.rmSync(item.filePath,{force:true})}catch{}
+      item.filePath=null;save(db,item)
+    }
   }
 
   async function reconcileAmbiguous(item){
