@@ -1,6 +1,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { buildPublicationCopy } from './publication-copy.js';
 
 const DATA_DIR=path.resolve(process.env.DATA_DIR||'/data');
 const PERSISTED=path.join(DATA_DIR,'publisher-config.json');
@@ -285,17 +287,89 @@ export function enforceEpisodeIntent(db,row){
   let repaired=false,reason=null;
   if(genericIntent){
     const idea=earthIn10Idea(Number(row.episode));
-    db.prepare("UPDATE factory_items SET hook=?,story=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
+    db.prepare("UPDATE factory_items SET hook=?,story=?,creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
       .run(idea.hook,idea.story,new Date().toISOString(),row.id);
     repaired=true;reason='generic-earth-intent-replaced';
   }else if(staleGenericPrompt){
-    db.prepare("UPDATE factory_items SET prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
+    db.prepare("UPDATE factory_items SET creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
       .run(new Date().toISOString(),row.id);
     repaired=true;reason='stale-generic-earth-prompt-cleared';
   }
   const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);
   if(!fresh||isGenericAutonomousIdea(fresh.hook,fresh.story))throw new Error('EARTH_IN_10_CONTENT_GATE: concrete geographic episode intent required before Flow generation');
   return{row:fresh,repaired,reason};
+}
+
+
+function sha256(v){return createHash('sha256').update(String(v)).digest('hex');}
+function creativePackageDigest(row,prompt,title,description){
+  return sha256(JSON.stringify({
+    episode:Number(row?.episode||0),
+    hook:String(row?.hook||''),
+    story:String(row?.story||''),
+    prompt:String(prompt||''),
+    title:String(title||''),
+    description:String(description||'')
+  }));
+}
+export function validateEpisodePrompt(row,prompt){
+  const bible=String(CONFIG.content.creative_bible||'').trim();
+  const p=String(prompt||'').trim();
+  if(bible.length<20)throw new Error('SHOW_BIBLE_REQUIRED: no episode may be generated without a configured Show Bible.');
+  if(p.length<400)throw new Error('PROMPT_QUALITY_GATE: prompt is empty or too short.');
+  if(!p.includes('CREATIVE BIBLE')||!p.includes(bible))throw new Error('PROMPT_QUALITY_GATE: prompt does not contain the active Show Bible.');
+  if(!p.includes('HOOK: '+String(row?.hook||'')))throw new Error('PROMPT_QUALITY_GATE: prompt is not bound to the episode hook.');
+  if(!p.includes('EPISODE INTENT: '+String(row?.story||'')))throw new Error('PROMPT_QUALITY_GATE: prompt is not bound to the episode story.');
+  if(isEarthIn10()&&(
+    /HOOK:\s*(NEXT CHAPTER|NEW TURN|NEW EPISODE)/i.test(p)||
+    /EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(p)
+  ))throw new Error('EARTH_IN_10_CONTENT_GATE: generic fallback prompt blocked before Flow.');
+  return true;
+}
+export function materializeCreativePackage(db,row,{force=false}={}){
+  const intent=enforceEpisodeIntent(db,row);
+  row=intent.row;
+  const existingPrompt=String(row?.prompt||'');
+  const existingTitle=String(row?.title||'');
+  const existingDescription=String(row?.description||'');
+  const existingDigest=existingPrompt&&existingTitle&&existingDescription
+    ? creativePackageDigest(row,existingPrompt,existingTitle,existingDescription)
+    : '';
+  if(!force&&existingPrompt&&existingTitle&&existingDescription&&
+     String(row?.creativePackageHash||'')===existingDigest){
+    validateEpisodePrompt(row,existingPrompt);
+    return{row,repaired:intent.repaired,reason:intent.reason,created:false};
+  }
+
+  const visual=resolveVisualCharacters(row);
+  const prompt=buildPrompt(db,row,visual);
+  validateEpisodePrompt(row,prompt);
+  const provider=(CONFIG.publication?.providers||[]).find(x=>x.type==='youtube')||{};
+  const copy=buildPublicationCopy({
+    hook:row.hook,
+    story:row.story,
+    prompt,
+    contextTerms:[],
+    hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+    showName:CONFIG.identity?.show_name||SHOW,
+    maxTitleLength:100
+  });
+  let description=String(copy.description||'');
+  while(Buffer.byteLength(description,'utf8')>4800)description=description.slice(0,-30).trimEnd();
+  const title=String(copy.title||'').slice(0,100);
+  if(!title.trim()||!description.trim())throw new Error('CREATIVE_PACKAGE_METADATA_EMPTY');
+  const promptHash=sha256(prompt),packageHash=creativePackageDigest(row,prompt,title,description),packageId='creative-package-v2-'+randomUUID();
+  const roles=visual.map(name=>({name,role:'ON_SCREEN',visual:true}));
+  const registryData=registry();
+  const handles=visual.map(name=>registryData.characters.find(x=>String(x.name)===String(name))?.mention||('@'+name));
+
+  db.prepare("UPDATE factory_items SET prompt=?,promptHash=?,promptGenerationId=?,characterHandles=?,characterRoles=?,promptPayloadHash=?,promptPayloadLength=?,title=?,description=?,creativePackageHash=?,creativePackageId=?,updatedAt=? WHERE id=?")
+    .run(prompt,promptHash,'runtime-package-v2-'+randomUUID(),JSON.stringify(handles),JSON.stringify(roles),promptHash,Buffer.byteLength(prompt,'utf8'),title,description,packageHash,packageId,new Date().toISOString(),row.id);
+
+  const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);
+  if(!fresh||!String(fresh.prompt||'').trim())throw new Error('PROMPT_QUALITY_GATE: prompt persistence failed.');
+  validateEpisodePrompt(fresh,fresh.prompt);
+  return{row:fresh,repaired:intent.repaired,reason:intent.reason,created:true};
 }
 
 export function ideaForEpisode(episode){
@@ -325,12 +399,10 @@ export function ensureBacklog(db,minReady=Math.max(9,DAILY_LIMIT*3)){
     db.prepare("INSERT OR IGNORE INTO factory_items(id,season,episode,hook,story,status,createdAt,updatedAt) VALUES(lower(hex(randomblob(16))),1,?,?,?,?,?,?)")
       .run(ep,idea.hook,idea.story,'draft',t,t);
   }
-  if(isEarthIn10()){
-    const rows=db.prepare("SELECT * FROM factory_items WHERE status='draft' ORDER BY episode").all();
-    for(const row of rows){
-      if(!isGenericAutonomousIdea(row.hook,row.story)&&!/HOOK:\s*NEXT CHAPTER/i.test(String(row.prompt||'')))continue;
-      enforceEpisodeIntent(db,row);
-    }
+  const drafts=db.prepare("SELECT * FROM factory_items WHERE status='draft' ORDER BY episode").all();
+  for(const row of drafts){
+    const force=isEarthIn10()&&(isGenericAutonomousIdea(row.hook,row.story)||/HOOK:\s*NEXT CHAPTER/i.test(String(row.prompt||'')));
+    materializeCreativePackage(db,row,{force});
   }
 }
 export function seedInitial(db){
