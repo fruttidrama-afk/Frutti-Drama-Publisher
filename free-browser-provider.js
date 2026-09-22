@@ -1352,23 +1352,51 @@ async function clickAndCaptureDownload(page,option,localPath,timeout=60000){
   const dir='/tmp/publisher-flow-downloads';
   try{fs.rmSync(dir,{recursive:true,force:true})}catch{}
   fs.mkdirSync(dir,{recursive:true,mode:0o700});
-  let cdp=null;
+
+  let cdp=null,downloadMeta=null;
+  const responseCandidates=[];
+  const responseHandler=async response=>{
+    try{
+      const url=String(response.url()||'');
+      const h=await response.allHeaders().catch(()=>({}));
+      const type=String(h['content-type']||h['Content-Type']||'');
+      const disposition=String(h['content-disposition']||h['Content-Disposition']||'');
+      if(/video\/|application\/octet-stream/i.test(type)||/attachment/i.test(disposition)||/videoplayback|googleusercontent|storage\.googleapis|download/i.test(url)){
+        responseCandidates.push({url,type,disposition,status:response.status(),at:Date.now()});
+      }
+    }catch{}
+  };
+  page.on('response',responseHandler);
+
   try{
     cdp=await page.context().newCDPSession(page);
-    await cdp.send('Page.setDownloadBehavior',{behavior:'allow',downloadPath:dir}).catch(()=>{});
-    await cdp.send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:dir,eventsEnabled:true}).catch(()=>{});
+    await cdp.send('Network.enable').catch(()=>{});
+    await cdp.send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:dir,eventsEnabled:true}).catch(async()=>{
+      await cdp.send('Page.setDownloadBehavior',{behavior:'allow',downloadPath:dir}).catch(()=>{});
+    });
+    cdp.on('Browser.downloadWillBegin',e=>{
+      downloadMeta={guid:String(e?.guid||''),url:String(e?.url||''),filename:String(e?.suggestedFilename||''),at:Date.now()};
+      publish('DOWNLOAD_WILL_BEGIN',{message:compact(JSON.stringify(downloadMeta),900)});
+    });
+    cdp.on('Browser.downloadProgress',e=>{
+      if(String(e?.state||'')==='completed')downloadMeta={...(downloadMeta||{}),guid:String(e?.guid||downloadMeta?.guid||''),completed:true,receivedBytes:Number(e?.receivedBytes||0),at:Date.now()};
+    });
   }catch{}
+
   const playwrightDownload=page.waitForEvent('download',{timeout}).catch(()=>null);
   await trustedClick(option);
+
   const deadline=Date.now()+timeout;
   let seenPath='',seenSize=-1,stable=0;
   while(Date.now()<deadline){
-    const dl=await Promise.race([playwrightDownload,sleep(250).then(()=>null)]);
+    const dl=await Promise.race([playwrightDownload,sleep(300).then(()=>null)]);
     if(dl){
       await dl.saveAs(localPath);
+      page.off('response',responseHandler);
       try{await cdp?.detach()}catch{}
       return true;
     }
+
     let names=[];try{names=fs.readdirSync(dir)}catch{}
     const complete=names.filter(n=>!n.endsWith('.crdownload')&&!n.endsWith('.tmp')&&!n.startsWith('.'));
     for(const name of complete){
@@ -1378,11 +1406,59 @@ async function clickAndCaptureDownload(page,option,localPath,timeout=60000){
       if(seenPath===p&&seenSize===st.size)stable++;else{seenPath=p;seenSize=st.size;stable=0}
       if(stable>=2){
         fs.copyFileSync(p,localPath);
+        page.off('response',responseHandler);
         try{await cdp?.detach()}catch{}
+        publish('DOWNLOAD_FILE_CAPTURED',{message:'Captured browser download '+name+' ('+st.size+' bytes).'});
         return true;
       }
     }
+
+    if(downloadMeta?.completed){
+      const candidates=[downloadMeta.guid,downloadMeta.filename].filter(Boolean).map(n=>path.join(dir,n));
+      for(const p of candidates){
+        try{
+          const st=fs.statSync(p);
+          if(st.isFile()&&st.size>100000){
+            fs.copyFileSync(p,localPath);
+            page.off('response',responseHandler);
+            try{await cdp?.detach()}catch{}
+            publish('DOWNLOAD_FILE_CAPTURED',{message:'Captured completed CDP download '+path.basename(p)+' ('+st.size+' bytes).'});
+            return true;
+          }
+        }catch{}
+      }
+    }
   }
+
+  // Some Flow download actions return a signed media URL without emitting a
+  // Playwright download event in an externally attached Chrome session.
+  const urls=[
+    downloadMeta?.url,
+    ...responseCandidates.slice().sort((a,b)=>b.at-a.at).map(x=>x.url)
+  ].filter(x=>/^https?:/i.test(String(x||'')));
+  for(const url of [...new Set(urls)]){
+    try{
+      const r=await page.context().request.get(url,{timeout:90000});
+      if(!r.ok())continue;
+      const body=await r.body();
+      if(body.length<100000)continue;
+      fs.writeFileSync(localPath,body,{mode:0o600});
+      const head=body.subarray(0,128);
+      if(head.includes(Buffer.from('ftyp'))){
+        page.off('response',responseHandler);
+        try{await cdp?.detach()}catch{}
+        publish('DOWNLOAD_URL_CAPTURED',{message:'Recovered Flow media from the signed download response ('+body.length+' bytes).'});
+        return true;
+      }
+      try{fs.rmSync(localPath,{force:true})}catch{}
+    }catch{}
+  }
+
+  publish('DOWNLOAD_CAPTURE_TIMEOUT',{message:compact(JSON.stringify({
+    download:downloadMeta,
+    responses:responseCandidates.slice(-12)
+  }),5000)});
+  page.off('response',responseHandler);
   try{await cdp?.detach()}catch{}
   return false;
 }
@@ -1409,10 +1485,14 @@ async function immediateDownloadChoice(page,localPath,{preferWanted=true}={}){
     if(!(await it.isVisible().catch(()=>false)))continue;
     const text=compact(await it.innerText().catch(()=>''),120);
     const aria=compact(await it.getAttribute('aria-label').catch(()=>''),120);
+    const href=String(await it.evaluate(el=>{
+      const a=el.matches?.('a[href]')?el:el.querySelector?.('a[href]');
+      return a?.href||el.closest?.('a[href]')?.href||'';
+    }).catch(()=>'' )||'');
     const label=compact(text+' '+aria,160);
-    visibleItems.push({it,text,aria,label});
+    visibleItems.push({it,text,aria,label,href});
   }
-  publish('DOWNLOAD_MENU_OPTIONS',{message:visibleItems.map(x=>x.label||'(unlabeled)').join(' | ')});
+  publish('DOWNLOAD_MENU_OPTIONS',{message:visibleItems.map(x=>(x.label||'(unlabeled)')+(x.href?' href='+compact(x.href,180):'')).join(' | ')});
   const fallback=
     visibleItems.find(x=>/720|original|standard|normal/i.test(x.label)&&!/1080|upscal/i.test(x.label))||
     visibleItems.find(x=>!/1080|upscal|gif/i.test(x.label))||
@@ -1423,6 +1503,19 @@ async function immediateDownloadChoice(page,localPath,{preferWanted=true}={}){
   if(fallback.text){
     const textTarget=page.getByText(new RegExp(escapeRe(fallback.text),'i')).last();
     if(await textTarget.count().catch(()=>0)&&await textTarget.isVisible().catch(()=>false))target=textTarget;
+  }
+  if(/^https?:/i.test(fallback.href||'')){
+    try{
+      const direct=await page.context().request.get(fallback.href,{timeout:90000});
+      if(direct.ok()){
+        const body=await direct.body();
+        if(body.length>100000&&body.subarray(0,128).includes(Buffer.from('ftyp'))){
+          fs.writeFileSync(localPath,body,{mode:0o600});
+          publish('DOWNLOAD_DIRECT_HREF',{message:'Recovered Flow media directly from the quality option href.'});
+          return{ok:true,method:(fallback.text||fallback.label||'direct-download')+' (direct href)'};
+        }
+      }
+    }catch{}
   }
   publish('DOWNLOAD_OPTION_CLICK',{message:'Clicking '+String(fallback.text||fallback.label||'fallback')+' with trusted pointer input.'});
   const ok=await clickAndCaptureDownload(page,target,localPath,60000);
