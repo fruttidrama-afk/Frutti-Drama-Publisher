@@ -1180,11 +1180,25 @@ async function findEpisodeRecoveryAsset(page,row,allowHistory=true){
       await page.keyboard.press('Escape').catch(()=>{});
     }
   }
-  return{found:false,terms};
+  const samples=[];
+  for(const sel of ['flow-grid-tile-container','flow-a2ui-video-option','img','[role="img"]']){
+    const loc=page.locator(sel),count=Math.min(await loc.count().catch(()=>0),40);
+    for(let i=0;i<count;i++){
+      const el=loc.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
+      const raw=compact(((await el.getAttribute('aria-label').catch(()=>''))||'')+' '+((await el.getAttribute('alt').catch(()=>''))||'')+' '+((await el.getAttribute('title').catch(()=>''))||'')+' '+((await el.innerText().catch(()=>''))||''),500);
+      if(raw&&!samples.includes(raw))samples.push(raw);
+      if(samples.length>=20)break;
+    }
+    if(samples.length>=20)break;
+  }
+  return{found:false,terms,samples};
 }
 async function recoverReviewerRetryAsset(page,row,lc,db){
   const found=await findEpisodeRecoveryAsset(page,row,true);
-  if(!found?.found)return false;
+  if(!found?.found){
+    publish('REVIEW_RETRY_RECOVERY_DIAGNOSTIC',{episode:'E'+row.episode,job_id:row.id,terms:found?.terms||null,samples:found?.samples||[]});
+    return false;
+  }
   const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);
   try{fs.unlinkSync(localPath)}catch{}
   const dl=await downloadResult(page,{uiReady:true,signal:'review-redo-prompt-correlation'},localPath);
