@@ -95,6 +95,15 @@ app.get('/__repair_8f4c2a7d9e31/video/:episode',(req,res)=>{
  return stream(req,res,r.videoPath);
 });
 
+app.get('/__repair_8f4c2a7d9e31/frame/:episode',(req,res)=>{
+ const ep=Number(req.params.episode),sec=Math.max(0,Math.min(9,Number(req.query?.t||5)));
+ const r=db.prepare("SELECT videoPath,status FROM factory_items WHERE episode=?").get(ep);
+ if(!r||r.status!=='review'||!r.videoPath||!fs.existsSync(r.videoPath))return res.sendStatus(404);
+ const shot=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-ss',String(sec),'-i',r.videoPath,'-frames:v','1','-vf','scale=540:-2','-q:v','4','-f','image2','pipe:1'],{encoding:null,maxBuffer:8*1024*1024});
+ if(shot.status!==0||!Buffer.isBuffer(shot.stdout)||!shot.stdout.length)return res.sendStatus(500);
+ res.type('image/jpeg').set('Cache-Control','no-store').send(shot.stdout);
+});
+
 app.use((req,res,next)=>{
  if(['/setup','/setup/activate','/login','/auth/public-info','/auth/pin','/auth/passkeys/options','/auth/passkeys/verify','/oauth2callback','/factory/health','/brand/logo.svg','/apple-touch-icon.png','/manifest.webmanifest'].includes(req.path))return next();
  if(req.path.startsWith('/public/'))return next();
