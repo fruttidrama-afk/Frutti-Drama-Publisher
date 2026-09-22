@@ -1339,13 +1339,76 @@ async function clickAndCaptureDownload(page,option,timeout=45000){
 async function openDownloadMenu(page){
   const trigger=await visibleDownloadButton(page);
   if(!trigger)return null;
-  await trigger.click({force:true,timeout:5000});await sleep(500);
+  await trigger.click({force:true,timeout:5000});
+  await sleep(500);
   return trigger;
 }
 async function immediateDownloadChoice(page,localPath,{preferWanted=true}={}){
   const wanted=CONFIG.generation.download_quality||'1080p Upscaled';
   if(!await openDownloadMenu(page))return{ok:false,reason:'no-download-control'};
-  const opt=page.getByText(new RegExp('^'+escapeRe(wanted)+'
+  const opt=page.getByText(new RegExp(escapeRe(wanted),'i')).last();
+  if(preferWanted&&await opt.count().catch(()=>0)&&await opt.isVisible().catch(()=>false)){
+    const dl=await clickAndCaptureDownload(page,opt,45000);
+    if(dl){
+      await dl.saveAs(localPath);
+      return{ok:true,method:wanted};
+    }
+    return{ok:false,reason:'preferred-quality-deferred',preferred:wanted};
+  }
+  const menuItems=page.locator('flow-menu-item');
+  const visibleItems=[];
+  for(let i=0;i<Math.min(await menuItems.count().catch(()=>0),20);i++){
+    const it=menuItems.nth(i);
+    if(!(await it.isVisible().catch(()=>false)))continue;
+    const label=compact((await it.innerText().catch(()=>''))+' '+(await it.getAttribute('aria-label').catch(()=>'')),160);
+    visibleItems.push({it,label});
+  }
+  const fallback=
+    visibleItems.find(x=>/720|original|standard|normal/i.test(x.label)&&!/1080|upscal/i.test(x.label))||
+    visibleItems.find(x=>!/1080|upscal/i.test(x.label))||
+    visibleItems[2]||
+    visibleItems[0];
+  if(!fallback)return{ok:false,reason:'no-download-option'};
+  const dl=await clickAndCaptureDownload(page,fallback.it,60000);
+  if(!dl)return{ok:false,reason:'fallback-download-timeout',label:fallback.label};
+  await dl.saveAs(localPath);
+  return{ok:true,method:(fallback.label||'standard-download')+' (recovery fallback)'};
+}
+async function downloadResult(page,rendered,localPath){
+  if(rendered?.i>=0){
+    const v=page.locator('video').nth(rendered.i);
+    if(await v.isVisible().catch(()=>false))await v.click({position:{x:10,y:10}}).catch(()=>{});
+    let attempt=await immediateDownloadChoice(page,localPath,{preferWanted:true});
+    if(attempt.ok)return{method:attempt.method};
+    if(rendered.src&&/^https?:/i.test(rendered.src)){
+      const r=await page.context().request.get(rendered.src,{timeout:90000});
+      if(r.ok()){
+        fs.writeFileSync(localPath,await r.body(),{mode:0o600});
+        return{method:'direct-video-url'};
+      }
+    }
+    if(attempt.reason==='preferred-quality-deferred'){
+      publish('DOWNLOAD_1080_DEFERRED',{message:'1080p upscale did not emit a download yet; recovering the same render at an immediate quality.'});
+      await page.keyboard.press('Escape').catch(()=>{});
+      await sleep(1200);
+      attempt=await immediateDownloadChoice(page,localPath,{preferWanted:false});
+      if(attempt.ok)return{method:attempt.method};
+    }
+    throw new Error('FRESH_VIDEO_DOWNLOAD_FAILED_NO_GENERIC_FALLBACK:'+String(attempt.reason||'unknown'));
+  }
+  if(!rendered?.uiReady)throw new Error('DOWNLOAD_WITHOUT_UNIQUE_FRESH_EVIDENCE');
+  let attempt=await immediateDownloadChoice(page,localPath,{preferWanted:true});
+  if(attempt.ok)return{method:attempt.method};
+  if(attempt.reason==='preferred-quality-deferred'){
+    publish('DOWNLOAD_1080_DEFERRED',{message:'1080p upscale did not emit a download yet; recovering the same render at an immediate quality.'});
+    await page.keyboard.press('Escape').catch(()=>{});
+    await sleep(1200);
+    if(rendered.baselineInventory)await openLatestExpectedVideoTile(page,rendered.baselineInventory).catch(()=>null);
+    attempt=await immediateDownloadChoice(page,localPath,{preferWanted:false});
+    if(attempt.ok)return{method:attempt.method};
+  }
+  throw new Error('UNIQUE_FRESH_TILE_DOWNLOAD_FAILED:'+String(attempt.reason||'unknown'));
+}
 function validateMp4(localPath){
   const st=fs.statSync(localPath);if(st.size<100000)throw new Error('MP4_TOO_SMALL:'+st.size);const head=fs.readFileSync(localPath).subarray(0,128);if(!head.includes(Buffer.from('ftyp')))throw new Error('MP4_FTYP_MISSING');
   const raw=execFileSync('ffprobe',['-v','error','-show_entries','format=duration:stream=codec_type,codec_name,width,height','-of','json',localPath],{encoding:'utf8',timeout:30000}),probe=JSON.parse(raw),stream=(probe.streams||[]).find(s=>s.codec_type==='video');if(!stream)throw new Error('MP4_VIDEO_STREAM_MISSING');
