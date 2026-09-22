@@ -154,6 +154,20 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   async function auditExistingMetadata(){
     const items=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('cancelled','deleted') ORDER BY episode").all();
     const episode1Title=String(items.find(x=>Number(x.episode)===1)?.title||'');
+    // One-off recovery for Earth in Ten after the YouTube quota incident:
+    // E1 is already privately uploaded on YouTube, so at 06:30 ART on 2026-09-23
+    // we only need to confirm/schedule that existing private asset for 19:00.
+    if(isEarthIn10(config)){
+      const first=items.find(x=>Number(x.episode)===1&&String(x.scheduledAt||'').startsWith('2026-09-23')&&x.videoId);
+      if(first){
+        const early=zonedLocal('2026-09-23','06:30',config.schedule.timezone).toISOString();
+        if(first.uploadAt!==early){
+          first.uploadAt=early;
+          hist(first,first.status,'One-off quota recovery: existing private YouTube video will be scheduled at 06:30 ART for 19:00 publication.');
+          save(db,first);
+        }
+      }
+    }
     let corrected=0,factoryCorrected=0,synced=0,quotaRetryAt=0;const report=[];
     for(const item of items){
       const row=db.prepare('SELECT episode,hook,story,prompt,title,description,creativePackageHash,creativePackageId,flowResult FROM factory_items WHERE id=?').get(item.itemId);
@@ -347,7 +361,11 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
           if(Date.now()<Date.parse(item.uploadAt))continue;
           if(!loadToken())throw new Error('YOUTUBE_AUTH_REQUIRED');
           if(item.resumableSession&&!item.videoId){const resolved=await reconcileAmbiguous(item);if(resolved&&item.status==='attention')continue}
-          if(item.videoId&&item.status==='queued'){await stageMetadata(item);hist(item,'uploaded','Existing private review staging prepared for publication.');save(db,item)}
+          if(item.videoId&&['queued','quota_wait','error','uploaded'].includes(String(item.status||''))){
+            await stageMetadata(item);
+            hist(item,'uploaded','Existing private YouTube video confirmed and scheduled for publication.');
+            item.error=null;item.retryAt=0;save(db,item);
+          }
           if(!item.videoId)await upload(item);
           await verify(item);item.attempts=0;item.retryAt=0;item.error=null;save(db,item);
         }catch(e){
