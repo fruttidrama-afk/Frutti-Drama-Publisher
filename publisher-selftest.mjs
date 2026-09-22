@@ -10,6 +10,19 @@ const machine=JSON.parse(read('GOOGLE_FLOW_AUTOMATION_SOP.json'));
 const manifest=JSON.parse(read('FLOW_SOP_KNOWLEDGE_MANIFEST.json'));
 const hash=createHash('sha256').update(master).digest('hex');
 
+const {buildPublicationCopy}=await import('./publication-copy.js');
+const metadataRegression=buildPublicationCopy({
+  hook:'PLITVICE WATER',
+  story:'A cinematic glide through Croatia’s Plitvice Lakes. Crystal turquoise water spills over moss-covered limestone terraces into layered pools surrounded by dense green forest and soft natural haze.',
+  prompt:'CREATIVE BIBLE\nExample only: Create a ten-second video of Patagonia at sunrise.\n\nHOOK: PLITVICE WATER\nEPISODE INTENT: A cinematic glide through Croatia’s Plitvice Lakes. Crystal turquoise water spills over moss-covered limestone terraces into layered pools surrounded by dense green forest and soft natural haze.',
+  contextTerms:[],
+  hashtags:['#Shorts','#ViralShorts'],
+  showName:'Earth in Ten',
+  maxTitleLength:100
+});
+must(!/PATAGONIA/i.test(metadataRegression.title),'Earth metadata must never inherit Patagonia from Show Bible examples');
+must(/PLITVICE/i.test(metadataRegression.title),'Earth metadata must derive from the current episode intent');
+
 must(machine.sop_id==='FLOW-SOP-v1.0','SOP version');
 must(machine.sha256===hash,'machine SOP hash mismatch');
 must(manifest.master_sha256===hash,'manifest SOP hash mismatch');
@@ -29,6 +42,7 @@ for(const [token,label] of [
   ['REVIEW_METADATA_READY','review metadata gate'],
   ['EPISODE_INTENT_REPAIRED','Earth episode intent repair gate'],
   ['CREATIVE_PACKAGE_READY','prompt/title/description package checkpoint'],
+  ["status IN ('regen_wait','draft') AND retryStrategy IN ('reuse_prompt','revise_prompt')",'human REDO priority queue'],
   ['creativePackageHash','creative package hash link'],
   ["source:'creative-package'",'review metadata preservation']
 ]) has(provider,token,label);
