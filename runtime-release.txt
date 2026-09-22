@@ -61,3 +61,4 @@ fix=signed-put-review-storage,force-1230-private-upload-1900-publish
 audit=existing-publication-storage-state
 fix=earth-e1-0630-existing-private-schedule,stage-existing-video-after-quota-wait
 audit=earth-e1-0630-effective-state
+fix=episode-bound-copy-authority,semantic-package-gate,immediate-human-redo-priority
