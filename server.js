@@ -375,7 +375,12 @@ app.get('/factory/knowledge',(req,res)=>{
   res.json({ok:true,knowledge:health().knowledge,documents:rows});
 });
 
+function isEarthIn10Publisher(){return /earth\s*in\s*10/i.test(String(CONFIG.identity?.show_name||''))}
 async function archiveReviewOriginal(row){
+ // Earth in Ten keeps review media on the Railway volume until approval.
+ // Uploading every review/redo to YouTube costs a videos.insert quota charge and can
+ // consume the daily API budget before the real publication upload/schedule.
+ if(isEarthIn10Publisher())return false;
  if(!loadToken()||row.reviewVideoId||!row.videoPath||!fs.existsSync(row.videoPath))return false;
  const yt=youtubeApi(),m=ensureCopy(row),out=await yt.videos.insert({part:['snippet','status'],requestBody:{snippet:{title:('[REVIEW] E'+row.episode+' '+m.hook).slice(0,100),description:'Private Publisher Runtime review staging.',categoryId:'24',tags:['publisher-review-'+row.id]},status:{privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}},media:{mimeType:'video/mp4',body:fs.createReadStream(row.videoPath)}}),videoId=String(out.data?.id||'');if(!videoId)throw new Error('Private staging upload failed.');
  const original=fs.statSync(row.videoPath).size,tmp=row.videoPath+'.preview.mp4',ff=spawnSync('ffmpeg',['-y','-i',row.videoPath,'-vf','scale=540:-2','-c:v','libx264','-preset','veryfast','-crf','31','-c:a','aac','-b:a','64k','-movflags','+faststart',tmp],{timeout:180000,encoding:'utf8'});
@@ -383,7 +388,7 @@ async function archiveReviewOriginal(row){
  const preview=fs.existsSync(row.videoPath)?fs.statSync(row.videoPath).size:0;db.prepare("UPDATE factory_items SET reviewVideoId=?,reviewArchivedAt=?,reviewOriginalSize=?,reviewPreviewSize=?,reviewArchiveError=NULL,updatedAt=? WHERE id=?").run(videoId,now(),original,preview,now(),row.id);return true;
 }
 let archiveBusy=false;
-async function storageTick(){if(archiveBusy)return;archiveBusy=true;try{const rows=db.prepare("SELECT * FROM factory_items WHERE status='review' AND videoPath IS NOT NULL ORDER BY updatedAt DESC").all(),st=storage(),aggressive=st?.free_percent!=null&&st.free_percent<Number(CONFIG.review.archive_below_free_percent||45);for(let i=0;i<rows.length;i++){const r=rows[i];if(!r.reviewVideoId&&(aggressive||i>=Number(CONFIG.review.hot_originals||2))){try{await archiveReviewOriginal(r)}catch(e){db.prepare('UPDATE factory_items SET reviewArchiveError=?,updatedAt=? WHERE id=?').run(String(e.message).slice(0,600),now(),r.id)}}}}finally{archiveBusy=false}}
+async function storageTick(){if(archiveBusy||isEarthIn10Publisher())return;archiveBusy=true;try{const rows=db.prepare("SELECT * FROM factory_items WHERE status='review' AND videoPath IS NOT NULL ORDER BY updatedAt DESC").all(),st=storage(),aggressive=st?.free_percent!=null&&st.free_percent<Number(CONFIG.review.archive_below_free_percent||45);for(let i=0;i<rows.length;i++){const r=rows[i];if(!r.reviewVideoId&&(aggressive||i>=Number(CONFIG.review.hot_originals||2))){try{await archiveReviewOriginal(r)}catch(e){db.prepare('UPDATE factory_items SET reviewArchiveError=?,updatedAt=? WHERE id=?').run(String(e.message).slice(0,600),now(),r.id)}}}}finally{archiveBusy=false}}
 setInterval(()=>void storageTick(),5*60*1000).unref?.();setTimeout(()=>void storageTick(),30000).unref?.();
 
 app.get('/api/status',(req,res)=>{const h=health(),youtubeConnected=Boolean(loadToken()),flowConnected=Boolean(h.flow.configured&&h.flow.authenticated),bibleConfigured=Boolean(String(CONFIG.content.creative_bible||'').trim()),ready=youtubeConnected&&flowConnected&&bibleConfigured;if(ready)activateReadyAutomation();res.json({health:health(),brand:brandPublic(),youtube:{oauthConfigured:Boolean(ytSecrets().client_id&&ytSecrets().client_secret),connected:youtubeConnected},flowBootstrap:'/flow/bootstrap',onboarding:{youtube:youtubeConnected,flow:flowConnected,bible:bibleConfigured,ready}})});
