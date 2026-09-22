@@ -43,6 +43,15 @@ try{
   if(knowledgeCount!==8)fail('expected 8 runtime knowledge docs, found '+knowledgeCount);
   if(CONFIG.schedule.generation_strategy!=='sequential')fail('fresh runtime is not sequential');
   if(CONFIG.schedule.indefinite!==true)fail('fresh runtime scheduler is not indefinite');
+  const episodeRows=db.prepare("SELECT episode,prompt,title,description,creativePackageHash FROM factory_items ORDER BY episode").all();
+  if(!episodeRows.length)fail('fresh runtime did not create backlog episodes');
+  for(const row of episodeRows){
+    if(!String(row.prompt||'').trim())fail('episode '+row.episode+' has an empty prompt');
+    if(!String(row.prompt||'').includes('Selftest Creative Bible'))fail('episode '+row.episode+' prompt does not contain the Show Bible');
+    if(!String(row.title||'').trim())fail('episode '+row.episode+' has no title in its creative package');
+    if(!String(row.description||'').trim())fail('episode '+row.episode+' has no description in its creative package');
+    if(!String(row.creativePackageHash||'').trim())fail('episode '+row.episode+' has no creative package hash');
+  }
   db.close();
   console.log(JSON.stringify({
     ok:true,
@@ -54,7 +63,10 @@ try{
     env_authorization:'true',
     automatic_activation_requires_readiness:true,
     generation_strategy:CONFIG.schedule.generation_strategy,
-    scheduler_indefinite:CONFIG.schedule.indefinite
+    scheduler_indefinite:CONFIG.schedule.indefinite,
+    backlog_episodes_with_nonempty_prompts:episodeRows.length,
+    prompt_show_bible_gate:true,
+    atomic_creative_packages:true
   },null,2));
 }finally{
   fs.rmSync(dir,{recursive:true,force:true});
