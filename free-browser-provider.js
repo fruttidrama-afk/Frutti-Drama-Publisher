@@ -1332,10 +1332,43 @@ async function openLatestGeneratedResult(page){
   });
   return{ready:false,opened:false,signal:'no-result-control'};
 }
-async function clickAndCaptureDownload(page,option,timeout=45000){
-  const pending=page.waitForEvent('download',{timeout}).catch(()=>null);
+async function clickAndCaptureDownload(page,option,localPath,timeout=60000){
+  const dir='/tmp/publisher-flow-downloads';
+  try{fs.rmSync(dir,{recursive:true,force:true})}catch{}
+  fs.mkdirSync(dir,{recursive:true,mode:0o700});
+  let cdp=null;
+  try{
+    cdp=await page.context().newCDPSession(page);
+    await cdp.send('Page.setDownloadBehavior',{behavior:'allow',downloadPath:dir}).catch(()=>{});
+    await cdp.send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:dir,eventsEnabled:true}).catch(()=>{});
+  }catch{}
+  const playwrightDownload=page.waitForEvent('download',{timeout}).catch(()=>null);
   await option.click({force:true,timeout:5000});
-  return await pending;
+  const deadline=Date.now()+timeout;
+  let seenPath='',seenSize=-1,stable=0;
+  while(Date.now()<deadline){
+    const dl=await Promise.race([playwrightDownload,sleep(250).then(()=>null)]);
+    if(dl){
+      await dl.saveAs(localPath);
+      try{await cdp?.detach()}catch{}
+      return true;
+    }
+    let names=[];try{names=fs.readdirSync(dir)}catch{}
+    const complete=names.filter(n=>!n.endsWith('.crdownload')&&!n.endsWith('.tmp')&&!n.startsWith('.'));
+    for(const name of complete){
+      const p=path.join(dir,name);
+      let st=null;try{st=fs.statSync(p)}catch{}
+      if(!st?.isFile()||st.size<100000)continue;
+      if(seenPath===p&&seenSize===st.size)stable++;else{seenPath=p;seenSize=st.size;stable=0}
+      if(stable>=2){
+        fs.copyFileSync(p,localPath);
+        try{await cdp?.detach()}catch{}
+        return true;
+      }
+    }
+  }
+  try{await cdp?.detach()}catch{}
+  return false;
 }
 async function openDownloadMenu(page){
   const trigger=await visibleDownloadButton(page);
@@ -1349,11 +1382,8 @@ async function immediateDownloadChoice(page,localPath,{preferWanted=true}={}){
   if(!await openDownloadMenu(page))return{ok:false,reason:'no-download-control'};
   const opt=page.getByText(new RegExp(escapeRe(wanted),'i')).last();
   if(preferWanted&&await opt.count().catch(()=>0)&&await opt.isVisible().catch(()=>false)){
-    const dl=await clickAndCaptureDownload(page,opt,45000);
-    if(dl){
-      await dl.saveAs(localPath);
-      return{ok:true,method:wanted};
-    }
+    const ok=await clickAndCaptureDownload(page,opt,localPath,20000);
+    if(ok)return{ok:true,method:wanted};
     return{ok:false,reason:'preferred-quality-deferred',preferred:wanted};
   }
   const menuItems=page.locator('flow-menu-item');
@@ -1364,15 +1394,15 @@ async function immediateDownloadChoice(page,localPath,{preferWanted=true}={}){
     const label=compact((await it.innerText().catch(()=>''))+' '+(await it.getAttribute('aria-label').catch(()=>'')),160);
     visibleItems.push({it,label});
   }
+  publish('DOWNLOAD_MENU_OPTIONS',{message:visibleItems.map(x=>x.label||'(unlabeled)').join(' | ')});
   const fallback=
     visibleItems.find(x=>/720|original|standard|normal/i.test(x.label)&&!/1080|upscal/i.test(x.label))||
-    visibleItems.find(x=>!/1080|upscal/i.test(x.label))||
+    visibleItems.find(x=>!/1080|upscal|gif/i.test(x.label))||
     visibleItems[2]||
     visibleItems[0];
   if(!fallback)return{ok:false,reason:'no-download-option'};
-  const dl=await clickAndCaptureDownload(page,fallback.it,60000);
-  if(!dl)return{ok:false,reason:'fallback-download-timeout',label:fallback.label};
-  await dl.saveAs(localPath);
+  const ok=await clickAndCaptureDownload(page,fallback.it,localPath,60000);
+  if(!ok)return{ok:false,reason:'fallback-download-timeout',label:fallback.label};
   return{ok:true,method:(fallback.label||'standard-download')+' (recovery fallback)'};
 }
 async function downloadResult(page,rendered,localPath){
@@ -1389,25 +1419,19 @@ async function downloadResult(page,rendered,localPath){
       }
     }
     if(attempt.reason==='preferred-quality-deferred'){
-      publish('DOWNLOAD_1080_DEFERRED',{message:'1080p upscale did not emit a download yet; recovering the same render at an immediate quality.'});
+      publish('DOWNLOAD_1080_DEFERRED',{message:'1080p upscale did not emit a file yet; recovering the same render at an immediate quality.'});
       await page.keyboard.press('Escape').catch(()=>{});
-      await sleep(1200);
+      await sleep(900);
       attempt=await immediateDownloadChoice(page,localPath,{preferWanted:false});
       if(attempt.ok)return{method:attempt.method};
     }
     throw new Error('FRESH_VIDEO_DOWNLOAD_FAILED_NO_GENERIC_FALLBACK:'+String(attempt.reason||'unknown'));
   }
   if(!rendered?.uiReady)throw new Error('DOWNLOAD_WITHOUT_UNIQUE_FRESH_EVIDENCE');
-  let attempt=await immediateDownloadChoice(page,localPath,{preferWanted:true});
+  // Recovery from a project tile prioritizes the already-rendered native file.
+  // Do not start a fresh 1080p upscale job while the serial queue is blocked.
+  const attempt=await immediateDownloadChoice(page,localPath,{preferWanted:false});
   if(attempt.ok)return{method:attempt.method};
-  if(attempt.reason==='preferred-quality-deferred'){
-    publish('DOWNLOAD_1080_DEFERRED',{message:'1080p upscale did not emit a download yet; recovering the same render at an immediate quality.'});
-    await page.keyboard.press('Escape').catch(()=>{});
-    await sleep(1200);
-    if(rendered.baselineInventory)await openLatestExpectedVideoTile(page,rendered.baselineInventory).catch(()=>null);
-    attempt=await immediateDownloadChoice(page,localPath,{preferWanted:false});
-    if(attempt.ok)return{method:attempt.method};
-  }
   throw new Error('UNIQUE_FRESH_TILE_DOWNLOAD_FAILED:'+String(attempt.reason||'unknown'));
 }
 function validateMp4(localPath){
@@ -1750,7 +1774,8 @@ function productionCandidate(db){
   // otherwise the earlier row blocks on the later generating row forever.
   const inflight=db.prepare("SELECT * FROM factory_items WHERE status='generating' ORDER BY episode LIMIT 1").get();
   if(inflight){
-    const due=Number(inflight.nextTry||0)<=Date.now();
+    const last=Date.parse(String(inflight.lastProgressAt||inflight.updatedAt||''))||0;
+    const due=Number(inflight.nextTry||0)<=Date.now()||(last>0&&Date.now()-last>60*1000);
     return due?inflight:null;
   }
   const blocker=db.prepare("SELECT * FROM factory_items WHERE status NOT IN ('review','queued','historical','published','generating') ORDER BY episode LIMIT 1").get();
