@@ -14,5 +14,7 @@ See the canonical master SOP, sections 5 and 30–31. Core catalog:
 - FLOW-ERR-011 CHAT_ONLY_RECOVERY
 - FLOW-ERR-012 NETWORK_FILTER_ASSUMPTION
 - FLOW-ERR-013 GENERIC_REVIEW_METADATA
+- FLOW-ERR-014 GENERIC_EPISODE_INTENT_LEAK — a persisted generic fallback such as NEXT CHAPTER reaches Flow instead of a show-specific episode concept. Recovery: repair the episode intent before prompt checkpointing, clear stale generic prompts, and hard-block submit until the show-specific content gate passes.
+- FLOW-ERR-015 WEB_STYLE_CONTAMINATES_VIDEO_PROMPT — Publisher/web reference styling leaks into the video-generation prompt. Recovery: isolate video visual style from branding/UI style and reject web-layout language from the video style channel.
 
 Canonical recovery rule: UNCERTAINTY → RECONCILE; NEVER BLINDLY RESUBMIT.
