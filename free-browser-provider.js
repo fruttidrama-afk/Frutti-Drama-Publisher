@@ -1343,7 +1343,7 @@ async function clickAndCaptureDownload(page,option,localPath,timeout=60000){
     await cdp.send('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:dir,eventsEnabled:true}).catch(()=>{});
   }catch{}
   const playwrightDownload=page.waitForEvent('download',{timeout}).catch(()=>null);
-  await option.click({force:true,timeout:5000});
+  await trustedClick(option);
   const deadline=Date.now()+timeout;
   let seenPath='',seenSize=-1,stable=0;
   while(Date.now()<deadline){
@@ -1391,8 +1391,10 @@ async function immediateDownloadChoice(page,localPath,{preferWanted=true}={}){
   for(let i=0;i<Math.min(await menuItems.count().catch(()=>0),20);i++){
     const it=menuItems.nth(i);
     if(!(await it.isVisible().catch(()=>false)))continue;
-    const label=compact((await it.innerText().catch(()=>''))+' '+(await it.getAttribute('aria-label').catch(()=>'')),160);
-    visibleItems.push({it,label});
+    const text=compact(await it.innerText().catch(()=>''),120);
+    const aria=compact(await it.getAttribute('aria-label').catch(()=>''),120);
+    const label=compact(text+' '+aria,160);
+    visibleItems.push({it,text,aria,label});
   }
   publish('DOWNLOAD_MENU_OPTIONS',{message:visibleItems.map(x=>x.label||'(unlabeled)').join(' | ')});
   const fallback=
@@ -1401,7 +1403,13 @@ async function immediateDownloadChoice(page,localPath,{preferWanted=true}={}){
     visibleItems[2]||
     visibleItems[0];
   if(!fallback)return{ok:false,reason:'no-download-option'};
-  const ok=await clickAndCaptureDownload(page,fallback.it,localPath,60000);
+  let target=fallback.it;
+  if(fallback.text){
+    const textTarget=page.getByText(new RegExp(escapeRe(fallback.text),'i')).last();
+    if(await textTarget.count().catch(()=>0)&&await textTarget.isVisible().catch(()=>false))target=textTarget;
+  }
+  publish('DOWNLOAD_OPTION_CLICK',{message:'Clicking '+String(fallback.text||fallback.label||'fallback')+' with trusted pointer input.'});
+  const ok=await clickAndCaptureDownload(page,target,localPath,60000);
   if(!ok)return{ok:false,reason:'fallback-download-timeout',label:fallback.label};
   return{ok:true,method:(fallback.label||'standard-download')+' (recovery fallback)'};
 }
