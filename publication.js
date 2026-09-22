@@ -33,15 +33,18 @@ function nextSlot(db,config){
 function metadata(row,config){
   const provider=(config.publication?.providers||[]).find(x=>x.type==='youtube')||{};
   let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
-  const copy=buildPublicationCopy({
-    hook:row.hook,
-    story:row.story,
-    prompt:row.prompt,
-    contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],
-    hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
-    showName:config.identity.show_name,
-    maxTitleLength:100
-  });
+  const override=flow?.publication_override;
+  const copy=override?.title&&override?.description
+    ? {title:String(override.title),description:String(override.description)}
+    : buildPublicationCopy({
+        hook:row.hook,
+        story:row.story,
+        prompt:row.prompt,
+        contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],
+        hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+        showName:config.identity.show_name,
+        maxTitleLength:100
+      });
   let description=copy.description;
   while(utf8(description)>4800)description=description.slice(0,-20).trimEnd();
   return{title:copy.title,description};
@@ -112,7 +115,10 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       const row=db.prepare('SELECT hook,story,prompt,flowResult FROM factory_items WHERE id=?').get(item.itemId);
       if(!row)continue;
       let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
-      const copy=buildPublicationCopy({hook:row.hook,story:row.story,prompt:row.prompt,contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],showName:config.identity.show_name,maxTitleLength:100});
+      const override=flow?.publication_override;
+      const copy=override?.title&&override?.description
+        ? {title:String(override.title),description:String(override.description)}
+        : buildPublicationCopy({hook:row.hook,story:row.story,prompt:row.prompt,contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],showName:config.identity.show_name,maxTitleLength:100});
       let description=copy.description;while(utf8(description)>4800)description=description.slice(0,-20).trimEnd();
       const changed=item.title!==copy.title||item.description!==description;
       report.push({episode:item.episode,title:copy.title,changed});
