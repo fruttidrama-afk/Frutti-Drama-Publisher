@@ -31,13 +31,13 @@ must(schema.properties?.knowledge?.properties?.flow_sop_version?.const==='FLOW-S
 for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY_ENTERED','automatic_submit_forbidden','flow-grid-tile-container','flow-tile-hover-footer','EPISODE_INTENT_REPAIRED','EARTH_IN_10_CONTENT_GATE','CREATIVE_PACKAGE_READY','creativePackageHash','source:\'creative-package\'']){
   must(provider.includes(token),'provider contract missing '+token);
 }
-for(const token of ['EARTH_IN_10_AUTONOMOUS_EPISODES','enforceEpisodeIntent','effectiveVideoVisualStyle','publisherWebStyleLeak']){
+for(const token of ['EARTH_IN_10_AUTONOMOUS_EPISODES','enforceEpisodeIntent','effectiveVideoVisualStyle','publisherWebStyleLeak','materializeCreativePackage','validateEpisodePrompt','SHOW_BIBLE_REQUIRED','PROMPT_QUALITY_GATE']){
   must(runtimeConfig.includes(token),'runtime content contract missing '+token);
 }
 for(const token of ['runtime_knowledge','creativePackageHash','creativePackageId','knowledge:flowSopLoaded','automation:exactlyOnceSubmit','automation:strictSerialGeneration']){
   must(init.includes(token),'runtime-init contract missing '+token);
 }
-for(const token of ["app.get('/factory/knowledge'","automation_safety","containsSyntheticMedia:true","creativePackageHash=NULL","title='',description=''"]){
+for(const token of ["app.get('/factory/knowledge'","automation_safety","containsSyntheticMedia:true","replacement creative package required"]){
   must(server.includes(token),'server contract missing '+token);
 }
 for(const token of ['Publication metadata synchronized from the episode creative package.',"if(String(row?.title||'').trim()&&String(row?.description||'').trim())"]){
