@@ -9,7 +9,7 @@ import {
   DURATION_SECONDS, DURATION_LABEL, ASPECT_RATIO, OUTPUT_COUNT, OUTPUT_LABEL,
   MODEL_INTENT, RESOLUTION_INTENT, DAILY_LIMIT, CREDIT_PER_GENERATION,
   DAILY_CREDIT_BUDGET, TIMEZONE, registry as configRegistry,
-  resolveVisualCharacters, buildPrompt, seedInitial, ensureBacklog, ideaForEpisode
+  resolveVisualCharacters, buildPrompt, seedInitial, ensureBacklog, enforceEpisodeIntent
 } from './runtime-config.js';
 import { buildPublicationCopy } from './publication-copy.js';
 
@@ -319,35 +319,19 @@ function checkpoint(row){
 function matchingCharacters(row){return resolveVisualCharacters(row);}
 function previousContinuity(db,row){if(!CONFIG.content.serialized)return'Independent episode.';const prev=db.prepare('SELECT hook,story,status FROM factory_items WHERE episode<? ORDER BY episode DESC LIMIT 1').get(Number(row.episode));return prev?('Previous canonical beat: '+prev.hook+' — '+prev.story):(CONFIG.content.canon||'Start from the configured Creative Bible.');}
 function buildLocalPrompt(db,row,visual){return buildPrompt(db,row,visual);}
-function genericEarthIntent(row){
-  return /earth\s*in\s*10/i.test(String(SHOW||CONFIG.identity?.show_name||''))&&(
-    /^(NEXT CHAPTER|NEW TURN|NEW EPISODE)$/i.test(String(row?.hook||'').trim())||
-    /Continue the configured Creative Bible and canon from the previous accepted beat/i.test(String(row?.story||''))||
-    /EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(String(row?.prompt||''))
-  );
-}
-function repairEarthIntentBeforeGeneration(db,row){
-  if(!genericEarthIntent(row))return row;
-  const idea=ideaForEpisode(Number(row.episode));
-  if(!idea||/^(NEXT CHAPTER|NEW TURN|NEW EPISODE)$/i.test(String(idea.hook||'').trim())||
-     /Continue the configured Creative Bible and canon from the previous accepted beat/i.test(String(idea.story||''))){
-    throw new Error('EARTH_PROMPT_NOT_CONCRETE: refusing to submit a generic Earth in 10 prompt.');
-  }
-  db.prepare("UPDATE factory_items SET hook=?,story=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,characterHandles=NULL,characterRoles=NULL,transportPreflight=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
-    .run(String(idea.hook),String(idea.story),now(),row.id);
-  publish('EARTH_PROMPT_REPAIRED',{episode:'E'+row.episode,job_id:row.id,hook:String(idea.hook)});
-  return db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);
-}
 function preparePromptIfNeeded(db,row){
-  row=repairEarthIntentBeforeGeneration(db,row);
+  const intent=enforceEpisodeIntent(db,row);
+  row=intent.row;
+  if(intent.repaired)publish('EPISODE_INTENT_REPAIRED',{episode:'E'+row.episode,job_id:row.id,reason:intent.reason,hook:compact(row.hook,120),story:compact(row.story,320)});
   let cp=checkpoint(row);if(cp)return cp;
   const visual=matchingCharacters(row),prompt=buildLocalPrompt(db,row,visual);
-  if(/earth\s*in\s*10/i.test(String(SHOW||CONFIG.identity?.show_name||''))&&
-     /EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(prompt)){
-    throw new Error('EARTH_PROMPT_NOT_CONCRETE: refusing to submit a generic Earth in 10 prompt.');
+  if(/^EARTH IN 10 — EPISODE /m.test(prompt)&&(
+     /HOOK:\s*(NEXT CHAPTER|NEW TURN|NEW EPISODE)/i.test(prompt)||
+     /EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(prompt))){
+    throw new Error('EARTH_IN_10_CONTENT_GATE: generic fallback prompt blocked before Flow');
   }
   const hash=sha(prompt),r=registry(),roles=visual.map(name=>({name,role:'ON_SCREEN',visual:true})),handles=visual.map(name=>r.characters.find(c=>String(c.name)===String(name))?.mention||('@'+name));
-  db.prepare("UPDATE factory_items SET prompt=?,promptHash=?,promptGenerationId=?,characterHandles=?,characterRoles=?,promptPayloadHash=?,promptPayloadLength=?,status='draft',providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?").run(prompt,hash,'runtime-prompt-v1-'+randomUUID(),JSON.stringify(handles),JSON.stringify(roles),hash,Buffer.byteLength(prompt,'utf8'),now(),row.id);
+  db.prepare("UPDATE factory_items SET prompt=?,promptHash=?,promptGenerationId=?,characterHandles=?,characterRoles=?,promptPayloadHash=?,promptPayloadLength=?,status='draft',providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?").run(prompt,hash,'runtime-prompt-v2-'+randomUUID(),JSON.stringify(handles),JSON.stringify(roles),hash,Buffer.byteLength(prompt,'utf8'),now(),row.id);
   cp=checkpoint(db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id));if(!cp)throw new Error('RUNTIME_PROMPT_CHECKPOINT_FAILED');return cp;
 }
 
