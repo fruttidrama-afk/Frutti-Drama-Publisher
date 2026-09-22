@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS factory_items(
  characterRoles TEXT,
  promptPayloadHash TEXT,
  promptPayloadLength INTEGER,
+ creativePackageHash TEXT,
+ creativePackageId TEXT,
  transportPreflight TEXT,
  runtimeAttemptCount INTEGER NOT NULL DEFAULT 0,
  lastProgressAt TEXT,
