@@ -367,7 +367,19 @@ function buildCreativePackage(row,prompt){
 function packageMatches(row){
   const prompt=String(row?.prompt||''),title=String(row?.title||''),description=String(row?.description||'');
   if(!prompt||!title||!description||!String(row?.creativePackageHash||''))return false;
-  return String(row.creativePackageHash)===creativePackageHash(row,prompt,title,description);
+  if(String(row.creativePackageHash)!==creativePackageHash(row,prompt,title,description))return false;
+  if(/earth\s*in\s*10/i.test(String(CONFIG.identity?.show_name||SHOW||''))){
+    const provider=(CONFIG.publication?.providers||[]).find(x=>x.type==='youtube')||{};
+    const expected=buildPublicationCopy({
+      hook:row.hook,story:row.story,prompt,contextTerms:[],
+      hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+      showName:CONFIG.identity?.show_name||SHOW,maxTitleLength:100
+    });
+    let d=String(expected.description||'');
+    while(Buffer.byteLength(d,'utf8')>4800)d=d.slice(0,-30).trimEnd();
+    if(title!==String(expected.title||'').slice(0,100)||description!==d)return false;
+  }
+  return true;
 }
 function preparePromptIfNeeded(db,row){
   const revise=String(row?.retryStrategy||'')==='revise_prompt'&&String(row?.reviewFeedback||'').trim().length>=3;
@@ -1887,21 +1899,25 @@ function auditRedoState(db){
 }
 
 function productionCandidate(db){
-  // Recovery has priority over episode number. A later episode that already
-  // crossed Generate must be retrieved before an earlier human REDO can run;
-  // otherwise the earlier row blocks on the later generating row forever.
+  // First finish any generation that already crossed the submit boundary.
   const inflight=db.prepare("SELECT * FROM factory_items WHERE status='generating' ORDER BY episode LIMIT 1").get();
   if(inflight){
     const last=Date.parse(String(inflight.lastProgressAt||inflight.updatedAt||''))||0;
     const due=Number(inflight.nextTry||0)<=Date.now()||(last>0&&Date.now()-last>60*1000);
     return due?inflight:null;
   }
+  // Human REDO is the highest-priority new generation. It must not wait behind
+  // ordinary backlog or the daily autonomous target: reviewer feedback is acted
+  // on immediately and the replacement returns to Review the same day.
+  const retries=db.prepare("SELECT * FROM factory_items WHERE status IN ('regen_wait','draft') AND retryStrategy IN ('reuse_prompt','revise_prompt') AND reviewFeedback IS NOT NULL AND TRIM(reviewFeedback)<>'' ORDER BY updatedAt,episode").all();
+  for(const retry of retries){
+    if(Number(retry.nextTry||0)<=Date.now()&&isReviewerRetry(retry))return retry;
+  }
   const blocker=db.prepare("SELECT * FROM factory_items WHERE status NOT IN ('review','queued','historical','published','generating') ORDER BY episode LIMIT 1").get();
   if(!blocker)return null;
   const due=Number(blocker.nextTry||0)<=Date.now();
   if(!['draft','regen_wait'].includes(String(blocker.status||'')))return null;
   if(!due)return null;
-  if(isReviewerRetry(blocker))return blocker;
   if(String(blocker.reviewFeedback||'').trim())return null;
   return blocker;
 }
