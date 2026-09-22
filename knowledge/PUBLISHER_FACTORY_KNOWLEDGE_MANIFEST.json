@@ -1,8 +1,9 @@
 {
   "package": "PUBLISHER_FACTORY_FLOW_KNOWLEDGE_PACK",
   "version": "FLOW-SOP-v1.0",
+  "master_sha256": "8172f4b415e516fb1ec211a338ef7872740d7931adfbc5ab31572344a5bc9162",
+  "master_git_blob_sha": "80bcfb73460d736b6f2accdf653cbe1f4f43690f",
   "mandatory_for_every_generated_publisher": true,
-  "master_git_blob_sha": "41f80a7cce6aaf365fa9036635578276610df7ee",
   "files": [
     "knowledge/GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md",
     "knowledge/GOOGLE_FLOW_AUTOMATION_SOP.json",
