@@ -329,6 +329,11 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     }finally{cloudMigrationRunning=false}
   }
 
+  try{
+    const auditRows=db.prepare("SELECT episode,title,status,filePath,videoId,resumableSession,scheduledAt,uploadAt FROM publication_items WHERE status NOT IN ('published','cancelled','deleted') ORDER BY episode").all()
+      .map(x=>({episode:x.episode,title:String(x.title||'').slice(0,80),status:x.status,videoId:Boolean(x.videoId),cloud:isReviewStorageUri(x.filePath),local:Boolean(x.filePath&&!isReviewStorageUri(x.filePath)&&fs.existsSync(x.filePath)),hasPath:Boolean(x.filePath),session:Boolean(x.resumableSession),scheduledAt:x.scheduledAt,uploadAt:x.uploadAt}));
+    console.log('[PUBLICATION STORAGE AUDIT]',JSON.stringify(auditRows));
+  }catch{}
   async function tick(){
     if(running)return;running=true;lastHeartbeat=now();lastError=null;
     await migratePendingPublicationMedia();
