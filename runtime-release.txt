@@ -57,3 +57,4 @@ fix=private-cloud-review-storage,no-youtube-review-staging,cloud-to-youtube-publ
 fix=cloud-review-storage-selftest-alignment
 fix=cloud-storage-selftest-init-order
 fix=migrate-existing-publication-media-to-private-cloud-storage
+fix=signed-put-review-storage,force-1230-private-upload-1900-publish
