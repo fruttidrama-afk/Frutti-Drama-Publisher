@@ -37,6 +37,10 @@ has(runtimeConfig,'EARTH_IN_10_AUTONOMOUS_EPISODES','Earth autonomous geographic
 has(runtimeConfig,'enforceEpisodeIntent','Earth episode intent validator');
 has(runtimeConfig,'effectiveVideoVisualStyle','video/web style isolation');
 has(runtimeConfig,'publisherWebStyleLeak','web-style contamination detector');
+has(runtimeConfig,'materializeCreativePackage','atomic prompt/title/description creation');
+has(runtimeConfig,'validateEpisodePrompt','Show Bible prompt validator');
+has(runtimeConfig,'SHOW_BIBLE_REQUIRED','Show Bible hard requirement');
+has(runtimeConfig,'PROMPT_QUALITY_GATE','nonempty prompt quality gate');
 
 const init=read('runtime-init.js');
 has(init,'runtime_knowledge','runtime knowledge table');
@@ -51,8 +55,7 @@ const server=read('server.js');
 has(server,"app.get('/factory/knowledge'",'knowledge endpoint');
 has(server,'automation_safety','health safety block');
 has(server,'containsSyntheticMedia:true','YouTube synthetic-media disclosure');
-has(server,'creativePackageHash=NULL','REDO invalidates the creative package');
-has(server,"title='',description=''",'REDO clears title and description with revised prompt');
+has(server,'replacement creative package required','REDO requests atomic package replacement without blanking the old prompt');
 
 const publication=read('publication.js');
 has(publication,'containsSyntheticMedia:true','publication synthetic-media disclosure');
