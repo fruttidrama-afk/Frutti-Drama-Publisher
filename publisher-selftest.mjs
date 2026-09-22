@@ -28,13 +28,13 @@ for(const [token,label] of [
   ['flow-tile-hover-footer','recorded asset-open path'],
   ['REVIEW_METADATA_READY','review metadata gate'],
   ['EPISODE_INTENT_REPAIRED','Earth episode intent repair gate'],
-  ['EARTH_IN_10_CONTENT_GATE','Earth generic prompt block'],
   ['CREATIVE_PACKAGE_READY','prompt/title/description package checkpoint'],
   ['creativePackageHash','creative package hash link'],
   ["source:'creative-package'",'review metadata preservation']
 ]) has(provider,token,label);
 has(runtimeConfig,'EARTH_IN_10_AUTONOMOUS_EPISODES','Earth autonomous geographic ideas');
 has(runtimeConfig,'enforceEpisodeIntent','Earth episode intent validator');
+has(runtimeConfig,'EARTH_IN_10_CONTENT_GATE','Earth generic prompt block');
 has(runtimeConfig,'effectiveVideoVisualStyle','video/web style isolation');
 has(runtimeConfig,'publisherWebStyleLeak','web-style contamination detector');
 has(runtimeConfig,'materializeCreativePackage','atomic prompt/title/description creation');
