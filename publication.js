@@ -107,7 +107,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   async function auditExistingMetadata(){
     const provider=(config.publication?.providers||[]).find(x=>x.type==='youtube')||{};
     const items=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('cancelled','deleted') ORDER BY episode").all();
-    let corrected=0,synced=0;
+    let corrected=0,synced=0;const report=[];
     for(const item of items){
       const row=db.prepare('SELECT hook,story,prompt,flowResult FROM factory_items WHERE id=?').get(item.itemId);
       if(!row)continue;
@@ -115,6 +115,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       const copy=buildPublicationCopy({hook:row.hook,story:row.story,prompt:row.prompt,contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],showName:config.identity.show_name,maxTitleLength:100});
       let description=copy.description;while(utf8(description)>4800)description=description.slice(0,-20).trimEnd();
       const changed=item.title!==copy.title||item.description!==description;
+      report.push({episode:item.episode,title:copy.title,changed});
       if(changed){
         item.title=copy.title;item.description=description;hist(item,item.status,'Publication metadata realigned with the exact episode story.');save(db,item);corrected++;
       }
@@ -125,7 +126,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
         }
       }
     }
-    if(corrected||synced)console.log('[PUBLICATION COPY AUDIT]',{corrected,synced});
+    if(report.length)console.log('[PUBLICATION COPY AUDIT]',JSON.stringify({corrected,synced,items:report}));
   }
 
   async function upload(item){
