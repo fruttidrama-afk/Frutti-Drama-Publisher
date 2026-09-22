@@ -243,7 +243,10 @@ function lifecycle(db, row) { return json(meta(db, `flow:generationLifecycle:${r
 function setLifecycle(db, row, state, extra={}) {
   const previous = lifecycle(db,row) || {};
   const progressAt=now();
-  const value = { ...previous, state, provider:PROVIDER, updated_at:progressAt, ...extra };
+  // Explicit transition arguments are authoritative. Many callers carry the
+  // previous lifecycle in `extra`; applying extra last silently restored the
+  // OLD state and trapped REDO jobs in SUBMIT_BOUNDARY_ENTERED forever.
+  const value = { ...previous, ...extra, state, provider:PROVIDER, updated_at:progressAt };
   setMeta(db, `flow:generationLifecycle:${row.id}`, JSON.stringify(value));
   try{db.prepare('UPDATE factory_items SET lastProgressAt=?,updatedAt=? WHERE id=?').run(progressAt,progressAt,row.id);}catch{}
   setMeta(db, 'flow:currentStep', state.toLowerCase());
@@ -1993,6 +1996,18 @@ function reviewerRetryTokenConsumed(row){
 function isReviewerRetry(row){
   return !!row&&['reuse_prompt','revise_prompt'].includes(String(row.retryStrategy||''))&&String(row.reviewFeedback||'').trim().length>=3&&['regen_wait','draft'].includes(String(row.status||''))&&retryTokenOpen(row);
 }
+function normalizeReauthorizedReviewerRetries(db){
+  try{
+    const rows=db.prepare("SELECT * FROM factory_items WHERE status='generating' AND retryStrategy IN ('reuse_prompt','revise_prompt') AND reviewFeedback IS NOT NULL AND reviewRetryToken IS NOT NULL AND (reviewRetrySubmittedToken IS NULL OR reviewRetrySubmittedToken<>reviewRetryToken)").all();
+    for(const row of rows){
+      const lc=lifecycle(db,row)||{};
+      if(Number(lc.retry_reauthorization_count||0)<1&&!lc.prior_submit_unretained)continue;
+      db.prepare("UPDATE factory_items SET status='regen_wait',providerRunId=NULL,error='Verified clean REDO retry ready to submit now.',nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
+      setLifecycle(db,row,'REDO_RETRY_REAUTHORIZED',{...lc,reviewer_retry:true,retry_token:String(row.reviewRetryToken||''),automatic_submit_forbidden:false,retry_reauthorization_count:Math.max(1,Number(lc.retry_reauthorization_count||0)),recovered_state_bug:true});
+      publish('REVIEW_RETRY_REAUTH_STATE_REPAIRED',{episode:'E'+row.episode,job_id:row.id,message:'Recovered REDO from stale lifecycle state; clean retry is ready immediately.'});
+    }
+  }catch(e){publish('REVIEW_RETRY_REAUTH_REPAIR_WARNING',{message:compact(e?.message||e,400)})}
+}
 function normalizeConsumedReviewerRetries(db){
   const rows=db.prepare("SELECT * FROM factory_items WHERE retryStrategy IN ('reuse_prompt','revise_prompt') AND reviewFeedback IS NOT NULL AND reviewRetryToken IS NOT NULL AND reviewRetrySubmittedToken=reviewRetryToken AND status NOT IN ('review','queued','historical','published')").all();
   for(const row of rows){
@@ -2042,7 +2057,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
