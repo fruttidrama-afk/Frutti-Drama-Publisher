@@ -25,39 +25,23 @@ async function broker(action,body={}){
   if(!r.ok||!j?.ok)throw new Error('REVIEW_STORAGE_'+String(action).toUpperCase()+'_FAILED:'+String(j?.error||r.status));
   return j;
 }
-function b64(v){return Buffer.from(String(v),'utf8').toString('base64')}
-function metadata(bucket,p){
-  return ['bucketName '+b64(bucket),'objectName '+b64(p),'contentType '+b64('video/mp4'),'cacheControl '+b64('3600')].join(',');
-}
-async function tusUpload(localPath,grant){
+async function uploadViaSignedUrl(localPath,grant){
+  if(!grant?.signedUrl)throw new Error('REVIEW_STORAGE_SIGNED_URL_MISSING');
   const size=fs.statSync(localPath).size;
-  const create=await fetch(grant.tusEndpoint,{
-    method:'POST',
-    signal:AbortSignal.timeout(90000),
-    headers:{'Tus-Resumable':'1.0.0','Upload-Length':String(size),'Upload-Metadata':metadata(grant.bucket,grant.path),'x-signature':String(grant.token),'x-upsert':'true'}
+  const body=fs.createReadStream(localPath);
+  const r=await fetch(grant.signedUrl,{
+    method:'PUT',
+    signal:AbortSignal.timeout(10*60*1000),
+    headers:{
+      'content-type':'video/mp4',
+      'content-length':String(size),
+      'cache-control':'max-age=3600',
+      'x-upsert':'true'
+    },
+    body,
+    duplex:'half'
   });
-  if(!create.ok)throw new Error('REVIEW_STORAGE_TUS_CREATE_FAILED:'+create.status+':'+(await create.text().catch(()=>'' )).slice(0,300));
-  const location=create.headers.get('location');
-  if(!location)throw new Error('REVIEW_STORAGE_TUS_LOCATION_MISSING');
-  const uploadUrl=new URL(location,grant.tusEndpoint).toString();
-  const fd=fs.openSync(localPath,'r');
-  try{
-    let offset=Number(create.headers.get('upload-offset')||0);
-    while(offset<size){
-      const end=Math.min(size,offset+CHUNK),buf=Buffer.alloc(end-offset);
-      const n=fs.readSync(fd,buf,0,buf.length,offset);
-      if(n!==buf.length)throw new Error('REVIEW_STORAGE_LOCAL_READ_SHORT');
-      const patch=await fetch(uploadUrl,{
-        method:'PATCH',signal:AbortSignal.timeout(120000),
-        headers:{'Tus-Resumable':'1.0.0','Upload-Offset':String(offset),'Content-Type':'application/offset+octet-stream','Content-Length':String(buf.length),'x-signature':String(grant.token)},
-        body:buf
-      });
-      if(!patch.ok)throw new Error('REVIEW_STORAGE_TUS_PATCH_FAILED:'+patch.status+':'+(await patch.text().catch(()=>'' )).slice(0,300));
-      const next=Number(patch.headers.get('upload-offset')||end);
-      if(!Number.isSafeInteger(next)||next<=offset)throw new Error('REVIEW_STORAGE_TUS_OFFSET_INVALID');
-      offset=next;
-    }
-  }finally{fs.closeSync(fd)}
+  if(!r.ok)throw new Error('REVIEW_STORAGE_SIGNED_UPLOAD_FAILED:'+r.status+':'+(await r.text().catch(()=>'' )).slice(0,500));
   return size;
 }
 
@@ -70,7 +54,7 @@ export async function uploadReviewFile(localPath,{itemId='review',revision=0}={}
   const safe=String(itemId||'review').replace(/[^A-Za-z0-9._-]/g,'_').slice(0,120)||'review';
   const objectName=safe+'-r'+Math.max(0,Number(revision||0))+'-'+Date.now()+'.mp4';
   const grant=await broker('upload-token',{objectName});
-  const size=await tusUpload(localPath,grant);
+  const size=await uploadViaSignedUrl(localPath,grant);
   return{uri:reviewStorageUri(grant.path),path:grant.path,size,provider:'supabase'};
 }
 export async function signedReviewUrl(uri,expiresIn=3600){
