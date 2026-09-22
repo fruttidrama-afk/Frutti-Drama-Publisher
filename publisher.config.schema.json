@@ -12,7 +12,8 @@
     "review",
     "schedule",
     "publication",
-    "security"
+    "security",
+    "knowledge"
   ],
   "properties": {
     "runtime_version": {
@@ -240,8 +241,54 @@
           "enum": [
             "unique-post-baseline-result"
           ]
+        },
+        "flow_sop_version": {
+          "const": "FLOW-SOP-v1.0"
+        },
+        "flow_sop_sha256": {
+          "const": "8172f4b415e516fb1ec211a338ef7872740d7931adfbc5ab31572344a5bc9162"
+        },
+        "inherit_flow_sop": {
+          "const": true
+        },
+        "exactly_once_submit": {
+          "const": true
+        },
+        "strict_serial_generation": {
+          "const": true
+        },
+        "project_grid_recovery": {
+          "const": true
+        },
+        "current_consent_only": {
+          "const": true
+        },
+        "review_metadata_required": {
+          "const": true
+        },
+        "golden_test_required": {
+          "const": true
         }
-      }
+      },
+      "required": [
+        "provider",
+        "persistent_profile",
+        "tinyfish_required",
+        "semantic_field_safety",
+        "external_reality_reconciliation",
+        "redo_exactly_once",
+        "redo_token_persistent",
+        "render_identity_binding",
+        "flow_sop_version",
+        "flow_sop_sha256",
+        "inherit_flow_sop",
+        "exactly_once_submit",
+        "strict_serial_generation",
+        "project_grid_recovery",
+        "current_consent_only",
+        "review_metadata_required",
+        "golden_test_required"
+      ]
     },
     "review": {
       "type": "object",
@@ -293,10 +340,7 @@
           "const": true
         },
         "generation_strategy": {
-          "enum": [
-            "sequential",
-            "parallel"
-          ]
+          "const": "sequential"
         },
         "posting_times": {
           "type": "array",
@@ -450,6 +494,33 @@
             "text": {
               "type": "string"
             }
+          }
+        }
+      }
+    },
+    "knowledge": {
+      "type": "object",
+      "required": [
+        "flow_sop_version",
+        "flow_sop_sha256",
+        "inherit",
+        "files"
+      ],
+      "properties": {
+        "flow_sop_version": {
+          "const": "FLOW-SOP-v1.0"
+        },
+        "flow_sop_sha256": {
+          "const": "8172f4b415e516fb1ec211a338ef7872740d7931adfbc5ab31572344a5bc9162"
+        },
+        "inherit": {
+          "const": true
+        },
+        "files": {
+          "type": "array",
+          "minItems": 8,
+          "contains": {
+            "const": "GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md"
           }
         }
       }
