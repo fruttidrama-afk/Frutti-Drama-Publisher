@@ -17,6 +17,7 @@ must(manifest.inheritance_required===true,'inheritance must be required');
 must(Array.isArray(manifest.canonical_files)&&manifest.canonical_files.length>=7,'knowledge pack incomplete');
 
 const provider=read('free-browser-provider.js');
+const runtimeConfig=read('runtime-config.js');
 for(const [token,label] of [
   ['flow-generate-icon-button','verified Flow submit selector'],
   ['arrow_forward','verified Flow submit icon'],
@@ -25,8 +26,14 @@ for(const [token,label] of [
   ['automatic_submit_forbidden','post-boundary submit lock'],
   ['flow-grid-tile-container','project-grid recovery'],
   ['flow-tile-hover-footer','recorded asset-open path'],
-  ['REVIEW_METADATA_READY','review metadata gate']
+  ['REVIEW_METADATA_READY','review metadata gate'],
+  ['EPISODE_INTENT_REPAIRED','Earth episode intent repair gate'],
+  ['EARTH_IN_10_CONTENT_GATE','Earth generic prompt block']
 ]) has(provider,token,label);
+has(runtimeConfig,'EARTH_IN_10_AUTONOMOUS_EPISODES','Earth autonomous geographic ideas');
+has(runtimeConfig,'enforceEpisodeIntent','Earth episode intent validator');
+has(runtimeConfig,'effectiveVideoVisualStyle','video/web style isolation');
+has(runtimeConfig,'publisherWebStyleLeak','web-style contamination detector');
 
 const init=read('runtime-init.js');
 has(init,'runtime_knowledge','runtime knowledge table');
