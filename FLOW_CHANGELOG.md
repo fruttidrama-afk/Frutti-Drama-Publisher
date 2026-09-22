@@ -8,4 +8,4 @@
 - Review metadata must be publication-ready before approval.
 - Date-scoped daily overrides, vanished-render reconciliation and insufficient-credit backoff incorporated.
 - Publisher Factory inheritance contract added.
-- Master SOP SHA-256: 8172f4b415e516fb1ec211a338ef7872740d7931adfbc5ab31572344a5bc9162
+- Master SOP SHA-256: a2c1e60458c19e5e806e3246e98c5d31e2a6783a9a0cb436d721722d02f09166
