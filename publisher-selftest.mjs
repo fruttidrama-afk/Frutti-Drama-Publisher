@@ -28,7 +28,10 @@ for(const [token,label] of [
   ['flow-tile-hover-footer','recorded asset-open path'],
   ['REVIEW_METADATA_READY','review metadata gate'],
   ['EPISODE_INTENT_REPAIRED','Earth episode intent repair gate'],
-  ['EARTH_IN_10_CONTENT_GATE','Earth generic prompt block']
+  ['EARTH_IN_10_CONTENT_GATE','Earth generic prompt block'],
+  ['CREATIVE_PACKAGE_READY','prompt/title/description package checkpoint'],
+  ['creativePackageHash','creative package hash link'],
+  ["source:'creative-package'",'review metadata preservation']
 ]) has(provider,token,label);
 has(runtimeConfig,'EARTH_IN_10_AUTONOMOUS_EPISODES','Earth autonomous geographic ideas');
 has(runtimeConfig,'enforceEpisodeIntent','Earth episode intent validator');
@@ -37,6 +40,8 @@ has(runtimeConfig,'publisherWebStyleLeak','web-style contamination detector');
 
 const init=read('runtime-init.js');
 has(init,'runtime_knowledge','runtime knowledge table');
+has(init,'creativePackageHash','creative package schema');
+has(init,'creativePackageId','creative package id schema');
 has(init,"knowledge:flowSopLoaded",'knowledge loaded marker');
 has(init,"automation:exactlyOnceSubmit",'exactly-once metadata');
 has(init,"automation:strictSerialGeneration",'strict serial metadata');
@@ -46,6 +51,8 @@ const server=read('server.js');
 has(server,"app.get('/factory/knowledge'",'knowledge endpoint');
 has(server,'automation_safety','health safety block');
 has(server,'containsSyntheticMedia:true','YouTube synthetic-media disclosure');
+has(server,'creativePackageHash=NULL','REDO invalidates the creative package');
+has(server,"title='',description=''",'REDO clears title and description with revised prompt');
 
 const publication=read('publication.js');
 has(publication,'containsSyntheticMedia:true','publication synthetic-media disclosure');
