@@ -1123,6 +1123,90 @@ function inventoryHasNew(current,baseline){
   const before=new Set(Array.isArray(baseline?.signatures)?baseline.signatures:[]);
   return (Array.isArray(current?.signatures)?current.signatures:[]).some(x=>!before.has(x));
 }
+function episodeRecoveryTerms(row){
+  const hook=norm(String(row?.hook||''));
+  const story=norm(String(row?.story||''));
+  const stop=new Set(['cinematic','video','through','while','under','above','below','across','into','from','with','this','that','their','there','where','soft','natural','light','morning','sunrise','dawn','landscape','water','clouds','mist']);
+  const hookTokens=hook.split(' ').filter(x=>x.length>=5&&!stop.has(x));
+  const storyTokens=story.split(' ').filter(x=>x.length>=6&&!stop.has(x));
+  return{hook,anchors:[...new Set([...hookTokens.slice(0,3),...storyTokens.slice(0,5)])].slice(0,8)};
+}
+async function findEpisodeRecoveryAsset(page,row,allowHistory=true){
+  const terms=episodeRecoveryTerms(row);
+  const candidates=[],seen=new Set();
+  const selectors=['flow-grid-tile-container','flow-a2ui-video-option','img','[role="img"]','[aria-label]'];
+  for(const sel of selectors){
+    const loc=page.locator(sel),count=Math.min(await loc.count().catch(()=>0),900);
+    for(let i=0;i<count;i++){
+      const el=loc.nth(i);
+      if(!(await el.isVisible().catch(()=>false)))continue;
+      const info=await el.evaluate(node=>{
+        const r=node.getBoundingClientRect();
+        const raw=[
+          node.getAttribute?.('aria-label')||'',
+          node.getAttribute?.('alt')||'',
+          node.getAttribute?.('title')||'',
+          node.innerText||'',
+          node.textContent||''
+        ].join(' ').replace(/\s+/g,' ').trim();
+        return{raw:raw.slice(0,6000),area:r.width*r.height};
+      }).catch(()=>null);
+      if(!info?.raw||info.area<1200)continue;
+      const n=norm(info.raw);
+      const matched=terms.anchors.filter(t=>n.includes(t));
+      const hookMatch=terms.hook.length>=8&&n.includes(terms.hook);
+      if(!hookMatch&&matched.length<Math.min(2,Math.max(1,terms.anchors.length)))continue;
+      const key=info.raw.slice(0,700);if(seen.has(key))continue;seen.add(key);
+      candidates.push({el,label:compact(info.raw,900),matched,score:(hookMatch?1000:0)+matched.length*100+Math.min(info.area/10000,50)});
+    }
+  }
+  candidates.sort((a,b)=>b.score-a.score);
+  for(const hit of candidates.slice(0,20)){
+    const interactive=hit.el.locator('xpath=ancestor-or-self::button | ancestor-or-self::*[@role="button"] | ancestor-or-self::flow-grid-tile-container').last();
+    const target=await interactive.count().catch(()=>0)?interactive:hit.el;
+    await target.scrollIntoViewIfNeeded().catch(()=>{});
+    await target.click({force:true,timeout:5000}).catch(()=>{});
+    await sleep(1000);
+    const d=await visibleDownloadButton(page);
+    if(d)return{found:true,label:hit.label,matched:hit.matched,source:'episode-prompt-correlation'};
+    await page.keyboard.press('Escape').catch(()=>{});await sleep(250);
+  }
+  if(allowHistory){
+    const history=page.getByRole('button',{name:/Open session history|Session history|Historial de sesiones/i}).last();
+    if(await history.count().catch(()=>0)&&await history.isVisible().catch(()=>false)){
+      await history.click().catch(()=>{});await sleep(900);
+      const retry=await findEpisodeRecoveryAsset(page,row,false);
+      if(retry?.found)return{...retry,source:'session-history/'+retry.source};
+      await page.keyboard.press('Escape').catch(()=>{});
+    }
+  }
+  return{found:false,terms};
+}
+async function recoverReviewerRetryAsset(page,row,lc,db){
+  const found=await findEpisodeRecoveryAsset(page,row,true);
+  if(!found?.found)return false;
+  const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);
+  try{fs.unlinkSync(localPath)}catch{}
+  const dl=await downloadResult(page,{uiReady:true,signal:'review-redo-prompt-correlation'},localPath);
+  const valid=validateMp4(localPath),recoveredAt=now();
+  const flowResult={
+    provider:PROVIDER,generation_id:lc?.generation_id||row.providerRunId||'',
+    generation_started_at:lc?.generation_started_at||lc?.submit_boundary_at||'',
+    reviewer_retry_recovery:true,matched_label:found.label,matched_terms:found.matched,
+    duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,
+    validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',
+    retrieved_at:recoveredAt
+  };
+  persistReviewMetadata(db,row,flowResult);
+  await saveReviewAsset(db,row,localPath,flowResult,recoveredAt);
+  const runId=String(lc?.generation_id||row.providerRunId||'');
+  if(runId)try{db.prepare("UPDATE factory_generations SET status='review',updatedAt=?,error=NULL WHERE itemId=? AND runId=?").run(recoveredAt,row.id,runId)}catch{}
+  setLifecycle(db,row,'REVIEW_READY',{...lc,generation_id:runId,reviewer_retry:true,recovered_by_prompt_correlation:true,matched_label:found.label,size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,retrieved_at:recoveredAt,automatic_submit_forbidden:true});
+  publish('REVIEW_RETRY_RECOVERED',{episode:'E'+row.episode,job_id:row.id,generation_id:runId,title:String(row.title||''),matched:found.matched,size:valid.size});
+  publish('REVIEW_READY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,generation_id:runId,size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`,factory_url:`/factory/video/${row.id}`});
+  return true;
+}
+
 async function reconcileAmbiguousGeneric(page,row,lc,db){
   const baselineInv=lc?.baseline_inventory||null;
   const boundary=Date.parse(String(lc?.submit_boundary_at||''));
@@ -1150,12 +1234,18 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
     const sameSigs=before.length===after.length&&before.every(x=>after.includes(x));
     if(sameCount&&sameSigs&&!busy){
       if(reviewerRetryTokenConsumed(row)){
-        db.prepare("UPDATE factory_items SET status='manual_hold',providerRunId=NULL,error=?,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(
-          'REDO was submitted but Flow did not confirm a result. Token stays consumed; automatic resubmit is forbidden.',
-          now(),now(),row.id
+        const recovered=await recoverReviewerRetryAsset(page,row,lc,db).catch(e=>{
+          publish('REVIEW_RETRY_RECOVERY_WARNING',{episode:'E'+row.episode,job_id:row.id,message:compact(e?.message||e,500)});
+          return false;
+        });
+        if(recovered)return{mode:'done'};
+        const retryAt=Date.now()+45000;
+        db.prepare("UPDATE factory_items SET status='generating',error=?,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run(
+          'REDO submitted; prompt-correlated recovery is still searching Flow. Generate remains locked to prevent duplicates.',
+          retryAt,now(),now(),row.id
         );
-        setLifecycle(db,row,'MANUAL_HOLD_SUBMIT_NOT_CONFIRMED',{...lc,reconciled_at:now(),automatic_submit_forbidden:true,reviewer_retry:true,retry_token:String(row.reviewRetryToken||'')});
-        publish('REVIEW_RETRY_NOT_CONFIRMED_HOLD',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'REDO token consumed; no automatic second Generate.'});
+        setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{...lc,reconciled_at:now(),automatic_submit_forbidden:true,reviewer_retry:true,retry_token:String(row.reviewRetryToken||''),retry_at:new Date(retryAt).toISOString(),recovery_mode:'prompt-correlated'});
+        publish('REVIEW_RETRY_RECOVERY_PENDING',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'REDO result not correlated yet; recovery continues automatically without a duplicate Generate.'});
         return{mode:'wait'};
       }
       const retryAt=Date.now()+60000;
@@ -1887,8 +1977,12 @@ function normalizeConsumedReviewerRetries(db){
     const lc=lifecycle(db,row)||{},state=String(lc.state||'').toUpperCase();
     if(AFTER_GENERATE.has(state)||AMBIGUOUS.has(state)){
       if(String(row.status||'')!=='generating')db.prepare("UPDATE factory_items SET status='generating',nextTry=0,error='REDO already submitted: recovery only; Generate is locked.',updatedAt=? WHERE id=?").run(now(),row.id);
+    }else if(state==='MANUAL_HOLD_SUBMIT_NOT_CONFIRMED'){
+      db.prepare("UPDATE factory_items SET status='generating',nextTry=0,error='REDO recovery resumed after runtime upgrade; Generate remains locked.',updatedAt=? WHERE id=?").run(now(),row.id);
+      setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{...lc,reviewer_retry:true,retry_token:String(row.reviewRetryToken||''),automatic_submit_forbidden:true,recovery_mode:'prompt-correlated',resumed_at:now()});
+      publish('REVIEW_RETRY_RECOVERY_RESUMED',{episode:'E'+row.episode,job_id:row.id});
     }else if(String(row.status||'')!=='manual_hold'){
-      db.prepare("UPDATE factory_items SET status='manual_hold',nextTry=0,error='REDO token already consumed without recoverable generation evidence. A new human REDO is required.',updatedAt=? WHERE id=?").run(now(),row.id);
+      db.prepare("UPDATE factory_items SET status='manual_hold',nextTry=0,error='REDO token already consumed without any submit-boundary evidence. A new human REDO is required.',updatedAt=? WHERE id=?").run(now(),row.id);
       setLifecycle(db,row,'MANUAL_HOLD_CONSUMED_RETRY',{...lc,reviewer_retry:true,retry_token:String(row.reviewRetryToken||''),automatic_submit_forbidden:true,held_at:now()});
     }
   }
