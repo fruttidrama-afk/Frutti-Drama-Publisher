@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
-import { isReviewStorageUri, readReviewRange, deleteReviewObject } from './review-storage.js';
+import { isReviewStorageUri, readReviewRange, deleteReviewObject, uploadReviewFile, reviewStorageConfigured, reviewStorageRequired } from './review-storage.js';
 import { buildPublicationCopy } from './publication-copy.js';
 
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -303,8 +303,35 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     return shifted;
   }
 
+  let cloudMigrationRunning=false;
+  async function migratePendingPublicationMedia(){
+    if(cloudMigrationRunning||(!reviewStorageConfigured()&&!reviewStorageRequired()))return;
+    cloudMigrationRunning=true;
+    try{
+      const rows=db.prepare("SELECT * FROM publication_items WHERE filePath IS NOT NULL AND filePath<>'' AND status NOT IN ('published','cancelled','deleted') ORDER BY episode").all();
+      for(const item of rows){
+        if(isReviewStorageUri(item.filePath)||item.videoId)continue;
+        if(!fs.existsSync(item.filePath))continue;
+        try{
+          const local=item.filePath;
+          const cloud=await uploadReviewFile(local,{itemId:'publication-'+item.id,revision:0});
+          item.filePath=cloud.uri;
+          item.fileSize=cloud.size||item.fileSize||fs.statSync(local).size;
+          hist(item,item.status,'Publication media moved to private cloud storage; YouTube quota is reserved for publication only.');
+          save(db,item);
+          try{fs.rmSync(local,{force:true})}catch{}
+          console.log('[PUBLICATION CLOUD MIGRATION]',JSON.stringify({episode:item.episode,size:item.fileSize}));
+        }catch(e){
+          console.error('[PUBLICATION CLOUD MIGRATION ERROR]',JSON.stringify({episode:item.episode,error:String(e?.message||e).slice(0,500)}));
+          if(reviewStorageRequired())throw e;
+        }
+      }
+    }finally{cloudMigrationRunning=false}
+  }
+
   async function tick(){
     if(running)return;running=true;lastHeartbeat=now();lastError=null;
+    await migratePendingPublicationMedia();
     try{
       const items=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('published','cancelled','deleted') ORDER BY scheduledAt").all();
       for(const item of items){
@@ -341,6 +368,6 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
 
   app.get('/publication/items',(_req,res)=>res.json({items:db.prepare('SELECT * FROM publication_items ORDER BY scheduledAt').all().map(publicItem),scheduler:{alive:true,lastHeartbeat,lastError,indefinite:true}}));
   app.post('/publication/run',(_req,res)=>{setTimeout(()=>void tick(),0);res.status(202).json({ok:true})});
-  const timer=setInterval(()=>void tick(),30000);timer.unref?.();setTimeout(()=>void auditExistingMetadata().then(()=>tick()),900).unref?.();
+  const timer=setInterval(()=>void tick(),30000);timer.unref?.();setTimeout(()=>void migratePendingPublicationMedia().then(()=>auditExistingMetadata()).then(()=>tick()).catch(e=>{lastError=String(e?.message||e)}),900).unref?.();
   return{enqueue,tick,status:()=>({alive:true,running,lastHeartbeat,lastError,indefinite:true}),close:()=>clearInterval(timer)};
 }
