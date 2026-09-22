@@ -54,7 +54,6 @@ has(init,"automation:projectGridRecovery",'project-grid metadata');
 const server=read('server.js');
 has(server,"app.get('/factory/knowledge'",'knowledge endpoint');
 has(server,'automation_safety','health safety block');
-has(publication,'containsSyntheticMedia:true','YouTube synthetic-media disclosure');
 has(server,'replacement creative package required','REDO requests atomic package replacement without blanking the old prompt');
 has(server,'prompt_integrity','live prompt integrity health');
 has(server,'prompt_show_bible_gate:true','Show Bible prompt safety flag');
@@ -62,6 +61,7 @@ has(server,'atomic_creative_package:true','atomic creative package safety flag')
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
 const publication=read('publication.js');
+has(publication,'containsSyntheticMedia:true','YouTube synthetic-media disclosure');
 has(publication,'containsSyntheticMedia:true','publication synthetic-media disclosure');
 has(publication,'buildPublicationCopy','publication copy builder');
 has(publication,'earthPromptIsEpisodeBound','Earth concrete prompt is publication metadata authority');
