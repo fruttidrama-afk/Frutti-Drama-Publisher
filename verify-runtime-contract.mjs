@@ -37,7 +37,7 @@ for(const token of ['EARTH_IN_10_AUTONOMOUS_EPISODES','enforceEpisodeIntent','ef
 for(const token of ['runtime_knowledge','creativePackageHash','creativePackageId','knowledge:flowSopLoaded','automation:exactlyOnceSubmit','automation:strictSerialGeneration']){
   must(init.includes(token),'runtime-init contract missing '+token);
 }
-for(const token of ["app.get('/factory/knowledge'","automation_safety","containsSyntheticMedia:true","replacement creative package required"]){
+for(const token of ["app.get('/factory/knowledge'","automation_safety","containsSyntheticMedia:true","replacement creative package required","prompt_integrity","prompt_show_bible_gate:true","atomic_creative_package:true","prompts_rematerialized:true"]){
   must(server.includes(token),'server contract missing '+token);
 }
 for(const token of ['Publication metadata synchronized from the episode creative package.',"if(String(row?.title||'').trim()&&String(row?.description||'').trim())"]){
