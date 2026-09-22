@@ -1,5 +1,5 @@
 publisher-runtime-stable-release
-version=2026-09-22.67
+version=2026-09-22.68
 includes=official-logo-and-reference-assets,branding-persisted-in-runtime,reference-led-dashboard,branded-activation,branded-login,branded-youtube-setup,branded-flow-setup,publisher-security-passkeys-and-sessions,account-scoped-multi-railway,existing-publisher-railway-link-awareness,authoritative-factory-config,verified-omni-1-1-flash-video-mode,golden-run-flow-sop,semantic-start-generation-selector,consent-no-dialog-support,flow-point-consent-approve-always-priority,flow-point-consent-approve-once-fallback,persisted-consent-mode,exactly-once-submit-boundary,submit-ambiguity-read-only-reconciliation,retrieval-timeout-no-regeneration,golden-run-existing-asset-recovery,cross-container-generation-lease,daily-target-env-override,strict-head-of-line-episode-ordering,hard-generation-evidence,true-generation-only-daily-accounting,false-start-credit-release,post-setup-success-dashboard
 fix=recorder-role-img-recovery,single-click-consent,chat-video-option-start-evidence,ambiguous-never-autoreleases
 
@@ -45,3 +45,4 @@ fix=allow-concrete-legacy-earth-prompts-to-repair-stale-copy-despite-generic-hoo
 fix=restore-legacy-earth-e2-namib-copy-from-historical-audit,normalize-existing-youtube-quota-errors-at-startup
 fix=one-time-open-publisher-device-key,year-session,direct-passkey-login-no-factory-redirect
 fix=human-publication-status,recovery-priority,no-duplicate-submit-after-ambiguity,virtualized-latest-tile,download-quality-recovery-fallback
+fix=repair-download-recovery-helper-syntax
