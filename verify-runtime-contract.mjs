@@ -10,6 +10,7 @@ const sop=JSON.parse(read('GOOGLE_FLOW_AUTOMATION_SOP.json'));
 const manifest=JSON.parse(read('FLOW_SOP_KNOWLEDGE_MANIFEST.json'));
 const schema=JSON.parse(read('publisher.config.schema.json'));
 const provider=read('free-browser-provider.js');
+const runtimeConfig=read('runtime-config.js');
 const init=read('runtime-init.js');
 const server=read('server.js');
 
@@ -26,8 +27,11 @@ for(const k of ['exactly_once_submit','strict_serial_generation','project_grid_r
 must(schema.properties?.schedule?.properties?.generation_strategy?.const==='sequential','generation strategy must be sequential');
 must(schema.properties?.knowledge?.properties?.flow_sop_version?.const==='FLOW-SOP-v1.0','schema knowledge version mismatch');
 
-for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY_ENTERED','automatic_submit_forbidden','flow-grid-tile-container','flow-tile-hover-footer']){
+for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY_ENTERED','automatic_submit_forbidden','flow-grid-tile-container','flow-tile-hover-footer','EPISODE_INTENT_REPAIRED','EARTH_IN_10_CONTENT_GATE']){
   must(provider.includes(token),'provider contract missing '+token);
+}
+for(const token of ['EARTH_IN_10_AUTONOMOUS_EPISODES','enforceEpisodeIntent','effectiveVideoVisualStyle','publisherWebStyleLeak']){
+  must(runtimeConfig.includes(token),'runtime content contract missing '+token);
 }
 for(const token of ['runtime_knowledge','knowledge:flowSopLoaded','automation:exactlyOnceSubmit','automation:strictSerialGeneration']){
   must(init.includes(token),'runtime-init contract missing '+token);
