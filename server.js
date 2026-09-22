@@ -88,22 +88,6 @@ app.get('/brand/logo.svg',(req,res)=>brandRedirect(res,brandPublic().logo_url,fa
 app.get('/apple-touch-icon.png',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');const b=brandPublic(),u=b.icon_180_url||b.icon_512_url;if(u)return res.redirect(302,u);res.type('image/svg+xml').send(fallbackBrandSvg())});
 app.get('/manifest.webmanifest',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');const b=brandPublic(),icons=[];if(b.icon_192_url)icons.push({src:b.icon_192_url,sizes:'192x192',type:'image/png',purpose:'any'});if(b.icon_512_url)icons.push({src:b.icon_512_url,sizes:'512x512',type:'image/png',purpose:'any'});if(b.maskable_icon_url)icons.push({src:b.maskable_icon_url,sizes:'512x512',type:'image/png',purpose:'maskable'});if(!icons.length)icons.push({src:'/brand/logo.svg',sizes:'any',type:'image/svg+xml',purpose:'any'});res.type('application/manifest+json').send(JSON.stringify({name:CONFIG.identity.show_name||CONFIG.identity.publisher_name,short_name:CONFIG.identity.show_name||CONFIG.identity.publisher_name,start_url:'/',scope:'/',display:'standalone',background_color:b.theme.background,theme_color:b.theme.primary,icons}))});
 
-app.get('/__repair_8f4c2a7d9e31/video/:episode',(req,res)=>{
- const ep=Number(req.params.episode);
- const r=db.prepare("SELECT id,videoPath,status FROM factory_items WHERE episode=?").get(ep);
- if(!r||r.status!=='review'||!r.videoPath||!fs.existsSync(r.videoPath))return res.sendStatus(404);
- return stream(req,res,r.videoPath);
-});
-
-app.get('/__repair_8f4c2a7d9e31/frame/:episode',(req,res)=>{
- const ep=Number(req.params.episode),sec=Math.max(0,Math.min(9,Number(req.query?.t||5)));
- const r=db.prepare("SELECT videoPath,status FROM factory_items WHERE episode=?").get(ep);
- if(!r||r.status!=='review'||!r.videoPath||!fs.existsSync(r.videoPath))return res.sendStatus(404);
- const shot=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-ss',String(sec),'-i',r.videoPath,'-frames:v','1','-vf','scale=540:-2','-q:v','4','-f','image2','pipe:1'],{encoding:null,maxBuffer:8*1024*1024});
- if(shot.status!==0||!Buffer.isBuffer(shot.stdout)||!shot.stdout.length)return res.sendStatus(500);
- res.type('image/jpeg').set('Cache-Control','no-store').send(shot.stdout);
-});
-
 app.use((req,res,next)=>{
  if(['/setup','/setup/activate','/login','/auth/public-info','/auth/pin','/auth/passkeys/options','/auth/passkeys/verify','/oauth2callback','/factory/health','/brand/logo.svg','/apple-touch-icon.png','/manifest.webmanifest'].includes(req.path))return next();
  if(req.path.startsWith('/public/'))return next();
@@ -286,30 +270,9 @@ function repairLegacyEarthReviewMetadata(){
 repairLegacyEarthReviewMetadata();
 
 function auditReviewMetadata(){
- const rows=db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode").all(),report=[],promptReport=[];
- for(const row of rows){
-   const fixed=ensureCopy(row),p=String(row.prompt||''),m=p.match(/EPISODE INTENT:\s*([^\n]+)/i);
-   const storyIdx=p.lastIndexOf('\nSTORY\n'),canonIdx=p.lastIndexOf('\nCANON / CONTINUITY\n');
-   const focusedStart=Math.max(0,canonIdx>=0?canonIdx:(storyIdx>=0?storyIdx:p.length-5000));
-   report.push({episode:fixed.episode,title:fixed.title});
-   promptReport.push({
-     episode:row.episode,hook:row.hook,story:row.story,
-     promptIntent:m?.[1]?.trim()||'',promptLength:p.length,
-     promptTail:p.slice(focusedStart)
-   });
- }
+ const rows=db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode").all(),report=[];
+ for(const row of rows){const fixed=ensureCopy(row);report.push({episode:fixed.episode,title:fixed.title});}
  if(report.length)console.log('[REVIEW COPY AUDIT]',JSON.stringify(report));
- if(promptReport.length)console.log('[REVIEW PROMPT FOCUSED AUDIT]',JSON.stringify(promptReport));
- for(const row of rows){
-   if(!row.videoPath||!fs.existsSync(row.videoPath))continue;
-   try{
-     const shot=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-ss','5','-i',row.videoPath,'-frames:v','1','-vf','scale=135:-2','-q:v','18','-f','image2','pipe:1'],{encoding:null,maxBuffer:4*1024*1024});
-     const b64=Buffer.isBuffer(shot.stdout)?shot.stdout.toString('base64'):'';
-     if(!b64)continue;
-     const chunk=7000,total=Math.ceil(b64.length/chunk);
-     for(let i=0;i<total;i++)console.log('[REVIEW_FRAME_B64]',JSON.stringify({episode:row.episode,part:i+1,total,data:b64.slice(i*chunk,(i+1)*chunk)}));
-   }catch(e){console.error('[REVIEW_FRAME_ERROR]',JSON.stringify({episode:row.episode,error:String(e?.message||e)}))}
- }
 }
 setTimeout(()=>{try{auditReviewMetadata()}catch(e){console.error('[REVIEW COPY AUDIT ERROR]',String(e?.message||e))}},1100).unref?.();
 app.get('/factory/cards',(req,res)=>res.json({cards:db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode LIMIT 50").all().map(card)}));
