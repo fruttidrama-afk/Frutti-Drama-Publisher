@@ -1,0 +1,19 @@
+{
+  "knowledge_pack": "GOOGLE_FLOW_AUTOMATION_SOP_KNOWLEDGE_PACK",
+  "version": "FLOW-SOP-v1.0",
+  "master_sha256": "8172f4b415e516fb1ec211a338ef7872740d7931adfbc5ab31572344a5bc9162",
+  "canonical_files": [
+    "GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md",
+    "GOOGLE_FLOW_AUTOMATION_SOP.json",
+    "FLOW_AI_IMPLEMENTATION_BRIEF.md",
+    "FLOW_RECOVERY_RUNBOOK.md",
+    "FLOW_GOLDEN_TEST.md",
+    "FLOW_FAILURE_CATALOG.md",
+    "FLOW_CHANGELOG.md"
+  ],
+  "deprecated_files": [
+    "FLOW_VIDEO_GENERATION_RETRIEVAL_SOP.md",
+    "FLOW_SERIAL_GENERATION_RECOVERY_SOP.md"
+  ],
+  "inheritance_required": true
+}
