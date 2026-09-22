@@ -252,6 +252,16 @@ function auditReviewMetadata(){
  }
  if(report.length)console.log('[REVIEW COPY AUDIT]',JSON.stringify(report));
  if(promptReport.length)console.log('[REVIEW PROMPT FOCUSED AUDIT]',JSON.stringify(promptReport));
+ for(const row of rows){
+   if(!row.videoPath||!fs.existsSync(row.videoPath))continue;
+   try{
+     const shot=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-ss','5','-i',row.videoPath,'-frames:v','1','-vf','scale=270:-2','-q:v','10','-f','image2','pipe:1'],{encoding:null,maxBuffer:4*1024*1024});
+     const b64=Buffer.isBuffer(shot.stdout)?shot.stdout.toString('base64'):'';
+     if(!b64)continue;
+     const chunk=7000,total=Math.ceil(b64.length/chunk);
+     for(let i=0;i<total;i++)console.log('[REVIEW_FRAME_B64]',JSON.stringify({episode:row.episode,part:i+1,total,data:b64.slice(i*chunk,(i+1)*chunk)}));
+   }catch(e){console.error('[REVIEW_FRAME_ERROR]',JSON.stringify({episode:row.episode,error:String(e?.message||e)}))}
+ }
 }
 setTimeout(()=>{try{auditReviewMetadata()}catch(e){console.error('[REVIEW COPY AUDIT ERROR]',String(e?.message||e))}},1100).unref?.();
 app.get('/factory/cards',(req,res)=>res.json({cards:db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode LIMIT 50").all().map(card)}));
