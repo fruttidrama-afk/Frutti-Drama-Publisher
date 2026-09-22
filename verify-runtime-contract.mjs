@@ -37,14 +37,17 @@ for(const token of ['EARTH_IN_10_AUTONOMOUS_EPISODES','enforceEpisodeIntent','ef
 for(const token of ['runtime_knowledge','creativePackageHash','creativePackageId','knowledge:flowSopLoaded','automation:exactlyOnceSubmit','automation:strictSerialGeneration']){
   must(init.includes(token),'runtime-init contract missing '+token);
 }
-for(const token of ["app.get('/factory/knowledge'","automation_safety","containsSyntheticMedia:true","replacement creative package required","prompt_integrity","prompt_show_bible_gate:true","atomic_creative_package:true","prompts_rematerialized:true"]){
+for(const token of ["app.get('/factory/knowledge'","automation_safety","replacement creative package required","prompt_integrity","prompt_show_bible_gate:true","atomic_creative_package:true","prompts_rematerialized:true","signedReviewUrl","deleteReviewObject"]){
   must(server.includes(token),'server contract missing '+token);
 }
 for(const token of ['earthPromptIsEpisodeBound','episode-generation-prompt','creativePackageDigest','quota_wait','shiftPendingQueueAfter','stored-package']){
   must(publication.includes(token),'publication metadata/quota contract missing '+token);
 }
-for(const token of ['isEarthIn10Publisher','Earth in Ten keeps review media on the Railway volume until approval.']){
-  must(server.includes(token),'Earth quota-reservation contract missing '+token);
+for(const token of ['uploadReviewFile','reviewStorageConfigured','saveReviewAsset']){
+  must(provider.includes(token),'private review-storage provider contract missing '+token);
+}
+for(const token of ['isReviewStorageUri','readReviewRange','deleteReviewObject','containsSyntheticMedia:true']){
+  must(publication.includes(token),'publication/review-storage contract missing '+token);
 }
 
 console.log(JSON.stringify({
