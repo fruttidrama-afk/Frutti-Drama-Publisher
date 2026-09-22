@@ -31,24 +31,26 @@ function nextSlot(db,config){
   throw new Error('No se encontró un slot de publicación futuro.');
 }
 function metadata(row,config){
+  if(String(row?.title||'').trim()&&String(row?.description||'').trim()){
+    let description=String(row.description);
+    while(utf8(description)>4800)description=description.slice(0,-20).trimEnd();
+    return{title:String(row.title).slice(0,100),description};
+  }
   const provider=(config.publication?.providers||[]).find(x=>x.type==='youtube')||{};
-  let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
-  const override=flow?.publication_override;
-  const copy=override?.title&&override?.description
-    ? {title:String(override.title),description:String(override.description)}
-    : buildPublicationCopy({
-        hook:row.hook,
-        story:row.story,
-        prompt:row.prompt,
-        contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],
-        hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
-        showName:config.identity.show_name,
-        maxTitleLength:100
-      });
+  const copy=buildPublicationCopy({
+    hook:row.hook,
+    story:row.story,
+    prompt:row.prompt,
+    contextTerms:[],
+    hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+    showName:config.identity.show_name,
+    maxTitleLength:100
+  });
   let description=copy.description;
   while(utf8(description)>4800)description=description.slice(0,-20).trimEnd();
   return{title:copy.title,description};
 }
+
 function publicItem(r){return{...r,history:JSON.parse(r.history||'[]'),resumableSession:undefined,filePath:r.filePath?true:false}}
 function hist(row,status,message=''){const h=JSON.parse(row.history||'[]');h.push({status,at:now(),message});row.history=JSON.stringify(h.slice(-120));row.status=status;row.updatedAt=now()}
 function save(db,row){db.prepare(`UPDATE publication_items SET title=?,description=?,scheduledAt=?,uploadAt=?,status=?,filePath=?,fileSize=?,videoId=?,resumableSession=?,playlistId=?,attempts=?,retryAt=?,error=?,history=?,updatedAt=? WHERE id=?`).run(row.title,row.description,row.scheduledAt,row.uploadAt,row.status,row.filePath,row.fileSize,row.videoId,row.resumableSession,row.playlistId,row.attempts,row.retryAt,row.error,row.history,row.updatedAt,row.id)}
@@ -112,18 +114,13 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     const items=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('cancelled','deleted') ORDER BY episode").all();
     let corrected=0,synced=0;const report=[];
     for(const item of items){
-      const row=db.prepare('SELECT hook,story,prompt,flowResult FROM factory_items WHERE id=?').get(item.itemId);
+      const row=db.prepare('SELECT hook,story,prompt,title,description,creativePackageHash,creativePackageId,flowResult FROM factory_items WHERE id=?').get(item.itemId);
       if(!row)continue;
-      let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
-      const override=flow?.publication_override;
-      const copy=override?.title&&override?.description
-        ? {title:String(override.title),description:String(override.description)}
-        : buildPublicationCopy({hook:row.hook,story:row.story,prompt:row.prompt,contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],showName:config.identity.show_name,maxTitleLength:100});
-      let description=copy.description;while(utf8(description)>4800)description=description.slice(0,-20).trimEnd();
+      const copy=metadata(row,config),description=copy.description;
       const changed=item.title!==copy.title||item.description!==description;
-      report.push({episode:item.episode,title:copy.title,changed});
+      report.push({episode:item.episode,title:copy.title,changed,source:String(row.creativePackageHash||'')?'creative-package':'legacy-fallback'});
       if(changed){
-        item.title=copy.title;item.description=description;hist(item,item.status,'Publication metadata realigned with the exact episode story.');save(db,item);corrected++;
+        item.title=copy.title;item.description=description;hist(item,item.status,'Publication metadata synchronized from the episode creative package.');save(db,item);corrected++;
       }
       if(item.videoId&&loadToken()){
         try{await ensureAiDisclosure(item)}catch{}
