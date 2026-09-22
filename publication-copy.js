@@ -52,10 +52,13 @@ function genericEpisodeText(v){
 function extractPromptIntent(prompt=''){
   const p=String(prompt||'').replace(/\r/g,'').trim();
   if(!p)return'';
-  const direct=p.match(/Create\s+(?:an?|the)?[^\n.]*?video\s+of\s+([^\n.]+)[.]/i);
-  if(direct?.[1])return normalize(direct[1]);
+  // The explicit per-episode intent is authoritative. The full production prompt
+  // also embeds the Show Bible, which may contain examples from older episodes
+  // (such as Patagonia). Never let an example sentence earlier in the Bible win.
   const intent=p.match(/EPISODE INTENT:\s*([^\n]+)/i);
   if(intent?.[1]&&!genericEpisodeText(intent[1]))return normalize(intent[1]);
+  const direct=p.match(/Create\s+(?:an?|the)?[^\n.]*?video\s+of\s+([^\n.]+)[.]/i);
+  if(direct?.[1])return normalize(direct[1]);
   const story=p.match(/\nSTORY\s*\n([\s\S]*?)(?:\nBEATS\s*\/\s*TIMING|\nCAMERA|\nLIGHTING)/i);
   if(story?.[1]){
     const cleaned=normalize(story[1].replace(/HOOK:\s*[^\n]+/i,'').replace(/EPISODE INTENT:\s*/i,''));
@@ -64,12 +67,13 @@ function extractPromptIntent(prompt=''){
   return'';
 }
 function earthKnownCopy({prompt='',hook='',story='',contextTerms=[]}={}){
-  // The exact episode intent is authoritative. Never let continuity/canon text from the
-  // rest of the prompt, or recovery correlation terms from another asset, hijack copy.
+  // Database hook/story are the episode's canonical intent. Prompt text contains the
+  // full Show Bible and can mention previous/example locations, so prompt is fallback only.
   const intent=extractPromptIntent(prompt);
-  const primary=normalize([intent,!genericEpisodeText(story)?story:'',!genericEpisodeText(hook)?hook:''].filter(Boolean).join(' ')).toLowerCase();
+  const canonical=normalize([!genericEpisodeText(story)?story:'',!genericEpisodeText(hook)?hook:''].filter(Boolean).join(' ')).toLowerCase();
+  const promptIntent=normalize(intent).toLowerCase();
   const fallback=normalize(Array.isArray(contextTerms)?contextTerms:[]).toLowerCase();
-  const hay=primary||fallback;
+  const hay=canonical||promptIntent||fallback;
   const known=[
     {re:/patagonia|glacial lake|turquoise.*lake/,title:'PATAGONIA SUNRISE: Turquoise glacial lake beneath the Andes.',desc:'A crystal-clear turquoise glacial lake, snow-covered peaks and soft sunrise mist turn Patagonia into a cinematic ten-second escape.'},
     {re:/namib|solitary tree|red orange dunes|dead vlei|deadvlei/,title:'NAMIB DESERT: A solitary tree beneath glowing red dunes.',desc:'A solitary dark tree stands against Namibia’s immense red-orange dunes as warm sunrise light stretches across the desert.'},
@@ -96,7 +100,7 @@ function shortenComplete(s,max){
 }
 function earthFallbackTitle({hook,story,prompt,maxTitleLength}){
   const intent=extractPromptIntent(prompt);
-  const source=intent||(!genericEpisodeText(story)?normalize(story):'');
+  const source=(!genericEpisodeText(story)?normalize(story):'')||intent;
   const cleanHook=!genericEpisodeText(hook)?normalize(hook).toUpperCase():'EARTH IN 10';
   let core='';
   if(source){
