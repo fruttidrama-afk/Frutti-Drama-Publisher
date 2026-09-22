@@ -382,7 +382,7 @@ function packageMatches(row){
   return true;
 }
 function preparePromptIfNeeded(db,row){
-  const revise=String(row?.retryStrategy||'')==='revise_prompt'&&String(row?.reviewFeedback||'').trim().length>=3;
+  const revise=String(row?.retryStrategy||'')==='revise_prompt'&&String(row?.reviewFeedback||'').trim().length>=3&&retryTokenOpen(row);
   const pkg=materializeCreativePackage(db,row,{force:revise});
   row=pkg.row;
   if(pkg.repaired)publish('EPISODE_INTENT_REPAIRED',{episode:'E'+row.episode,job_id:row.id,reason:pkg.reason,hook:compact(row.hook,120),story:compact(row.story,320)});
@@ -1253,12 +1253,20 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
           return false;
         });
         if(recovered)return{mode:'done'};
+        const reauthCount=Number(lc?.retry_reauthorization_count||0);
+        if(age>=8*60*1000&&reauthCount<1){
+          db.prepare("UPDATE factory_items SET status='regen_wait',providerRunId=NULL,reviewRetrySubmittedToken=NULL,error='Verified no retained REDO render after submit; one clean retry re-authorized.',nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?")
+            .run(now(),now(),row.id);
+          setLifecycle(db,row,'REDO_RETRY_REAUTHORIZED',{...lc,reconciled_at:now(),reviewer_retry:true,retry_token:String(row.reviewRetryToken||''),retry_reauthorization_count:reauthCount+1,prior_submit_unretained:true,automatic_submit_forbidden:false});
+          publish('REVIEW_RETRY_REAUTHORIZED',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'No Flow render exists after the prior REDO submit; exactly one clean retry has been re-authorized.'});
+          return{mode:'wait'};
+        }
         const retryAt=Date.now()+45000;
         db.prepare("UPDATE factory_items SET status='generating',error=?,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run(
           'REDO submitted; prompt-correlated recovery is still searching Flow. Generate remains locked to prevent duplicates.',
           retryAt,now(),now(),row.id
         );
-        setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{...lc,reconciled_at:now(),automatic_submit_forbidden:true,reviewer_retry:true,retry_token:String(row.reviewRetryToken||''),retry_at:new Date(retryAt).toISOString(),recovery_mode:'prompt-correlated'});
+        setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{...lc,reconciled_at:now(),automatic_submit_forbidden:true,reviewer_retry:true,retry_token:String(row.reviewRetryToken||''),retry_at:new Date(retryAt).toISOString(),recovery_mode:'prompt-correlated',retry_reauthorization_count:reauthCount});
         publish('REVIEW_RETRY_RECOVERY_PENDING',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'REDO result not correlated yet; recovery continues automatically without a duplicate Generate.'});
         return{mode:'wait'};
       }
