@@ -255,7 +255,7 @@ function auditReviewMetadata(){
  for(const row of rows){
    if(!row.videoPath||!fs.existsSync(row.videoPath))continue;
    try{
-     const shot=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-ss','5','-i',row.videoPath,'-frames:v','1','-vf','scale=270:-2','-q:v','10','-f','image2','pipe:1'],{encoding:null,maxBuffer:4*1024*1024});
+     const shot=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-ss','5','-i',row.videoPath,'-frames:v','1','-vf','scale=135:-2','-q:v','18','-f','image2','pipe:1'],{encoding:null,maxBuffer:4*1024*1024});
      const b64=Buffer.isBuffer(shot.stdout)?shot.stdout.toString('base64'):'';
      if(!b64)continue;
      const chunk=7000,total=Math.ceil(b64.length/chunk);
