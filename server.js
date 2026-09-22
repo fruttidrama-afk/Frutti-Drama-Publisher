@@ -213,15 +213,18 @@ function stream(req,res,file){const st=fs.statSync(file),range=req.headers.range
 function ensureCopy(row){
  const provider=(CONFIG.publication.providers||[]).find(x=>x.type==='youtube')||{};
  let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
- const copy=buildPublicationCopy({
-   hook:row.hook,
-   story:row.story,
-   prompt:row.prompt,
-   contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],
-   hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
-   showName:CONFIG.identity.show_name,
-   maxTitleLength:100
- });
+ const override=flow?.publication_override;
+ const copy=override?.title&&override?.description
+   ? {title:String(override.title),description:String(override.description)}
+   : buildPublicationCopy({
+       hook:row.hook,
+       story:row.story,
+       prompt:row.prompt,
+       contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],
+       hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+       showName:CONFIG.identity.show_name,
+       maxTitleLength:100
+     });
  let description=copy.description;
  while(Buffer.byteLength(description,'utf8')>4800)description=description.slice(0,-30).trimEnd();
  if(row.title!==copy.title||row.description!==description){
@@ -246,6 +249,42 @@ function classifyReviewFeedback(value){
  return'revise_prompt';
 }
 function card(row){row=ensureCopy(row);return{id:row.id,episode:row.episode,hook:row.hook,story:row.story,title:row.title,description:row.description,status:row.status,videoUrl:row.status==='review'&&row.videoPath?'/factory/video/'+encodeURIComponent(row.id):null,archivedOriginal:Boolean(row.reviewVideoId),updatedAt:row.updatedAt,error:row.error}}
+function repairLegacyEarthReviewMetadata(){
+ if(!/earth\s*in\s*10/i.test(String(CONFIG.identity?.show_name||'')))return;
+ const tags='#EarthIn10 #Nature #Travel #Shorts #ViralShorts';
+ const repairs={
+  3:{
+   title:'DUNE LAGOONS: Turquoise water cuts through endless white dunes. #Shorts #ViralShorts',
+   description:'Turquoise lagoons wind between sweeping white dunes in a surreal ten-second aerial landscape.\n\nEARTH IN 10\n\n'+tags
+  },
+  4:{
+   title:'HIDDEN INTERIOR: Sunbeams cut through a weathered structure. #Shorts #ViralShorts',
+   description:'Warm shafts of light pierce a shadowy, weathered interior, revealing layered beams, dust and dramatic depth.\n\nEARTH IN 10\n\n'+tags
+  },
+  5:{
+   title:'STORM HIKE: A hooded traveler pauses beneath a gray sky. #Shorts #ViralShorts',
+   description:'A hooded traveler pauses in cold, overcast weather and raises a drink against a stark gray outdoor backdrop.\n\nEARTH IN 10\n\n'+tags
+  },
+  6:{
+   title:'QUIET STREET: Morning light falls across an empty urban block. #Shorts #ViralShorts',
+   description:'A quiet street, leafy tree and low-rise buildings sit in clear daylight, captured as a calm ten-second urban moment.\n\nEARTH IN 10\n\n'+tags
+  }
+ };
+ const rows=db.prepare("SELECT id,episode,hook,story,prompt,flowResult,status FROM factory_items WHERE episode IN (3,4,5,6) AND status='review'").all();
+ for(const row of rows){
+   const generic=/^(NEXT CHAPTER|NEW TURN|NEW EPISODE)$/i.test(String(row.hook||'').trim())||
+     /Continue the configured Creative Bible and canon from the previous accepted beat/i.test(String(row.story||''))||
+     /EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(String(row.prompt||''));
+   const repair=repairs[Number(row.episode)];
+   if(!generic||!repair)continue;
+   let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
+   flow.publication_override={...repair,reason:'legacy-generic-prompt-visual-repair',source:'review-frame-audit'};
+   db.prepare('UPDATE factory_items SET flowResult=?,title=?,description=?,updatedAt=? WHERE id=?')
+     .run(JSON.stringify(flow),repair.title,repair.description,now(),row.id);
+ }
+}
+repairLegacyEarthReviewMetadata();
+
 function auditReviewMetadata(){
  const rows=db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode").all(),report=[],promptReport=[];
  for(const row of rows){
