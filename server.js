@@ -21,7 +21,7 @@ google.options({timeout:90000,retry:false});
 const app=express(),PORT=Number(process.env.PORT||8080);
 const DATA_DIR=path.resolve(process.env.DATA_DIR||'/data'),DIR=path.join(DATA_DIR,'publisher-runtime'),DB_PATH=path.join(DIR,'factory.sqlite');
 const AUTH_PATH=path.join(DIR,'auth.json'),SECRET_PATH=path.join(DIR,'secrets.json'),YT_TOKEN_PATH=path.join(DIR,'youtube-token.json');
-const SESSION_COOKIE='publisher_session',TTL=30*24*60*60*1000;
+const SESSION_COOKIE='publisher_session',TTL=365*24*60*60*1000;
 fs.mkdirSync(DIR,{recursive:true,mode:0o700});
 const db=new DatabaseSync(DB_PATH,{timeout:5000});
 for(const sql of [
@@ -59,15 +59,71 @@ function issue(req,res,method='pin'){const exp=Date.now()+TTL,nonce=randomBytes(
 function valid(req){const x=sessionParse(req);if(!x)return false;const s=authState(),r=s.sessions.find(y=>y.id===x.id);if(r?.revokedAt)return false;if(!r){s.sessions.push({id:x.id,device:device(req),createdAt:now(),lastSeenAt:now(),expiresAt:x.exp,method:'existing'});saveAuth(s)}else if(Date.now()-Date.parse(r.lastSeenAt||0)>5*60*1000){r.lastSeenAt=now();saveAuth(s)}return true}
 function configured(){const s=authState();return Boolean(s.pinHash||s.passkeys.length)}
 function htmlReq(req){return req.method==='GET'&&String(req.headers.accept||'').includes('text/html')}
-function secure(req,res,next){if(valid(req))return next();if(htmlReq(req))return res.redirect('/setup');return res.status(401).json({error:'Access required.',login:'/setup'})}
+function secure(req,res,next){
+  if(valid(req))return next();
+  const loginPath=configured()?'/login':'/setup';
+  if(htmlReq(req))return res.redirect(loginPath);
+  return res.status(401).json({error:'Access required.',login:loginPath});
+}
 
 const rp=()=>String(process.env.RAILWAY_PUBLIC_DOMAIN||process.env.PUBLISHER_PUBLIC_DOMAIN||'localhost').replace(/^https?:\/\//,'').split('/')[0];
 const origin=req=>String(process.env.PUBLISHER_PUBLIC_URL||(req.protocol+'://'+req.get('host'))).replace(/\/$/,'');
 const regChallenges=new Map(),authChallenges=new Map();
 function passkeysPublic(){return authState().passkeys.map(x=>({id:x.id,name:x.name||'Passkey',createdAt:x.createdAt,lastUsedAt:x.lastUsedAt,deviceType:x.deviceType,backedUp:Boolean(x.backedUp)}))}
 
-app.get('/setup',(req,res)=>{const brand=brandPublic(),t=brand.theme||{},show=String(CONFIG.identity.show_name||CONFIG.identity.publisher_name||'Publisher'),esc=x=>String(x||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');res.send(`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="${esc(t.primary||'#0d3152')}"><title>Activar ${esc(show)}</title><style>:root{--n:${esc(t.primary||'#0d3152')};--g:${esc(t.accent||t.secondary||'#b59a64')};--bg:${esc(t.background||'#071018')};--surface:${esc(t.surface||'#10232f')};--ink:${esc(t.text||'#f5f3ed')};--m:color-mix(in srgb,var(--ink) 70%,transparent)}*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;background:linear-gradient(180deg,rgba(0,0,0,.42),rgba(0,0,0,.72)),${brand.reference_image_url?'url("'+esc(brand.reference_image_url)+'")':'var(--bg)'};background-size:cover;background-position:center;font-family:Arial,sans-serif;padding:24px;color:var(--ink)}.c{width:min(520px,100%);background:color-mix(in srgb,var(--surface) 82%,transparent);border:1px solid color-mix(in srgb,var(--ink) 16%,transparent);padding:30px;text-align:center;border-radius:28px;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);box-shadow:0 28px 90px rgba(0,0,0,.34)}.logo{width:96px;height:96px;object-fit:cover;border-radius:24px;margin:0 auto 14px;display:${brand.logo_url?'block':'none'};box-shadow:0 14px 44px rgba(0,0,0,.25)}.mark{font:600 28px/.95 Arial,sans-serif;letter-spacing:.08em;color:var(--ink);margin-bottom:6px}.tag{font-size:10px;letter-spacing:.16em;color:var(--m);margin-bottom:22px}.eye{font-size:11px;letter-spacing:.2em;color:var(--g);font-weight:800;margin-bottom:10px}h1{font:600 42px/.98 Arial,sans-serif;letter-spacing:.01em;margin:0 0 14px}.muted{color:var(--m);line-height:1.5}.err{color:#ffb2a8;font-size:13px;margin-top:14px}.spin{width:26px;height:26px;border:3px solid color-mix(in srgb,var(--ink) 20%,transparent);border-top-color:var(--g);border-radius:50%;margin:20px auto;animation:s .8s linear infinite}@keyframes s{to{transform:rotate(360deg)}}</style></head><body><main class=c>${brand.logo_url?'<img class="logo" src="'+esc(brand.logo_url)+'" alt="">':''}<div class=mark>${esc(show)}</div><div class=tag>${esc(brand.tagline||'')}</div><div class=eye>SECURE ACTIVATION</div><h1 id=t>Opening your Publisher</h1><div id=spin class=spin></div><p id=m class=muted>Validating this device…</p><div id=e class=err></div></main><script>(async()=>{const t=document.querySelector('#t'),m=document.querySelector('#m'),e=document.querySelector('#e'),spin=document.querySelector('#spin');const raw=location.hash.startsWith('#code=')?decodeURIComponent(location.hash.slice(6)):'';if(!raw){t.textContent='Open from Publisher Factory';m.textContent='Use CONFIGURE from Publisher Factory to open this Publisher securely on this device.';spin.style.display='none';return}try{history.replaceState(null,'',location.pathname);const r=await fetch('/setup/activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:raw})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Activation failed');m.textContent='Ready.';location.replace('/')}catch(x){spin.style.display='none';t.textContent='Activation failed';e.textContent=x.message}})();</script></body></html>`)});
-app.post('/setup/activate',(req,res)=>{const expected=String(process.env.PUBLISHER_SETUP_TOKEN||''),token=String(req.body?.token||'');if(!expected||!safeEq(token,expected))return res.status(401).json({error:'Activation link is invalid or expired.'});if(!configured())setPin(String(Math.floor(100000+Math.random()*900000)));issue(req,res,'factory-setup');res.json({ok:true})});
+app.get('/setup',(req,res)=>{
+  if(valid(req))return res.redirect('/');
+  const brand=brandPublic(),t=brand.theme||{},show=String(CONFIG.identity.show_name||CONFIG.identity.publisher_name||'Publisher'),
+    esc=x=>String(x||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  res.send(`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="${esc(t.primary||'#0d3152')}"><title>Activar ${esc(show)}</title>
+<style>
+:root{--n:${esc(t.primary||'#0d3152')};--g:${esc(t.accent||t.secondary||'#b59a64')};--bg:${esc(t.background||'#071018')};--surface:${esc(t.surface||'#10232f')};--ink:${esc(t.text||'#f5f3ed')};--m:color-mix(in srgb,var(--ink) 70%,transparent)}
+*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;background:linear-gradient(180deg,rgba(0,0,0,.42),rgba(0,0,0,.72)),${brand.reference_image_url?'url("'+esc(brand.reference_image_url)+'")':'var(--bg)'};background-size:cover;background-position:center;font-family:Arial,sans-serif;padding:24px;color:var(--ink)}
+.c{width:min(520px,100%);background:color-mix(in srgb,var(--surface) 82%,transparent);border:1px solid color-mix(in srgb,var(--ink) 16%,transparent);padding:30px;text-align:center;border-radius:28px;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);box-shadow:0 28px 90px rgba(0,0,0,.34)}
+.logo{width:96px;height:96px;object-fit:cover;border-radius:24px;margin:0 auto 14px;display:${brand.logo_url?'block':'none'};box-shadow:0 14px 44px rgba(0,0,0,.25)}
+.mark{font:600 28px/.95 Arial,sans-serif;letter-spacing:.08em;color:var(--ink);margin-bottom:6px}.tag{font-size:10px;letter-spacing:.16em;color:var(--m);margin-bottom:22px}.eye{font-size:11px;letter-spacing:.2em;color:var(--g);font-weight:800;margin-bottom:10px}
+h1{font:600 42px/.98 Arial,sans-serif;letter-spacing:.01em;margin:0 0 14px}.muted{color:var(--m);line-height:1.5}.err{color:#ffb2a8;font-size:13px;margin-top:14px}
+.spin{width:26px;height:26px;border:3px solid color-mix(in srgb,var(--ink) 20%,transparent);border-top-color:var(--g);border-radius:50%;margin:20px auto;animation:s .8s linear infinite}@keyframes s{to{transform:rotate(360deg)}}
+.actions{display:none;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:20px}.actions.show{display:flex}.btn{border:1px solid color-mix(in srgb,var(--ink) 24%,transparent);background:transparent;color:var(--ink);padding:13px 18px;font-weight:800;letter-spacing:.04em;cursor:pointer}.btn.primary{background:var(--g);border-color:var(--g);color:#111}
+</style></head><body><main class=c>${brand.logo_url?'<img class="logo" src="'+esc(brand.logo_url)+'" alt="">':''}<div class=mark>${esc(show)}</div><div class=tag>${esc(brand.tagline||'')}</div><div class=eye>DEVICE ACCESS</div><h1 id=t>Opening your Publisher</h1><div id=spin class=spin></div><p id=m class=muted>Validating this device…</p><div id=actions class=actions><button id=key class="btn primary" type=button>CREATE DEVICE KEY</button><button id=continue class=btn type=button style="display:none">CONTINUE THIS SESSION</button></div><div id=e class=err></div></main>
+<script>
+const q=s=>document.querySelector(s),t=q('#t'),m=q('#m'),e=q('#e'),spin=q('#spin'),actions=q('#actions'),key=q('#key'),cont=q('#continue');
+const fromB64url=v=>{const s=String(v||'').replace(/-/g,'+').replace(/_/g,'/'),p=s+'='.repeat((4-s.length%4)%4),raw=atob(p),out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out};
+const toB64url=v=>{let s='';for(const x of new Uint8Array(v))s+=String.fromCharCode(x);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
+const deviceName=()=>/iPad/i.test(navigator.userAgent)?'iPad':/iPhone/i.test(navigator.userAgent)?'iPhone':/Android/i.test(navigator.userAgent)?'Android':/Macintosh/i.test(navigator.userAgent)?'Mac':/Windows/i.test(navigator.userAgent)?'Windows PC':'This device';
+async function req(url,opt={}){const r=await fetch(url,{headers:{'Content-Type':'application/json',...(opt.headers||{})},...opt}),j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j}
+async function createKey(){
+  key.disabled=true;e.textContent='';m.textContent='Confirmá Face ID / Touch ID / bloqueo del dispositivo para guardar esta llave.';
+  try{
+    if(!window.PublicKeyCredential||!navigator.credentials)throw new Error('Este navegador no permite crear una passkey.');
+    const raw=await req('/auth/passkeys/register/options',{method:'POST',body:'{}'}),binding=raw._binding,o={...raw};delete o._binding;
+    o.challenge=fromB64url(o.challenge);o.user={...o.user,id:fromB64url(o.user.id)};o.excludeCredentials=(o.excludeCredentials||[]).map(x=>({...x,id:fromB64url(x.id)}));
+    const cred=await navigator.credentials.create({publicKey:o});if(!cred)throw new Error('Se canceló la creación de la llave.');
+    const credential={id:cred.id,rawId:toB64url(cred.rawId),type:cred.type,authenticatorAttachment:cred.authenticatorAttachment||null,clientExtensionResults:cred.getClientExtensionResults?.()||{},response:{clientDataJSON:toB64url(cred.response.clientDataJSON),attestationObject:toB64url(cred.response.attestationObject),transports:cred.response.getTransports?.()||[]}};
+    await req('/auth/passkeys/register/verify',{method:'POST',body:JSON.stringify({_binding:binding,name:deviceName(),credential})});
+    localStorage.setItem('publisher_device_key_registered','1');
+    m.textContent='Listo. Este dispositivo quedó autorizado.';location.replace('/');
+  }catch(x){e.textContent=x.message;key.disabled=false;cont.style.display='inline-block';m.textContent='Podés volver a intentar o continuar con esta sesión.'}
+}
+(async()=>{
+  const raw=location.hash.startsWith('#code=')?decodeURIComponent(location.hash.slice(6)):'';
+  if(!raw){
+    spin.style.display='none';
+    if(localStorage.getItem('publisher_device_key_registered')==='1'){location.replace('/login');return}
+    t.textContent='Open Publisher once';
+    m.textContent='Abrí este Publisher una sola vez desde OPEN PUBLISHER en Publisher Factory para autorizar este dispositivo.';
+    return;
+  }
+  try{
+    history.replaceState(null,'',location.pathname);
+    await req('/setup/activate',{method:'POST',body:JSON.stringify({token:raw})});
+    if(localStorage.getItem('publisher_device_key_registered')==='1'){m.textContent='Device recognized.';location.replace('/');return}
+    spin.style.display='none';t.textContent='Create a key for this device';m.textContent='Esto se hace una sola vez. Después vas a poder entrar directamente a este Publisher desde este dispositivo.';actions.classList.add('show');
+  }catch(x){spin.style.display='none';t.textContent='Activation failed';e.textContent=x.message}
+})();
+key.onclick=createKey;cont.onclick=()=>location.replace('/');
+</script></body></html>`)});
+app.post('/setup/activate',(req,res)=>{const expected=String(process.env.PUBLISHER_SETUP_TOKEN||''),token=String(req.body?.token||'');if(!expected||!safeEq(token,expected))return res.status(401).json({error:'Activation link is invalid or expired.'});if(!configured())setPin(String(Math.floor(100000+Math.random()*900000)));issue(req,res,'factory-open');res.json({ok:true,passkeysRegistered:authState().passkeys.length,device:device(req)})});
 app.get('/login',(req,res)=>res.sendFile('login.html',{root:'public'}));
 app.get('/auth/public-info',(req,res)=>{const a=authState();res.json({publisherName:CONFIG.identity.publisher_name,showName:CONFIG.identity.show_name,passkeysRegistered:a.passkeys.length,brand:brandPublic()})});
 app.post('/auth/pin',(req,res)=>{const pin=String(req.body.pin||'');if(!pinOk(pin))return res.status(401).json({error:'Incorrect PIN.'});issue(req,res,'pin');res.json({ok:true})});
