@@ -337,8 +337,12 @@ export function materializeCreativePackage(db,row,{force=false}={}){
     : '';
   if(!force&&existingPrompt&&existingTitle&&existingDescription&&
      String(row?.creativePackageHash||'')===existingDigest){
-    validateEpisodePrompt(row,existingPrompt);
-    return{row,repaired:intent.repaired,reason:intent.reason,created:false};
+    try{
+      validateEpisodePrompt(row,existingPrompt);
+      return{row,repaired:intent.repaired,reason:intent.reason,created:false};
+    }catch{
+      force=true;
+    }
   }
 
   const visual=resolveVisualCharacters(row);
