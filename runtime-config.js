@@ -104,7 +104,7 @@ export function loadConfig(){
     },
     automation:{provider:'free-browser-provider',persistent_profile:true,tinyfish_required:false,semantic_field_safety:true,external_reality_reconciliation:true,...(c.automation||{})},
     review:{mode:clean(review.mode||'review',40),archive_provider:clean(review.archive_provider||'youtube-private-staging',80),hot_originals:Number(review.hot_originals??2),archive_below_free_percent:Number(review.archive_below_free_percent??45)},
-    schedule:{timezone:clean(schedule.timezone||identity.timezone||'UTC',100),indefinite:true,generation_strategy:clean(schedule.generation_strategy||(content.serialized!==false?'sequential':'parallel'),40),posting_times:Array.isArray(schedule.posting_times)?schedule.posting_times.map(String):['19:00'],upload_lead_minutes:Number(schedule.upload_lead_minutes??390)},
+    schedule:{timezone:clean(schedule.timezone||identity.timezone||'UTC',100),indefinite:true,generation_strategy:'sequential',posting_times:Array.isArray(schedule.posting_times)?schedule.posting_times.map(String):['19:00'],upload_lead_minutes:Number(schedule.upload_lead_minutes??390)},
     publication:c.publication||{providers:[{type:'youtube'}]},
     security:c.security||{passkeys:true,recovery_pin:true,session_management:true}
   };
