@@ -15,3 +15,4 @@ fix=serial-latest-video-tile-recovery
 fix=episode-local-prompt-metadata,prevent-continuity-context-title-bleed
 fix=proactive-review-metadata-repair,queued-copy-audit-report
 fix=transient-tile-false-positive,enabled-download-only,fast-vanished-render-release
+fix=review-prompt-diagnostics
