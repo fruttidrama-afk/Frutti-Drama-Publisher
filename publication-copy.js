@@ -63,8 +63,13 @@ function extractPromptIntent(prompt=''){
   }
   return'';
 }
-function earthKnownCopy({prompt='',contextTerms=[]}={}){
-  const hay=normalize([prompt,...(Array.isArray(contextTerms)?contextTerms:[])].join(' ')).toLowerCase();
+function earthKnownCopy({prompt='',hook='',story='',contextTerms=[]}={}){
+  // The exact episode intent is authoritative. Never let continuity/canon text from the
+  // rest of the prompt, or recovery correlation terms from another asset, hijack copy.
+  const intent=extractPromptIntent(prompt);
+  const primary=normalize([intent,!genericEpisodeText(story)?story:'',!genericEpisodeText(hook)?hook:''].filter(Boolean).join(' ')).toLowerCase();
+  const fallback=normalize(Array.isArray(contextTerms)?contextTerms:[]).toLowerCase();
+  const hay=primary||fallback;
   const known=[
     {re:/patagonia|glacial lake|turquoise.*lake/,title:'PATAGONIA SUNRISE: Turquoise glacial lake beneath the Andes.',desc:'A crystal-clear turquoise glacial lake, snow-covered peaks and soft sunrise mist turn Patagonia into a cinematic ten-second escape.'},
     {re:/namib|solitary tree|red orange dunes|dead vlei|deadvlei/,title:'NAMIB DESERT: A solitary tree beneath glowing red dunes.',desc:'A solitary dark tree stands against Namibia’s immense red-orange dunes as warm sunrise light stretches across the desert.'},
@@ -91,7 +96,7 @@ function shortenComplete(s,max){
 }
 function earthFallbackTitle({hook,story,prompt,maxTitleLength}){
   const intent=extractPromptIntent(prompt);
-  const source=!genericEpisodeText(story)?normalize(story):intent;
+  const source=intent||(!genericEpisodeText(story)?normalize(story):'');
   const cleanHook=!genericEpisodeText(hook)?normalize(hook).toUpperCase():'EARTH IN 10';
   let core='';
   if(source){
@@ -127,12 +132,12 @@ export function buildPublicationCopy({hook,story,prompt='',contextTerms=[],hasht
   let title='';
   let descriptionBase='';
   if(earth){
-    const known=earthKnownCopy({prompt,contextTerms});
+    const known=earthKnownCopy({prompt,hook:cleanHook,story:cleanStory,contextTerms});
     if(known){title=known.title;descriptionBase=known.desc}
     else{
       title=earthFallbackTitle({hook:cleanHook,story:cleanStory,prompt,maxTitleLength});
       const intent=extractPromptIntent(prompt);
-      descriptionBase=!genericEpisodeText(cleanStory)&&cleanStory?cleanStory:(intent||'A cinematic ten-second glimpse of one of Earth’s extraordinary landscapes.');
+      descriptionBase=intent||(!genericEpisodeText(cleanStory)&&cleanStory?cleanStory:'')||'A cinematic ten-second glimpse of one of Earth’s extraordinary landscapes.';
     }
   }else{
     const prefix=cleanHook?cleanHook+': ':'';
