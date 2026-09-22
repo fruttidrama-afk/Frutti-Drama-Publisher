@@ -339,7 +339,21 @@ export function materializeCreativePackage(db,row,{force=false}={}){
      String(row?.creativePackageHash||'')===existingDigest){
     try{
       validateEpisodePrompt(row,existingPrompt);
-      return{row,repaired:intent.repaired,reason:intent.reason,created:false};
+      const provider=(CONFIG.publication?.providers||[]).find(x=>x.type==='youtube')||{};
+      const expected=buildPublicationCopy({
+        hook:row.hook,
+        story:row.story,
+        prompt:existingPrompt,
+        contextTerms:[],
+        hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+        showName:CONFIG.identity?.show_name||SHOW,
+        maxTitleLength:100
+      });
+      let expectedDescription=String(expected.description||'');
+      while(Buffer.byteLength(expectedDescription,'utf8')>4800)expectedDescription=expectedDescription.slice(0,-30).trimEnd();
+      const expectedTitle=String(expected.title||'').slice(0,100);
+      if(existingTitle!==expectedTitle||existingDescription!==expectedDescription)force=true;
+      else return{row,repaired:intent.repaired,reason:intent.reason,created:false};
     }catch{
       force=true;
     }
