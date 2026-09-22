@@ -40,8 +40,11 @@ for(const token of ['runtime_knowledge','creativePackageHash','creativePackageId
 for(const token of ["app.get('/factory/knowledge'","automation_safety","containsSyntheticMedia:true","replacement creative package required","prompt_integrity","prompt_show_bible_gate:true","atomic_creative_package:true","prompts_rematerialized:true"]){
   must(server.includes(token),'server contract missing '+token);
 }
-for(const token of ['Publication metadata synchronized from the episode creative package.',"if(String(row?.title||'').trim()&&String(row?.description||'').trim())"]){
-  must(publication.includes(token),'creative package publication source missing '+token);
+for(const token of ['earthPromptIsEpisodeBound','episode-generation-prompt','creativePackageDigest','quota_wait','shiftPendingQueueAfter','stored-package']){
+  must(publication.includes(token),'publication metadata/quota contract missing '+token);
+}
+for(const token of ['isEarthIn10Publisher','Earth in Ten keeps review media on the Railway volume until approval.']){
+  must(server.includes(token),'Earth quota-reservation contract missing '+token);
 }
 
 console.log(JSON.stringify({
