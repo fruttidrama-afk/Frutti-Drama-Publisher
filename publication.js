@@ -1,7 +1,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { buildPublicationCopy } from './publication-copy.js';
 
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -30,13 +30,37 @@ function nextSlot(db,config){
   for(let di=0;di<730;di++){for(const t of times){const d=zonedLocal(day,t,tz);if(d.getTime()<=Date.now()+5*60*1000)continue;const iso=d.toISOString();if(!used.has(iso))return iso}day=addDay(day)}
   throw new Error('No se encontró un slot de publicación futuro.');
 }
+function isEarthIn10(config){return /earth\s*in\s*10/i.test(String(config?.identity?.show_name||''))}
+function earthPromptIsEpisodeBound(row){
+  const prompt=String(row?.prompt||'');
+  const m=prompt.match(/EPISODE INTENT:\s*([^\n]+)/i);
+  const intent=String(m?.[1]||row?.story||'').trim();
+  if(!intent)return false;
+  if(/Continue the configured Creative Bible and canon from the previous accepted beat/i.test(intent))return false;
+  if(/^(NEXT CHAPTER|NEW TURN|NEW EPISODE)\b/i.test(String(row?.hook||'').trim()))return false;
+  return true;
+}
+function creativePackageDigest(row,title,description){
+  return createHash('sha256').update(JSON.stringify({
+    episode:Number(row?.episode||0),
+    hook:String(row?.hook||''),
+    story:String(row?.story||''),
+    prompt:String(row?.prompt||''),
+    title:String(title||''),
+    description:String(description||'')
+  })).digest('hex');
+}
 function metadata(row,config){
-  if(String(row?.title||'').trim()&&String(row?.description||'').trim()){
+  const provider=(config.publication?.providers||[]).find(x=>x.type==='youtube')||{};
+  // For Earth in Ten, the exact episode generation prompt is the source of truth.
+  // Legacy generic-prompt rows keep their explicit reviewed copy, but every concrete
+  // episode prompt is re-derived so stale copy from another episode cannot survive.
+  const promptAuthoritative=isEarthIn10(config)&&earthPromptIsEpisodeBound(row);
+  if(!promptAuthoritative&&String(row?.title||'').trim()&&String(row?.description||'').trim()){
     let description=String(row.description);
     while(utf8(description)>4800)description=description.slice(0,-20).trimEnd();
-    return{title:String(row.title).slice(0,100),description};
+    return{title:String(row.title).slice(0,100),description,source:'stored-package'};
   }
-  const provider=(config.publication?.providers||[]).find(x=>x.type==='youtube')||{};
   const copy=buildPublicationCopy({
     hook:row.hook,
     story:row.story,
@@ -48,7 +72,7 @@ function metadata(row,config){
   });
   let description=copy.description;
   while(utf8(description)>4800)description=description.slice(0,-20).trimEnd();
-  return{title:copy.title,description};
+  return{title:copy.title,description,source:promptAuthoritative?'episode-generation-prompt':'derived-fallback'};
 }
 
 function publicItem(r){return{...r,history:JSON.parse(r.history||'[]'),resumableSession:undefined,filePath:r.filePath?true:false}}
@@ -110,26 +134,34 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   }
 
   async function auditExistingMetadata(){
-    const provider=(config.publication?.providers||[]).find(x=>x.type==='youtube')||{};
     const items=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('cancelled','deleted') ORDER BY episode").all();
-    let corrected=0,synced=0;const report=[];
+    let corrected=0,factoryCorrected=0,synced=0;const report=[];
     for(const item of items){
-      const row=db.prepare('SELECT hook,story,prompt,title,description,creativePackageHash,creativePackageId,flowResult FROM factory_items WHERE id=?').get(item.itemId);
+      const row=db.prepare('SELECT episode,hook,story,prompt,title,description,creativePackageHash,creativePackageId,flowResult FROM factory_items WHERE id=?').get(item.itemId);
       if(!row)continue;
       const copy=metadata(row,config),description=copy.description;
-      const changed=item.title!==copy.title||item.description!==description;
-      report.push({episode:item.episode,title:copy.title,changed,source:String(row.creativePackageHash||'')?'creative-package':'legacy-fallback'});
-      if(changed){
-        item.title=copy.title;item.description=description;hist(item,item.status,'Publication metadata synchronized from the episode creative package.');save(db,item);corrected++;
-      }
-      if(item.videoId&&loadToken()){
-        try{await ensureAiDisclosure(item)}catch{}
-        if(!['published','cancelled','deleted'].includes(String(item.status||''))){
-          try{await stageMetadata(item);synced++}catch{}
+      const promptAuthoritative=isEarthIn10(config)&&earthPromptIsEpisodeBound(row);
+      if(promptAuthoritative){
+        const packageHash=creativePackageDigest(row,copy.title,description);
+        const factoryChanged=row.title!==copy.title||row.description!==description||String(row.creativePackageHash||'')!==packageHash;
+        if(factoryChanged){
+          db.prepare("UPDATE factory_items SET title=?,description=?,creativePackageHash=?,creativePackageId=COALESCE(creativePackageId,?),updatedAt=? WHERE id=?")
+            .run(copy.title,description,packageHash,'creative-package-repaired-'+randomUUID(),now(),item.itemId);
+          factoryCorrected++;
         }
       }
+      const changed=item.title!==copy.title||item.description!==description;
+      report.push({episode:item.episode,title:copy.title,changed,factory_changed:promptAuthoritative&&(row.title!==copy.title||row.description!==description),source:copy.source});
+      if(changed){
+        item.title=copy.title;item.description=description;hist(item,item.status,'Publication metadata synchronized from this episode generation prompt.');save(db,item);corrected++;
+      }
+      // Only sync YouTube immediately when copy actually changed. Routine publication
+      // scheduling remains in tick(), avoiding needless API calls against daily quota.
+      if(changed&&item.videoId&&loadToken()&&!['published','cancelled','deleted'].includes(String(item.status||''))){
+        try{await stageMetadata(item);synced++}catch{}
+      }
     }
-    if(report.length)console.log('[PUBLICATION COPY AUDIT]',JSON.stringify({corrected,synced,items:report}));
+    if(report.length)console.log('[PUBLICATION COPY AUDIT]',JSON.stringify({corrected,factoryCorrected,synced,items:report}));
   }
 
   async function upload(item){
@@ -172,6 +204,53 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     item.status='attention';item.error='Resumable session expired ambiguously. Reconcile YouTube before any new upload.';save(db,item);return true;
   }
 
+  function isQuotaExceeded(e){
+    const status=Number(e?.response?.status||e?.status||0);
+    const reasons=[
+      ...(Array.isArray(e?.response?.data?.error?.errors)?e.response.data.error.errors.map(x=>x?.reason):[]),
+      e?.response?.data?.error?.status,
+      e?.code
+    ].filter(Boolean).join(' ');
+    const msg=String(e?.message||e||'');
+    return status===403&&/quota|quotaExceeded|dailyLimitExceeded/i.test(reasons+' '+msg);
+  }
+  function nextYoutubeQuotaRetry(){
+    const tz='America/Los_Angeles',today=dayKey(new Date(),tz),tomorrow=addDay(today,1);
+    return zonedLocal(tomorrow,'00:05',tz).getTime();
+  }
+  function nextFreeSlotAfter(afterMs,used){
+    const tz=config.schedule.timezone,times=postingTimes(config);let day=dayKey(new Date(afterMs),tz);
+    for(let di=0;di<730;di++){
+      for(const t of times){
+        const d=zonedLocal(day,t,tz),iso=d.toISOString();
+        if(d.getTime()<=afterMs+5*60*1000||used.has(iso))continue;
+        return iso;
+      }
+      day=addDay(day);
+    }
+    throw new Error('No se encontró un slot de publicación posterior a la recuperación de cuota.');
+  }
+  function shiftPendingQueueAfter(afterMs){
+    const pending=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('published','scheduled','cancelled','deleted') ORDER BY episode,scheduledAt").all();
+    if(!pending.length)return[];
+    const pendingIds=new Set(pending.map(x=>String(x.id)));
+    const used=new Set(db.prepare("SELECT id,scheduledAt FROM publication_items WHERE status NOT IN ('cancelled','deleted')").all()
+      .filter(x=>!pendingIds.has(String(x.id))).map(x=>String(x.scheduledAt)));
+    const shifted=[];let cursor=afterMs;
+    for(const item of pending){
+      const scheduledAt=nextFreeSlotAfter(cursor,used);
+      used.add(scheduledAt);cursor=Date.parse(scheduledAt);
+      const uploadAt=new Date(Date.parse(scheduledAt)-Number(config.schedule.upload_lead_minutes||0)*60000).toISOString();
+      if(item.scheduledAt!==scheduledAt||item.uploadAt!==uploadAt){
+        item.scheduledAt=scheduledAt;item.uploadAt=uploadAt;
+        hist(item,item.status,'Publication slot moved forward automatically because YouTube API quota resets after the previous slot.');
+        save(db,item);shifted.push({episode:item.episode,scheduledAt});
+      }
+    }
+    if(shifted.length)console.log('[PUBLICATION QUOTA RESCHEDULE]',JSON.stringify({after:new Date(afterMs).toISOString(),shifted}));
+    return shifted;
+  }
+
   async function tick(){
     if(running)return;running=true;lastHeartbeat=now();lastError=null;
     try{
@@ -188,11 +267,21 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
           if(!item.videoId)await upload(item);
           await verify(item);item.attempts=0;item.retryAt=0;item.error=null;save(db,item);
         }catch(e){
-          const msg=String(e?.message||e);item.attempts=Number(item.attempts||0)+1;item.error=msg;
-          if(msg==='YOUTUBE_AUTH_REQUIRED'){item.status='auth_wait';item.retryAt=0}
-          else if(msg==='UPLOAD_SESSION_AMBIGUOUS'){item.status='attention';item.retryAt=0}
-          else{item.status='error';item.retryAt=Date.now()+Math.min(60*60*1000,60000*Math.pow(2,Math.min(item.attempts,6)))}
-          hist(item,item.status,msg);save(db,item);
+          const raw=String(e?.message||e);item.attempts=Number(item.attempts||0)+1;
+          if(isQuotaExceeded(e)){
+            item.status='quota_wait';item.retryAt=nextYoutubeQuotaRetry();
+            item.error='YouTube daily API quota exhausted. Automatic retry is scheduled after the quota reset.';
+            hist(item,item.status,item.error);save(db,item);
+            shiftPendingQueueAfter(item.retryAt);
+            console.log('[PUBLICATION QUOTA WAIT]',JSON.stringify({episode:item.episode,retryAt:new Date(item.retryAt).toISOString()}));
+          }else if(raw==='YOUTUBE_AUTH_REQUIRED'){
+            item.error=raw;item.status='auth_wait';item.retryAt=0;hist(item,item.status,raw);save(db,item);
+          }else if(raw==='UPLOAD_SESSION_AMBIGUOUS'){
+            item.error=raw;item.status='attention';item.retryAt=0;hist(item,item.status,raw);save(db,item);
+          }else{
+            item.error=raw;item.status='error';item.retryAt=Date.now()+Math.min(60*60*1000,60000*Math.pow(2,Math.min(item.attempts,6)));
+            hist(item,item.status,raw);save(db,item);
+          }
         }
       }
     }catch(e){lastError=String(e?.message||e)}finally{lastHeartbeat=now();running=false}
