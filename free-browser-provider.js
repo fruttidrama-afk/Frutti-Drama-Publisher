@@ -9,7 +9,7 @@ import {
   DURATION_SECONDS, DURATION_LABEL, ASPECT_RATIO, OUTPUT_COUNT, OUTPUT_LABEL,
   MODEL_INTENT, RESOLUTION_INTENT, DAILY_LIMIT, CREDIT_PER_GENERATION,
   DAILY_CREDIT_BUDGET, TIMEZONE, registry as configRegistry,
-  resolveVisualCharacters, buildPrompt, seedInitial, ensureBacklog, enforceEpisodeIntent
+  resolveVisualCharacters, buildPrompt, seedInitial, ensureBacklog, enforceEpisodeIntent, materializeCreativePackage, validateEpisodePrompt
 } from './runtime-config.js';
 import { buildPublicationCopy } from './publication-copy.js';
 
@@ -354,31 +354,15 @@ function packageMatches(row){
   return String(row.creativePackageHash)===creativePackageHash(row,prompt,title,description);
 }
 function preparePromptIfNeeded(db,row){
-  const intent=enforceEpisodeIntent(db,row);
-  row=intent.row;
-  if(intent.repaired)publish('EPISODE_INTENT_REPAIRED',{episode:'E'+row.episode,job_id:row.id,reason:intent.reason,hook:compact(row.hook,120),story:compact(row.story,320)});
-  let cp=checkpoint(row);
-  if(cp&&packageMatches(row))return{...cp,title:row.title,description:row.description,creativePackageHash:row.creativePackageHash,creativePackageId:row.creativePackageId};
-  if(cp){
-    const pkg=buildCreativePackage(row,cp.prompt);
-    db.prepare("UPDATE factory_items SET title=?,description=?,creativePackageHash=?,creativePackageId=?,updatedAt=? WHERE id=?")
-      .run(pkg.title,pkg.description,pkg.hash,pkg.id,now(),row.id);
-    publish('CREATIVE_PACKAGE_READY',{episode:'E'+row.episode,job_id:row.id,prompt_hash:cp.hash,package_hash:pkg.hash,title:pkg.title,legacy_prompt_reused:true});
-    return{...cp,title:pkg.title,description:pkg.description,creativePackageHash:pkg.hash,creativePackageId:pkg.id};
-  }
-  const visual=matchingCharacters(row),prompt=buildLocalPrompt(db,row,visual);
-  if(/^EARTH IN 10 — EPISODE /m.test(prompt)&&(
-     /HOOK:\s*(NEXT CHAPTER|NEW TURN|NEW EPISODE)/i.test(prompt)||
-     /EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(prompt))){
-    throw new Error('EARTH_IN_10_CONTENT_GATE: generic fallback prompt blocked before Flow');
-  }
-  const hash=sha(prompt),pkg=buildCreativePackage(row,prompt),r=registry(),roles=visual.map(name=>({name,role:'ON_SCREEN',visual:true})),handles=visual.map(name=>r.characters.find(c=>String(c.name)===String(name))?.mention||('@'+name));
-  db.prepare("UPDATE factory_items SET prompt=?,promptHash=?,promptGenerationId=?,characterHandles=?,characterRoles=?,promptPayloadHash=?,promptPayloadLength=?,title=?,description=?,creativePackageHash=?,creativePackageId=?,status='draft',providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
-    .run(prompt,hash,'runtime-prompt-v3-'+randomUUID(),JSON.stringify(handles),JSON.stringify(roles),hash,Buffer.byteLength(prompt,'utf8'),pkg.title,pkg.description,pkg.hash,pkg.id,now(),row.id);
-  publish('CREATIVE_PACKAGE_READY',{episode:'E'+row.episode,job_id:row.id,prompt_hash:hash,package_hash:pkg.hash,title:pkg.title,legacy_prompt_reused:false});
-  const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);
-  cp=checkpoint(fresh);if(!cp||!packageMatches(fresh))throw new Error('RUNTIME_CREATIVE_PACKAGE_CHECKPOINT_FAILED');
-  return{...cp,title:fresh.title,description:fresh.description,creativePackageHash:fresh.creativePackageHash,creativePackageId:fresh.creativePackageId};
+  const revise=String(row?.retryStrategy||'')==='revise_prompt'&&String(row?.reviewFeedback||'').trim().length>=3;
+  const pkg=materializeCreativePackage(db,row,{force:revise});
+  row=pkg.row;
+  if(pkg.repaired)publish('EPISODE_INTENT_REPAIRED',{episode:'E'+row.episode,job_id:row.id,reason:pkg.reason,hook:compact(row.hook,120),story:compact(row.story,320)});
+  if(pkg.created)publish('CREATIVE_PACKAGE_READY',{episode:'E'+row.episode,job_id:row.id,prompt_hash:row.promptHash,package_hash:row.creativePackageHash,title:row.title,reason:revise?'human-redo-revision':'episode-materialization'});
+  validateEpisodePrompt(row,row.prompt);
+  const cp=checkpoint(row);
+  if(!cp||!packageMatches(row))throw new Error('RUNTIME_CREATIVE_PACKAGE_CHECKPOINT_FAILED');
+  return{...cp,title:row.title,description:row.description,creativePackageHash:row.creativePackageHash,creativePackageId:row.creativePackageId};
 }
 
 function reviewMetadata(row,flowResult={}){
