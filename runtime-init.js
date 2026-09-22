@@ -12,6 +12,52 @@ const INSTANCE_MARKER=path.join(DATA_DIR,'publisher-instance.json');
 const INSTANCE_ID=String(process.env.PUBLISHER_INSTANCE_ID||'').trim();
 const RESET_ON_CHANGE=String(process.env.PUBLISHER_RESET_ON_INSTANCE_CHANGE||'false').toLowerCase()==='true';
 
+function freeBytes(p){
+  try{const s=fs.statfsSync(p);return Number(s.bavail)*Number(s.bsize)}catch{return null}
+}
+function cleanupRecreatableStorage(){
+  const before=freeBytes(DATA_DIR);
+  const profile=path.join(DIR,'flow-profile');
+  const disposable=[
+    path.join(profile,'Default','Cache'),
+    path.join(profile,'Default','Code Cache'),
+    path.join(profile,'Default','GPUCache'),
+    path.join(profile,'Default','DawnCache'),
+    path.join(profile,'Default','GraphiteDawnCache'),
+    path.join(profile,'Default','ShaderCache'),
+    path.join(profile,'Default','Service Worker','CacheStorage'),
+    path.join(profile,'Default','Service Worker','ScriptCache'),
+    path.join(profile,'GrShaderCache'),
+    path.join(profile,'ShaderCache'),
+    path.join(profile,'DawnCache'),
+    path.join(profile,'GraphiteDawnCache'),
+    path.join(profile,'component_crx_cache'),
+    path.join(profile,'Crashpad'),
+    path.join(profile,'BrowserMetrics')
+  ];
+  let removed=0;
+  for(const p of disposable){
+    try{
+      if(!fs.existsSync(p))continue;
+      const dirSize=q=>{let n=0;try{const st=fs.statSync(q);if(st.isFile())return st.size;for(const e of fs.readdirSync(q,{withFileTypes:true}))n+=dirSize(path.join(q,e.name));}catch{}return n};
+      const size=dirSize(p);
+      fs.rmSync(p,{recursive:true,force:true});
+      removed+=Number(size||0);
+    }catch{}
+  }
+  const generated=path.join(DIR,'generated');
+  try{
+    for(const name of fs.readdirSync(generated)){
+      if(!/\.preview\.mp4$|\.crdownload$|\.tmp$/i.test(name))continue;
+      const p=path.join(generated,name);
+      try{removed+=fs.statSync(p).size||0;fs.rmSync(p,{force:true})}catch{}
+    }
+  }catch{}
+  const after=freeBytes(DATA_DIR);
+  if(removed>0||before!==after)console.log('[STORAGE CLEANUP]',JSON.stringify({removed_bytes:removed,free_before:before,free_after:after}));
+}
+cleanupRecreatableStorage();
+
 if(INSTANCE_ID&&RESET_ON_CHANGE){
   let previous=null;
   try{previous=JSON.parse(fs.readFileSync(INSTANCE_MARKER,'utf8'))?.id||null}catch{}
