@@ -10,7 +10,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 COPY package.json ./
 RUN npm install --omit=dev
-COPY runtime-config.js runtime-init.js free-browser-provider.js flow-bootstrap.js server.js publication.js publication-copy.js publisher-selftest.mjs publisher.config.schema.json ./
+COPY runtime-config.js runtime-init.js free-browser-provider.js flow-bootstrap.js server.js publication.js publication-copy.js publisher-selftest.mjs verify-runtime-contract.mjs publisher.config.schema.json ./
 COPY GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md GOOGLE_FLOW_AUTOMATION_SOP.json FLOW_AI_IMPLEMENTATION_BRIEF.md FLOW_RECOVERY_RUNBOOK.md FLOW_GOLDEN_TEST.md FLOW_FAILURE_CATALOG.md FLOW_CHANGELOG.md FLOW_SOP_KNOWLEDGE_MANIFEST.json ./
 RUN node --check runtime-config.js \
   && node --check runtime-init.js \
