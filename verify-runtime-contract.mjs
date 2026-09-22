@@ -13,6 +13,7 @@ const provider=read('free-browser-provider.js');
 const runtimeConfig=read('runtime-config.js');
 const init=read('runtime-init.js');
 const server=read('server.js');
+const publication=read('publication.js');
 
 const sha=createHash('sha256').update(master).digest('hex');
 must(sop.sop_id==='FLOW-SOP-v1.0','wrong SOP version');
@@ -38,6 +39,9 @@ for(const token of ['runtime_knowledge','creativePackageHash','creativePackageId
 }
 for(const token of ["app.get('/factory/knowledge'","automation_safety","containsSyntheticMedia:true","creativePackageHash=NULL","title='',description=''"]){
   must(server.includes(token),'server contract missing '+token);
+}
+for(const token of ['Publication metadata synchronized from the episode creative package.',"if(String(row?.title||'').trim()&&String(row?.description||'').trim())"]){
+  must(publication.includes(token),'creative package publication source missing '+token);
 }
 
 console.log(JSON.stringify({
