@@ -57,6 +57,8 @@ has(server,"title='',description=''",'REDO clears title and description with rev
 const publication=read('publication.js');
 has(publication,'containsSyntheticMedia:true','publication synthetic-media disclosure');
 has(publication,'buildPublicationCopy','publication copy builder');
+has(publication,'Publication metadata synchronized from the episode creative package.','creative package as publication source');
+has(publication,"if(String(row?.title||'').trim()&&String(row?.description||'').trim())",'publication preserves package copy');
 
 const schema=JSON.parse(read('publisher.config.schema.json'));
 must(schema.properties?.schedule?.properties?.generation_strategy?.const==='sequential','Publisher Factory must enforce sequential Flow generation');
