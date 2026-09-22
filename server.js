@@ -258,27 +258,53 @@ function creativePackageDigest(row,title=row?.title,description=row?.description
  return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
 function ensureCopy(row){
- if(String(row?.title||'').trim()&&String(row?.description||'').trim()&&String(row?.creativePackageHash||'')===creativePackageDigest(row)){
-   return row;
- }
  const provider=(CONFIG.publication.providers||[]).find(x=>x.type==='youtube')||{};
  let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
  const override=flow?.publication_override;
+ const earth=/earth\s*in\s*10/i.test(String(CONFIG.identity?.show_name||''));
+ let expected=null;
+ if(override?.title&&override?.description){
+   expected={title:String(override.title),description:String(override.description)};
+ }else if(earth){
+   expected=buildPublicationCopy({
+     hook:row.hook,
+     story:row.story,
+     prompt:row.prompt,
+     contextTerms:[],
+     hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+     showName:CONFIG.identity.show_name,
+     maxTitleLength:100
+   });
+ }
+ if(expected){
+   let expectedDescription=String(expected.description||'');
+   while(Buffer.byteLength(expectedDescription,'utf8')>4800)expectedDescription=expectedDescription.slice(0,-30).trimEnd();
+   const expectedTitle=String(expected.title||'').slice(0,100);
+   const selfConsistent=String(row?.creativePackageHash||'')===creativePackageDigest(row);
+   const semanticallyCorrect=String(row?.title||'')===expectedTitle&&String(row?.description||'')===expectedDescription;
+   if(selfConsistent&&semanticallyCorrect)return row;
+   const packageHash=creativePackageDigest(row,expectedTitle,expectedDescription),packageId='creative-package-repaired-'+randomBytes(12).toString('hex');
+   db.prepare('UPDATE factory_items SET title=?,description=?,creativePackageHash=?,creativePackageId=?,updatedAt=? WHERE id=?')
+     .run(expectedTitle,expectedDescription,packageHash,packageId,now(),row.id);
+   console.log('[CREATIVE PACKAGE COPY REPAIRED]',JSON.stringify({episode:row.episode,title:expectedTitle,reason:selfConsistent?'semantic-mismatch':'hash-or-copy-mismatch'}));
+   return{...row,title:expectedTitle,description:expectedDescription,creativePackageHash:packageHash,creativePackageId:packageId};
+ }
+ if(String(row?.title||'').trim()&&String(row?.description||'').trim()&&String(row?.creativePackageHash||'')===creativePackageDigest(row)){
+   return row;
+ }
  let copy;
  if(String(row?.title||'').trim()&&String(row?.description||'').trim()){
    copy={title:String(row.title),description:String(row.description)};
  }else{
-   copy=override?.title&&override?.description
-     ? {title:String(override.title),description:String(override.description)}
-     : buildPublicationCopy({
-         hook:row.hook,
-         story:row.story,
-         prompt:row.prompt,
-         contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],
-         hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
-         showName:CONFIG.identity.show_name,
-         maxTitleLength:100
-       });
+   copy=buildPublicationCopy({
+     hook:row.hook,
+     story:row.story,
+     prompt:row.prompt,
+     contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],
+     hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+     showName:CONFIG.identity.show_name,
+     maxTitleLength:100
+   });
  }
  let description=String(copy.description||'');
  while(Buffer.byteLength(description,'utf8')>4800)description=description.slice(0,-30).trimEnd();
