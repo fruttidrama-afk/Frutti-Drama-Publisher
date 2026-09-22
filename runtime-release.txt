@@ -64,3 +64,4 @@ audit=earth-e1-0630-effective-state
 fix=episode-bound-copy-authority,semantic-package-gate,immediate-human-redo-priority
 fix=redo-prompt-correlated-recovery,resume-legacy-redo-holds-without-duplicate-submit
 audit=redo-flow-visible-asset-labels
+fix=redo-single-clean-reauthorization-after-verified-no-render
