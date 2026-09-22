@@ -323,10 +323,13 @@ function activateReadyAutomation(){
   try{
     const lf=liveFlowConfig(),knowledgeReady=metaGet('knowledge:flowSopLoaded','false')==='true',ready=Boolean(loadToken())&&Boolean(lf.project_id&&flowAuth()?.ok)&&Boolean(String(CONFIG.content.creative_bible||'').trim())&&knowledgeReady;
     if(!ready)return false;
-    if(metaGet('automation:factoryEnabled','false')!=='true')metaSet('automation:factoryEnabled','true');
+    const already=metaGet('automation:factoryEnabled','false')==='true';
+    if(already)return true;
+    metaSet('automation:factoryEnabled','true');
     const t=now();
     if(!metaGet('automation:readinessActivatedAt',''))metaSet('automation:readinessActivatedAt',t);
     try{db.prepare("UPDATE factory_items SET nextTry=0,error=NULL,updatedAt=? WHERE status IN ('draft','regen_wait') AND providerRunId IS NULL").run(t)}catch{}
+    console.log('[AUTOMATION READY] YouTube + exact Flow project + Creative Bible + canonical SOP verified. Starting autonomous production.');
     setTimeout(()=>{try{globalThis.__publisherRunProvider?.()}catch{}},450).unref?.();
     return true;
   }catch{return false}
@@ -371,4 +374,5 @@ app.get('/security',(req,res)=>res.sendFile('security.html',{root:'public'}));
 app.use(express.static('public'));
 app.get('/',(req,res)=>res.sendFile('index.html',{root:'public'}));
 
+setInterval(()=>{try{activateReadyAutomation()}catch{}},30000).unref?.();
 app.listen(PORT,'0.0.0.0',()=>{console.log('Publisher Runtime v1 listening',PORT);setTimeout(()=>activateReadyAutomation(),1400).unref?.()});
