@@ -59,3 +59,4 @@ fix=cloud-storage-selftest-init-order
 fix=migrate-existing-publication-media-to-private-cloud-storage
 fix=signed-put-review-storage,force-1230-private-upload-1900-publish
 audit=existing-publication-storage-state
+fix=earth-e1-0630-existing-private-schedule,stage-existing-video-after-quota-wait
