@@ -1,0 +1,25 @@
+{
+  "package": "PUBLISHER_FACTORY_FLOW_KNOWLEDGE_PACK",
+  "version": "FLOW-SOP-v1.0",
+  "mandatory_for_every_generated_publisher": true,
+  "master_git_blob_sha": "41f80a7cce6aaf365fa9036635578276610df7ee",
+  "files": [
+    "knowledge/GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md",
+    "knowledge/GOOGLE_FLOW_AUTOMATION_SOP.json",
+    "knowledge/FLOW_AI_IMPLEMENTATION_BRIEF.md",
+    "knowledge/FLOW_FAILURE_CATALOG.md",
+    "knowledge/FLOW_RECOVERY_RUNBOOK.md",
+    "knowledge/FLOW_GOLDEN_TEST.md",
+    "knowledge/FLOW_CHANGELOG.md"
+  ],
+  "runtime_contract": {
+    "strict_serial": true,
+    "exactly_once_submit": true,
+    "exact_project_verification": true,
+    "project_grid_recovery": true,
+    "mp4_validation": true,
+    "review_ready_gate": true,
+    "final_metadata_before_review": true,
+    "synthetic_media_disclosure": true
+  }
+}

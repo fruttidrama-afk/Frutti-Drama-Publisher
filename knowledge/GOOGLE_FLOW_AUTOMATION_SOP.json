@@ -1,0 +1,51 @@
+{
+  "sop_id": "FLOW-SOP-v1.0",
+  "source_of_truth": "knowledge/GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md",
+  "source_git_blob_sha": "41f80a7cce6aaf365fa9036635578276610df7ee",
+  "mandatory_inheritance": true,
+  "generation": {
+    "provider": "google-flow",
+    "exact_project_verification": true,
+    "prompt_title_guard": true,
+    "prompt_readback": true,
+    "baseline_before_submit": true,
+    "submit_boundary_persisted_before_click": true,
+    "submit_selector": "flow-project-page flow-prompt-box flow-generate-icon-button mat-icon",
+    "submit_icon": "arrow_forward",
+    "submit_accessible_names": [
+      "Iniciar generación",
+      "Start generation"
+    ],
+    "exactly_once_submit": true,
+    "current_consent_only": true,
+    "consent_modes": [
+      "NO_DIALOG_OBSERVED",
+      "PER_GENERATION",
+      "ALWAYS_APPROVED"
+    ],
+    "generation_proof": "unique-post-baseline-project-video-tile",
+    "strict_serial": true,
+    "recovery_surface": "project-grid",
+    "mp4_validation_required": true,
+    "review_ready_before_next_submit": true,
+    "uncertainty_rule": "RECONCILE_NEVER_BLINDLY_RESUBMIT"
+  },
+  "review": {
+    "playable_validated_video_required": true,
+    "final_public_metadata_required": true,
+    "internal_planner_placeholders_forbidden": true
+  },
+  "publication": {
+    "preserve_review_metadata_to_youtube": true,
+    "contains_synthetic_media": true
+  },
+  "resilience": {
+    "persistent_profile": true,
+    "persistent_db": true,
+    "restart_reconciliation": true,
+    "same_asset_download_retry": true,
+    "vanished_render_reconciliation": true,
+    "insufficient_credit_backoff": true
+  },
+  "acceptance_gate": "Golden Test must reach REVIEW_READY before automation is marked healthy."
+}
