@@ -171,6 +171,11 @@ put('knowledge:flowSopDeclaredSha256',String(process.env.PUBLISHER_FLOW_SOP_SHA2
 put('knowledge:flowSopLoaded',knowledgeLoaded===knowledgeFiles.length?'true':'false');
 put('knowledge:flowSopDocumentCount',String(knowledgeLoaded));
 put('knowledge:inheritToPublisher','true');
+const declaredSopSha=String(process.env.PUBLISHER_FLOW_SOP_SHA256||CONFIG.knowledge?.flow_sop_sha256||'').trim();
+if(knowledgeLoaded!==knowledgeFiles.length)throw new Error('FLOW_SOP_KNOWLEDGE_PACK_INCOMPLETE:'+knowledgeLoaded+'/'+knowledgeFiles.length);
+if(!masterSha)throw new Error('FLOW_SOP_MASTER_HASH_MISSING');
+if(declaredSopSha&&declaredSopSha!==masterSha)throw new Error('FLOW_SOP_HASH_MISMATCH:'+declaredSopSha+':'+masterSha);
+console.log('[RUNTIME SOP READY]',JSON.stringify({version:SOP_VERSION,sha256:masterSha,documents:knowledgeLoaded,inherit:true}));
 put('automation:exactlyOnceSubmit','true');
 put('automation:strictSerialGeneration','true');
 put('automation:projectGridRecovery','true');
