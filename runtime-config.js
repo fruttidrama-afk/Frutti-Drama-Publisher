@@ -215,7 +215,7 @@ export function buildPrompt(db,row,visual=[]){
     'Use purposeful cinematic framing and coherent geography. No arbitrary camera teleportation. Preserve subject identity and spatial continuity across cuts.',
     '',
     'LIGHTING / VISUAL STYLE',
-    CONFIG.content.visual_style||'Cinematic, coherent and polished.',
+    effectiveVideoVisualStyle(),
     '',
     'EMOTION / PERFORMANCE',
     'Make emotion legible immediately and consistent with the episode intent. Avoid accidental comedy unless configured.',
@@ -252,13 +252,50 @@ const EARTH_IN_10_AUTONOMOUS_EPISODES=[
   {hook:'SOCOTRA DRAGONS',story:'A cinematic golden-hour landscape on Socotra Island, Yemen. Strange dragon’s-blood trees stand across a rocky plateau above a distant turquoise sea, rendered with documentary-level realism.'},
   {hook:'TORRES DEL PAINE',story:'A cinematic dawn in Torres del Paine, Chile. Granite towers rise beyond a windswept turquoise lake while fast Patagonian clouds reveal brief shafts of warm sunrise light.'}
 ];
+function earthConfiguredSpecificInitialCount(){
+  return (CONFIG.content.initial_episodes||[]).filter(v=>{
+    const hook=Array.isArray(v)?String(v[0]||''):String(v?.hook||v?.title||'');
+    const story=Array.isArray(v)?String(v[1]||''):String(v?.story||v?.intent||v?.description||'');
+    return !(/^NEXT CHAPTER$/i.test(hook.trim())||/Continue the configured Creative Bible and canon from the previous accepted beat/i.test(story));
+  }).length;
+}
 function earthIn10Idea(episode){
-  const i=Math.max(0,Number(episode)-4);
+  const i=Math.max(0,Number(episode)-earthConfiguredSpecificInitialCount()-1);
   return EARTH_IN_10_AUTONOMOUS_EPISODES[i%EARTH_IN_10_AUTONOMOUS_EPISODES.length];
 }
 function isEarthIn10(){return /earth\s*in\s*10/i.test(String(SHOW||CONFIG.identity?.show_name||''));}
 function isGenericAutonomousIdea(hook,story){
   return /^NEXT CHAPTER$/i.test(String(hook||'').trim())||/Continue the configured Creative Bible and canon from the previous accepted beat/i.test(String(story||''));
+}
+function publisherWebStyleLeak(v){
+  return /web reference|layout authority|publisher|website|webpage|page layout|logo consistently|app design|interface design|ui design/i.test(String(v||''));
+}
+function effectiveVideoVisualStyle(){
+  const configured=String(CONFIG.content.visual_style||'').trim();
+  if(!isEarthIn10())return configured||'Cinematic, coherent and polished.';
+  const earth='Hyperrealistic premium travel-documentary landscape cinematography. The real geographic location named in EPISODE INTENT is the visual authority. Preserve recognizable geology, vegetation, climate, water, architecture and atmospheric conditions for that place. Natural physically coherent light, realistic depth, stable terrain and purposeful camera movement. No real-estate walkthrough, property showcase, interior-design reel, website aesthetic, app/UI styling, branding layout or generic luxury architecture.';
+  if(!configured||/^cinematic$/i.test(configured)||publisherWebStyleLeak(configured))return earth;
+  return earth+' Additional configured video style: '+configured;
+}
+export function enforceEpisodeIntent(db,row){
+  if(!isEarthIn10())return{row,repaired:false,reason:null};
+  const genericIntent=isGenericAutonomousIdea(row?.hook,row?.story);
+  const prompt=String(row?.prompt||'');
+  const staleGenericPrompt=/HOOK:\s*NEXT CHAPTER/i.test(prompt)||/EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(prompt);
+  let repaired=false,reason=null;
+  if(genericIntent){
+    const idea=earthIn10Idea(Number(row.episode));
+    db.prepare("UPDATE factory_items SET hook=?,story=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title=NULL,description=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
+      .run(idea.hook,idea.story,new Date().toISOString(),row.id);
+    repaired=true;reason='generic-earth-intent-replaced';
+  }else if(staleGenericPrompt){
+    db.prepare("UPDATE factory_items SET prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
+      .run(new Date().toISOString(),row.id);
+    repaired=true;reason='stale-generic-earth-prompt-cleared';
+  }
+  const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);
+  if(!fresh||isGenericAutonomousIdea(fresh.hook,fresh.story))throw new Error('EARTH_IN_10_CONTENT_GATE: concrete geographic episode intent required before Flow generation');
+  return{row:fresh,repaired,reason};
 }
 
 export function ideaForEpisode(episode){
@@ -289,12 +326,10 @@ export function ensureBacklog(db,minReady=Math.max(9,DAILY_LIMIT*3)){
       .run(ep,idea.hook,idea.story,'draft',t,t);
   }
   if(isEarthIn10()){
-    const rows=db.prepare("SELECT id,episode,hook,story,prompt,status FROM factory_items WHERE status='draft' ORDER BY episode").all();
+    const rows=db.prepare("SELECT * FROM factory_items WHERE status='draft' ORDER BY episode").all();
     for(const row of rows){
-      if(String(row.prompt||'').trim())continue;
-      if(!isGenericAutonomousIdea(row.hook,row.story))continue;
-      const idea=ideaForEpisode(Number(row.episode));
-      db.prepare("UPDATE factory_items SET hook=?,story=?,updatedAt=? WHERE id=?").run(idea.hook,idea.story,t,row.id);
+      if(!isGenericAutonomousIdea(row.hook,row.story)&&!/HOOK:\s*NEXT CHAPTER/i.test(String(row.prompt||'')))continue;
+      enforceEpisodeIntent(db,row);
     }
   }
 }
