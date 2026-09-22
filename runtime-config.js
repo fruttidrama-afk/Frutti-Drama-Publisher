@@ -285,7 +285,7 @@ export function enforceEpisodeIntent(db,row){
   let repaired=false,reason=null;
   if(genericIntent){
     const idea=earthIn10Idea(Number(row.episode));
-    db.prepare("UPDATE factory_items SET hook=?,story=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title=NULL,description=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
+    db.prepare("UPDATE factory_items SET hook=?,story=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
       .run(idea.hook,idea.story,new Date().toISOString(),row.id);
     repaired=true;reason='generic-earth-intent-replaced';
   }else if(staleGenericPrompt){
