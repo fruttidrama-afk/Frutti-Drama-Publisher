@@ -19,6 +19,7 @@ RUN node --check runtime-config.js \
   && node --check publication.js \
   && node --check publication-copy.js \
   && node --check server.js \
+  && node verify-runtime-contract.mjs \
   && node publisher-selftest.mjs
 COPY public ./public
 ENV NODE_ENV=production
