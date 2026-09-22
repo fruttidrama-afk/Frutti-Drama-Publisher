@@ -16,6 +16,7 @@ import {
 import { CONFIG,PROJECT_ID,PROJECT_NAME,PROJECT_URL,DAILY_LIMIT,TIMEZONE,ideaForEpisode,ensureBacklog } from './runtime-config.js';
 import { installPublication } from './publication.js';
 import { buildPublicationCopy } from './publication-copy.js';
+import { uploadReviewFile, signedReviewUrl, deleteReviewObject, isReviewStorageUri, reviewStorageConfigured, reviewStorageRequired } from './review-storage.js';
 
 google.options({timeout:90000,retry:false});
 const app=express(),PORT=Number(process.env.PORT||8080);
@@ -302,7 +303,7 @@ function classifyReviewFeedback(value){
  if(stochastic.some(x=>x.test(t)))return'reuse_prompt';
  return'revise_prompt';
 }
-function card(row){row=ensureCopy(row);return{id:row.id,episode:row.episode,hook:row.hook,story:row.story,title:row.title,description:row.description,status:row.status,videoUrl:row.status==='review'&&row.videoPath?'/factory/video/'+encodeURIComponent(row.id):null,archivedOriginal:Boolean(row.reviewVideoId),updatedAt:row.updatedAt,error:row.error}}
+function card(row){row=ensureCopy(row);const hasReviewMedia=row.status==='review'&&((row.videoPath&&fs.existsSync(row.videoPath))||isReviewStorageUri(row.remoteUrl));return{id:row.id,episode:row.episode,hook:row.hook,story:row.story,title:row.title,description:row.description,status:row.status,videoUrl:hasReviewMedia?'/factory/video/'+encodeURIComponent(row.id):null,archivedOriginal:isReviewStorageUri(row.remoteUrl),updatedAt:row.updatedAt,error:row.error}}
 function repairLegacyEarthReviewMetadata(){
  if(!/earth\s*in\s*10/i.test(String(CONFIG.identity?.show_name||'')))return;
  const tags='#EarthIn10 #Nature #Travel #Shorts #ViralShorts';
@@ -346,8 +347,8 @@ function auditReviewMetadata(){
 }
 setTimeout(()=>{try{auditReviewMetadata()}catch(e){console.error('[REVIEW COPY AUDIT ERROR]',String(e?.message||e))}},1100).unref?.();
 app.get('/factory/cards',(req,res)=>res.json({cards:db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode LIMIT 50").all().map(card)}));
-app.get('/factory/video/:id',(req,res)=>{const r=db.prepare("SELECT videoPath,status FROM factory_items WHERE id=?").get(req.params.id);if(!r||r.status!=='review'||!r.videoPath||!fs.existsSync(r.videoPath))return res.sendStatus(404);stream(req,res,r.videoPath)});
-app.post('/factory/:id/approve',(req,res)=>{try{let r=db.prepare('SELECT * FROM factory_items WHERE id=?').get(req.params.id);if(!r)return res.sendStatus(404);if(r.status!=='review')return res.status(409).json({error:'Already processed.'});r=ensureCopy(r);const item=publication.enqueue(r);if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{};db.prepare("UPDATE factory_items SET status='queued',stockId=?,videoPath=NULL,error=NULL,updatedAt=? WHERE id=?").run(item.id,now(),r.id);ensureBacklog(db);res.json({ok:true,publication:item})}catch(e){res.status(400).json({error:e.message})}});
+app.get('/factory/video/:id',async(req,res)=>{try{const r=db.prepare("SELECT videoPath,remoteUrl,status FROM factory_items WHERE id=?").get(req.params.id);if(!r||r.status!=='review')return res.sendStatus(404);if(r.videoPath&&fs.existsSync(r.videoPath))return stream(req,res,r.videoPath);if(isReviewStorageUri(r.remoteUrl)){const url=await signedReviewUrl(r.remoteUrl,3600);return res.redirect(302,url)}return res.sendStatus(404)}catch(e){res.status(502).json({error:'Review video storage unavailable.'})}});
+app.post('/factory/:id/approve',(req,res)=>{try{let r=db.prepare('SELECT * FROM factory_items WHERE id=?').get(req.params.id);if(!r)return res.sendStatus(404);if(r.status!=='review')return res.status(409).json({error:'Already processed.'});r=ensureCopy(r);const item=publication.enqueue(r);if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{};db.prepare("UPDATE factory_items SET status='queued',stockId=?,videoPath=NULL,remoteUrl=NULL,error=NULL,updatedAt=? WHERE id=?").run(item.id,now(),r.id);ensureBacklog(db);res.json({ok:true,publication:item})}catch(e){res.status(400).json({error:e.message})}});
 app.post('/factory/:id/reject',async(req,res)=>{
  let r=db.prepare('SELECT * FROM factory_items WHERE id=?').get(req.params.id);
  if(!r)return res.sendStatus(404);
@@ -355,13 +356,13 @@ app.post('/factory/:id/reject',async(req,res)=>{
  const feedback=String(req.body?.feedback||'').replace(/[\u0000-\u001f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,1200);
  if(feedback.length<3)return res.status(400).json({error:'Explain briefly what went wrong before REDO.'});
  const strategy=classifyReviewFeedback(feedback),token=randomBytes(24).toString('hex'),rev=Number(r.revision||0)+1,stamp=now();
- if(r.reviewVideoId&&loadToken()){try{await youtubeApi().videos.delete({id:r.reviewVideoId})}catch{}}
+ if(isReviewStorageUri(r.remoteUrl)){try{await deleteReviewObject(r.remoteUrl)}catch{}}
  if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{}
  if(strategy==='revise_prompt'){
-   db.prepare("UPDATE factory_items SET status='regen_wait',revision=?,reviewFeedback=?,retryStrategy=?,reviewRetryToken=?,reviewRetrySubmittedToken=NULL,transportPreflight=NULL,providerRunId=NULL,flowResult=NULL,videoPath=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewContentHash=NULL,error='Human REDO requested: replacement creative package required.',nextTry=0,updatedAt=? WHERE id=?")
+   db.prepare("UPDATE factory_items SET status='regen_wait',revision=?,reviewFeedback=?,retryStrategy=?,reviewRetryToken=?,reviewRetrySubmittedToken=NULL,transportPreflight=NULL,providerRunId=NULL,flowResult=NULL,videoPath=NULL,remoteUrl=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewContentHash=NULL,error='Human REDO requested: replacement creative package required.',nextTry=0,updatedAt=? WHERE id=?")
      .run(rev,feedback,strategy,token,stamp,r.id);
  }else{
-   db.prepare("UPDATE factory_items SET status='regen_wait',revision=?,reviewFeedback=?,retryStrategy=?,reviewRetryToken=?,reviewRetrySubmittedToken=NULL,transportPreflight=NULL,providerRunId=NULL,flowResult=NULL,videoPath=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewContentHash=NULL,error='Human REDO requested: reuse the same prompt for one new render.',nextTry=0,updatedAt=? WHERE id=?")
+   db.prepare("UPDATE factory_items SET status='regen_wait',revision=?,reviewFeedback=?,retryStrategy=?,reviewRetryToken=?,reviewRetrySubmittedToken=NULL,transportPreflight=NULL,providerRunId=NULL,flowResult=NULL,videoPath=NULL,remoteUrl=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewContentHash=NULL,error='Human REDO requested: reuse the same prompt for one new render.',nextTry=0,updatedAt=? WHERE id=?")
      .run(rev,feedback,strategy,token,stamp,r.id);
  }
  metaSet('flow:generationLifecycle:'+r.id,JSON.stringify({
@@ -431,20 +432,28 @@ app.get('/factory/knowledge',(req,res)=>{
   res.json({ok:true,knowledge:health().knowledge,documents:rows});
 });
 
-function isEarthIn10Publisher(){return /earth\s*in\s*10/i.test(String(CONFIG.identity?.show_name||''))}
 async function archiveReviewOriginal(row){
- // Earth in Ten keeps review media on the Railway volume until approval.
- // Uploading every review/redo to YouTube costs a videos.insert quota charge and can
- // consume the daily API budget before the real publication upload/schedule.
- if(isEarthIn10Publisher())return false;
- if(!loadToken()||row.reviewVideoId||!row.videoPath||!fs.existsSync(row.videoPath))return false;
- const yt=youtubeApi(),m=ensureCopy(row),out=await yt.videos.insert({part:['snippet','status'],requestBody:{snippet:{title:('[REVIEW] E'+row.episode+' '+m.hook).slice(0,100),description:'Private Publisher Runtime review staging.',categoryId:'24',tags:['publisher-review-'+row.id]},status:{privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}},media:{mimeType:'video/mp4',body:fs.createReadStream(row.videoPath)}}),videoId=String(out.data?.id||'');if(!videoId)throw new Error('Private staging upload failed.');
- const original=fs.statSync(row.videoPath).size,tmp=row.videoPath+'.preview.mp4',ff=spawnSync('ffmpeg',['-y','-i',row.videoPath,'-vf','scale=540:-2','-c:v','libx264','-preset','veryfast','-crf','31','-c:a','aac','-b:a','64k','-movflags','+faststart',tmp],{timeout:180000,encoding:'utf8'});
- if(ff.status===0&&fs.existsSync(tmp)&&fs.statSync(tmp).size<original*.85){fs.renameSync(tmp,row.videoPath)}else try{fs.rmSync(tmp,{force:true})}catch{}
- const preview=fs.existsSync(row.videoPath)?fs.statSync(row.videoPath).size:0;db.prepare("UPDATE factory_items SET reviewVideoId=?,reviewArchivedAt=?,reviewOriginalSize=?,reviewPreviewSize=?,reviewArchiveError=NULL,updatedAt=? WHERE id=?").run(videoId,now(),original,preview,now(),row.id);return true;
+ if(isReviewStorageUri(row.remoteUrl))return true;
+ if(!row.videoPath||!fs.existsSync(row.videoPath))return false;
+ if(!reviewStorageConfigured()){
+   if(reviewStorageRequired())throw new Error('REVIEW_STORAGE_REQUIRED_NOT_CONFIGURED');
+   return false;
+ }
+ const original=fs.statSync(row.videoPath).size;
+ const cloud=await uploadReviewFile(row.videoPath,{itemId:row.id,revision:row.revision});
+ db.prepare("UPDATE factory_items SET remoteUrl=?,reviewVideoId=NULL,reviewArchivedAt=?,reviewOriginalSize=?,reviewPreviewSize=NULL,reviewArchiveError=NULL,videoPath=NULL,updatedAt=? WHERE id=?")
+   .run(cloud.uri,now(),cloud.size||original,now(),row.id);
+ try{fs.rmSync(row.videoPath,{force:true})}catch{}
+ return true;
 }
 let archiveBusy=false;
-async function storageTick(){if(archiveBusy||isEarthIn10Publisher())return;archiveBusy=true;try{const rows=db.prepare("SELECT * FROM factory_items WHERE status='review' AND videoPath IS NOT NULL ORDER BY updatedAt DESC").all(),st=storage(),aggressive=st?.free_percent!=null&&st.free_percent<Number(CONFIG.review.archive_below_free_percent||45);for(let i=0;i<rows.length;i++){const r=rows[i];if(!r.reviewVideoId&&(aggressive||i>=Number(CONFIG.review.hot_originals||2))){try{await archiveReviewOriginal(r)}catch(e){db.prepare('UPDATE factory_items SET reviewArchiveError=?,updatedAt=? WHERE id=?').run(String(e.message).slice(0,600),now(),r.id)}}}}finally{archiveBusy=false}}
+async function storageTick(){
+ if(archiveBusy)return;archiveBusy=true;
+ try{
+   const rows=db.prepare("SELECT * FROM factory_items WHERE status='review' AND videoPath IS NOT NULL ORDER BY updatedAt DESC").all();
+   for(const r of rows){try{await archiveReviewOriginal(r)}catch(e){db.prepare('UPDATE factory_items SET reviewArchiveError=?,updatedAt=? WHERE id=?').run(String(e.message).slice(0,600),now(),r.id)}}
+ }finally{archiveBusy=false}
+}
 setInterval(()=>void storageTick(),5*60*1000).unref?.();setTimeout(()=>void storageTick(),30000).unref?.();
 
 app.get('/api/status',(req,res)=>{const h=health(),youtubeConnected=Boolean(loadToken()),flowConnected=Boolean(h.flow.configured&&h.flow.authenticated),bibleConfigured=Boolean(String(CONFIG.content.creative_bible||'').trim()),ready=youtubeConnected&&flowConnected&&bibleConfigured;if(ready)activateReadyAutomation();res.json({health:health(),brand:brandPublic(),youtube:{oauthConfigured:Boolean(ytSecrets().client_id&&ytSecrets().client_secret),connected:youtubeConnected},flowBootstrap:'/flow/bootstrap',onboarding:{youtube:youtubeConnected,flow:flowConnected,bible:bibleConfigured,ready}})});
