@@ -301,6 +301,8 @@ function ensureSchema(db) {
     `ALTER TABLE factory_items ADD COLUMN characterRoles TEXT`,
     `ALTER TABLE factory_items ADD COLUMN promptPayloadHash TEXT`,
     `ALTER TABLE factory_items ADD COLUMN promptPayloadLength INTEGER`,
+    `ALTER TABLE factory_items ADD COLUMN creativePackageHash TEXT`,
+    `ALTER TABLE factory_items ADD COLUMN creativePackageId TEXT`,
     `ALTER TABLE factory_items ADD COLUMN transportPreflight TEXT`,
     `ALTER TABLE factory_items ADD COLUMN runtimeAttemptCount INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE factory_items ADD COLUMN lastProgressAt TEXT`,
@@ -319,20 +321,64 @@ function checkpoint(row){
 function matchingCharacters(row){return resolveVisualCharacters(row);}
 function previousContinuity(db,row){if(!CONFIG.content.serialized)return'Independent episode.';const prev=db.prepare('SELECT hook,story,status FROM factory_items WHERE episode<? ORDER BY episode DESC LIMIT 1').get(Number(row.episode));return prev?('Previous canonical beat: '+prev.hook+' — '+prev.story):(CONFIG.content.canon||'Start from the configured Creative Bible.');}
 function buildLocalPrompt(db,row,visual){return buildPrompt(db,row,visual);}
+function creativePackageHash(row,prompt,title,description){
+  return sha(JSON.stringify({
+    episode:Number(row?.episode||0),
+    hook:String(row?.hook||''),
+    story:String(row?.story||''),
+    prompt:String(prompt||''),
+    title:String(title||''),
+    description:String(description||'')
+  }));
+}
+function buildCreativePackage(row,prompt){
+  const provider=(CONFIG.publication?.providers||[]).find(x=>x.type==='youtube')||{};
+  const copy=buildPublicationCopy({
+    hook:row.hook,
+    story:row.story,
+    prompt,
+    contextTerms:[],
+    hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+    showName:CONFIG.identity?.show_name||SHOW,
+    maxTitleLength:100
+  });
+  let description=String(copy.description||'');
+  while(Buffer.byteLength(description,'utf8')>4800)description=description.slice(0,-30).trimEnd();
+  const title=String(copy.title||'').slice(0,100);
+  if(!title.trim()||!description.trim())throw new Error('CREATIVE_PACKAGE_METADATA_EMPTY');
+  return{title,description,hash:creativePackageHash(row,prompt,title,description),id:'creative-package-v1-'+randomUUID()};
+}
+function packageMatches(row){
+  const prompt=String(row?.prompt||''),title=String(row?.title||''),description=String(row?.description||'');
+  if(!prompt||!title||!description||!String(row?.creativePackageHash||''))return false;
+  return String(row.creativePackageHash)===creativePackageHash(row,prompt,title,description);
+}
 function preparePromptIfNeeded(db,row){
   const intent=enforceEpisodeIntent(db,row);
   row=intent.row;
   if(intent.repaired)publish('EPISODE_INTENT_REPAIRED',{episode:'E'+row.episode,job_id:row.id,reason:intent.reason,hook:compact(row.hook,120),story:compact(row.story,320)});
-  let cp=checkpoint(row);if(cp)return cp;
+  let cp=checkpoint(row);
+  if(cp&&packageMatches(row))return{...cp,title:row.title,description:row.description,creativePackageHash:row.creativePackageHash,creativePackageId:row.creativePackageId};
+  if(cp){
+    const pkg=buildCreativePackage(row,cp.prompt);
+    db.prepare("UPDATE factory_items SET title=?,description=?,creativePackageHash=?,creativePackageId=?,updatedAt=? WHERE id=?")
+      .run(pkg.title,pkg.description,pkg.hash,pkg.id,now(),row.id);
+    publish('CREATIVE_PACKAGE_READY',{episode:'E'+row.episode,job_id:row.id,prompt_hash:cp.hash,package_hash:pkg.hash,title:pkg.title,legacy_prompt_reused:true});
+    return{...cp,title:pkg.title,description:pkg.description,creativePackageHash:pkg.hash,creativePackageId:pkg.id};
+  }
   const visual=matchingCharacters(row),prompt=buildLocalPrompt(db,row,visual);
   if(/^EARTH IN 10 — EPISODE /m.test(prompt)&&(
      /HOOK:\s*(NEXT CHAPTER|NEW TURN|NEW EPISODE)/i.test(prompt)||
      /EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(prompt))){
     throw new Error('EARTH_IN_10_CONTENT_GATE: generic fallback prompt blocked before Flow');
   }
-  const hash=sha(prompt),r=registry(),roles=visual.map(name=>({name,role:'ON_SCREEN',visual:true})),handles=visual.map(name=>r.characters.find(c=>String(c.name)===String(name))?.mention||('@'+name));
-  db.prepare("UPDATE factory_items SET prompt=?,promptHash=?,promptGenerationId=?,characterHandles=?,characterRoles=?,promptPayloadHash=?,promptPayloadLength=?,status='draft',providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?").run(prompt,hash,'runtime-prompt-v2-'+randomUUID(),JSON.stringify(handles),JSON.stringify(roles),hash,Buffer.byteLength(prompt,'utf8'),now(),row.id);
-  cp=checkpoint(db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id));if(!cp)throw new Error('RUNTIME_PROMPT_CHECKPOINT_FAILED');return cp;
+  const hash=sha(prompt),pkg=buildCreativePackage(row,prompt),r=registry(),roles=visual.map(name=>({name,role:'ON_SCREEN',visual:true})),handles=visual.map(name=>r.characters.find(c=>String(c.name)===String(name))?.mention||('@'+name));
+  db.prepare("UPDATE factory_items SET prompt=?,promptHash=?,promptGenerationId=?,characterHandles=?,characterRoles=?,promptPayloadHash=?,promptPayloadLength=?,title=?,description=?,creativePackageHash=?,creativePackageId=?,status='draft',providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
+    .run(prompt,hash,'runtime-prompt-v3-'+randomUUID(),JSON.stringify(handles),JSON.stringify(roles),hash,Buffer.byteLength(prompt,'utf8'),pkg.title,pkg.description,pkg.hash,pkg.id,now(),row.id);
+  publish('CREATIVE_PACKAGE_READY',{episode:'E'+row.episode,job_id:row.id,prompt_hash:hash,package_hash:pkg.hash,title:pkg.title,legacy_prompt_reused:false});
+  const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);
+  cp=checkpoint(fresh);if(!cp||!packageMatches(fresh))throw new Error('RUNTIME_CREATIVE_PACKAGE_CHECKPOINT_FAILED');
+  return{...cp,title:fresh.title,description:fresh.description,creativePackageHash:fresh.creativePackageHash,creativePackageId:fresh.creativePackageId};
 }
 
 function reviewMetadata(row,flowResult={}){
@@ -356,9 +402,16 @@ function reviewMetadata(row,flowResult={}){
 }
 function persistReviewMetadata(db,row,flowResult={}){
   try{
-    const m=reviewMetadata(row,flowResult);
-    db.prepare('UPDATE factory_items SET title=?,description=?,updatedAt=? WHERE id=?').run(m.title,m.description,now(),row.id);
-    publish('REVIEW_METADATA_READY',{episode:'E'+row.episode,job_id:row.id,title:m.title});
+    const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row;
+    if(packageMatches(fresh)){
+      const m={title:String(fresh.title),description:String(fresh.description)};
+      publish('REVIEW_METADATA_READY',{episode:'E'+fresh.episode,job_id:fresh.id,title:m.title,source:'creative-package',package_hash:fresh.creativePackageHash});
+      return m;
+    }
+    const m=reviewMetadata(fresh,flowResult),pkgHash=creativePackageHash(fresh,fresh.prompt,m.title,m.description);
+    db.prepare('UPDATE factory_items SET title=?,description=?,creativePackageHash=?,creativePackageId=?,updatedAt=? WHERE id=?')
+      .run(m.title,m.description,pkgHash,'creative-package-legacy-'+randomUUID(),now(),fresh.id);
+    publish('REVIEW_METADATA_READY',{episode:'E'+fresh.episode,job_id:fresh.id,title:m.title,source:'legacy-repair',package_hash:pkgHash});
     return m;
   }catch(e){
     publish('REVIEW_METADATA_WARNING',{episode:'E'+row.episode,job_id:row.id,message:compact(e?.message||e,400)});
