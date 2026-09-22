@@ -30,6 +30,8 @@ for(const sql of [
   "ALTER TABLE factory_items ADD COLUMN reviewRetryToken TEXT",
   "ALTER TABLE factory_items ADD COLUMN reviewRetrySubmittedToken TEXT",
   "ALTER TABLE factory_items ADD COLUMN reviewContentHash TEXT",
+  "ALTER TABLE factory_items ADD COLUMN creativePackageHash TEXT",
+  "ALTER TABLE factory_items ADD COLUMN creativePackageId TEXT",
   "ALTER TABLE factory_generations ADD COLUMN generationKind TEXT NOT NULL DEFAULT 'automatic'"
 ]){try{db.exec(sql)}catch{}}
 
@@ -288,7 +290,7 @@ app.post('/factory/:id/reject',async(req,res)=>{
  if(r.reviewVideoId&&loadToken()){try{await youtubeApi().videos.delete({id:r.reviewVideoId})}catch{}}
  if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{}
  if(strategy==='revise_prompt'){
-   db.prepare("UPDATE factory_items SET status='regen_wait',revision=?,reviewFeedback=?,retryStrategy=?,reviewRetryToken=?,reviewRetrySubmittedToken=NULL,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,transportPreflight=NULL,providerRunId=NULL,flowResult=NULL,videoPath=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewContentHash=NULL,error='Human REDO requested: prompt correction required.',nextTry=0,updatedAt=? WHERE id=?")
+   db.prepare("UPDATE factory_items SET status='regen_wait',revision=?,reviewFeedback=?,retryStrategy=?,reviewRetryToken=?,reviewRetrySubmittedToken=NULL,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',creativePackageHash=NULL,creativePackageId=NULL,transportPreflight=NULL,providerRunId=NULL,flowResult=NULL,videoPath=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewContentHash=NULL,error='Human REDO requested: prompt correction required.',nextTry=0,updatedAt=? WHERE id=?")
      .run(rev,feedback,strategy,token,stamp,r.id);
  }else{
    db.prepare("UPDATE factory_items SET status='regen_wait',revision=?,reviewFeedback=?,retryStrategy=?,reviewRetryToken=?,reviewRetrySubmittedToken=NULL,transportPreflight=NULL,providerRunId=NULL,flowResult=NULL,videoPath=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewContentHash=NULL,error='Human REDO requested: reuse the same prompt for one new render.',nextTry=0,updatedAt=? WHERE id=?")
