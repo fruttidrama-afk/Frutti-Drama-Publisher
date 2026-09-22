@@ -998,116 +998,1762 @@ Serial execution is not a performance preference. It is part of asset-correlatio
 
 Required sequence:
 
-
-# 19A. CANONICAL KNOWLEDGE PACK APPENDICES
-
-The following documents are part of this SOP and are inherited together. They intentionally duplicate critical rules so a future AI can recover the operating model even if only one file is loaded.
-
-# FLOW AI IMPLEMENTATION BRIEF
-
-Use the exact target Flow project. Never confuse project title with the rich-text prompt composer. Verify Video/model/ratio/duration/output settings. Insert and read back the prompt. Capture a project-grid baseline. Persist SUBMIT_BOUNDARY_ENTERED and automatic_submit_forbidden=true before the non-idempotent submit.
-
-The verified submit action is the right-arrow `arrow_forward` inside `flow-generate-icon-button`, accessible as `Iniciar generación` / `Start generation`. Click it exactly once per authorized generation intent.
-
-Only handle a permission message created after the current boundary. No dialog is valid when the profile is already approved.
-
-Do not treat click success, disabled controls, generic busy text, chat `flow-a2ui-video-option`, or guessed Network request names as sole generation proof. Prefer a unique post-baseline video tile in the exact project.
-
-Run strictly serially: generate one → wait → recover that one from the project grid → download → validate → generate final title/description/hashtags → REVIEW_READY → only then generate the next.
-
-On post-boundary uncertainty, reconcile read-only and never blindly resend.
-
-Earth in 10: normal target 3/day. Temporary 2026-09-21 test target 6/day only, auto-expiring back to 3/day. Review must show publication-ready metadata.
-
-# FLOW RECOVERY RUNBOOK
-
-- AUTH_FAILED → preserve lifecycle, reauthenticate persistent profile, reverify exact project.
-- WRONG_PROJECT → no submit; resolve exact project from Flow home.
-- PROMPT_FAILED → clear/reinsert once; verify title unchanged; otherwise stop.
-- CONFIRMATION_FAILED → preserve submit boundary; reconcile exact project; no resend.
-- SUBMIT_AMBIGUOUS → read-only reconciliation; automatic_submit_forbidden=true.
-- GENERATION_TIMEOUT → keep serial lock; wait/reconcile; no next episode.
-- TEMPORARY RENDER DISAPPEARED → after safety window and exact baseline restoration, mark no_generation and permit one clean serial retry.
-- INSUFFICIENT_CREDITS → no_generation accounting, long backoff, state ESPERANDO CRÉDITOS.
-- DOWNLOAD_FAILED → retry same asset only.
-- VIDEO_INVALID → redownload same asset; no regeneration.
-- YOUTUBE_AUTH/UPLOAD_FAILURE → publication-specific retry; never return to Flow generation.
-
-# FLOW GOLDEN TEST
-
-Run exactly one paid generation after any critical change to project resolution, prompt targeting, settings, submit selector, consent, asset correlation, download, or serial locking.
-
-Pass only if all succeed:
-1. persistent session valid;
-2. exact project verified;
-3. project title unchanged;
-4. real prompt composer verified;
-5. Video/model/ratio/duration/count verified;
-6. prompt inserted/read back;
-7. pre-submit baseline persisted;
-8. exactly-once boundary persisted;
-9. exact right arrow clicked once;
-10. current consent handled or validly absent;
-11. unique post-baseline project video tile observed;
-12. no second submit;
-13. same asset opened from project grid;
-14. MP4 downloaded;
-15. MP4 validated;
-16. final public title/description/hashtags generated;
-17. Review shows playable video and final metadata;
-18. lifecycle REVIEW_READY;
-19. serial gate released.
-
-Only then set FLOW_AUTOMATION_HEALTHY=true.
-
-# FLOW FAILURE CATALOG
-
-See the canonical master SOP, sections 5 and 30–31. Core catalog:
-- FLOW-ERR-001 CLICK_SUCCESS_FALSE_POSITIVE
-- FLOW-ERR-002 STALE_CONSENT_CARD
-- FLOW-ERR-003 WRONG_FLOW_PROJECT
-- FLOW-ERR-004 RECOVERY_GATE_BLOCKED_PRODUCTION
-- FLOW-ERR-005 GENERIC_BUSY_FALSE_POSITIVE
-- FLOW-ERR-006 CHAT_VIDEO_OPTION_FALSE_POSITIVE
-- FLOW-ERR-007 BRITTLE_MATERIAL_IDS
-- FLOW-ERR-008 PROJECT_TITLE_CONTAMINATED
-- FLOW-ERR-009 PARALLEL_GENERATION_CORRELATION_RACE
-- FLOW-ERR-010 TIMEOUT_CAUSED_REGENERATION
-- FLOW-ERR-011 CHAT_ONLY_RECOVERY
-- FLOW-ERR-012 NETWORK_FILTER_ASSUMPTION
-- FLOW-ERR-013 GENERIC_REVIEW_METADATA
-
-Canonical recovery rule: UNCERTAINTY → RECONCILE; NEVER BLINDLY RESUBMIT.
-
-# 19B. FINAL RULES ADDED AFTER THE VERIFIED RUN
-
-- Review must contain publication-ready title, description and hashtags before approval; internal planner text such as NEXT CHAPTER / Continue the configured Creative Bible is forbidden as public copy.
-- Google Flow generation is strictly serial for every Publisher, even for non-serialized creative shows, because project-grid recovery depends on unique post-baseline asset correlation.
-- A temporary volume increase must be scoped to an explicit publisher-local date and automatically expire back to the configured daily target.
-- If a transient Flow render placeholder disappears and the exact project returns to the stored pre-submit baseline after a conservative safety window, mark the attempt no_generation and permit one clean serial retry; never release merely because a timer expired.
-- If Flow explicitly reports insufficient credits/points, do not count the attempt as a completed generation; enter a long backoff / ESPERANDO CRÉDITOS state and resume later.
-- Publisher Factory must embed this SOP version and SHA in every new Publisher configuration and deployment, and every runtime must ingest the knowledge files into its durable runtime knowledge database.
-- New Publishers must auto-start only after Flow authentication + exact project binding + creative bible are ready. Setup must not require another human demonstration of the generate/recover procedure.
-
-# 19C. PUBLISHER FACTORY INHERITANCE CONTRACT
-
-Every generated Publisher MUST inherit:
-
-```yaml
-flow_sop_version: FLOW-SOP-v1.0
-flow_sop_sha256: 8172f4b415e516fb1ec211a338ef7872740d7931adfbc5ab31572344a5bc9162
-exactly_once_submit: true
-strict_serial_generation: true
-project_grid_recovery: true
-prompt_title_guard: true
-current_consent_only: true
-review_metadata_required: true
-golden_test_required_after_critical_change: true
-indefinite_scheduler: true
+```text
+GENERATE ONE
+→ WAIT FOR THAT ONE
+→ RECOVER THAT ONE
+→ VALIDATE THAT ONE
+→ CREATE FINAL METADATA
+→ REVIEW_READY
+→ ONLY THEN NEXT GENERATION
 ```
 
-New Publishers may vary show bible, characters, Flow project, duration, model, schedule and metadata style, but these safety/runtime invariants are universal.
+Why:
 
-# 19D. END-TO-END ACCEPTANCE GATE FOR PUBLISHER FACTORY
+If video A and video B are submitted before video A is recovered, the project grid can reorder by recency. A naive “open latest video” recovery can then open B while the application thinks it is recovering A. A later recovery can open B again. The result is a lost association, duplicated download and potentially wrong video publication.
 
-Publisher Factory may call a deployment READY only when the deployed runtime reports the expected SOP version/hash and its health endpoint exists. The first real content production is then gated by Flow setup readiness and the universal Golden path. A runtime that lacks the canonical SOP knowledge record, serial gate, exact-project resolver, prompt/title guard, exactly-once boundary, project-grid recovery or MP4 validation is not a valid Publisher Factory output.
+The serial gate therefore remains closed through:
+
+```text
+SUBMIT_BOUNDARY_ENTERED
+GENERATION_START_PENDING
+GENERATION_RUNNING
+GENERATION_COMPLETE
+VIDEO_RETRIEVING
+VIDEO_READY
+VALIDATION_PENDING
+```
+
+It opens only after:
+
+```text
+REVIEW_READY
+```
+
+or another explicit terminal/manual-hold state.
+
+No “catch up” logic is allowed to parallelize Flow jobs merely because the daily target is behind schedule.
+
+---
+
+# 20. Render waiting
+
+A new project tile can appear before the final media is ready.
+
+Distinguish:
+
+```text
+GENERATION_RUNNING
+```
+
+from:
+
+```text
+GENERATION_COMPLETE
+```
+
+`GENERATION_RUNNING` means the current job has project-correlated evidence but the media may still be rendering.
+
+`GENERATION_COMPLETE` means the same current asset can be opened and recovered as final media.
+
+Polling rules:
+
+- keep the serial lock;
+- periodically refresh progress timestamps;
+- detect explicit Flow generation failure text;
+- do not submit another generation;
+- keep exact project identity verified;
+- retain baseline and current asset evidence.
+
+A render timeout produces:
+
+```text
+GENERATION_TIMEOUT
+```
+
+or retrieval-pending state.
+
+It does not grant permission to send again.
+
+---
+
+# 21. Project-grid recovery
+
+The project grid is the canonical recovery surface because it is more durable than the chat.
+
+Operator-proven path:
+
+```text
+Flow
+→ exact project
+→ project content grid
+→ newest unique post-baseline video tile
+→ hover/open tile
+→ media editor
+→ Descargar contenido multimedia
+→ choose quality
+→ download
+```
+
+Observed component structure:
+
+```text
+flow-grid-tile-container
+  → flow-video-tile
+  → flow-tile-hover-footer
+```
+
+## 21.1 Correlation rule
+
+Before submit, store the grid baseline.
+
+After submit, no other job is allowed.
+
+Therefore the unique new post-baseline video tile can be bound to the current job.
+
+## 21.2 If multiple new tiles appear
+
+This is not a normal success.
+
+Possible causes:
+
+- another human generated in the same project;
+- another worker violated serial locking;
+- a stale baseline was used;
+- Flow created multiple outputs unexpectedly.
+
+Response:
+
+1. freeze new submits;
+2. preserve all candidate tile signatures;
+3. inspect prompt fingerprints/chat accessible names/timestamps;
+4. require stronger correlation or manual decision;
+5. do not assign an arbitrary latest tile.
+
+## 21.3 Chat as secondary recovery
+
+Chat can expose:
+
+```text
+flow-chat-bubble
+  → flow-a2ui-message-renderer
+    → flow-a2ui-video-option
+      → img
+```
+
+The result image may expose prompt text as its accessible name.
+
+This is useful supporting evidence but chat history can be stale or absent. Project-grid recovery remains primary.
+
+---
+
+# 22. Download
+
+Once the exact asset is open:
+
+Primary semantic action:
+
+```text
+Descargar contenido multimedia
+Download
+```
+
+Then:
+
+1. look for configured download quality by visible label;
+2. click it once;
+3. wait for the browser download event;
+4. save to deterministic job path;
+5. never overwrite another job's file.
+
+The operator recording also demonstrated a third-menu-item path in that specific Flow UI. It is a bounded fallback, not a universal selector.
+
+A download timeout does not imply generation failure.
+
+---
+
+# 23. MP4 validation
+
+A file on disk is not enough.
+
+Required checks:
+
+```yaml
+exists: true
+size_bytes: reasonable_and_nonzero
+container_signature: MP4 / ftyp
+video_stream: present
+decodable: true
+duration: within target tolerance
+width: positive
+height: positive
+orientation: matches 9:16
+```
+
+Recommended:
+
+```text
+ffprobe
+```
+
+Optional additional validation:
+
+- decode first frame;
+- verify audio stream only if the show requires audio;
+- detect obvious duplicate local content hash;
+- store codec;
+- store file size;
+- store duration/resolution.
+
+Verified Earth output examples:
+
+```text
+Patagonia: 10s, 1080x1920
+Namib:     10s, 1080x1920
+E3 auto:   10s, 1080x1920
+```
+
+The exact file sizes differ. File-size equality is not required.
+
+If validation fails:
+
+```text
+reopen same asset
+→ redownload
+→ revalidate
+```
+
+Do not generate again.
+
+---
+
+# 24. Review-ready contract
+
+A job reaches `REVIEW_READY` only when all of these are true:
+
+1. correct project asset identified;
+2. MP4 downloaded;
+3. MP4 validated;
+4. file linked to the correct factory item;
+5. final YouTube title exists;
+6. final YouTube description exists;
+7. hashtags exist according to project config/defaults;
+8. Review card can play the video;
+9. Review card displays final public copy;
+10. REDO and APPROVE controls are available.
+
+The operator should not need to rewrite metadata merely to approve a technically correct video.
+
+---
+
+# 25. Review metadata failure and fix
+
+The screenshot `IMG_2614.jpeg` provided direct evidence of two separate facts:
+
+### VERIFIED success
+
+The recovered video was available in Review with a playable video player.
+
+### VERIFIED failure
+
+The public-copy areas displayed internal planner content:
+
+```text
+NEXT CHAPTER: Continue the configured Creative Bible...
+```
+
+and:
+
+```text
+Continue the configured Creative Bible and canon...
+```
+
+This is unacceptable because those phrases are production instructions, not viewer-facing metadata.
+
+## 25.1 Metadata source priority
+
+Use the richest reliable context in this order:
+
+1. concrete episode story/intent;
+2. actual stored generation prompt;
+3. recovery terms/context;
+4. project-specific non-misleading fallback.
+
+Never prefer a generic planner placeholder over a concrete prompt.
+
+## 25.2 Earth known-context examples
+
+If recovery/generation context proves Patagonia/glacial lake:
+
+```text
+PATAGONIA SUNRISE: Turquoise glacial lake beneath the Andes. #Shorts #ViralShorts
+```
+
+Description:
+
+```text
+A crystal-clear turquoise glacial lake, snow-covered peaks and soft sunrise mist turn Patagonia into a cinematic ten-second escape.
+
+EARTH IN 10
+
+#EarthIn10 #Nature #Travel #Shorts #ViralShorts
+```
+
+If context proves Namib/desert/solitary tree:
+
+```text
+NAMIB DESERT: A solitary tree beneath glowing red dunes. #Shorts #ViralShorts
+```
+
+Description:
+
+```text
+A solitary dark tree stands against Namibia’s immense red-orange dunes as warm sunrise light stretches across the desert.
+
+EARTH IN 10
+
+#EarthIn10 #Nature #Travel #Shorts #ViralShorts
+```
+
+## 25.3 Earth title rules
+
+- location or natural phenomenon first when known;
+- factual;
+- short enough for YouTube title limits;
+- no internal Creative Bible language;
+- no ellipsis truncation;
+- title ends as a complete phrase/sentence;
+- include `#Shorts #ViralShorts` for the Earth YouTube-ready title when space permits.
+
+## 25.4 Earth description rules
+
+- summarize what the prompt asks the viewer to see;
+- do not expose production instructions;
+- do not claim a location not supported by the prompt/context;
+- include show name;
+- include:
+  - `#EarthIn10`
+  - `#Nature`
+  - `#Travel`
+  - `#Shorts`
+  - `#ViralShorts`
+- merge configured channel hashtags rather than silently replacing them.
+
+## 25.5 Publication consistency
+
+The title/description approved in Review must be the same metadata passed into the publication queue.
+
+Approval should not later replace it with generic copy.
+
+---
+
+# 26. Autonomous Earth episode planning
+
+A separate planning defect created generic future rows:
+
+```text
+NEXT CHAPTER
+Continue the configured Creative Bible...
+```
+
+For an independent landscape show, this serialization language is not useful.
+
+Future Earth episodes should use concrete visual premises before prompt construction.
+
+Canonical Earth seed examples:
+
+1. Iceland black volcanic coast;
+2. Zhangjiajie sandstone pillars in mist;
+3. Salar de Uyuni mirror sunrise;
+4. Faroe sea cliffs and waterfall;
+5. Dolomites dawn;
+6. Lençóis Maranhenses blue lagoons;
+7. Milford Sound waterfalls;
+8. Atacama blue hour;
+9. Plitvice turquoise cascades;
+10. Lofoten Arctic sunrise;
+11. Socotra dragon’s-blood trees;
+12. Torres del Paine dawn.
+
+Each story should specify:
+
+- exact location;
+- key visual subject;
+- natural lighting;
+- atmosphere/weather;
+- cinematic camera intent;
+- no people/animals/buildings unless episode explicitly needs them;
+- vertical 9:16;
+- exact 10 seconds;
+- no text/subtitles/logos.
+
+This gives both Flow and the metadata generator concrete information.
+
+---
+
+# 27. Temporary six-video test
+
+Normal Earth production remains:
+
+```text
+3 videos/day
+```
+
+The operator requested a single six-video day on:
+
+```text
+2026-09-21
+```
+
+The correct mechanism is a date-scoped override, not a permanent config mutation.
+
+Conceptual variables:
+
+```yaml
+PUBLISHER_DAILY_LIMIT_OVERRIDE_DAY: "2026-09-21"
+PUBLISHER_DAILY_LIMIT_OVERRIDE_COUNT: 6
+```
+
+The runtime compares the override date with the publisher's local timezone/day.
+
+When the date changes:
+
+```text
+effective daily target → normal configured target (3)
+```
+
+No manual reset should be required.
+
+## 27.1 Six-video test sequence
+
+Already completed/recovered items count toward the six.
+
+Then:
+
+```text
+video 4 generate
+→ recover
+→ validate
+→ metadata
+→ Review
+
+video 5 generate
+→ recover
+→ validate
+→ metadata
+→ Review
+
+video 6 generate
+→ recover
+→ validate
+→ metadata
+→ Review
+
+STOP at 6/6
+```
+
+Never generate videos 4, 5 and 6 concurrently.
+
+## 27.2 Why date-scoped override matters
+
+Without a date scope, a temporary stress test can silently become a permanent doubled production budget.
+
+The system must surface:
+
+```text
+daily_target
+completed_today
+remaining_today
+daily_override_active
+```
+
+in health/status.
+
+---
+
+# 28. Daily accounting
+
+Count production once per confirmed generation/recovery.
+
+Do not count:
+
+- preflight;
+- prompt insertion;
+- click attempt;
+- false positive;
+- no-generation infrastructure failure;
+- review retry as a new normal daily episode unless policy explicitly says so.
+
+Do count a manually generated/recovered test video when:
+
+- it is intentionally assigned to an episode;
+- its MP4 validates;
+- it enters Review;
+- a single accounting row records it.
+
+This is why recovered Patagonia and Namib could legitimately be part of the daily total.
+
+---
+
+# 29. Restart and Railway redeploy recovery
+
+The pipeline must survive:
+
+- Railway restart;
+- code deploy;
+- browser crash;
+- worker crash;
+- network interruption;
+- process termination during render.
+
+Durable state must include at minimum:
+
+```text
+episode_id
+job_id
+generation_intent_id
+flow_project_id
+flow_project_name
+prompt
+prompt_hash
+submit_boundary_at
+consent_mode
+baseline
+generation_asset_evidence
+generation_started_at
+video_path
+validation
+title
+description
+review_status
+```
+
+## 29.1 Restart before submit
+
+Safe to repeat preflight.
+
+## 29.2 Restart after submit boundary
+
+Do not submit.
+
+Procedure:
+
+```text
+read lifecycle
+→ exact project
+→ baseline comparison
+→ find current asset
+→ if rendering: wait
+→ if complete: recover
+→ if uncertain: reconcile
+```
+
+## 29.3 Restart during download
+
+Reopen the same correlated asset and retry download.
+
+## 29.4 Restart after local MP4 but before Review update
+
+Validate the existing local file and finish DB linkage. Do not regenerate.
+
+---
+
+# 30. Error catalog
+
+## FLOW-ERR-001 — CLICK_SUCCESS_FALSE_POSITIVE
+
+**Symptom:** browser reports click, project has no new render.
+
+**Root cause:** an input event was confused with application acceptance.
+
+**Solution:** baseline + exact project output evidence.
+
+**Recovery:** post-boundary reconciliation; no resend.
+
+## FLOW-ERR-002 — STALE_CONSENT_CARD
+
+**Symptom:** Always approve appears clicked but remains visible/no render.
+
+**Root cause:** historical permission cards remain mounted.
+
+**Solution:** compare permission containers before/after current submit.
+
+**Recovery:** keep boundary locked and reconcile.
+
+## FLOW-ERR-003 — WRONG_FLOW_PROJECT
+
+**Symptom:** runtime logs activity but operator's target project is unchanged.
+
+**Root cause:** browser is controlling another valid Flow project.
+
+**Solution:** resolve exact project by visible name and verify URL/id/title.
+
+**Recovery:** return to Flow home and resolve uniquely.
+
+## FLOW-ERR-004 — RECOVERY_GATE_BLOCKED_PRODUCTION
+
+**Symptom:** no new prompt reaches Flow.
+
+**Root cause:** debugging recovery branch returned before production.
+
+**Solution:** explicit lifecycle branch.
+
+**Recovery:** repair ordering without discarding post-boundary state.
+
+## FLOW-ERR-005 — GENERIC_BUSY_FALSE_POSITIVE
+
+**Symptom:** runtime logs generation based on busy/disabled UI; no render exists.
+
+**Root cause:** weak UI state used as hard evidence.
+
+**Solution:** project-correlated asset requirement.
+
+## FLOW-ERR-006 — CHAT_VIDEO_OPTION_FALSE_POSITIVE
+
+**Symptom:** chat video option changed but no new project render.
+
+**Root cause:** chat/history DOM is not durable asset truth.
+
+**Solution:** project grid wins.
+
+## FLOW-ERR-007 — BRITTLE_MATERIAL_IDS
+
+**Symptom:** selector breaks after reload.
+
+**Root cause:** generated Angular/Material numeric ids.
+
+**Solution:** semantic/component selectors.
+
+## FLOW-ERR-008 — PROJECT_TITLE_CONTAMINATED
+
+**Symptom:** project name replaced by long prompt.
+
+**Root cause:** wrong editable field.
+
+**Solution:** component-scoped prompt locator + title guard.
+
+## FLOW-ERR-009 — PARALLEL_GENERATION_CORRELATION_RACE
+
+**Symptom:** wrong/latest video recovered twice.
+
+**Root cause:** two in-flight generations.
+
+**Solution:** strict serial execution.
+
+## FLOW-ERR-010 — TIMEOUT_CAUSED_REGENERATION
+
+**Symptom:** same episode could be sent again after slow render.
+
+**Root cause:** timeout treated as no-generation proof.
+
+**Solution:** reconciliation-only post-boundary timeout.
+
+## FLOW-ERR-011 — CHAT_ONLY_RECOVERY
+
+**Symptom:** project contains video but chat path is unavailable.
+
+**Root cause:** chat treated as durable registry.
+
+**Solution:** project-grid recovery.
+
+## FLOW-ERR-012 — NETWORK_FILTER_ASSUMPTION
+
+**Symptom:** no `generate` Network row found during a real generation.
+
+**Root cause:** undocumented request naming assumption.
+
+**Solution:** network is optional diagnostics only.
+
+## FLOW-ERR-013 — GENERIC_REVIEW_METADATA
+
+**Symptom:** recovered video plays but title/description are internal planner text.
+
+**Root cause:** metadata builder used hook/story placeholders rather than prompt/context.
+
+**Solution:** build and persist final publication copy before Review.
+
+---
+
+# 31. Dead ends: do not repeat
+
+### “Click successful” means Flow generated
+
+False.
+
+### “Button disabled” means Flow generated
+
+False as sole evidence.
+
+### “Busy text” means Flow generated
+
+False as sole evidence.
+
+### `flow-a2ui-video-option` means current project generated
+
+False as sole evidence.
+
+### Click any visible Always approve
+
+False. It can be historical.
+
+### First visible text field is prompt
+
+False. It can be project title.
+
+### Numeric Material ID is stable
+
+False.
+
+### Network must contain a request whose name includes generate
+
+False in the observed Muestra 3 workflow.
+
+### Generate several videos, then recover newest
+
+Unsafe.
+
+### Render timeout allows retry submit
+
+Unsafe.
+
+### Chat is the only recovery route
+
+False.
+
+### Placeholder planner copy is acceptable in Review
+
+False.
+
+
+# 32. Machine-operable happy path
+
+Every step below has a deliberately narrow success signal. Future agents must not silently replace it with a weaker signal.
+
+## GF-001 — Select head-of-line job
+
+**ACTION**  
+Choose the earliest unresolved episode allowed by the serial gate and the effective daily quota.
+
+**SUCCESS SIGNAL**  
+Exactly one candidate exists.
+
+**FAILURE SIGNAL**  
+More than one active generation/retrieval job exists, or no eligible job exists.
+
+**RECOVERY**  
+Do not skip an unresolved earlier episode merely to make progress on a later one.
+
+**NEXT STATE**  
+`SESSION_REQUIRED`
+
+## GF-002 — Acquire browser lease
+
+**ACTION**  
+Acquire the durable project/browser lease before controlling the persistent Flow profile. Refresh a heartbeat while the worker owns the profile.
+
+**SUCCESS SIGNAL**  
+The current worker is the only live owner.
+
+**FAILURE SIGNAL**  
+Another live worker/bootstrap process owns the profile.
+
+**RECOVERY**  
+Wait; do not steal a live profile.
+
+## GF-003 — Launch persistent browser
+
+**ACTION**  
+Launch Chromium/Playwright using the durable Flow profile stored on persistent volume.
+
+**SUCCESS SIGNAL**  
+Flow opens without a Google sign-in/security challenge.
+
+**FAILURE SIGNAL**  
+Login, CAPTCHA, verify-it's-you, account recovery or security checkpoint.
+
+**RECOVERY**  
+Stop all non-idempotent actions and use the approved authentication/bootstrap workflow.
+
+## GF-004 — Resolve exact Flow project
+
+**ACTION**  
+Open Flow home, enumerate visible `flow-project-card` elements, match the exact expected project name, open its `/project/<id>` link and persist the resolved identity.
+
+**SUCCESS SIGNAL**  
+Visible project title and current URL/project id match the adapter configuration.
+
+**FAILURE SIGNAL**  
+Zero matches, multiple matches, title mismatch or unexpected project id.
+
+**RECOVERY**  
+Stop with `WRONG_PROJECT`, capture visible project cards and do not submit.
+
+## GF-005 — Verify prompt destination
+
+**ACTION**  
+Locate the rich text/contenteditable inside the current Flow prompt component and independently identify the project-title input.
+
+**SUCCESS SIGNAL**  
+Target is classified `VIDEO_PROMPT_COMPOSER`.
+
+**FAILURE SIGNAL**  
+Only the project title or another unrelated editable control is found.
+
+**RECOVERY**  
+Stop before typing.
+
+## GF-006 — Clear prompt state
+
+**ACTION**  
+Clear previous prompt text and remove stale reference/ingredient chips when applicable.
+
+**SUCCESS SIGNAL**  
+Composer is empty and the current ingredient count matches the expected clean baseline.
+
+## GF-007 — Configure video generation
+
+**ACTION**  
+Select Video, aspect ratio, model, duration, output count and configured resolution intent.
+
+**SUCCESS SIGNAL**  
+Visible settings reflect the requested adapter configuration.
+
+**FAILURE SIGNAL**  
+Any critical setting is wrong or unverifiable.
+
+**RECOVERY**  
+Reopen/reselect once. If still unverifiable, stop before submit.
+
+## GF-008 — Attach exact saved reference assets
+
+**ACTION**  
+For shows that use saved Flow characters/reference images, attach only the configured assets and verify names/count.
+
+**SUCCESS SIGNAL**  
+Exact expected asset set/count.
+
+**FAILURE SIGNAL**  
+Missing, approximate or wrong asset.
+
+**RECOVERY**  
+Clear and rebuild the attachment state once; otherwise stop.
+
+## GF-009 — Insert prompt
+
+**ACTION**  
+Insert the full stored prompt into the verified prompt composer.
+
+**SUCCESS SIGNAL**  
+Read-back contains expected beginning/end fragments and byte length is within tolerance. Project title remains unchanged.
+
+**FAILURE SIGNAL**  
+Truncation, wrong field or title contamination.
+
+**RECOVERY**  
+One controlled clear-and-reinsert attempt before submit.
+
+## GF-010 — Prepare review metadata seed
+
+**ACTION**  
+Derive title/description/hashtags from concrete story, stored prompt and recovery context.
+
+**SUCCESS SIGNAL**  
+No internal planner placeholder leaks into public copy.
+
+**RECOVERY**  
+Use a safe non-misleading project fallback if the concrete prompt is temporarily unavailable.
+
+## GF-011 — Capture pre-submit project baseline
+
+**ACTION**  
+Persist tile count/signatures, video-tile count/signatures, visible media sources, project id, timestamp and job id.
+
+**SUCCESS SIGNAL**  
+Baseline is durable.
+
+**FAILURE SIGNAL**  
+Baseline could not be captured or persisted.
+
+**RECOVERY**  
+Do not submit.
+
+## GF-012 — Enter exactly-once submit boundary
+
+**ACTION**  
+Create a generation intent UUID and persist:
+
+```yaml
+state: SUBMIT_BOUNDARY_ENTERED
+automatic_submit_forbidden: true
+generation_id: <uuid>
+submit_boundary_at: <timestamp>
+baseline: <project baseline>
+```
+
+**SUCCESS SIGNAL**  
+The durable lifecycle write succeeds.
+
+**FAILURE SIGNAL**  
+DB persistence fails.
+
+**RECOVERY**  
+Abort before click.
+
+## GF-013 — Focus current prompt top row
+
+**ACTION**  
+Mirror Muestra 3 and focus/click the current `div.prompt-top-row`.
+
+**SUCCESS SIGNAL**  
+Current prompt component remains active and no navigation occurs.
+
+## GF-014 — Click the exact right-arrow control
+
+**ACTION**  
+Click the `mat-icon` inside `flow-generate-icon-button`; icon text `arrow_forward`; accessibility fallback `Iniciar generación` / `Start generation`.
+
+**SUCCESS SIGNAL**  
+Exactly one input event is issued and logged as `SUBMIT_ARROW_CLICKED`.
+
+**IMPORTANT**  
+This is input evidence only. It is not proof that Google Flow accepted the generation.
+
+**RETRY POLICY**  
+Never automatically click the same generation arrow again for this generation intent.
+
+## GF-015 — Resolve current consent
+
+**ACTION**  
+Compare permission containers with the pre-submit snapshot. If a new current permission message appears, prefer `Aprobar siempre` / `Always approve`; otherwise one-time approval. If no new permission appears, continue.
+
+**SUCCESS SIGNAL**  
+Current consent is accepted, or no current consent exists.
+
+**FAILURE SIGNAL**  
+Only stale historical consent controls are present or the current consent remains actionable with no downstream evidence.
+
+**RECOVERY**  
+Post-boundary reconciliation only. No resend.
+
+## GF-016 — Observe exact-project generation evidence
+
+**ACTION**  
+Watch the exact target project grid against the stored baseline.
+
+**SUCCESS SIGNAL**  
+A unique post-baseline project video tile appears.
+
+**FAILURE SIGNAL**  
+Only weak UI changes such as busy text, disabled controls or chat changes.
+
+**RECOVERY**  
+Remain `SUBMIT_AMBIGUOUS` and reconcile read-only.
+
+## GF-017 — Hold the serial lock
+
+**ACTION**  
+Block all later episodes until the current job is fully recovered and Review-ready.
+
+**SUCCESS SIGNAL**  
+No second in-flight generation/retrieval job.
+
+## GF-018 — Wait for the current asset
+
+**ACTION**  
+Poll the unique current tile until it becomes openable/downloadable. Do not infer failure merely from elapsed time.
+
+**SUCCESS SIGNAL**  
+The exact current asset can be opened and exposes media download.
+
+**FAILURE SIGNAL**  
+Flow explicitly reports generation failure or the temporary render slot disappears and the exact project returns to the pre-submit asset baseline for the configured safety window.
+
+## GF-019 — Open current asset from project grid
+
+**ACTION**  
+Open the unique post-baseline video tile, preferring the recorded `flow-tile-hover-footer` interaction when present.
+
+**SUCCESS SIGNAL**  
+Media editor opens and download control is visible.
+
+## GF-020 — Download media
+
+**ACTION**  
+Click `Descargar contenido multimedia` / `Download`, choose configured quality by visible label and wait for browser download event.
+
+**SUCCESS SIGNAL**  
+Bytes are saved to the deterministic job path.
+
+**RETRY POLICY**  
+Retry the same asset only.
+
+## GF-021 — Validate MP4
+
+**ACTION**  
+Verify file existence, MP4/container signature, stream, decodability, duration, dimensions and vertical orientation.
+
+**SUCCESS SIGNAL**  
+All required checks pass.
+
+**FAILURE SIGNAL**  
+Truncated, zero-byte, non-MP4, undecodable, wrong-duration or wrong-orientation output.
+
+**RECOVERY**  
+Redownload the same asset. Never regenerate solely because the download is invalid.
+
+## GF-022 — Persist media + publication metadata
+
+**ACTION**  
+Write title, description, hashtags, local path, Flow result, dimensions, size, duration, generation id and timestamps.
+
+**SUCCESS SIGNAL**  
+Atomic DB update succeeds.
+
+## GF-023 — Enter Review
+
+**ACTION**  
+Set factory item to `review` / lifecycle `REVIEW_READY`.
+
+**SUCCESS SIGNAL**  
+Review panel plays the video and displays final title and description.
+
+## GF-024 — Release serial gate
+
+**ACTION**  
+Allow the scheduler to inspect the next head-of-line job only after current Review-ready state is durable.
+
+## GF-025 — Apply effective daily quota
+
+**ACTION**  
+Count confirmed productions exactly once and stop at the effective target.
+
+**SUCCESS SIGNAL**  
+Normal Earth day stops at 3. The temporary 2026-09-21 test stops at 6, then automatically returns to 3 on the next local date.
+
+---
+
+# 33. Self-healing recovery runbook
+
+## 33.1 Flow UI changed
+
+1. Stop before submit when possible.
+2. Capture current URL, screenshot and visible text.
+3. Capture DOM around:
+   - project card;
+   - project title;
+   - prompt box;
+   - settings;
+   - generation arrow;
+   - permission message;
+   - project grid.
+4. Record selector counts.
+5. Preserve lifecycle.
+6. Update selector registry in a branch.
+7. Run no-credit preflight.
+8. Run exactly one Golden Test.
+9. Promote new SOP version only after pass.
+
+## 33.2 Google session expired
+
+1. Detect accounts.google.com, sign-in, password, captcha, verify-it's-you or security-check.
+2. Mark `AUTH_FAILED`.
+3. Preserve post-boundary state.
+4. Reauthenticate durable profile.
+5. Reverify exact project.
+6. Resume according to lifecycle.
+
+## 33.3 Wrong project opened
+
+1. Never submit.
+2. Return to Flow home.
+3. Enumerate project cards.
+4. Match unique exact expected name.
+5. Open exact card.
+6. Verify visible title and URL/project id.
+7. Resume preflight.
+
+## 33.4 Wrong model/settings
+
+1. No submit.
+2. Reopen settings.
+3. Verify Video, model, ratio, duration, count and resolution intent.
+4. Capture evidence if selector changed.
+5. Fail closed when unverifiable.
+
+## 33.5 Prompt failed to insert
+
+1. No submit.
+2. Clear composer.
+3. Reinsert once.
+4. Read back first/last fragments and byte length.
+5. Verify project title unchanged.
+6. Stop `PROMPT_FAILED` if still wrong.
+
+## 33.6 Consent did not appear
+
+This is not inherently an error. Continue project observation. A persistent profile may already be in `ALWAYS_APPROVED`.
+
+## 33.7 Consent appeared but did not accept
+
+1. Do not click submit again.
+2. Preserve boundary.
+3. Reconcile exact project.
+4. If no project asset can be established, require positive evidence of no generation before any new submit intent.
+
+## 33.8 Click occurred but project asset never appears
+
+1. Enter `SUBMIT_AMBIGUOUS`.
+2. Keep `automatic_submit_forbidden=true`.
+3. Compare project grid against baseline.
+4. Do not send again because a timer expired.
+
+## 33.9 Temporary render slot disappears
+
+If all of the following become true:
+
+- exact project verified;
+- render is older than the safety threshold;
+- no busy state;
+- no playable fresh media;
+- no fresh tile/signature remains relative to baseline;
+- evidence remains stable for a second safety window;
+
+then mark the previous run `no_generation`, remove it from logical daily accounting and authorize one clean serial retry.
+
+This behavior exists to recover from transient Flow render placeholders that vanish without leaving a retained asset.
+
+## 33.10 Insufficient Flow credits
+
+If Flow explicitly shows insufficient points/credits:
+
+1. do not count that attempt as a completed generation;
+2. mark generation accounting `no_generation`;
+3. return job to a waiting/draft state with a long backoff;
+4. set Flow state `ESPERANDO CRÉDITOS`;
+5. do not hammer the generation button repeatedly;
+6. resume after credits are available.
+
+## 33.11 Render appears frozen
+
+1. Keep serial gate.
+2. Poll current asset.
+3. Persist progress heartbeat.
+4. Capture evidence.
+5. Do not advance to next episode.
+
+## 33.12 Worker died during render
+
+1. Read lifecycle on restart.
+2. Any state at/after submit boundary forbids fresh submit.
+3. Reopen exact project.
+4. Compare with durable baseline.
+5. Recover if asset exists.
+6. Continue validation/Review.
+
+## 33.13 Railway redeployed
+
+1. Reconstruct from persistent `/data`.
+2. Reuse SQLite DB.
+3. Reuse persistent browser profile.
+4. Reuse recovered media.
+5. Do not assume in-memory locks/state survived.
+6. Restore from durable lifecycle.
+
+## 33.14 Asset exists but correlation is unclear
+
+1. Freeze all new generation.
+2. Inspect:
+   - baseline signatures;
+   - prompt fingerprint;
+   - chat accessible name;
+   - timestamps;
+   - active job count.
+3. Do not choose an arbitrary latest tile.
+
+## 33.15 Download failed
+
+1. Reopen exact same asset.
+2. Retry download.
+3. Validate.
+4. Never regenerate because download failed.
+
+## 33.16 YouTube OAuth expired
+
+1. Keep Review/queued media safe.
+2. Reauthorize YouTube independently.
+3. Do not invoke Flow.
+
+## 33.17 YouTube upload/schedule failed
+
+1. Resume/reconcile resumable upload.
+2. Preserve approved metadata.
+3. Do not send episode back to Flow.
+
+---
+
+# 34. Observability requirements
+
+Recommended structured events:
+
+```text
+FLOW_SESSION_READY
+FLOW_PROJECT_RESOLVED
+FLOW_PROJECT_VERIFIED
+FLOW_PROMPT_TARGET_VERIFIED
+FLOW_SETTINGS_APPLIED
+FLOW_PROMPT_INSERTED
+FLOW_PROMPT_VERIFIED
+FLOW_BASELINE_CAPTURED
+FLOW_SUBMIT_BOUNDARY_ENTERED
+SUBMIT_ARROW_CLICKED
+FLOW_CONFIRMATION_VISIBLE
+FLOW_CONFIRMATION_ACCEPTED
+FLOW_PROJECT_ASSET_DETECTED
+FLOW_RENDER_COMPLETE
+FLOW_VIDEO_OPENED
+FLOW_VIDEO_DOWNLOADED
+FLOW_VIDEO_VALIDATED
+REVIEW_METADATA_READY
+REVIEW_READY
+SERIAL_GATE_BLOCKED
+DAILY_LIMIT
+FLOW_JOB_FAILED
+```
+
+Fields when applicable:
+
+```text
+timestamp
+episode
+job_id
+generation_id
+project_name
+project_id
+state
+prompt_hash
+baseline counts
+post counts
+consent_mode
+retry_count
+error_code
+screenshot_ref
+dom_snapshot_ref
+download_size
+duration
+width
+height
+codec
+title
+```
+
+Never log secrets.
+
+Event names must preserve evidence semantics. A mere click must not be named `GENERATION_STARTED`.
+
+---
+
+# 35. Automatic evidence capture
+
+Capture evidence automatically when:
+
+- authentication challenge;
+- wrong project;
+- project title mismatch;
+- prompt-target mismatch;
+- settings mismatch;
+- consent failure;
+- submit ambiguity;
+- render timeout;
+- vanished render;
+- asset correlation failure;
+- download failure;
+- validation failure;
+- repeated selector failure.
+
+Recommended evidence package:
+
+```text
+timestamp
+current URL
+visible project title
+screenshot
+visible body excerpt
+critical selector counts
+current lifecycle
+baseline inventory
+post inventory
+console errors
+network summary if available
+browser trace reference
+```
+
+Strip cookies, tokens, passwords and authorization headers.
+
+---
+
+# 36. Data contract
+
+Persist at least:
+
+```yaml
+episode_id: string
+job_id: string
+attempt_id: string
+generation_intent_id: string
+flow_project_id: string
+flow_project_name: string
+prompt: string
+prompt_hash: sha256
+model: string
+aspect_ratio: string
+duration_seconds: number
+output_count: number
+reference_assets: []
+created_at: timestamp
+submitted_at: timestamp
+asset_detected_at: timestamp
+generation_completed_at: timestamp
+asset_signature: string
+video_path: string
+download_size: integer
+download_duration: number
+download_width: integer
+download_height: integer
+download_codec: string
+validation_status: string
+title: string
+description: string
+review_status: string
+youtube_status: string
+```
+
+If Flow does not expose a stable generation id, the application `generation_intent_id` still protects exactly-once semantics.
+
+---
+
+# 37. YouTube post-Flow contract
+
+Flow ends at a validated Review item. Publication is a separate idempotent pipeline.
+
+```text
+REVIEW_READY
+→ operator APPROVE
+→ publication queue
+→ private staging/upload
+→ approved title/description
+→ synthetic-media disclosure
+→ scheduling
+→ verification
+→ published
+```
+
+Required disclosure for AI-generated/meaningfully altered video:
+
+```text
+containsSyntheticMedia = true
+```
+
+A YouTube problem must never cause a new Flow generation.
+
+---
+
+# 38. Golden Test
+
+After any critical Flow change, run exactly one paid generation.
+
+Pass criteria:
+
+1. persistent session valid;
+2. exact project resolved;
+3. project title correct;
+4. prompt composer correct;
+5. Video mode correct;
+6. model correct;
+7. aspect ratio correct;
+8. duration correct;
+9. output count correct;
+10. prompt inserted/read back;
+11. baseline persisted;
+12. exactly-once boundary persisted;
+13. exact right-arrow clicked once;
+14. current consent handled or absent;
+15. unique post-baseline project video tile observed;
+16. no second submit;
+17. same tile becomes recoverable;
+18. same tile opened;
+19. MP4 downloaded;
+20. MP4 validated;
+21. title/description/hashtags generated;
+22. Review shows playable video and final metadata;
+23. lifecycle is `REVIEW_READY`;
+24. serial gate released.
+
+Only then:
+
+```text
+FLOW_AUTOMATION_HEALTHY = TRUE
+```
+
+If any critical checkpoint fails:
+
+```text
+FLOW_AUTOMATION_HEALTHY = FALSE
+```
+
+Do not downgrade the result to “mostly works.”
+
+---
+
+# 39. Confidence map
+
+| Component | Status | Confidence | Evidence |
+|---|---|---:|---|
+| Persistent Flow session | VERIFIED | HIGH | successful automated run + recoveries |
+| Exact Earth project | VERIFIED | HIGH | name + project id |
+| Prompt/title distinction | VERIFIED in code; historical failure known | HIGH | explicit guards |
+| Video settings | VERIFIED | HIGH | successful settings log |
+| Prompt insertion | VERIFIED | HIGH | Recorder + runtime |
+| Exact right-arrow submit | VERIFIED | HIGH | Muestra 3 + automated success |
+| Simple Network `generate` filter | NOT REQUIRED / UNKNOWN | LOW | no useful row in Muestra 3 |
+| Always-approve profile behavior | VERIFIED for current profile | MEDIUM-HIGH | human consent + later no-dialog |
+| New project video tile evidence | VERIFIED | HIGH | successful run tile delta |
+| Strict serial recovery | VERIFIED | HIGH | automated recovery |
+| Project-grid recovery | VERIFIED | HIGH | Patagonia, Namib and automated result |
+| MP4 validation | VERIFIED | HIGH | 10s 1080×1920 outputs |
+| Review playback | VERIFIED | HIGH | operator screenshot |
+| Old Review metadata | FAILED | HIGH | placeholder visible in screenshot |
+| Prompt/context Review metadata | IMPLEMENTED | HIGH design | deterministic builder |
+| Normal 3/day | VERIFIED | HIGH | runtime daily stop |
+| Date-scoped 6/day | IMPLEMENTED TEST MECHANISM | HIGH design | auto-expiring override |
+| Synthetic-media disclosure | VERIFIED in code | HIGH | YouTube publication field |
+
+---
+
+# 40. Dependency map
+
+## Google Flow
+
+Role: generation and project asset storage.  
+Failure detection: auth challenge, project mismatch, selector change, explicit generation failure, no retained asset.  
+Recovery: preserve lifecycle, reverify exact project, never duplicate submit.
+
+## Google authentication
+
+Role: Flow session.  
+Failure: sign-in/security challenge.  
+Recovery: approved persistent-profile bootstrap.
+
+## Chromium / Playwright
+
+Role: browser automation.  
+Failure: crash, stale lock, selector change.  
+Recovery: persistent profile + durable state + lease heartbeat.
+
+## Railway
+
+Role: runtime hosting, worker, volume and deployments.  
+Failure: restart/deploy.  
+Recovery: reconstruct from `/data`.
+
+## SQLite/runtime data
+
+Role: lifecycle, idempotency, accounting, Review metadata.  
+Failure: unavailable/corrupt.  
+Recovery: stop generation until durable state is restored.
+
+## GitHub
+
+Role: source and versioned SOP.  
+Failure: source/deploy mismatch.  
+Recovery: pin commits and deploy only tested code.
+
+## YouTube API/OAuth
+
+Role: post-approval upload and scheduling.  
+Failure: auth/upload/schedule.  
+Recovery: publication-specific retry; no Flow regeneration.
+
+---
+
+# 41. Security
+
+Never export:
+
+- Google cookies;
+- login passwords;
+- OAuth client secrets;
+- access/refresh tokens;
+- bearer tokens;
+- passkey private material;
+- Railway secret values;
+- resumable upload URLs intended to remain private.
+
+Use logical names for protected stores rather than values.
+
+---
+
+# 42. SOP versioning
+
+Current version:
+
+```text
+FLOW-SOP-v1.0
+```
+
+When Flow changes:
+
+1. reproduce the failure;
+2. preserve evidence;
+3. identify which assumption broke;
+4. mark previous assumption invalid if needed;
+5. update selector/state/recovery logic;
+6. increment SOP version;
+7. record changelog;
+8. run one Golden Test;
+9. only then promote the new version to runtime knowledge.
+
+---
+
+# 43. Publisher Factory integration
+
+Every future Publisher should inherit this SOP automatically.
+
+New Publisher setup should supply adapter data only:
+
+```text
+Show Bible
+Google/Flow account/profile
+Flow project
+model/settings
+saved characters/reference assets
+daily volume
+YouTube channel
+posting schedule
+metadata rules
+review policy
+```
+
+A new application must not rediscover basic Flow control from scratch.
+
+Conceptual interface:
+
+```text
+generate_video(
+    prompt,
+    model,
+    duration,
+    aspect_ratio,
+    reference_assets,
+    project_config,
+    metadata_config
+)
+→ {
+    generation_intent_id,
+    asset_evidence,
+    local_video,
+    validation,
+    title,
+    description,
+    review_item
+}
+```
+
+---
+
+# 44. AI implementation brief
+
+If you are an AI agent receiving only this SOP:
+
+1. Do not modify FruttiDrama while repairing another Publisher unless explicitly authorized.
+2. Verify the exact Flow project before every submit.
+3. Distinguish project title from prompt composer.
+4. Verify generation settings.
+5. Insert and read back the prompt.
+6. Capture a project-grid baseline.
+7. Persist exactly-once state before clicking.
+8. The verified submit is the right-arrow `arrow_forward` inside `flow-generate-icon-button`.
+9. Click it once.
+10. Handle only consent created after the current boundary.
+11. Do not trust click success, busy text, disabled controls, chat video options or guessed request names as sole proof.
+12. Require project-correlated post-baseline evidence.
+13. Keep exactly one in-flight generation/retrieval job.
+14. Recover from the project grid.
+15. Validate the MP4.
+16. Generate final YouTube title/description/hashtags before Review.
+17. Only after Review-ready may the next job begin.
+18. On uncertainty, reconcile—never resend.
+19. Date-scope temporary volume overrides.
+20. Update this SOP after Flow changes.
+
+---
+
+# 45. Troubleshooting decision tree
+
+```text
+Video not in Review
+│
+├─ Correct Flow project verified?
+│  ├─ NO → WRONG_PROJECT → resolve exact project → no submit
+│  └─ YES
+│
+├─ Prompt in real composer and title unchanged?
+│  ├─ NO → PROMPT_FAILED / TITLE CONTAMINATION
+│  └─ YES
+│
+├─ Settings verified?
+│  ├─ NO → fix settings → no submit
+│  └─ YES
+│
+├─ Baseline persisted?
+│  ├─ NO → unsafe → no submit
+│  └─ YES
+│
+├─ Submit boundary persisted?
+│  ├─ NO → do not click
+│  └─ YES
+│
+├─ Exact right arrow clicked once?
+│  ├─ NO → selector/input failure
+│  └─ YES
+│
+├─ New current consent?
+│  ├─ YES → approve current only
+│  └─ NO → valid branch
+│
+├─ New project video tile relative to baseline?
+│  ├─ NO → SUBMIT_AMBIGUOUS → reconcile only
+│  └─ YES
+│
+├─ More than one in-flight job?
+│  ├─ YES → correlation emergency → freeze
+│  └─ NO
+│
+├─ Current tile persists and becomes downloadable?
+│  ├─ NO, then disappears after safety window → no-retained-render recovery
+│  ├─ NO, still exists → continue waiting
+│  └─ YES
+│
+├─ Download succeeds?
+│  ├─ NO → retry same asset
+│  └─ YES
+│
+├─ MP4 validates?
+│  ├─ NO → redownload same asset
+│  └─ YES
+│
+├─ Final title/description ready?
+│  ├─ NO → metadata repair; never publish placeholder
+│  └─ YES
+│
+└─ REVIEW_READY → next serial job allowed
+```
+
+---
+
+# 46. Changelog v1.0
+
+- Frozen the first verified automated Earth generation/recovery path.
+- Recorded exact Earth project id.
+- Replaced vague “Generate button” terminology with recorder-exact right-arrow selector.
+- Invalidated click/busy/chat-option false positives.
+- Made exact-project grid evidence canonical.
+- Made strict serial generation/recovery mandatory.
+- Established project-grid recovery as the primary route.
+- Established MP4 validation as mandatory before Review.
+- Added restart/redeploy exactly-once recovery.
+- Added Review screenshot as proof that recovered videos reached the panel.
+- Classified generic Review metadata as a failure.
+- Added prompt/context-derived YouTube copy.
+- Added Earth hashtag defaults.
+- Added concrete autonomous Earth landscape planning.
+- Added date-scoped one-day six-video test.
+- Preserved normal 3/day target.
+- Added vanished-render self-healing.
+- Added insufficient-credit detection.
+- Added runtime knowledge-pack requirement.
+- Added Golden Test and versioning rules.
+
+---
+
+# 47. Final operational rule
+
+> **VERIFY THE PROJECT. VERIFY THE PROMPT FIELD. VERIFY SETTINGS. SAVE THE BASELINE. PERSIST THE BOUNDARY. CLICK THE RIGHT ARROW ONCE. HANDLE ONLY CURRENT CONSENT. WAIT FOR A NEW PROJECT VIDEO TILE. GENERATE NOTHING ELSE. RECOVER THAT TILE. VALIDATE THE MP4. CREATE FINAL YOUTUBE COPY. MOVE IT TO REVIEW. ONLY THEN UNLOCK THE NEXT VIDEO.**
+
+This is the shortest faithful representation of what actually worked.
+
+---
+
+# Appendix A — Release checklist
+
+Before deploying a Flow automation change:
+
+- [ ] exact project resolver unchanged or tested;
+- [ ] title guard intact;
+- [ ] prompt locator intact;
+- [ ] settings verifier intact;
+- [ ] right-arrow selector intact;
+- [ ] consent scoped to current message;
+- [ ] baseline persisted before submit;
+- [ ] post-boundary auto-resend impossible;
+- [ ] serial lock intact;
+- [ ] project-grid correlation intact;
+- [ ] same-asset download retries only;
+- [ ] MP4 validation intact;
+- [ ] metadata generated before Review;
+- [ ] YouTube metadata preserved after approval;
+- [ ] synthetic-media disclosure intact;
+- [ ] daily accounting intact;
+- [ ] date-scoped override intact;
+- [ ] vanished-render recovery does not resubmit prematurely;
+- [ ] credit-failure path does not hammer Flow;
+- [ ] SOP version updated if behavior changed;
+- [ ] Golden Test run when required.
+
+# Appendix B — Review copy quality checklist
+
+Before Review is shown:
+
+- [ ] title contains no internal `NEXT CHAPTER` placeholder unless intentionally public;
+- [ ] description contains no Creative Bible instruction;
+- [ ] location/subject is supported by prompt/context;
+- [ ] no invented fact is unsupported;
+- [ ] Earth title contains `#Shorts #ViralShorts` when space permits;
+- [ ] Earth description contains `#EarthIn10 #Nature #Travel #Shorts #ViralShorts`;
+- [ ] title/description fit YouTube limits;
+- [ ] same copy will be queued on approval.
+
+# Appendix C — Evidence priority
+
+When evidence conflicts, prioritize:
+
+1. validated downloaded media linked to a post-baseline project asset;
+2. exact target-project grid;
+3. operator recording of the actual action;
+4. durable lifecycle tied to that project/baseline;
+5. component-scoped DOM observation;
+6. browser input result;
+7. generic chat/busy text;
+8. speculative Network naming;
+9. prior assistant assumption.
+
+Later direct evidence invalidates earlier speculation.
+
+# Appendix D — Why this SOP must travel with every Publisher
+
+The automation required many iterations because Google Flow is a stateful web application in this workflow. If this knowledge remains only in one chat, a future Publisher can repeat expensive mistakes: wrong project, wrong editable field, false submit, stale consent, parallel recovery race, duplicate credit spend, vanished temporary tiles, lost asset correlation and generic Review metadata.
+
+Every Publisher related to this system should therefore carry:
+
+```text
+GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md
+GOOGLE_FLOW_AUTOMATION_SOP.json
+FLOW_AI_IMPLEMENTATION_BRIEF.md
+FLOW_FAILURE_CATALOG.md
+FLOW_RECOVERY_RUNBOOK.md
+FLOW_GOLDEN_TEST.md
+FLOW_CHANGELOG.md
+```
+
+and should persist current SOP version/hash/content or a durable knowledge record in its runtime storage.
+
+The purpose is reproducibility after chat loss, model changes, agent turnover, deploys and future Flow UI changes.

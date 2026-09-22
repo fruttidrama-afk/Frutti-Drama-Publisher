@@ -1,38 +1,54 @@
 {
   "sop_id": "FLOW-SOP-v1.0",
   "sha256": "8172f4b415e516fb1ec211a338ef7872740d7931adfbc5ab31572344a5bc9162",
+  "source_of_truth": "GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md",
+  "source_git_blob_sha": "41f80a7cce6aaf365fa9036635578276610df7ee",
+  "mandatory_inheritance": true,
   "verified_on": "EARTH IN 10",
   "verified_project_id": "800af820-b951-4035-ab20-f64df8883fb0",
-  "submit": {
-    "selector": "flow-project-page flow-prompt-box flow-generate-icon-button mat-icon",
-    "icon": "arrow_forward",
-    "accessible_names": [
+  "generation": {
+    "provider": "google-flow",
+    "exact_project_verification": true,
+    "prompt_title_guard": true,
+    "prompt_readback": true,
+    "baseline_before_submit": true,
+    "submit_boundary_persisted_before_click": true,
+    "submit_selector": "flow-project-page flow-prompt-box flow-generate-icon-button mat-icon",
+    "submit_icon": "arrow_forward",
+    "submit_accessible_names": [
       "Iniciar generación",
       "Start generation"
     ],
-    "exactly_once": true
-  },
-  "invariants": {
-    "verify_exact_project": true,
-    "prompt_title_guard": true,
-    "baseline_before_submit": true,
+    "exactly_once_submit": true,
     "current_consent_only": true,
-    "strict_serial_generation": true,
-    "project_grid_recovery": true,
-    "validated_mp4_required": true,
-    "review_metadata_required": true,
-    "no_regenerate_from_uncertainty": true,
-    "insufficient_credit_backoff": true,
-    "vanished_render_reconcile": true
+    "consent_modes": [
+      "NO_DIALOG_OBSERVED",
+      "PER_GENERATION",
+      "ALWAYS_APPROVED"
+    ],
+    "generation_proof": "unique-post-baseline-project-video-tile",
+    "strict_serial": true,
+    "recovery_surface": "project-grid",
+    "mp4_validation_required": true,
+    "review_ready_before_next_submit": true,
+    "uncertainty_rule": "RECONCILE_NEVER_BLINDLY_RESUBMIT"
   },
   "review": {
-    "final_title": true,
-    "final_description": true,
-    "hashtags": true
+    "playable_validated_video_required": true,
+    "final_public_metadata_required": true,
+    "internal_planner_placeholders_forbidden": true
   },
-  "publisher_factory": {
-    "inherit_to_every_publisher": true,
-    "golden_test_after_critical_change": true,
-    "indefinite_scheduler": true
-  }
+  "publication": {
+    "preserve_review_metadata_to_youtube": true,
+    "contains_synthetic_media": true
+  },
+  "resilience": {
+    "persistent_profile": true,
+    "persistent_db": true,
+    "restart_reconciliation": true,
+    "same_asset_download_retry": true,
+    "vanished_render_reconciliation": true,
+    "insufficient_credit_backoff": true
+  },
+  "acceptance_gate": "Golden Test must reach REVIEW_READY before automation is marked healthy."
 }
