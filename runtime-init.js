@@ -129,7 +129,11 @@ CREATE TABLE IF NOT EXISTS publication_items(
  updatedAt TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS publication_status_idx ON publication_items(status,retryAt,scheduledAt);
-`);
+);
+for(const sql of [
+  "ALTER TABLE factory_items ADD COLUMN creativePackageHash TEXT",
+  "ALTER TABLE factory_items ADD COLUMN creativePackageId TEXT"
+]){try{db.exec(sql)}catch{}}
 const put=(k,v)=>db.prepare("INSERT INTO factory_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k,String(v));
 put('runtime:version','publisher-runtime-v1');
 put('runtime:show',CONFIG.identity.show_name);
