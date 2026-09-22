@@ -11,6 +11,7 @@ RUN apt-get update \
 COPY package.json ./
 RUN npm install --omit=dev
 COPY runtime-config.js runtime-init.js free-browser-provider.js flow-bootstrap.js server.js publication.js publication-copy.js ./
+COPY GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md GOOGLE_FLOW_AUTOMATION_SOP.json FLOW_AI_IMPLEMENTATION_BRIEF.md FLOW_RECOVERY_RUNBOOK.md FLOW_GOLDEN_TEST.md FLOW_FAILURE_CATALOG.md FLOW_CHANGELOG.md FLOW_SOP_KNOWLEDGE_MANIFEST.json ./
 RUN node --check runtime-config.js \
   && node --check runtime-init.js \
   && node --check free-browser-provider.js \
