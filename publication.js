@@ -166,6 +166,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
           hist(first,first.status,'One-off quota recovery: existing private YouTube video will be scheduled at 06:30 ART for 19:00 publication.');
           save(db,first);
         }
+        console.log('[EARTH E1 EARLY SCHEDULE]',JSON.stringify({episode:first.episode,videoId:Boolean(first.videoId),uploadAt:early,scheduledAt:first.scheduledAt,status:first.status}));
       }
     }
     let corrected=0,factoryCorrected=0,synced=0,quotaRetryAt=0;const report=[];
