@@ -196,28 +196,40 @@ app.get('/auth/google',secure,(req,res)=>{try{const state=randomBytes(24).toStri
 app.get('/oauth2callback',async(req,res)=>{try{const y=ytSecrets();if(!req.query.code||!safeEq(String(req.query.state||''),String(y.oauth_state||''))||Number(y.oauth_state_exp||0)<Date.now())throw new Error('OAuth state invalid or expired.');const c=oauthClient(),{tokens}=await c.getToken(String(req.query.code));saveToken(tokens);saveYtSecrets({oauth_state:null,oauth_state_exp:0});res.redirect('/integrations/youtube')}catch(e){res.status(400).send('YouTube OAuth failed: '+e.message)}});
 
 function stream(req,res,file){const st=fs.statSync(file),range=req.headers.range;res.set('Accept-Ranges','bytes');res.set('Content-Type','video/mp4');res.set('Cache-Control','private,no-store');if(!range){res.set('Content-Length',String(st.size));return fs.createReadStream(file).pipe(res)}const m=/^bytes=(\d*)-(\d*)$/.exec(range);if(!m)return res.sendStatus(416);const a=m[1]?Number(m[1]):0,b=m[2]?Number(m[2]):st.size-1;if(a<0||b<a||b>=st.size)return res.sendStatus(416);res.status(206).set('Content-Range','bytes '+a+'-'+b+'/'+st.size).set('Content-Length',String(b-a+1));fs.createReadStream(file,{start:a,end:b}).pipe(res)}
+function creativePackageDigest(row,title=row?.title,description=row?.description){
+ const payload={episode:Number(row?.episode||0),hook:String(row?.hook||''),story:String(row?.story||''),prompt:String(row?.prompt||''),title:String(title||''),description:String(description||'')};
+ return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+}
 function ensureCopy(row){
+ if(String(row?.title||'').trim()&&String(row?.description||'').trim()&&String(row?.creativePackageHash||'')===creativePackageDigest(row)){
+   return row;
+ }
  const provider=(CONFIG.publication.providers||[]).find(x=>x.type==='youtube')||{};
  let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
  const override=flow?.publication_override;
- const copy=override?.title&&override?.description
-   ? {title:String(override.title),description:String(override.description)}
-   : buildPublicationCopy({
-       hook:row.hook,
-       story:row.story,
-       prompt:row.prompt,
-       contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],
-       hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
-       showName:CONFIG.identity.show_name,
-       maxTitleLength:100
-     });
- let description=copy.description;
- while(Buffer.byteLength(description,'utf8')>4800)description=description.slice(0,-30).trimEnd();
- if(row.title!==copy.title||row.description!==description){
-   db.prepare('UPDATE factory_items SET title=?,description=?,updatedAt=? WHERE id=?').run(copy.title,description,now(),row.id);
+ let copy;
+ if(String(row?.title||'').trim()&&String(row?.description||'').trim()){
+   copy={title:String(row.title),description:String(row.description)};
+ }else{
+   copy=override?.title&&override?.description
+     ? {title:String(override.title),description:String(override.description)}
+     : buildPublicationCopy({
+         hook:row.hook,
+         story:row.story,
+         prompt:row.prompt,
+         contextTerms:Array.isArray(flow.matched_terms)?flow.matched_terms:[],
+         hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+         showName:CONFIG.identity.show_name,
+         maxTitleLength:100
+       });
  }
- return{...row,title:copy.title,description};
+ let description=String(copy.description||'');
+ while(Buffer.byteLength(description,'utf8')>4800)description=description.slice(0,-30).trimEnd();
+ const title=String(copy.title||'').slice(0,100),packageHash=creativePackageDigest(row,title,description),packageId=String(row.creativePackageId||('creative-package-legacy-'+randomBytes(12).toString('hex')));
+ db.prepare('UPDATE factory_items SET title=?,description=?,creativePackageHash=?,creativePackageId=?,updatedAt=? WHERE id=?').run(title,description,packageHash,packageId,now(),row.id);
+ return{...row,title,description,creativePackageHash:packageHash,creativePackageId:packageId};
 }
+
 function classifyReviewFeedback(value){
  const t=String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
  const promptSignals=[
