@@ -64,8 +64,14 @@ has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts'
 const publication=read('publication.js');
 has(publication,'containsSyntheticMedia:true','publication synthetic-media disclosure');
 has(publication,'buildPublicationCopy','publication copy builder');
-has(publication,'Publication metadata synchronized from the episode creative package.','creative package as publication source');
-has(publication,"if(String(row?.title||'').trim()&&String(row?.description||'').trim())",'publication preserves package copy');
+has(publication,'earthPromptIsEpisodeBound','Earth concrete prompt is publication metadata authority');
+has(publication,'episode-generation-prompt','episode prompt provenance is recorded');
+has(publication,'creativePackageDigest','repaired creative package hash');
+has(publication,'quota_wait','YouTube quota-aware publication state');
+has(publication,'shiftPendingQueueAfter','quota recovery preserves publication order');
+has(publication,'stored-package','legacy/non-Earth package copy fallback');
+has(server,'isEarthIn10Publisher','Earth-specific review quota guard');
+has(server,'Earth in Ten keeps review media on the Railway volume until approval.','Earth avoids review-stage YouTube inserts');
 
 const schema=JSON.parse(read('publisher.config.schema.json'));
 must(schema.properties?.schedule?.properties?.generation_strategy?.const==='sequential','Publisher Factory must enforce sequential Flow generation');
