@@ -51,6 +51,16 @@ function creativePackageDigest(row,title,description){
     description:String(description||'')
   })).digest('hex');
 }
+function legacyEarthPublicationRepair(row,item,config,episode1Title=''){
+  if(!isEarthIn10(config)||Number(item?.episode)!==2)return null;
+  const duplicatedPatagonia=/PATAGONIA SUNRISE/i.test(String(row?.title||item?.title||''))&&/PATAGONIA SUNRISE/i.test(String(episode1Title||''));
+  if(!duplicatedPatagonia)return null;
+  return{
+    title:'NAMIB DESERT: A solitary tree beneath glowing red dunes. #Shorts #ViralShorts',
+    description:'A solitary dark tree stands against Namibia’s immense red-orange dunes as warm sunrise light stretches across the desert.\n\nEARTH IN 10\n\n#EarthIn10 #Nature #Travel #Shorts #ViralShorts',
+    source:'historical-prompt-copy-audit'
+  };
+}
 function metadata(row,config){
   const provider=(config.publication?.providers||[]).find(x=>x.type==='youtube')||{};
   // For Earth in Ten, the exact episode generation prompt is the source of truth.
@@ -136,25 +146,47 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
 
   async function auditExistingMetadata(){
     const items=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('cancelled','deleted') ORDER BY episode").all();
-    let corrected=0,factoryCorrected=0,synced=0;const report=[];
+    const episode1Title=String(items.find(x=>Number(x.episode)===1)?.title||'');
+    let corrected=0,factoryCorrected=0,synced=0,quotaRetryAt=0;const report=[];
     for(const item of items){
       const row=db.prepare('SELECT episode,hook,story,prompt,title,description,creativePackageHash,creativePackageId,flowResult FROM factory_items WHERE id=?').get(item.itemId);
       if(!row)continue;
-      const copy=metadata(row,config),description=copy.description;
+      const legacyRepair=legacyEarthPublicationRepair(row,item,config,episode1Title);
+      const copy=legacyRepair||metadata(row,config),description=copy.description;
       const promptAuthoritative=isEarthIn10(config)&&earthPromptIsEpisodeBound(row);
-      if(promptAuthoritative){
+      const repairFactory=Boolean(legacyRepair)||promptAuthoritative;
+      let factoryChanged=false;
+      if(repairFactory){
         const packageHash=creativePackageDigest(row,copy.title,description);
-        const factoryChanged=row.title!==copy.title||row.description!==description||String(row.creativePackageHash||'')!==packageHash;
+        factoryChanged=row.title!==copy.title||row.description!==description||String(row.creativePackageHash||'')!==packageHash;
         if(factoryChanged){
-          db.prepare("UPDATE factory_items SET title=?,description=?,creativePackageHash=?,creativePackageId=COALESCE(creativePackageId,?),updatedAt=? WHERE id=?")
-            .run(copy.title,description,packageHash,'creative-package-repaired-'+randomUUID(),now(),item.itemId);
+          let flowResult=String(row.flowResult||'');
+          if(legacyRepair){
+            let flow={};try{flow=JSON.parse(flowResult||'{}')||{}}catch{}
+            flow.publication_override={
+              title:copy.title,description,
+              reason:'legacy-e2-namib-metadata-regression-repair',
+              source:'historical-publication-copy-audit'
+            };
+            flowResult=JSON.stringify(flow);
+          }
+          db.prepare("UPDATE factory_items SET title=?,description=?,creativePackageHash=?,creativePackageId=COALESCE(creativePackageId,?),flowResult=?,updatedAt=? WHERE id=?")
+            .run(copy.title,description,packageHash,'creative-package-repaired-'+randomUUID(),flowResult,now(),item.itemId);
           factoryCorrected++;
         }
       }
       const changed=item.title!==copy.title||item.description!==description;
-      report.push({episode:item.episode,title:copy.title,changed,factory_changed:promptAuthoritative&&(row.title!==copy.title||row.description!==description),source:copy.source});
+      report.push({episode:item.episode,title:copy.title,changed,factory_changed:factoryChanged,source:copy.source});
       if(changed){
-        item.title=copy.title;item.description=description;hist(item,item.status,'Publication metadata synchronized from this episode generation prompt.');save(db,item);corrected++;
+        item.title=copy.title;item.description=description;
+        hist(item,item.status,legacyRepair?'Legacy E2 metadata restored from its historical prompt-copy audit.':'Publication metadata synchronized from this episode generation prompt.');
+        save(db,item);corrected++;
+      }
+      const storedQuotaError=String(item.status||'')==='error'&&/quota/i.test(String(item.error||''));
+      if(storedQuotaError){
+        item.retryAt=nextYoutubeQuotaRetry();quotaRetryAt=Math.max(quotaRetryAt,item.retryAt);
+        item.error='YouTube daily API quota exhausted. Automatic retry is scheduled after the quota reset.';
+        hist(item,'quota_wait',item.error);save(db,item);
       }
       // Only sync YouTube immediately when copy actually changed. Routine publication
       // scheduling remains in tick(), avoiding needless API calls against daily quota.
@@ -162,7 +194,8 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
         try{await stageMetadata(item);synced++}catch{}
       }
     }
-    if(report.length)console.log('[PUBLICATION COPY AUDIT]',JSON.stringify({corrected,factoryCorrected,synced,items:report}));
+    if(quotaRetryAt)shiftPendingQueueAfter(quotaRetryAt);
+    if(report.length)console.log('[PUBLICATION COPY AUDIT]',JSON.stringify({corrected,factoryCorrected,synced,quotaNormalized:Boolean(quotaRetryAt),items:report}));
   }
 
   async function upload(item){
