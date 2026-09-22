@@ -1095,7 +1095,7 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
 async function waitGenerationStarted(page,baseline,baselineInventory,baselineBusy=0,timeout=90000){
   const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean)),startedAt=Date.now(),deadline=startedAt+timeout;
   const baseVideoTiles=Number(baselineInventory?.video_tile_count||0);
-  let lastEvidence='';
+  let lastEvidence='',sawProvisionalTile=false,provisionalSince=0,vanishedSince=0,lastTileProbeAt=0;
   while(Date.now()<deadline){
     await renderAuthGuard(page);
     const bodyText=await getBody(page).catch(()=>'');
@@ -1104,15 +1104,47 @@ async function waitGenerationStarted(page,baseline,baselineInventory,baselineBus
     const vids=await currentVideos(page);
     const freshVideo=vids.some(v=>v.src&&!baseSrc.has(v.src)&&Number(v.duration||0)>0);
     const inv=await captureFlowInventory(page);
-    const newVideoTile=Number(inv.video_tile_count||0)>baseVideoTiles;
+    const busyCount=await visibleGenerationBusyCount(page).catch(()=>0);
+    const bodyBusy=/generating|processing|rendering|creating video|generando|procesando|upscaling|preparing video|preparando video/i.test(bodyText);
+    const hardBusy=Number(busyCount||0)>Number(baselineBusy||0)||bodyBusy;
+    const tileCount=Number(inv.video_tile_count||0),newVideoTile=tileCount>baseVideoTiles;
     const elapsed=Date.now()-startedAt;
-    lastEvidence=`freshPlayableVideo=${freshVideo}; videoTiles=${baseVideoTiles}->${inv.video_tile_count||0}; allTiles=${baselineInventory?.tile_count||0}->${inv.tile_count||0}; elapsedMs=${elapsed}`;
-    if(freshVideo||newVideoTile){
-      return{started:true,evidence:lastEvidence,videos:vids,inventory:inv,render_complete:true};
+    lastEvidence=`freshPlayableVideo=${freshVideo}; busy=${hardBusy}; busyCount=${baselineBusy}->${busyCount}; videoTiles=${baseVideoTiles}->${tileCount}; allTiles=${baselineInventory?.tile_count||0}->${inv.tile_count||0}; elapsedMs=${elapsed}`;
+
+    // Hard evidence only. A transient Flow grid node is NOT proof that a
+    // generation exists: Flow virtualizes/replaces tile DOM while updating.
+    if(freshVideo||hardBusy){
+      return{started:true,evidence:lastEvidence,videos:vids,inventory:inv,render_complete:freshVideo};
+    }
+
+    if(newVideoTile){
+      sawProvisionalTile=true;
+      vanishedSince=0;
+      if(!provisionalSince)provisionalSince=Date.now();
+      // A tile becomes hard render evidence only when its editor exposes an
+      // enabled Download control. Visible-but-disabled controls do not count.
+      if(Date.now()-lastTileProbeAt>5000){
+        lastTileProbeAt=Date.now();
+        const probe=await openLatestExpectedVideoTile(page,baselineInventory).catch(()=>null);
+        if(probe?.ready){
+          return{started:true,evidence:lastEvidence+'; enabledDownload=true',videos:vids,inventory:inv,render_complete:true};
+        }
+      }
+      if(Date.now()-provisionalSince>8*60*1000){
+        throw new Error('FLOW_NO_RETAINED_RENDER_AFTER_TRANSIENT_TILE');
+      }
+    }else if(sawProvisionalTile){
+      if(!vanishedSince)vanishedSince=Date.now();
+      // The supposed new tile appeared, then vanished, while Flow reports no
+      // busy state and no playable media. Treat that as no retained generation
+      // instead of blocking the head-of-line episode for 20+ minutes.
+      if(Date.now()-vanishedSince>45000){
+        throw new Error('FLOW_NO_RETAINED_RENDER_AFTER_TRANSIENT_TILE');
+      }
     }
     await sleep(1200);
   }
-  return{started:false,evidence:'No real rendered video appeared after the submit boundary. '+lastEvidence};
+  return{started:false,evidence:'No hard Flow generation evidence appeared after the submit boundary. '+lastEvidence};
 }
 function firstFreshRendered(vids,baseline){
   const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean));
@@ -1120,15 +1152,22 @@ function firstFreshRendered(vids,baseline){
   return fresh.length===1?fresh[0]:null;
 }
 async function visibleDownloadButton(page){
+  const usable=async c=>{
+    if(!(await c.isVisible().catch(()=>false)))return false;
+    if(await c.isDisabled().catch(()=>false))return false;
+    if(String(await c.getAttribute('aria-disabled').catch(()=>'')||'').toLowerCase()==='true')return false;
+    if(await c.getAttribute('disabled').catch(()=>null)!==null)return false;
+    return true;
+  };
   const named=page.getByRole('button',{name:/Download|Export|Descargar/i});
   for(let i=(await named.count())-1;i>=0;i--){
     const c=named.nth(i);
-    if(await c.isVisible().catch(()=>false))return c;
+    if(await usable(c))return c;
   }
   const buttons=page.locator('button,[role="button"]');
   for(let i=(await buttons.count())-1;i>=0;i--){
     const c=buttons.nth(i);
-    if(!(await c.isVisible().catch(()=>false)))continue;
+    if(!(await usable(c)))continue;
     const txt=compact((await c.innerText().catch(()=>''))+' '+(await c.getAttribute('aria-label').catch(()=>''))+' '+(await c.getAttribute('title').catch(()=>'')),180);
     if(/download|export|descargar|file_download/i.test(txt))return c;
   }
@@ -1647,7 +1686,7 @@ async function runProvider(){
   setLifecycle(db,fresh,'WAITING_FOR_CREDITS',{prior_generation_id:run,last_error:message,attempt_count:attempts,retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:false});
   setMeta(db,'flow:state','ESPERANDO CRÉDITOS');
   setMeta(db,'flow:message','Google Flow reported insufficient credits. Production will retry later without counting this as a completed generation.');
-}else if(/FLOW_NO_RETAINED_RENDER_AFTER_20M/.test(message)){
+}else if(/FLOW_NO_RETAINED_RENDER_AFTER_(?:20M|TRANSIENT_TILE)/.test(message)){
   const run=String(lc?.generation_id||fresh.providerRunId||'');
   if(run)db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='No retained project asset after 20+ minutes; released for one clean serial retry.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),fresh.id,run);
   const retryAt=Date.now()+30000;
