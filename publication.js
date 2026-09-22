@@ -37,7 +37,8 @@ function earthPromptIsEpisodeBound(row){
   const intent=String(m?.[1]||row?.story||'').trim();
   if(!intent)return false;
   if(/Continue the configured Creative Bible and canon from the previous accepted beat/i.test(intent))return false;
-  if(/^(NEXT CHAPTER|NEW TURN|NEW EPISODE)\b/i.test(String(row?.hook||'').trim()))return false;
+  // A legacy generic hook must not veto a concrete generation prompt/story.
+  // The content actually submitted to Flow is authoritative for publication copy.
   return true;
 }
 function creativePackageDigest(row,title,description){
