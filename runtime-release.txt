@@ -1,5 +1,5 @@
 publisher-runtime-stable-release
-version=2026-09-21.60
+version=2026-09-21.61
 includes=official-logo-and-reference-assets,branding-persisted-in-runtime,reference-led-dashboard,branded-activation,branded-login,branded-youtube-setup,branded-flow-setup,publisher-security-passkeys-and-sessions,account-scoped-multi-railway,existing-publisher-railway-link-awareness,authoritative-factory-config,verified-omni-1-1-flash-video-mode,golden-run-flow-sop,semantic-start-generation-selector,consent-no-dialog-support,flow-point-consent-approve-always-priority,flow-point-consent-approve-once-fallback,persisted-consent-mode,exactly-once-submit-boundary,submit-ambiguity-read-only-reconciliation,retrieval-timeout-no-regeneration,golden-run-existing-asset-recovery,cross-container-generation-lease,daily-target-env-override,strict-head-of-line-episode-ordering,hard-generation-evidence,true-generation-only-daily-accounting,false-start-credit-release,post-setup-success-dashboard
 fix=recorder-role-img-recovery,single-click-consent,chat-video-option-start-evidence,ambiguous-never-autoreleases
 
@@ -35,3 +35,4 @@ fix=runtime-sop-hash-startup-gate,canonical-sop-env
 fix=autonomous-readiness-watcher,official-setup-then-auto-start
 
 fix=universal-sequential-runtime-default,parallel-fallback-forbidden
+fix=unique-per-video-metadata,legacy-earth-review-repair,generic-earth-prompt-block
