@@ -62,3 +62,4 @@ audit=existing-publication-storage-state
 fix=earth-e1-0630-existing-private-schedule,stage-existing-video-after-quota-wait
 audit=earth-e1-0630-effective-state
 fix=episode-bound-copy-authority,semantic-package-gate,immediate-human-redo-priority
+fix=redo-prompt-correlated-recovery,resume-legacy-redo-holds-without-duplicate-submit
