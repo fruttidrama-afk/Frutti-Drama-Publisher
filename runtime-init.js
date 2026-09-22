@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
 import { CONFIG, seedInitial, ensureBacklog } from './runtime-config.js';
 
 const DATA_DIR=path.resolve(process.env.DATA_DIR||'/data');
@@ -73,6 +74,14 @@ CREATE TABLE IF NOT EXISTS factory_items(
 );
 CREATE INDEX IF NOT EXISTS factory_status_idx ON factory_items(status,nextTry,episode);
 CREATE TABLE IF NOT EXISTS factory_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS runtime_knowledge(
+ key TEXT PRIMARY KEY,
+ version TEXT NOT NULL,
+ sha256 TEXT NOT NULL,
+ content TEXT NOT NULL,
+ source TEXT NOT NULL,
+ updatedAt TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS factory_generations(
  id TEXT PRIMARY KEY,
  itemId TEXT NOT NULL,
@@ -125,9 +134,48 @@ put('runtime:show',CONFIG.identity.show_name);
 put('automation:provider','FreeBrowserProvider');
 put('automation:tinyfishRequired','false');
 put('automation:tinyfishFallback','disabled');
-put('automation:factoryEnabled',String(process.env.PUBLISHER_ENABLED||'false').toLowerCase()==='true'?'true':'false');
+// Environment PUBLISHER_ENABLED means the runtime is allowed to automate once setup is ready.
+// The durable DB gate starts closed on a brand-new Publisher and server.js opens it only after
+// YouTube + exact Flow project + Creative Bible readiness has been verified.
+if(!db.prepare("SELECT 1 ok FROM factory_meta WHERE key='automation:factoryEnabled'").get())put('automation:factoryEnabled','false');
 put('automation:noEndDate','true');
 put('automation:planner',CONFIG.content.serialized?'serial-config-v1':'independent-config-v1');
+
+const SOP_VERSION=String(process.env.PUBLISHER_FLOW_SOP_VERSION||CONFIG.knowledge?.flow_sop_version||'FLOW-SOP-v1.0');
+const knowledgeFiles=[
+  'GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md',
+  'GOOGLE_FLOW_AUTOMATION_SOP.json',
+  'FLOW_AI_IMPLEMENTATION_BRIEF.md',
+  'FLOW_RECOVERY_RUNBOOK.md',
+  'FLOW_GOLDEN_TEST.md',
+  'FLOW_FAILURE_CATALOG.md',
+  'FLOW_CHANGELOG.md',
+  'FLOW_SOP_KNOWLEDGE_MANIFEST.json'
+];
+let knowledgeLoaded=0,masterSha='';
+for(const file of knowledgeFiles){
+  try{
+    const full=path.join(process.cwd(),file),content=fs.readFileSync(full,'utf8');
+    const sha256=createHash('sha256').update(content).digest('hex'),updatedAt=new Date().toISOString();
+    db.prepare(`INSERT INTO runtime_knowledge(key,version,sha256,content,source,updatedAt)
+      VALUES(?,?,?,?,?,?)
+      ON CONFLICT(key) DO UPDATE SET version=excluded.version,sha256=excluded.sha256,content=excluded.content,source=excluded.source,updatedAt=excluded.updatedAt`)
+      .run(file,SOP_VERSION,sha256,content,'runtime-repository',updatedAt);
+    if(file==='GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md')masterSha=sha256;
+    knowledgeLoaded++;
+  }catch{}
+}
+put('knowledge:flowSopVersion',SOP_VERSION);
+put('knowledge:flowSopSha256',masterSha||String(process.env.PUBLISHER_FLOW_SOP_SHA256||CONFIG.knowledge?.flow_sop_sha256||''));
+put('knowledge:flowSopDeclaredSha256',String(process.env.PUBLISHER_FLOW_SOP_SHA256||CONFIG.knowledge?.flow_sop_sha256||''));
+put('knowledge:flowSopLoaded',knowledgeLoaded===knowledgeFiles.length?'true':'false');
+put('knowledge:flowSopDocumentCount',String(knowledgeLoaded));
+put('knowledge:inheritToPublisher','true');
+put('automation:exactlyOnceSubmit','true');
+put('automation:strictSerialGeneration','true');
+put('automation:projectGridRecovery','true');
+put('automation:reviewMetadataRequired','true');
+put('automation:goldenTestRequired','true');
 seedInitial(db);
 ensureBacklog(db);
 db.close();
