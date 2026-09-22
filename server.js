@@ -233,12 +233,18 @@ function card(row){row=ensureCopy(row);return{id:row.id,episode:row.episode,hook
 function auditReviewMetadata(){
  const rows=db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode").all(),report=[],promptReport=[];
  for(const row of rows){
-   const fixed=ensureCopy(row),p=String(row.prompt||''),m=p.match(/EPISODE INTENT:\\s*([^\\n]+)/i);
+   const fixed=ensureCopy(row),p=String(row.prompt||''),m=p.match(/EPISODE INTENT:\s*([^\n]+)/i);
+   const storyIdx=p.lastIndexOf('\nSTORY\n'),canonIdx=p.lastIndexOf('\nCANON / CONTINUITY\n');
+   const focusedStart=Math.max(0,canonIdx>=0?canonIdx:(storyIdx>=0?storyIdx:p.length-5000));
    report.push({episode:fixed.episode,title:fixed.title});
-   promptReport.push({episode:row.episode,hook:row.hook,story:row.story,promptIntent:m?.[1]?.trim()||'',promptLength:p.length,promptExcerpt:p.slice(0,12000)});
+   promptReport.push({
+     episode:row.episode,hook:row.hook,story:row.story,
+     promptIntent:m?.[1]?.trim()||'',promptLength:p.length,
+     promptTail:p.slice(focusedStart)
+   });
  }
  if(report.length)console.log('[REVIEW COPY AUDIT]',JSON.stringify(report));
- if(promptReport.length)console.log('[REVIEW PROMPT AUDIT]',JSON.stringify(promptReport));
+ if(promptReport.length)console.log('[REVIEW PROMPT FOCUSED AUDIT]',JSON.stringify(promptReport));
 }
 setTimeout(()=>{try{auditReviewMetadata()}catch(e){console.error('[REVIEW COPY AUDIT ERROR]',String(e?.message||e))}},1100).unref?.();
 app.get('/factory/cards',(req,res)=>res.json({cards:db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode LIMIT 50").all().map(card)}));
