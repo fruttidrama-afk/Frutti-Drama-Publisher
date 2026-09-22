@@ -505,6 +505,7 @@ async function launchLocal() {
     '--disable-features=IsolateOrigins,site-per-process,CalculateNativeWinOcclusion,OptimizationHints,MediaRouter',
     '--disable-background-networking','--disable-component-update','--disable-sync','--disable-extensions','--disable-default-apps',
     '--metrics-recording-only','--no-first-run','--no-default-browser-check','--password-store=basic',
+    '--disk-cache-dir=/tmp/publisher-chrome-cache','--disk-cache-size=16777216','--media-cache-size=8388608',
     '--js-flags=--max-old-space-size=160','--window-size=1024,700',
     flowUrl()
   ],{env,stdio:['ignore','ignore','pipe']});
