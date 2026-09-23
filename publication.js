@@ -514,7 +514,12 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
 
           // Migrate any future video left in YouTube's old scheduled state:
           // remove publishAt once, keep it PRIVATE, then leave it untouched.
-          if(item.videoId&&['scheduled','queued','quota_wait','error','uploaded','auth_wait'].includes(String(item.status||''))){
+          const localStatus=String(item.status||'');
+          const needsPrivatePreparation=item.videoId&&(
+            ['scheduled','queued','quota_wait','error','auth_wait'].includes(localStatus)||
+            (localStatus==='uploaded'&&Boolean(item.remotePublishAt))
+          );
+          if(needsPrivatePreparation){
             const state=await stageMetadata(item);
             item.error=null;item.retryAt=0;save(db,item);
             if(String(state||item.status)==='published')continue;
