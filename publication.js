@@ -87,7 +87,74 @@ function metadata(row,config){
   return{title:copy.title,description,source:promptAuthoritative?'episode-generation-prompt':'derived-fallback'};
 }
 
-function publicItem(r){return{...r,history:JSON.parse(r.history||'[]'),resumableSession:undefined,filePath:r.filePath?true:false}}
+function canonicalPublicationState(r){
+  const s=String(r?.status||'').toLowerCase(),remote=String(r?.remotePrivacyStatus||'').toLowerCase(),hasVideo=Boolean(r?.videoId);
+  if(remote==='public'||s==='published')return{
+    key:'public',label:'PÚBLICO',
+    message:'YouTube confirma que este video ya está público.',
+    resolution:'none',actionRequired:false
+  };
+  if(hasVideo&&(remote==='private'||['uploaded','scheduled','quota_wait'].includes(s)))return{
+    key:'private',label:'PRIVADO',
+    message:s==='quota_wait'
+      ?'El video ya está en YouTube y sigue privado. El sistema volverá a sincronizarlo automáticamente cuando se renueve la cuota.'
+      :'El video ya está en YouTube y permanece privado hasta la hora de publicación.',
+    resolution:s==='quota_wait'?'automatic':'none',actionRequired:false
+  };
+  if(!hasVideo&&s==='queued')return{
+    key:'stock',label:'EN STOCK',
+    message:'El video está guardado en el Publisher y todavía no fue subido a YouTube.',
+    resolution:'automatic',actionRequired:false
+  };
+  if(!hasVideo&&s==='quota_wait')return{
+    key:'pending',label:'PENDIENTE',
+    message:'Todavía no se pudo subir a YouTube porque la cuota diaria está agotada. Se reintentará automáticamente.',
+    resolution:'automatic',actionRequired:false
+  };
+  if(s==='uploading')return{
+    key:'pending',label:'PENDIENTE',
+    message:'La subida privada a YouTube está en curso. No requiere intervención.',
+    resolution:'automatic',actionRequired:false
+  };
+  if(s==='auth_wait')return{
+    key:'pending',label:'ERROR',
+    message:'YouTube necesita reconexión OAuth antes de continuar.',
+    resolution:'action_required',actionRequired:true
+  };
+  if(s==='attention')return{
+    key:'pending',label:'ERROR',
+    message:String(r?.error||'La publicación necesita revisión manual antes de continuar.'),
+    resolution:'action_required',actionRequired:true
+  };
+  if(s==='error'){
+    const automatic=Number(r?.retryAt||0)>Date.now();
+    return{
+      key:'pending',label:automatic?'PENDIENTE':'ERROR',
+      message:String(r?.error|| (automatic?'Hubo un error transitorio y el sistema volverá a intentarlo.':'La publicación requiere intervención.')),
+      resolution:automatic?'automatic':'action_required',actionRequired:!automatic
+    };
+  }
+  return{
+    key:'pending',label:'PENDIENTE',
+    message:String(r?.error||'El video está esperando el siguiente paso del proceso.'),
+    resolution:'automatic',actionRequired:false
+  };
+}
+function publicItem(r){
+  const state=canonicalPublicationState(r);
+  return{
+    ...r,
+    history:JSON.parse(r.history||'[]'),
+    resumableSession:undefined,
+    filePath:Boolean(r.filePath),
+    stockVideoUrl:r.filePath&&!r.videoId?('/publication/'+encodeURIComponent(r.id)+'/video'):null,
+    canonicalStatus:state.key,
+    canonicalLabel:state.label,
+    canonicalMessage:state.message,
+    canonicalResolution:state.resolution,
+    canonicalActionRequired:state.actionRequired
+  };
+}
 function hist(row,status,message=''){const h=JSON.parse(row.history||'[]');h.push({status,at:now(),message});row.history=JSON.stringify(h.slice(-120));row.status=status;row.updatedAt=now()}
 function save(db,row){db.prepare(`UPDATE publication_items SET title=?,description=?,scheduledAt=?,uploadAt=?,status=?,filePath=?,fileSize=?,videoId=?,resumableSession=?,playlistId=?,attempts=?,retryAt=?,error=?,history=?,updatedAt=?,aiDisclosureSyncedAt=?,remotePrivacyStatus=?,remotePublishAt=?,remoteStatusCheckedAt=? WHERE id=?`).run(row.title,row.description,row.scheduledAt,row.uploadAt,row.status,row.filePath,row.fileSize,row.videoId,row.resumableSession,row.playlistId,row.attempts,row.retryAt,row.error,row.history,row.updatedAt,row.aiDisclosureSyncedAt||null,row.remotePrivacyStatus||null,row.remotePublishAt||null,row.remoteStatusCheckedAt||null,row.id)}
 
@@ -569,6 +636,20 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     }catch(e){lastError=String(e?.message||e)}finally{lastHeartbeat=now();running=false}
   }
 
+  app.get('/publication/:id/video',async(req,res)=>{try{
+    const item=db.prepare('SELECT id,filePath,videoId,status FROM publication_items WHERE id=?').get(req.params.id);
+    if(!item)return res.sendStatus(404);
+    if(!item.filePath)return res.status(404).json({error:'Este video ya no conserva una copia local de Stock.'});
+    if(isReviewStorageUri(item.filePath)){
+      const url=await signedReviewUrl(item.filePath,1800);
+      if(!url)return res.status(404).json({error:'No se pudo abrir la copia privada del video.'});
+      return res.redirect(302,url);
+    }
+    const abs=path.resolve(item.filePath),root=path.resolve(dataDir)+path.sep;
+    if(!abs.startsWith(root)||!fs.existsSync(abs))return res.status(404).json({error:'La copia local de Stock ya no está disponible.'});
+    res.setHeader('Cache-Control','private, max-age=0, no-store');
+    return res.sendFile(abs);
+  }catch(e){res.status(500).json({error:String(e?.message||e)})}});
   app.get('/publication/items',(_req,res)=>res.json({items:db.prepare('SELECT * FROM publication_items ORDER BY scheduledAt').all().map(publicItem),scheduler:{alive:true,lastHeartbeat,lastError,indefinite:true}}));
   app.post('/publication/run',(_req,res)=>{setTimeout(()=>void tick(),0);res.status(202).json({ok:true})});
   const timer=setInterval(()=>void tick(),30000);timer.unref?.();setTimeout(()=>void migratePendingPublicationMedia().then(()=>auditExistingMetadata()).then(()=>tick()).catch(e=>{lastError=String(e?.message||e)}),900).unref?.();
