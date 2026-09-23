@@ -14,7 +14,7 @@ import {
   generateRegistrationOptions,verifyRegistrationResponse,
   generateAuthenticationOptions,verifyAuthenticationResponse
 } from '@simplewebauthn/server';
-import { CONFIG,PROJECT_ID,PROJECT_NAME,PROJECT_URL,DAILY_LIMIT,TIMEZONE,ideaForEpisode,ensureBacklog } from './runtime-config.js';
+import { CONFIG,PROJECT_ID,PROJECT_NAME,PROJECT_URL,DAILY_LIMIT,TIMEZONE,ideaForEpisode,ensureBacklog,materializeCreativePackage } from './runtime-config.js';
 import { installPublication } from './publication.js';
 import { buildPublicationCopy } from './publication-copy.js';
 import { signedReviewUrl, deleteReviewObject, isReviewStorageUri } from './review-storage.js';
@@ -40,6 +40,23 @@ for(const sql of [
 
 app.use(express.json({limit:'2mb'}));
 app.use(express.urlencoded({extended:false,limit:'256kb'}));
+
+function applyForcedNewIntentsAtStartup(){
+  let forced={};
+  try{forced=JSON.parse(String(process.env.PUBLISHER_FORCE_NEW_INTENTS_JSON||'{}'))||{}}catch{return}
+  for(const [episodeKey,intent] of Object.entries(forced)){
+    const episode=Number(episodeKey);if(!Number.isInteger(episode)||episode<1)continue;
+    const row=db.prepare('SELECT * FROM factory_items WHERE episode=? ORDER BY season DESC LIMIT 1').get(episode);
+    if(!row||!String(row.reviewFeedback||'').trim())continue;
+    const hook=String(intent?.hook||'').trim(),story=String(intent?.story||'').trim();
+    if(!hook||!story)continue;
+    if(String(row.hook||'')===hook&&String(row.story||'')===story&&String(row.prompt||'').includes('HOOK: '+hook))continue;
+    const out=materializeCreativePackage(db,row,{force:true});
+    console.log('[FORCED NEW EPISODE INTENT APPLIED]',JSON.stringify({episode,hook:out.row?.hook||hook,title:out.row?.title||null,status:out.row?.status||null}));
+  }
+}
+try{applyForcedNewIntentsAtStartup()}catch(e){console.error('[FORCED NEW EPISODE INTENT ERROR]',String(e?.message||e))}
+
 
 const now=()=>new Date().toISOString();
 const safeEq=(a,b)=>{const A=Buffer.from(String(a)),B=Buffer.from(String(b));return A.length===B.length&&timingSafeEqual(A,B)};
