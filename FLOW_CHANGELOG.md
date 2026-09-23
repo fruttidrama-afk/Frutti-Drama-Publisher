@@ -12,3 +12,4 @@
 ## Runtime hardening — 2026-09-23
 - Fixed FLOW-ERR-017 COMPOSER_REQUERY_RACE by reusing the editor resolved by the Flow readiness gate and reacquiring only through that gate after a transient remount.
 - Publisher Factory runtime contract and self-test now reject the defective readiness-then-immediate-requery pattern.
+- Restored Flow's native Retry/Reintentar path for explicit unusual-activity no-charge failures; a failed tile is retried once before any later clean composer submit is allowed.
