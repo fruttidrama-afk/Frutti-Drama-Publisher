@@ -151,6 +151,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       if(String(item.status)!=='published')hist(item,'published',source+' confirms PUBLIC.');
       else item.updatedAt=now();
       item.error=null;item.retryAt=0;save(db,item);
+      console.log('[PUBLICATION REMOTE STATE]',JSON.stringify({episode:item.episode,videoId:item.videoId,state:'published',source,scheduledAt:item.scheduledAt}));
       await cleanupPublicationMedia(item);
       return'published';
     }
@@ -160,6 +161,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       if(String(item.status)!=='scheduled'||changedSchedule)hist(item,'scheduled',changedSchedule?source+' confirms the private schedule; local date/time was corrected to match YouTube.':source+' confirms private scheduled publication.');
       else item.updatedAt=now();
       item.error=null;item.retryAt=0;save(db,item);
+      console.log('[PUBLICATION REMOTE STATE]',JSON.stringify({episode:item.episode,videoId:item.videoId,state:'scheduled',source,scheduledAt:item.scheduledAt,remotePublishAt:item.remotePublishAt}));
       await cleanupPublicationMedia(item);
       return'scheduled';
     }
@@ -187,6 +189,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       item.remoteStatusCheckedAt=now();
       if(String(item.status)!=='published')hist(item,'published','YouTube public page confirms the video is publicly reachable while API status sync is unavailable.');
       item.error=null;item.retryAt=0;save(db,item);
+      console.log('[PUBLICATION PUBLIC FALLBACK]',JSON.stringify({episode:item.episode,videoId:item.videoId,state:'published'}));
       await cleanupPublicationMedia(item);
       return true;
     }catch{return false}
