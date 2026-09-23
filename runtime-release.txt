@@ -70,3 +70,4 @@ fix=youtube-authoritative-publication-state,quota-safe-state-sync,persist-ai-dis
 audit=publication-remote-state-reconciliation
 fix=quota-free-public-youtube-watch-page-reconciliation
 fix=quota-free-oembed-watch-public-reconciliation
+fix=live-earth-publication-state-quota-drift-repair
