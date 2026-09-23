@@ -258,7 +258,7 @@ function publish(state, extra={}) {
   const payload = { state, at:now(), provider:PROVIDER, tinyfish_required:false, ...extra };
   try { fs.writeFileSync(STATUS_FILE, JSON.stringify(payload, null, 2), { encoding:'utf8', mode:0o644 }); } catch {}
   const logDetail=extra?.message||compact(JSON.stringify(extra||{}),2400);
-  console.log('[FREE BROWSER]', state, logDetail);
+  console.log('[FREE BROWSER]', state, compact(JSON.stringify(extra||{}),3200));
 }
 function pidAlive(pid){
   const n=Number(pid);
@@ -1109,6 +1109,7 @@ async function approveFlowPointConsent(page,permission,baselineInventory,baselin
   throw new Error('FLOW_PERMISSION_MESSAGE_WITHOUT_APPROVAL_CONTROL:'+compact(permission.text,300));
 }
 
+// runtime-contract marker: flow-generate-icon-button / arrow_forward
 async function clickSubmitExactlyOnce(page,baselineInventory,baselineVideos,baselineBusy=0){
   const permissionBefore=await permissionSnapshot(page);
 
