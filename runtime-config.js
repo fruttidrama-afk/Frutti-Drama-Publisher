@@ -281,6 +281,17 @@ function effectiveVideoVisualStyle(){
 }
 export function enforceEpisodeIntent(db,row){
   if(!isEarthIn10())return{row,repaired:false,reason:null};
+  let forcedIntents={};
+  try{forcedIntents=JSON.parse(String(process.env.PUBLISHER_FORCE_NEW_INTENTS_JSON||'{}'))||{}}catch{}
+  const forced=forcedIntents[String(row?.episode||'')]||forcedIntents[Number(row?.episode||0)];
+  if(forced&&String(row?.reviewFeedback||'').trim()){
+    const hook=String(forced.hook||'').trim(),story=String(forced.story||'').trim();
+    if(hook&&story&&(String(row.hook||'')!==hook||String(row.story||'')!==story)){
+      db.prepare("UPDATE factory_items SET hook=?,story=?,prompt=NULL,promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title=NULL,description=NULL,creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
+        .run(hook,story,new Date().toISOString(),row.id);
+      row=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row;
+    }
+  }
   const genericIntent=isGenericAutonomousIdea(row?.hook,row?.story);
   const prompt=String(row?.prompt||'');
   const staleGenericPrompt=/HOOK:\s*NEXT CHAPTER/i.test(prompt)||/EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(prompt);
