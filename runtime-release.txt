@@ -113,3 +113,4 @@ fix=adaptive-no-charge-provider-backoff
 fix=isolate-earth-forensic-repairs-from-generic-publishers
 fix=frutti-single-submit-boundary-no-native-retry
 fix=purge-earth-one-off-repairs-from-canonical-runtime
+fix=frutti-aligned-nocharge-contract-consistency
