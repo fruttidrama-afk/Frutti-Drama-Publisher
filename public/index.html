@@ -298,7 +298,7 @@ function publicationUi(x){
   if(s==='scheduled')return{label:'CONFIRMADO · PRIVADO',detail:'Subido en privado y programación confirmada por YouTube.'};
   if(s==='uploaded')return{label:'PRIVADO · VERIFICANDO',detail:'El video ya está en YouTube en privado; falta confirmar la programación.'};
   if(s==='uploading')return{label:'SUBIENDO EN PRIVADO',detail:'La subida a YouTube está en curso.'};
-  if(s==='quota_wait')return{label:hasVideo?'PRIVADO · ESPERANDO CUOTA':'PENDIENTE · ESPERANDO CUOTA',detail:'Todavía no está confirmado. Reintento automático cuando YouTube renueve la cuota diaria.'};
+  if(s==='quota_wait')return{label:hasVideo?'YOUTUBE · SINCRONIZANDO ESTADO':'PENDIENTE · ESPERANDO CUOTA',detail:hasVideo?'El video ya existe en YouTube. El panel no supone que siga privado: sincronizará el estado remoto real (público o programado) en cuanto YouTube responda.':'Todavía no fue subido. Reintento automático cuando YouTube renueve la cuota diaria.'};
   if(s==='queued')return{label:'PENDIENTE',detail:'Aprobado y en cola para subir en privado.'};
   if(s==='auth_wait')return{label:'ERROR · YOUTUBE DESCONECTADO',detail:'Hay que reconectar YouTube antes de continuar.'};
   if(s==='attention')return{label:'REVISAR',detail:x.error||'La publicación necesita revisión antes de continuar.'};
