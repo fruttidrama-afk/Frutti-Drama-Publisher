@@ -79,3 +79,4 @@ fix=four-human-video-states,stock-preview-detail,earth-publishing-redesign
 fix=railway-https-webauthn-origin,publisher-passkey-registration
 fix=publisher-factory-passkey-client-and-account-security
 fix=free-browser-supabase-passkey-bootstrap
+fix=daily-rollover-unblock-stale-ambiguous-generation
