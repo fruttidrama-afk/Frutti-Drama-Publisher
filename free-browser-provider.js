@@ -1289,32 +1289,7 @@ async function findGenerationConsentAction(page){
   ranked.sort((a,b)=>b.score-a.score||b.box.y-a.box.y);
   return ranked[0]||null;
 }
-async function clickSubmitExactlyOnce(page,baselineInventory=null,baselineVideos=[],baselineBusy=0){
-  const noChargeVisible=async()=>{
-    const body=await getBody(page).catch(()=>'');
-    return /unusual activity|actividad inusual/i.test(body)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(body);
-  };
-  const clickNativeRetry=async(stage)=>{
-    if(!(await noChargeVisible()))return false;
-    const retryCandidates=page.getByRole('button',{name:/^(Retry|Reintentar)$/i});
-    for(let i=(await retryCandidates.count().catch(()=>0))-1;i>=0;i--){
-      const retry=retryCandidates.nth(i);
-      if(!(await retry.isVisible().catch(()=>false))||!(await retry.isEnabled().catch(()=>false)))continue;
-      await trustedClick(retry);
-      publish('FLOW_FAILED_TILE_RETRY_CLICKED',{stage,message:'Flow explicitly reported no charge. Used the native Retry action for the failed tile instead of submitting a duplicate prompt.'});
-      await sleep(900);
-      return true;
-    }
-    return false;
-  };
-
-  // A prior no-charge tile is safe to retry: Flow explicitly says that attempt
-  // was not charged and did not create a retained generation. Prefer its native
-  // Retry action before crossing a new composer submit boundary.
-  if(await clickNativeRetry('pre-submit')){
-    return'flow-failed-tile-retry';
-  }
-
+async function clickSubmitExactlyOnce(page){
   const send=await generationSendButton(page,false);
   if(!(await send.isVisible().catch(()=>false))||!(await send.isEnabled().catch(()=>false)))throw new Error('START_GENERATION_BUTTON_NOT_READY');
   await trustedClick(send);
@@ -1329,6 +1304,7 @@ async function clickSubmitExactlyOnce(page,baselineInventory=null,baselineVideos
       await sleep(700);
       return'confirmation-point-cost';
     }
+
     const dialogs=page.getByRole('dialog');
     for(let d=(await dialogs.count().catch(()=>0))-1;d>=0;d--){
       const dialog=dialogs.nth(d);
@@ -1341,21 +1317,6 @@ async function clickSubmitExactlyOnce(page,baselineInventory=null,baselineVideos
         return'confirmation-dialog';
       }
     }
-    // Flow can reject immediately with a no-charge failed tile. In that case,
-    // retry that exact tile once instead of waiting and later submitting again.
-    if(await clickNativeRetry('post-submit-warning')){
-      const retryDeadline=Date.now()+12000;
-      while(Date.now()<retryDeadline){
-        await sleep(350);
-        const transition=await generationTransitionVisible(page,baselineInventory,baselineVideos,baselineBusy).catch(()=>({started:false}));
-        if(transition.started){
-          publish('FLOW_FAILED_TILE_RETRY_STARTED',{message:'Native Flow Retry produced hard generation-start evidence.'});
-          return'flow-failed-tile-retry-confirmed';
-        }
-        if(await noChargeVisible())break;
-      }
-      return'flow-failed-tile-retry';
-    }
     await sleep(200);
   }
 
@@ -1366,13 +1327,21 @@ async function clickSubmitExactlyOnce(page,baselineInventory=null,baselineVideos
     const label=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||''),160);
     if(label)visibleButtons.push(label);
   }
-  const postBody=await getBody(page).catch(()=>'');
-  publish('POST_ARROW_NO_CONSENT',{message:'No point-cost confirmation was detected after the generation arrow.',body:compact(postBody,1600),buttons:visibleButtons.slice(-30)});
-
-  if(await clickNativeRetry('post-consent-timeout')){
-    return'flow-failed-tile-retry';
-  }
+  publish('POST_ARROW_NO_CONSENT',{message:'No point-cost confirmation was detected after the generation arrow.',body:compact(await getBody(page),1600),buttons:visibleButtons.slice(-30)});
   return'start-generation-direct';
+}
+
+async function visibleGenerationBusyCount(page){
+  const busy=page.locator('text=/Generating|Processing|Rendering|Creating video|Generando|Procesando|Starting generation|Initiating|Creando video|Preparando video/i');
+  let n=0;
+  for(let i=0;i<Math.min(await busy.count().catch(()=>0),80);i++){
+    if(await busy.nth(i).isVisible().catch(()=>false))n++;
+  }
+  const progress=page.locator('text=/^(?:[1-9]|[1-9][0-9])%$/');
+  for(let i=0;i<Math.min(await progress.count().catch(()=>0),40);i++){
+    if(await progress.nth(i).isVisible().catch(()=>false))n++;
+  }
+  return n;
 }
 
 async function renderAuthGuard(page){
@@ -1388,155 +1357,50 @@ async function captureFlowInventory(page){
       const tiles=[...document.querySelectorAll('flow-grid-tile-container')].filter(el=>{const r=el.getBoundingClientRect();return r.width>20&&r.height>20;});
       const sigs=tiles.map(el=>String(el.getAttribute('aria-label')||el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,220)).filter(Boolean);
       const body=String(document.body?.innerText||'').replace(/\s+/g,' ').trim();
-      const videoOptions=[...document.querySelectorAll('flow-a2ui-video-option')].filter(el=>{const r=el.getBoundingClientRect();return r.width>20&&r.height>20;});
-      const videoOptionNames=videoOptions.map(el=>{
-        const img=el.querySelector('img,[role="img"]');
-        return String(img?.getAttribute('aria-label')||img?.getAttribute('alt')||el.getAttribute('aria-label')||el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,1200);
-      }).filter(Boolean);
-      const videoTiles=tiles.filter(el=>!!el.querySelector('flow-video-tile'));
-      const videoTileSigs=videoTiles.map(el=>String(el.getAttribute('aria-label')||el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,500)).filter(Boolean);
-      return{
-        tile_count:tiles.length,
-        ordered_signatures:sigs.slice(0,120),
-        signatures:[...new Set(sigs)].slice(0,120),
-        video_tile_count:videoTiles.length,
-        video_tile_signatures:videoTileSigs.slice(0,80),
-        video_option_count:videoOptions.length,
-        video_option_names:videoOptionNames.slice(-40),
-        busy:/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation|creating|preparing video|creando video|preparando video/i.test(body)
-      };
+      return{tile_count:tiles.length,ordered_signatures:sigs.slice(0,120),signatures:[...new Set(sigs)].slice(0,120),busy:/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation/i.test(body)};
     });
-  }catch{return{tile_count:0,ordered_signatures:[],signatures:[],video_tile_count:0,video_tile_signatures:[],video_option_count:0,video_option_names:[],busy:false}}
+  }catch{return{tile_count:0,ordered_signatures:[],signatures:[],busy:false}}
 }
 function inventoryHasNew(current,baseline){
   if(!baseline)return false;
   if(Number(current?.tile_count||0)>Number(baseline?.tile_count||0))return true;
-  if(Number(current?.video_option_count||0)>Number(baseline?.video_option_count||0))return true;
-  const beforeNames=new Set(Array.isArray(baseline?.video_option_names)?baseline.video_option_names:[]);
-  if((Array.isArray(current?.video_option_names)?current.video_option_names:[]).some(x=>!beforeNames.has(x)))return true;
   const before=new Set(Array.isArray(baseline?.signatures)?baseline.signatures:[]);
   return (Array.isArray(current?.signatures)?current.signatures:[]).some(x=>!before.has(x));
 }
-function episodeRecoveryTerms(row){
-  const hook=norm(String(row?.hook||''));
-  const story=norm(String(row?.story||''));
-  const stop=new Set(['cinematic','video','through','while','under','above','below','across','into','from','with','this','that','their','there','where','soft','natural','light','morning','sunrise','dawn','landscape','water','clouds','mist']);
-  const hookTokens=hook.split(' ').filter(x=>x.length>=5&&!stop.has(x));
-  const storyTokens=story.split(' ').filter(x=>x.length>=6&&!stop.has(x));
-  return{hook,anchors:[...new Set([...hookTokens.slice(0,3),...storyTokens.slice(0,5)])].slice(0,8)};
-}
-async function findEpisodeRecoveryAsset(page,row,allowHistory=true){
-  const terms=episodeRecoveryTerms(row);
-  const candidates=[],seen=new Set();
-  const selectors=['flow-grid-tile-container','flow-a2ui-video-option','img','[role="img"]','[aria-label]'];
-  for(const sel of selectors){
-    const loc=page.locator(sel),count=Math.min(await loc.count().catch(()=>0),900);
-    for(let i=0;i<count;i++){
-      const el=loc.nth(i);
-      if(!(await el.isVisible().catch(()=>false)))continue;
-      const info=await el.evaluate(node=>{
-        const r=node.getBoundingClientRect();
-        const raw=[
-          node.getAttribute?.('aria-label')||'',
-          node.getAttribute?.('alt')||'',
-          node.getAttribute?.('title')||'',
-          node.innerText||'',
-          node.textContent||''
-        ].join(' ').replace(/\s+/g,' ').trim();
-        return{raw:raw.slice(0,6000),area:r.width*r.height};
-      }).catch(()=>null);
-      if(!info?.raw||info.area<1200)continue;
-      const n=norm(info.raw);
-      const matched=terms.anchors.filter(t=>n.includes(t));
-      const hookMatch=terms.hook.length>=8&&n.includes(terms.hook);
-      if(!hookMatch&&matched.length<Math.min(2,Math.max(1,terms.anchors.length)))continue;
-      const key=info.raw.slice(0,700);if(seen.has(key))continue;seen.add(key);
-      candidates.push({el,label:compact(info.raw,900),matched,score:(hookMatch?1000:0)+matched.length*100+Math.min(info.area/10000,50)});
-    }
-  }
-  candidates.sort((a,b)=>b.score-a.score);
-  for(const hit of candidates.slice(0,20)){
-    const interactive=hit.el.locator('xpath=ancestor-or-self::button | ancestor-or-self::*[@role="button"] | ancestor-or-self::flow-grid-tile-container').last();
-    const target=await interactive.count().catch(()=>0)?interactive:hit.el;
-    await target.scrollIntoViewIfNeeded().catch(()=>{});
-    await target.click({force:true,timeout:5000}).catch(()=>{});
-    await sleep(1000);
-    const d=await visibleDownloadButton(page);
-    if(d)return{found:true,label:hit.label,matched:hit.matched,source:'episode-prompt-correlation'};
-    await page.keyboard.press('Escape').catch(()=>{});await sleep(250);
-  }
-  if(allowHistory){
-    const history=page.getByRole('button',{name:/Open session history|Session history|Historial de sesiones/i}).last();
-    if(await history.count().catch(()=>0)&&await history.isVisible().catch(()=>false)){
-      await history.click().catch(()=>{});await sleep(900);
-      const retry=await findEpisodeRecoveryAsset(page,row,false);
-      if(retry?.found)return{...retry,source:'session-history/'+retry.source};
-      await page.keyboard.press('Escape').catch(()=>{});
-    }
-  }
-  const samples=[];
-  for(const sel of ['flow-grid-tile-container','flow-a2ui-video-option','img','[role="img"]']){
-    const loc=page.locator(sel),count=Math.min(await loc.count().catch(()=>0),40);
-    for(let i=0;i<count;i++){
-      const el=loc.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
-      const raw=compact(((await el.getAttribute('aria-label').catch(()=>''))||'')+' '+((await el.getAttribute('alt').catch(()=>''))||'')+' '+((await el.getAttribute('title').catch(()=>''))||'')+' '+((await el.innerText().catch(()=>''))||''),500);
-      if(raw&&!samples.includes(raw))samples.push(raw);
-      if(samples.length>=20)break;
-    }
-    if(samples.length>=20)break;
-  }
-  return{found:false,terms,samples};
-}
-async function recoverReviewerRetryAsset(page,row,lc,db){
-  const found=await findEpisodeRecoveryAsset(page,row,true);
-  if(!found?.found){
-    publish('REVIEW_RETRY_RECOVERY_DIAGNOSTIC',{episode:'E'+row.episode,job_id:row.id,terms:found?.terms||null,samples:found?.samples||[]});
-    return false;
-  }
-  const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);
-  try{fs.unlinkSync(localPath)}catch{}
-  const dl=await downloadResult(page,{uiReady:true,signal:'review-redo-prompt-correlation'},localPath);
-  const valid=validateMp4(localPath),recoveredAt=now();
-  const flowResult={
-    provider:PROVIDER,generation_id:lc?.generation_id||row.providerRunId||'',
-    generation_started_at:lc?.generation_started_at||lc?.submit_boundary_at||'',
-    reviewer_retry_recovery:true,matched_label:found.label,matched_terms:found.matched,
-    duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,
-    validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',
-    retrieved_at:recoveredAt
-  };
-  persistReviewMetadata(db,row,flowResult);
-  await saveReviewAsset(db,row,localPath,flowResult,recoveredAt);
-  const runId=String(lc?.generation_id||row.providerRunId||'');
-  if(runId)try{db.prepare("UPDATE factory_generations SET status='review',updatedAt=?,error=NULL WHERE itemId=? AND runId=?").run(recoveredAt,row.id,runId)}catch{}
-  setLifecycle(db,row,'REVIEW_READY',{...lc,generation_id:runId,reviewer_retry:true,recovered_by_prompt_correlation:true,matched_label:found.label,size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,retrieved_at:recoveredAt,automatic_submit_forbidden:true});
-  publish('REVIEW_RETRY_RECOVERED',{episode:'E'+row.episode,job_id:row.id,generation_id:runId,title:String(row.title||''),matched:found.matched,size:valid.size});
-  publish('REVIEW_READY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,generation_id:runId,size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`,factory_url:`/factory/video/${row.id}`});
-  return true;
-}
-
 async function reconcileAmbiguousGeneric(page,row,lc,db){
   const baselineInv=lc?.baseline_inventory||null;
   const boundary=Date.parse(String(lc?.submit_boundary_at||''));
   const age=Number.isFinite(boundary)?Date.now()-boundary:0;
   const currentInv=await captureFlowInventory(page);
   const body=(await getBody(page)).slice(0,14000);
-  if(/unusual activity|actividad inusual/i.test(body)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(body)){
-    const run=String(lc?.generation_id||row.providerRunId||'');
-    scheduleNoChargeRetry(db,row,{run,evidence:'Ambiguous submit reconciled to explicit no-charge unusual-activity response.',reason:'reconcile-ambiguous-no-charge'});
-    return{mode:'wait'};
-  }
   const busy=currentInv.busy||/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation/i.test(body);
-  const fresh=inventoryHasNew(currentInv,baselineInv);
+  const baselineUsable=Boolean(baselineInv&&Number(baselineInv.tile_count||0)>0&&Array.isArray(baselineInv.signatures)&&baselineInv.signatures.length>0);
+  const fresh=baselineUsable&&inventoryHasNew(currentInv,baselineInv);
+
+  // A persisted Flow result is stronger evidence than an unusable/virtualized
+  // baseline. Correlate the rendered tile to this episode before keeping the
+  // job indefinitely in SUBMIT_AMBIGUOUS.
+  if(!busy&&age>=20000){
+    const correlated=await openEpisodeCorrelatedResult(page,row).catch(()=>null);
+    if(correlated?.found){
+      const startedAt=String(lc?.generation_started_at||lc?.submit_boundary_at||now());
+      const next=setLifecycle(db,row,'GENERATION_STARTED',{...lc,generation_started_at:startedAt,evidence:'ambiguous-reconciled-by-'+correlated.signal,matched_label:correlated.label,matched_terms:correlated.matched,reconciled_at:now(),automatic_submit_forbidden:true});
+      db.prepare("UPDATE factory_items SET status='generating',error=NULL,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
+      const runId=String(next.generation_id||row.providerRunId||'');
+      if(runId){
+        const exists=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE itemId=? AND runId=?").get(row.id,runId)?.n||0);
+        if(!exists)try{db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)").run(randomUUID(),row.id,artDay(new Date(startedAt)),sha(String(row.promptHash||'')+':'+runId),CREDITS_PER_GENERATION,'running',runId,startedAt,now(),'automatic')}catch{}
+      }
+      publish('AMBIGUOUS_CORRELATED_RENDER',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,label:correlated.label,matched:correlated.matched,signal:correlated.signal});
+      return{mode:'retrieve',lifecycle:next};
+    }
+    publish('AMBIGUOUS_CORRELATION_DIAGNOSTIC',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,terms:episodeRecoveryTerms(row),samples:(currentInv?.ordered_signatures||currentInv?.signatures||[]).slice(0,18)});
+  }
+
   if(fresh||busy){
     const startedAt=String(lc?.generation_started_at||now());
-    const next=setLifecycle(db,row,'GENERATION_STARTED',{...lc,generation_started_at:startedAt,evidence:`ambiguous-reconciled:fresh=${fresh};busy=${busy};tiles=${baselineInv?.tile_count||0}->${currentInv.tile_count}`,reconciled_at:now(),automatic_submit_forbidden:true});
+    const next=setLifecycle(db,row,'GENERATION_STARTED',{...lc,generation_started_at:startedAt,evidence:`ambiguous-reconciled:fresh=${fresh};busy=${busy};tiles=${baselineInv?.tile_count||0}->${currentInv.tile_count}`,reconciled_at:now()});
     db.prepare("UPDATE factory_items SET status='generating',error=NULL,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
-    const runId=String(next.generation_id||row.providerRunId||'');
-    if(runId){
-      const exists=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE itemId=? AND runId=?").get(row.id,runId)?.n||0);
-      if(!exists)try{db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)").run(randomUUID(),row.id,artDay(new Date(startedAt)),sha(String(row.promptHash||'')+':'+runId),CREDITS_PER_GENERATION,'running',runId,startedAt,now(),'automatic')}catch{}
-    }
     publish('AMBIGUOUS_RECONCILED_GENERATION',{episode:`T${row.season}E${row.episode}`,job_id:row.id,evidence:next.evidence});
     return{mode:'retrieve',lifecycle:next};
   }
@@ -1547,32 +1411,25 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
     const sameSigs=before.length===after.length&&before.every(x=>after.includes(x));
     if(sameCount&&sameSigs&&!busy){
       if(reviewerRetryTokenConsumed(row)){
-        const recovered=await recoverReviewerRetryAsset(page,row,lc,db).catch(e=>{
-          publish('REVIEW_RETRY_RECOVERY_WARNING',{episode:'E'+row.episode,job_id:row.id,message:compact(e?.message||e,500)});
-          return false;
-        });
-        if(recovered)return{mode:'done'};
-        const reauthCount=Number(lc?.retry_reauthorization_count||0);
-        if(age>=8*60*1000&&reauthCount<1){
-          db.prepare("UPDATE factory_items SET status='regen_wait',providerRunId=NULL,reviewRetrySubmittedToken=NULL,error='Verified no retained REDO render after submit; one clean retry re-authorized.',nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?")
-            .run(now(),now(),row.id);
-          setLifecycle(db,row,'REDO_RETRY_REAUTHORIZED',{...lc,reconciled_at:now(),reviewer_retry:true,retry_token:String(row.reviewRetryToken||''),retry_reauthorization_count:reauthCount+1,prior_submit_unretained:true,automatic_submit_forbidden:false});
-          publish('REVIEW_RETRY_REAUTHORIZED',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'No Flow render exists after the prior REDO submit; exactly one clean retry has been re-authorized.'});
-          return{mode:'wait'};
-        }
-        const retryAt=Date.now()+45000;
-        db.prepare("UPDATE factory_items SET status='generating',error=?,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run(
-          'REDO submitted; prompt-correlated recovery is still searching Flow. Generate remains locked to prevent duplicates.',
-          retryAt,now(),now(),row.id
+        db.prepare("UPDATE factory_items SET status='manual_hold',providerRunId=NULL,error=?,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(
+          'Rehacer enviado pero Flow no confirmó resultado. El token quedó consumido y NO se reenviará automáticamente; se requiere un nuevo Rehacer humano.',
+          now(),now(),row.id
         );
-        setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{...lc,reconciled_at:now(),automatic_submit_forbidden:true,reviewer_retry:true,retry_token:String(row.reviewRetryToken||''),retry_at:new Date(retryAt).toISOString(),recovery_mode:'prompt-correlated',retry_reauthorization_count:reauthCount});
-        publish('REVIEW_RETRY_RECOVERY_PENDING',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'REDO result not correlated yet; recovery continues automatically without a duplicate Generate.'});
+        setLifecycle(db,row,'MANUAL_HOLD_SUBMIT_NOT_CONFIRMED',{
+          ...lc,
+          reconciled_at:now(),
+          evidence:`No new Flow result after ${Math.round(age/1000)}s; inventory unchanged at ${currentInv.tile_count} tiles.`,
+          automatic_submit_forbidden:true,
+          reviewer_retry:true,
+          retry_token:String(row.reviewRetryToken||'')
+        });
+        publish('REVIEW_RETRY_NOT_CONFIRMED_HOLD',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Reviewer retry token is consumed. Flow showed no result; automatic resubmit is forbidden until a new human Rehacer request.'});
         return{mode:'wait'};
       }
       const retryAt=Date.now()+60000;
-      db.prepare("UPDATE factory_items SET status='generating',error=?,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run('SUBMIT_AMBIGUOUS — inventory unchanged is not proof of no generation; Generate remains locked.',retryAt,now(),now(),row.id);
-      setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{...lc,reconciled_at:now(),evidence:`Inventory unchanged after ${Math.round(age/1000)}s; this is insufficient to prove no generation.`,retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:true,last_inventory:currentInv});
-      publish('AMBIGUOUS_STILL_LOCKED',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'No unique result yet. Generate stays locked; reconciliation will continue.'});
+      db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run(retryAt,now(),now(),row.id);
+      setLifecycle(db,row,'RECONCILED_NO_GENERATION',{prior_generation_id:String(lc?.generation_id||row.providerRunId||''),submit_boundary_at:String(lc?.submit_boundary_at||''),reconciled_at:now(),evidence:`No new Flow result after ${Math.round(age/1000)}s; inventory unchanged at ${currentInv.tile_count} tiles.`,retry_at:new Date(retryAt).toISOString()});
+      publish('AMBIGUOUS_RECONCILED_NO_GENERATION',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Flow inventory unchanged; automatic episode generation may retry after backoff.'});
       return{mode:'wait'};
     }
   }
