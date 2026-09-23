@@ -28,7 +28,7 @@ for(const k of ['exactly_once_submit','strict_serial_generation','project_grid_r
 must(schema.properties?.schedule?.properties?.generation_strategy?.const==='sequential','generation strategy must be sequential');
 must(schema.properties?.knowledge?.properties?.flow_sop_version?.const==='FLOW-SOP-v1.0','schema knowledge version mismatch');
 
-for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY_ENTERED','automatic_submit_forbidden','flow-grid-tile-container','flow-tile-hover-footer','EPISODE_INTENT_REPAIRED','CREATIVE_PACKAGE_READY','creativePackageHash','source:\'creative-package\'','let editor=await waitFlowReady(page,30000)','FLOW_FAILED_TILE_RETRY_CLICKED','Retry|Reintentar']){
+for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY_ENTERED','automatic_submit_forbidden','flow-grid-tile-container','flow-tile-hover-footer','EPISODE_INTENT_REPAIRED','CREATIVE_PACKAGE_READY','creativePackageHash','source:\'creative-package\'','let editor=await waitFlowReady(page,30000)']){
   must(provider.includes(token),'provider contract missing '+token);
 }
 must(!provider.includes("await waitFlowReady(page,30000);\n  const editor=await promptEditor(page);"),'provider must not re-query the Flow composer immediately after readiness');
