@@ -2571,6 +2571,30 @@ function rearmEarthE11AfterFullFruttiPort(db){
   return true;
 }
 
+function rearmEarthE11AfterStableComposerFix(db){
+  if(EXPECTED_FLOW_PROJECT_NAME!=='EARTH IN 10')return false;
+  const key='repair:earth-e11-stable-composer-handoff-v1';
+  if(meta(db,key,'')==='done')return false;
+  const row=db.prepare("SELECT * FROM factory_items WHERE episode=11 LIMIT 1").get();
+  if(!row){setMeta(db,key,'done');return false;}
+  const confirmed=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE itemId=? AND credits>0 AND status NOT IN ('no_generation','infra_rejected')").get(row.id)?.n||0);
+  const noMedia=!row.videoPath&&!row.remoteUrl&&!row.reviewVideoId;
+  const explicitNoCharge=/FLOW_(?:TRANSIENT_)?NO_CHARGE/.test(String(row.error||''));
+  if(String(row.status||'')==='draft'&&noMedia&&confirmed===0&&explicitNoCharge){
+    db.prepare("UPDATE factory_items SET providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
+    setMeta(db,'flow:transientCooldownUntil','0');
+    setMeta(db,'flow:noChargeStreak:'+row.id,'0');
+    setLifecycle(db,row,'STABLE_COMPOSER_FIX_REARMED',{
+      rearmed_at:now(),
+      automatic_submit_forbidden:false,
+      evidence:'Prior E11 attempt explicitly produced no charge/no retained media. Cooldown cleared once after stable composer handoff deployment.'
+    });
+    publish('STABLE_COMPOSER_FIX_REARMED',{episode:'E11',job_id:row.id,message:'E11 no-charge cooldown cleared once so the stable composer handoff can be exercised immediately.'});
+  }
+  setMeta(db,key,'done');
+  return true;
+}
+
 function productionCandidate(db){
   // Recovery always wins, but out-of-order ambiguous rows are quarantined by
   // normalizeOutOfOrderAmbiguous() before this function runs.
@@ -2720,7 +2744,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db);realignEarthE11ToFruttiProtocol(db);rearmEarthE11AfterFullFruttiPort(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db);realignEarthE11ToFruttiProtocol(db);rearmEarthE11AfterFullFruttiPort(db);rearmEarthE11AfterStableComposerFix(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
