@@ -2268,79 +2268,6 @@ function quarantineStaleReviewerRetryAmbiguous(db){
 }
 
 
-function repairEarthE10NoGeneration(db){
-  if(EXPECTED_FLOW_PROJECT_NAME!=='EARTH IN 10')return false;
-  const key='repair:earth-e10-no-generation-v1';
-  if(meta(db,key,'')==='done')return false;
-  const row=db.prepare("SELECT * FROM factory_items WHERE episode=10 LIMIT 1").get();
-  if(!row){setMeta(db,key,'done');return false;}
-  const lc=lifecycle(db,row)||{};
-  const state=String(lc.state||'').toUpperCase();
-  const mode=String(lc.submit_mode||'');
-  const noResult=String(row.status||'')==='generating'&&state==='SUBMIT_AMBIGUOUS'&&/composer-arrow-direct/.test(mode);
-  if(noResult){
-    const run=String(lc.generation_id||row.providerRunId||'');
-    if(run){
-      try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Operator verified no Flow generation after direct arrow click.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),row.id,run)}catch{}
-    }
-    db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?")
-      .run(now(),now(),row.id);
-    setLifecycle(db,row,'NO_GENERATION_REPAIRED',{prior_generation_id:run,repaired_at:now(),automatic_submit_forbidden:false,evidence:'No render or generation exists in Flow; previous direct arrow click produced no confirmation and no hard start evidence.'});
-    publish('NO_GENERATION_REPAIRED',{episode:'E10',job_id:row.id,message:'False ambiguous submit cleared. E10 is ready for one clean automatic submit using the repaired interactive control and point-cost confirmation.'});
-  }
-  setMeta(db,key,'done');
-  return noResult;
-}
-
-function repairEarthE11KnownNoCharge(db){
-  if(EXPECTED_FLOW_PROJECT_NAME!=='EARTH IN 10')return false;
-  const key='repair:earth-e11-known-no-charge-v1';
-  if(meta(db,key,'')==='done')return false;
-  const row=db.prepare("SELECT * FROM factory_items WHERE episode=11 LIMIT 1").get();
-  if(!row){setMeta(db,key,'done');return false;}
-  const lc=lifecycle(db,row)||{};
-  if(String(row.status||'')==='generating'&&String(lc.state||'').toUpperCase()==='SUBMIT_AMBIGUOUS'){
-    const run=String(lc.generation_id||row.providerRunId||'');
-    if(run)try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Known Google Flow no-charge unusual-activity rejection.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),row.id,run)}catch{}
-    db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
-    setLifecycle(db,row,'KNOWN_NO_CHARGE_REPAIRED',{prior_generation_id:run,repaired_at:now(),automatic_submit_forbidden:false,evidence:'Live Flow UI explicitly reported unusual activity and that this generation was not charged.'});
-    publish('KNOWN_NO_CHARGE_REPAIRED',{episode:'E11',job_id:row.id,message:'Verified no-charge E11 attempt cleared. Automatic production can retry immediately under the repaired detector.'});
-    setMeta(db,key,'done');
-    return true;
-  }
-  setMeta(db,key,'done');
-  return false;
-}
-
-function repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db){
-  if(EXPECTED_FLOW_PROJECT_NAME!=='EARTH IN 10')return false;
-  const key='repair:earth-2026-09-23-only-e10-rendered-v1';
-  if(meta(db,key,'')==='done')return false;
-
-  // Operator verified live in Google Flow that only the first successful render
-  // of the day exists. All later E11+ attempts produced no retained generation.
-  // Clear those stale pre/reconciliation states once, then let strict serial
-  // production restart from E11. Review/queued/published rows are never touched.
-  const rows=db.prepare("SELECT * FROM factory_items WHERE episode>=11 AND status NOT IN ('review','queued','historical','published') AND (reviewFeedback IS NULL OR TRIM(reviewFeedback)='') ORDER BY episode").all();
-  let repaired=0;
-  for(const row of rows){
-    try{
-      db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Operator confirmed no retained Google Flow render after today\\'s first successful episode.',updatedAt=? WHERE itemId=? AND status NOT IN ('review','completed')").run(now(),row.id);
-    }catch{}
-    db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?")
-      .run(now(),now(),row.id);
-    setLifecycle(db,row,'OPERATOR_CONFIRMED_NO_GENERATION_RESET',{
-      repaired_at:now(),
-      automatic_submit_forbidden:false,
-      operator_evidence:"Only today's first successful Earth in Ten render is present in Google Flow; later attempts retained no generation."
-    });
-    repaired++;
-  }
-  setMeta(db,key,'done');
-  if(repaired)publish('TODAY_STALE_ATTEMPTS_RESET',{repaired,message:'Cleared stale E11+ no-generation states after operator verification. Strict serial production resumes from E11 only.'});
-  return repaired>0;
-}
-
 function normalizeOutOfOrderAmbiguous(db){
   // Any ambiguous submit for episode N that was created before N-1 reached
   // Review is a legacy sequencing violation. Preserve the submit evidence and
@@ -2448,95 +2375,6 @@ function seedTransientCooldownFromRecentNoCharge(db){
   setMeta(db,key,'done');
 }
 
-
-function armImmediateNoChargeRetryAfterUpgrade(db){
-  const key='repair:flow-no-charge-retry-button-v1';
-  if(meta(db,key,'')==='done')return false;
-  const row=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND error LIKE 'FLOW_TRANSIENT_NO_CHARGE%' ORDER BY episode LIMIT 1").get();
-  if(row){
-    db.prepare("UPDATE factory_items SET nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
-    setMeta(db,'flow:transientCooldownUntil','0');
-    publish('NO_CHARGE_RETRY_REARMED',{episode:'E'+row.episode,job_id:row.id,message:'Cleared the old cooldown once so Flow’s own failed-tile Retry action can run immediately after this runtime upgrade.'});
-  }
-  setMeta(db,key,'done');
-  return Boolean(row);
-}
-
-function armImmediateNoChargeRetryV2(db){
-  const key='repair:flow-no-charge-post-failure-retry-v2';
-  if(meta(db,key,'')==='done')return false;
-  const row=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND error LIKE 'FLOW_TRANSIENT_NO_CHARGE%' ORDER BY episode LIMIT 1").get();
-  if(row){
-    db.prepare("UPDATE factory_items SET nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
-    setMeta(db,'flow:transientCooldownUntil','0');
-    publish('NO_CHARGE_RETRY_V2_REARMED',{episode:'E'+row.episode,job_id:row.id,message:'Testing Flow’s own Retry action immediately after the no-charge warning, without another duplicate prompt submit.'});
-  }
-  setMeta(db,key,'done');
-  return Boolean(row);
-}
-
-function realignEarthE11ToFruttiProtocol(db){
-  if(EXPECTED_FLOW_PROJECT_NAME!=='EARTH IN 10')return false;
-  const key='repair:earth-e11-frutti-protocol-v1';
-  if(meta(db,key,'')==='done')return false;
-  const row=db.prepare("SELECT * FROM factory_items WHERE episode=11 LIMIT 1").get();
-  if(!row){setMeta(db,key,'done');return false;}
-  const noMedia=!row.videoPath&&!row.remoteUrl&&!row.reviewVideoId;
-  const oldCooldown=/FLOW_TRANSIENT_NO_CHARGE/.test(String(row.error||''))&&Number(row.nextTry||0)>Date.now();
-  if(String(row.status||'')==='draft'&&noMedia&&oldCooldown){
-    db.prepare("UPDATE factory_items SET providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
-    setMeta(db,'flow:transientCooldownUntil','0');
-    setMeta(db,'flow:noChargeStreak:'+row.id,'0');
-    setLifecycle(db,row,'PROTOCOL_REALIGNED_RETRY',{realigned_at:now(),automatic_submit_forbidden:false,evidence:'Removed Earth-only failed-tile/global-cooldown behavior; using FruttiDrama composer submit and recover-to-review handoff.'});
-    publish('PROTOCOL_REALIGNED_RETRY',{episode:'E11',job_id:row.id,message:'Earth E11 re-armed immediately under the same generate → recover → next protocol as FruttiDrama.'});
-  }
-  setMeta(db,key,'done');
-  return true;
-}
-
-function rearmEarthE11AfterFullFruttiPort(db){
-  if(EXPECTED_FLOW_PROJECT_NAME!=='EARTH IN 10')return false;
-  const key='repair:earth-e11-full-frutti-port-v1';
-  if(meta(db,key,'')==='done')return false;
-  const row=db.prepare("SELECT * FROM factory_items WHERE episode=11 LIMIT 1").get();
-  if(!row){setMeta(db,key,'done');return false;}
-  const lc=lifecycle(db,row)||{};
-  const confirmed=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE itemId=? AND credits>0 AND status NOT IN ('no_generation','infra_rejected')").get(row.id)?.n||0);
-  const noMedia=!row.videoPath&&!row.remoteUrl&&!row.reviewVideoId;
-  if(noMedia&&confirmed===0&&['generating','draft'].includes(String(row.status||''))){
-    db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?")
-      .run(now(),now(),row.id);
-    setMeta(db,'flow:transientCooldownUntil','0');
-    setLifecycle(db,row,'FULL_FRUTTI_PROTOCOL_REARMED',{prior_state:String(lc.state||''),rearmed_at:now(),automatic_submit_forbidden:false,evidence:'No hard Flow start/retained render exists; Earth browser interaction layer now matches the working FruttiDrama protocol.'});
-    publish('FULL_FRUTTI_PROTOCOL_REARMED',{episode:'E11',job_id:row.id,message:'E11 re-armed once under the same composer/settings/send/start-confirmation protocol that completed FruttiDrama today.'});
-  }
-  setMeta(db,key,'done');
-  return true;
-}
-
-function rearmEarthE11AfterStableComposerFix(db){
-  if(EXPECTED_FLOW_PROJECT_NAME!=='EARTH IN 10')return false;
-  const key='repair:earth-e11-stable-composer-handoff-v1';
-  if(meta(db,key,'')==='done')return false;
-  const row=db.prepare("SELECT * FROM factory_items WHERE episode=11 LIMIT 1").get();
-  if(!row){setMeta(db,key,'done');return false;}
-  const confirmed=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE itemId=? AND credits>0 AND status NOT IN ('no_generation','infra_rejected')").get(row.id)?.n||0);
-  const noMedia=!row.videoPath&&!row.remoteUrl&&!row.reviewVideoId;
-  const explicitNoCharge=/FLOW_(?:TRANSIENT_)?NO_CHARGE/.test(String(row.error||''));
-  if(String(row.status||'')==='draft'&&noMedia&&confirmed===0&&explicitNoCharge){
-    db.prepare("UPDATE factory_items SET providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
-    setMeta(db,'flow:transientCooldownUntil','0');
-    setMeta(db,'flow:noChargeStreak:'+row.id,'0');
-    setLifecycle(db,row,'STABLE_COMPOSER_FIX_REARMED',{
-      rearmed_at:now(),
-      automatic_submit_forbidden:false,
-      evidence:'Prior E11 attempt explicitly produced no charge/no retained media. Cooldown cleared once after stable composer handoff deployment.'
-    });
-    publish('STABLE_COMPOSER_FIX_REARMED',{episode:'E11',job_id:row.id,message:'E11 no-charge cooldown cleared once so the stable composer handoff can be exercised immediately.'});
-  }
-  setMeta(db,key,'done');
-  return true;
-}
 
 function productionCandidate(db){
   // Recovery always wins, but out-of-order ambiguous rows are quarantined by
@@ -2692,7 +2530,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);if(EXPECTED_FLOW_PROJECT_NAME==='EARTH IN 10'){repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db);realignEarthE11ToFruttiProtocol(db);rearmEarthE11AfterFullFruttiPort(db);rearmEarthE11AfterStableComposerFix(db)}quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
