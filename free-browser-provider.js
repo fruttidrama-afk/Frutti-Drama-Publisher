@@ -2180,14 +2180,13 @@ async function processRow(db,row){
 function reconcileAmbiguousNoGeneration(){return false;}
 function serialReady(db,row){
   if(!row)return false;if(!CONFIG.content.serialized||Number(row.episode)<=1)return true;
-  const prev=db.prepare('SELECT status,videoPath,remoteUrl,reviewVideoId,flowResult FROM factory_items WHERE episode<? ORDER BY episode DESC LIMIT 1').get(Number(row.episode));if(!prev)return false;
+  const prev=db.prepare('SELECT status FROM factory_items WHERE episode<? ORDER BY episode DESC LIMIT 1').get(Number(row.episode));if(!prev)return false;
   const gate=CONFIG.content.continuity_gate;if(gate==='none')return true;
-  // Serial production handoff occurs when the previous render has been safely
-  // recovered and is available for Review. Human Approve/Redo happens later and
-  // must never block today's next generation.
-  if(['review','queued','historical','published'].includes(String(prev.status||'')))return true;
-  let fr={};try{fr=JSON.parse(String(prev.flowResult||'{}'))||{}}catch{}
-  return Boolean(prev.videoPath||prev.remoteUrl||prev.reviewVideoId||fr?.validated_ftyp);
+  // Strict handoff: the next episode may start only after the previous render
+  // has been recovered into Review (or has already advanced beyond Review).
+  // Approve/Redo is NOT required. Draft/regen rows never count as recovered,
+  // even if stale media fields from an older attempt still exist.
+  return ['review','queued','historical','published'].includes(String(prev.status||''));
 }
 function retryTokenOpen(row){
   const token=String(row?.reviewRetryToken||'').trim(),submitted=String(row?.reviewRetrySubmittedToken||'').trim();
