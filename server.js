@@ -46,13 +46,26 @@ function applyForcedNewIntentsAtStartup(){
   try{forced=JSON.parse(String(process.env.PUBLISHER_FORCE_NEW_INTENTS_JSON||'{}'))||{}}catch{return}
   for(const [episodeKey,intent] of Object.entries(forced)){
     const episode=Number(episodeKey);if(!Number.isInteger(episode)||episode<1)continue;
-    const row=db.prepare('SELECT * FROM factory_items WHERE episode=? ORDER BY season DESC LIMIT 1').get(episode);
+    let row=db.prepare('SELECT * FROM factory_items WHERE episode=? ORDER BY season DESC LIMIT 1').get(episode);
     if(!row||!String(row.reviewFeedback||'').trim())continue;
     const hook=String(intent?.hook||'').trim(),story=String(intent?.story||'').trim();
     if(!hook||!story)continue;
-    if(String(row.hook||'')===hook&&String(row.story||'')===story&&String(row.prompt||'').includes('HOOK: '+hook))continue;
-    const out=materializeCreativePackage(db,row,{force:true});
-    console.log('[FORCED NEW EPISODE INTENT APPLIED]',JSON.stringify({episode,hook:out.row?.hook||hook,title:out.row?.title||null,status:out.row?.status||null}));
+    const alreadyApplied=String(row.hook||'')===hook&&String(row.story||'')===story&&String(row.prompt||'').includes('HOOK: '+hook);
+    const out=alreadyApplied?{row}:materializeCreativePackage(db,row,{force:true});
+    row=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||out.row||row;
+    let redoReauthorized=false;
+    // The current operator explicitly requested a NEW redo for this replacement
+    // intent. A legacy consumed/ambiguous retry must not keep the new creative
+    // package in manual_hold. Mint one fresh retry token exactly once.
+    if(String(row.status||'')==='manual_hold'){
+      try{if(row.videoPath&&fs.existsSync(row.videoPath))fs.rmSync(row.videoPath,{force:true})}catch{}
+      const retryToken=randomBytes(24).toString('hex'),stamp=new Date().toISOString();
+      db.prepare(`UPDATE factory_items SET status='regen_wait',retryStrategy='revise_prompt',reviewRetryToken=?,reviewRetrySubmittedToken=NULL,videoPath=NULL,remoteUrl=NULL,providerRunId=NULL,flowResult=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewArchiveError=NULL,reviewContentHash=NULL,error='Nuevo Rehacer autorizado por el operador para el concepto reemplazado.',nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?`)
+        .run(retryToken,stamp,stamp,row.id);
+      row=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row;
+      redoReauthorized=true;
+    }
+    console.log('[FORCED NEW EPISODE INTENT APPLIED]',JSON.stringify({episode,hook:row?.hook||hook,title:row?.title||null,status:row?.status||null,redoReauthorized}));
   }
 }
 try{applyForcedNewIntentsAtStartup()}catch(e){console.error('[FORCED NEW EPISODE INTENT ERROR]',String(e?.message||e))}
