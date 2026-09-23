@@ -2393,6 +2393,22 @@ function normalizeOutOfOrderAmbiguous(db){
     break;
   }
 }
+function normalizeLiveNoChargeCooldown(db){
+  try{
+    const rows=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND error LIKE 'FLOW_TRANSIENT_NO_CHARGE%' ORDER BY episode").all();
+    for(const row of rows){
+      const key='flow:noChargeStreak:'+row.id;
+      let streak=Number(meta(db,key,'0'))||0;
+      if(streak<2){streak=2;setMeta(db,key,String(streak))}
+      const minUntil=Date.now()+20*60*1000;
+      if(Number(row.nextTry||0)<minUntil){
+        db.prepare("UPDATE factory_items SET nextTry=?,error=?,updatedAt=? WHERE id=?").run(minUntil,'FLOW_TRANSIENT_NO_CHARGE — automatic retry scheduled after 20m cooldown.',now(),row.id);
+        setMeta(db,'flow:transientCooldownUntil',String(minUntil));
+        publish('FLOW_TRANSIENT_COOLDOWN_EXTENDED',{episode:'E'+row.episode,job_id:row.id,until:new Date(minUntil).toISOString(),message:'Repeated no-charge unusual-activity responses detected. Cooldown extended automatically to stop hammering Flow.'});
+      }
+    }
+  }catch(e){publish('FLOW_TRANSIENT_COOLDOWN_WARNING',{message:compact(e?.message||e,300)})}
+}
 function seedTransientCooldownFromRecentNoCharge(db){
   const key='repair:flow-transient-cooldown-seed-v1';
   if(meta(db,key,'')==='done')return;
@@ -2556,10 +2572,11 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);seedTransientCooldownFromRecentNoCharge(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);normalizeLiveNoChargeCooldown(db);seedTransientCooldownFromRecentNoCharge(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
+    setMeta(db,'automation:serialHandoffMode','recover-to-review-no-approval-gate');
     setMeta(db,'maintenance:supabasePasskeysLastOutcome','deferred_while_content_worker_active');
     const migrated=await migrateProfileOnce(db);if(!migrated)return;
     const goldenRecovery=await recoverGoldenRunIfRequested(db);
@@ -2592,13 +2609,17 @@ async function runProvider(){
     try{if(db&&row){const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row,lc=lifecycle(db,fresh)||{},state=String(lc.state||'').toUpperCase(),attempts=Number(fresh.runtimeAttemptCount||0)+1,beforeGenerate=!AFTER_GENERATE.has(state)&&!AMBIGUOUS.has(state),baseBackoff=beforeGenerate?10000:60000,capBackoff=beforeGenerate?5*60*1000:60*60*1000,backoff=Math.min(capBackoff,baseBackoff*Math.pow(2,Math.min(attempts-1,6))),nextTry=Date.now()+backoff;if(/FLOW_TRANSIENT_NO_CHARGE/.test(message)){
   const run=String(lc?.generation_id||fresh.providerRunId||'');
   if(run)try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Google Flow transient unusual-activity rejection; explicitly not charged.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),fresh.id,run)}catch{}
-  const retryAt=Date.now()+10*60*1000;
+  const streakKey='flow:noChargeStreak:'+fresh.id;
+  const streak=Math.max(1,(Number(meta(db,streakKey,'0'))||0)+1);
+  setMeta(db,streakKey,String(streak));
+  const cooldownMinutes=Math.min(60,10*Math.pow(2,Math.min(streak-1,3)));
+  const retryAt=Date.now()+cooldownMinutes*60*1000;
   setMeta(db,'flow:transientCooldownUntil',String(retryAt));
-  db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),'FLOW_TRANSIENT_NO_CHARGE — automatic retry scheduled after cooldown.',retryAt,now(),fresh.id);
-  setLifecycle(db,fresh,'TRANSIENT_NO_CHARGE_RETRY',{prior_generation_id:run,last_error:message,attempt_count:attempts,retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:false});
-  setMeta(db,'flow:state','CONECTADO');
-  setMeta(db,'flow:message','Google Flow rechazó temporalmente la generación sin cobrar puntos. Reintento automático programado.');
-  publish('TRANSIENT_NO_CHARGE_RETRY',{episode:'E'+fresh.episode,job_id:fresh.id,retry_at:new Date(retryAt).toISOString(),message:'Flow explicitly reported no charge. This attempt is not counted; automatic retry remains enabled.'});
+  db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),'FLOW_TRANSIENT_NO_CHARGE — automatic retry scheduled after '+cooldownMinutes+'m cooldown.',retryAt,now(),fresh.id);
+  setLifecycle(db,fresh,'TRANSIENT_NO_CHARGE_RETRY',{prior_generation_id:run,last_error:message,attempt_count:attempts,no_charge_streak:streak,cooldown_minutes:cooldownMinutes,retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:false});
+  setMeta(db,'flow:state','ESPERANDO FLOW');
+  setMeta(db,'flow:message','Google Flow rechazó temporalmente la generación por actividad inusual sin cobrar puntos. Reintento automático del mismo episodio después del cooldown; no se avanza al siguiente hasta recuperarlo.');
+  publish('TRANSIENT_NO_CHARGE_RETRY',{episode:'E'+fresh.episode,job_id:fresh.id,retry_at:new Date(retryAt).toISOString(),streak,cooldown_minutes:cooldownMinutes,message:'Flow explicitly reported no charge. The same episode will retry automatically after a progressive cooldown; this attempt is not counted.'});
 }else if(/FLOW_INSUFFICIENT_CREDITS/.test(message)){
   const run=String(lc?.generation_id||fresh.providerRunId||'');
   if(run)db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Flow reported insufficient credits; no retained video.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),fresh.id,run);
@@ -2617,7 +2638,7 @@ async function runProvider(){
 }else if(/FLOW_GENERATION_FAILED/.test(message)){db.prepare("UPDATE factory_items SET status='failed_after_generate',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=0,updatedAt=? WHERE id=?").run(attempts,now(),message,now(),fresh.id);setLifecycle(db,fresh,'FAILED_AFTER_GENERATE',{last_error:message,attempt_count:attempts})}else if(AFTER_GENERATE.has(state)){db.prepare("UPDATE factory_items SET status='generating',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id);setLifecycle(db,fresh,'RETRIEVAL_PENDING',{...lc,last_error:message,attempt_count:attempts,retry_at:new Date(nextTry).toISOString()})}else if(AMBIGUOUS.has(state)){db.prepare("UPDATE factory_items SET status='generating',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id)}else if(reviewerRetryTokenConsumed(fresh)){
   db.prepare("UPDATE factory_items SET status='manual_hold',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=0,updatedAt=? WHERE id=?").run(attempts,now(),message,now(),fresh.id);
   setLifecycle(db,fresh,'MANUAL_HOLD_CONSUMED_RETRY',{...lc,last_error:message,attempt_count:attempts,automatic_submit_forbidden:true,retry_token:String(fresh.reviewRetryToken||'')});
-}else{db.prepare("UPDATE factory_items SET status='draft',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id);setLifecycle(db,fresh,'FAILED_BEFORE_GENERATE',{last_error:message,attempt_count:attempts,retry_at:new Date(nextTry).toISOString()})}}if(db){setMeta(db,'flow:state',/FLOW_AUTH/.test(message)?'REQUIERE REAUTENTICACIÓN':'ERROR');setMeta(db,'flow:message',message)}}catch{}publish('ERROR',{message,episode:row?('E'+row.episode):null});
+}else{db.prepare("UPDATE factory_items SET status='draft',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id);setLifecycle(db,fresh,'FAILED_BEFORE_GENERATE',{last_error:message,attempt_count:attempts,retry_at:new Date(nextTry).toISOString()})}}if(db&&!/FLOW_TRANSIENT_NO_CHARGE|FLOW_INSUFFICIENT_CREDITS/.test(message)){setMeta(db,'flow:state',/FLOW_AUTH/.test(message)?'REQUIERE REAUTENTICACIÓN':'ERROR');setMeta(db,'flow:message',message)}}catch{}publish(/FLOW_TRANSIENT_NO_CHARGE/.test(message)?'FLOW_COOLDOWN':'ERROR',{message,episode:row?('E'+row.episode):null});
   }finally{try{db?.close()}catch{}releaseLock()}
 }
 globalThis.__publisherRunProvider=()=>{void runProvider();};
