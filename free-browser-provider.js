@@ -1156,7 +1156,9 @@ async function clickSubmitExactlyOnce(page,baselineInventory,baselineVideos,base
     const label=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||''),180);
     if(label)buttons.push(label);
   }
-  publish('POST_ARROW_NO_CONSENT',{message:'No generation transition or point-cost confirmation followed the generate click.',body:compact(await getBody(page),1800),buttons:buttons.slice(-35)});
+  const postBody=await getBody(page);
+  publish('POST_ARROW_NO_CONSENT',{message:'No generation transition or point-cost confirmation followed the generate click.',body:compact(postBody,1800),buttons:buttons.slice(-35)});
+  if(/unusual activity|actividad inusual/i.test(postBody)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(postBody))throw new Error('FLOW_TRANSIENT_NO_CHARGE');
   return'composer-arrow-direct';
 }
 
@@ -1370,6 +1372,7 @@ async function waitGenerationStarted(page,baseline,baselineInventory,baselineBus
     await renderAuthGuard(page);
     const bodyText=await getBody(page).catch(()=>'');
     if(flowCreditFailure(bodyText))throw new Error('FLOW_INSUFFICIENT_CREDITS');
+    if(/unusual activity|actividad inusual/i.test(bodyText)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(bodyText))throw new Error('FLOW_TRANSIENT_NO_CHARGE');
     if(/failed to generate|generation failed|couldn't generate|no se pudo generar/i.test(bodyText))throw new Error('FLOW_GENERATION_FAILED');
     const vids=await currentVideos(page);
     const freshVideo=vids.some(v=>v.src&&!baseSrc.has(v.src)&&Number(v.duration||0)>0);
@@ -2369,7 +2372,16 @@ async function runProvider(){
     publish(priorityRetry?'REVIEW_RETRY_PICKED':'PRODUCTION_PICKED',{episode:'E'+row.episode,job_id:row.id,used_today:used,remaining_today:Math.max(0,dailyProductionLimit()-used),daily_limit_bypassed:priorityRetry});await processRow(db,row);
   }catch(err){
     const message=compact(err?.stack||err?.message||err,900);
-    try{if(db&&row){const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row,lc=lifecycle(db,fresh)||{},state=String(lc.state||'').toUpperCase(),attempts=Number(fresh.runtimeAttemptCount||0)+1,beforeGenerate=!AFTER_GENERATE.has(state)&&!AMBIGUOUS.has(state),baseBackoff=beforeGenerate?10000:60000,capBackoff=beforeGenerate?5*60*1000:60*60*1000,backoff=Math.min(capBackoff,baseBackoff*Math.pow(2,Math.min(attempts-1,6))),nextTry=Date.now()+backoff;if(/FLOW_INSUFFICIENT_CREDITS/.test(message)){
+    try{if(db&&row){const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row,lc=lifecycle(db,fresh)||{},state=String(lc.state||'').toUpperCase(),attempts=Number(fresh.runtimeAttemptCount||0)+1,beforeGenerate=!AFTER_GENERATE.has(state)&&!AMBIGUOUS.has(state),baseBackoff=beforeGenerate?10000:60000,capBackoff=beforeGenerate?5*60*1000:60*60*1000,backoff=Math.min(capBackoff,baseBackoff*Math.pow(2,Math.min(attempts-1,6))),nextTry=Date.now()+backoff;if(/FLOW_TRANSIENT_NO_CHARGE/.test(message)){
+  const run=String(lc?.generation_id||fresh.providerRunId||'');
+  if(run)try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Google Flow transient unusual-activity rejection; explicitly not charged.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),fresh.id,run)}catch{}
+  const retryAt=Date.now()+5*60*1000;
+  db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),'FLOW_TRANSIENT_NO_CHARGE — automatic retry scheduled.',retryAt,now(),fresh.id);
+  setLifecycle(db,fresh,'TRANSIENT_NO_CHARGE_RETRY',{prior_generation_id:run,last_error:message,attempt_count:attempts,retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:false});
+  setMeta(db,'flow:state','CONECTADO');
+  setMeta(db,'flow:message','Google Flow rechazó temporalmente la generación sin cobrar puntos. Reintento automático programado.');
+  publish('TRANSIENT_NO_CHARGE_RETRY',{episode:'E'+fresh.episode,job_id:fresh.id,retry_at:new Date(retryAt).toISOString(),message:'Flow explicitly reported no charge. This attempt is not counted; automatic retry remains enabled.'});
+}else if(/FLOW_INSUFFICIENT_CREDITS/.test(message)){
   const run=String(lc?.generation_id||fresh.providerRunId||'');
   if(run)db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Flow reported insufficient credits; no retained video.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),fresh.id,run);
   const retryAt=Date.now()+60*60*1000;
