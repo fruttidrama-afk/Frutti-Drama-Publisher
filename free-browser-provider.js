@@ -2299,6 +2299,37 @@ function normalizeOutOfOrderAmbiguous(db){
     break;
   }
 }
+function noChargeDelayMs(streak){
+  if(streak<=1)return 5*60*1000;
+  if(streak===2)return 15*60*1000;
+  if(streak===3)return 60*60*1000;
+  // Persistent "unusual activity" is no longer treated as a normal transient
+  // failure. Repeated automatic requests can keep the account throttled, so
+  // after three consecutive no-charge rejections the provider enters a full
+  // 24-hour protective quarantine before trying the same serial episode again.
+  return 24*60*60*1000;
+}
+function resetFlowTransientCaches(db,row){
+  const key='flow:transientCacheResetV1:'+row.id;
+  if(meta(db,key,'')==='done')return false;
+  const dirs=[
+    path.join(PROFILE_DIR,'Default','Cache'),
+    path.join(PROFILE_DIR,'Default','Code Cache'),
+    path.join(PROFILE_DIR,'Default','GPUCache'),
+    path.join(PROFILE_DIR,'Default','Service Worker','CacheStorage'),
+    path.join(PROFILE_DIR,'Default','Service Worker','ScriptCache'),
+    path.join(PROFILE_DIR,'GrShaderCache'),
+    path.join(PROFILE_DIR,'GraphiteDawnCache'),
+    path.join(PROFILE_DIR,'ShaderCache')
+  ];
+  let removed=0;
+  for(const dir of dirs){
+    try{if(fs.existsSync(dir)){fs.rmSync(dir,{recursive:true,force:true});removed++}}catch{}
+  }
+  setMeta(db,key,'done');
+  publish('FLOW_TRANSIENT_CACHE_RESET',{episode:'E'+row.episode,job_id:row.id,removed_paths:removed,message:'Persistent Flow unusual-activity state detected. Non-cookie browser caches were cleared once; Google login cookies and the authenticated account were preserved.'});
+  return true;
+}
 function scheduleNoChargeRetry(db,row,opts={}){
   const fresh=db.prepare("SELECT * FROM factory_items WHERE id=?").get(row.id)||row;
   const run=String(opts.run||lifecycle(db,fresh)?.generation_id||fresh.providerRunId||'');
@@ -2306,30 +2337,36 @@ function scheduleNoChargeRetry(db,row,opts={}){
   const streakKey='flow:noChargeStreak:'+fresh.id;
   const streak=Math.max(0,Number(meta(db,streakKey,'0'))||0)+1;
   setMeta(db,streakKey,String(streak));
-  const stepMs=15*60*1000;
-  const delay=Math.min(60*60*1000,stepMs*Math.pow(2,Math.min(streak-1,2)));
+  if(streak>=4)resetFlowTransientCaches(db,fresh);
+  const delay=noChargeDelayMs(streak);
   const retryAt=Date.now()+delay;
+  const quarantined=streak>=4;
   setMeta(db,'flow:transientCooldownUntil',String(retryAt));
   db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=?,nextTry=?,runtimeAttemptCount=runtimeAttemptCount+1,lastProgressAt=?,updatedAt=? WHERE id=?")
-    .run('FLOW_NO_CHARGE — provider cooldown active; same episode remains head-of-line.',retryAt,now(),now(),fresh.id);
-  setLifecycle(db,fresh,'TRANSIENT_NO_CHARGE_RETRY',{
+    .run(quarantined?'FLOW_UNUSUAL_ACTIVITY_QUARANTINE — same episode preserved; automatic retry after 24h protective cooldown.':'FLOW_NO_CHARGE — provider cooldown active; same episode remains head-of-line.',retryAt,now(),now(),fresh.id);
+  setLifecycle(db,fresh,quarantined?'UNUSUAL_ACTIVITY_QUARANTINE':'TRANSIENT_NO_CHARGE_RETRY',{
     prior_generation_id:run,
     submit_mode:String(opts.submitMode||''),
     evidence:String(opts.evidence||opts.reason||''),
     no_charge_streak:streak,
     retry_at:new Date(retryAt).toISOString(),
     provider_cooldown_until:new Date(retryAt).toISOString(),
-    automatic_submit_forbidden:false
+    automatic_submit_forbidden:false,
+    protective_quarantine:quarantined
   });
-  setMeta(db,'flow:state','CONECTADO');
-  setMeta(db,'flow:message','Google Flow rechazó sin cargo. Se conserva el mismo episodio y se aplica backoff automático antes del próximo intento.');
-  publish('TRANSIENT_NO_CHARGE_RETRY',{
+  setMeta(db,'flow:state',quarantined?'PAUSA PROTECTORA':'CONECTADO');
+  setMeta(db,'flow:message',quarantined
+    ?'Google Flow rechazó repetidamente por actividad inusual. La cuenta queda en pausa protectora 24h para no prolongar el bloqueo; E'+fresh.episode+' sigue primero y reintentará automáticamente.'
+    :'Google Flow rechazó sin cargo. Se conserva el mismo episodio y se aplica backoff automático antes del próximo intento.');
+  publish(quarantined?'FLOW_UNUSUAL_ACTIVITY_QUARANTINE':'TRANSIENT_NO_CHARGE_RETRY',{
     episode:'E'+fresh.episode,
     job_id:fresh.id,
     retry_at:new Date(retryAt).toISOString(),
     no_charge_streak:streak,
     cooldown_minutes:Math.round(delay/60000),
-    message:'Flow explicitly returned no-charge. Adaptive cooldown is active; no other episode may submit before this head-of-line retry.'
+    message:quarantined
+      ?'Repeated unusual-activity/no-charge responses crossed the safety threshold. Automatic submits are quarantined for 24h so the provider account can recover.'
+      :'Flow explicitly returned no-charge. Adaptive cooldown is active; no other episode may submit before this head-of-line retry.'
   });
   return retryAt;
 }
@@ -2339,20 +2376,26 @@ function resetNoChargeBackoff(db,row){
 }
 function normalizeLiveNoChargeCooldown(db){
   try{
-    const rows=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND error LIKE 'FLOW_TRANSIENT_NO_CHARGE%' ORDER BY episode").all();
+    const rows=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND (error LIKE 'FLOW%NO_CHARGE%' OR error LIKE 'FLOW_UNUSUAL_ACTIVITY_QUARANTINE%') ORDER BY episode").all();
     for(const row of rows){
       const streakKey='flow:noChargeStreak:'+row.id;
-      let streak=Number(meta(db,streakKey,'0'))||0;
-      if(streak<2){streak=2;setMeta(db,streakKey,String(streak))}
-      const onceKey='flow:noChargeLegacyCooldownNormalized:'+row.id;
-      if(meta(db,onceKey,'')==='done')continue;
-      const minUntil=Date.now()+20*60*1000;
+      const streak=Math.max(0,Number(meta(db,streakKey,'0'))||0);
+      if(streak<4)continue;
+      resetFlowTransientCaches(db,row);
+      const base=Date.parse(String(row.lastProgressAt||row.updatedAt||''))||Date.now();
+      const minUntil=base+24*60*60*1000;
       if(Number(row.nextTry||0)<minUntil){
-        db.prepare("UPDATE factory_items SET nextTry=?,error=?,updatedAt=? WHERE id=?").run(minUntil,'FLOW_TRANSIENT_NO_CHARGE — automatic retry scheduled after 20m cooldown.',now(),row.id);
-        setMeta(db,'flow:transientCooldownUntil',String(minUntil));
-        publish('FLOW_TRANSIENT_COOLDOWN_EXTENDED',{episode:'E'+row.episode,job_id:row.id,until:new Date(minUntil).toISOString(),message:'Repeated no-charge unusual-activity responses detected. Cooldown extended once to stop hammering Flow.'});
+        db.prepare("UPDATE factory_items SET nextTry=?,error=?,updatedAt=? WHERE id=?").run(minUntil,'FLOW_UNUSUAL_ACTIVITY_QUARANTINE — same episode preserved; automatic retry after 24h protective cooldown.',now(),row.id);
       }
-      setMeta(db,onceKey,'done');
+      const providerUntil=Math.max(Number(meta(db,'flow:transientCooldownUntil','0'))||0,minUntil);
+      setMeta(db,'flow:transientCooldownUntil',String(providerUntil));
+      setMeta(db,'flow:state','PAUSA PROTECTORA');
+      setMeta(db,'flow:message','Google Flow mantiene un bloqueo de actividad inusual. La automatización no enviará más requests hasta '+new Date(providerUntil).toISOString()+'.');
+      const onceKey='flow:persistentNoChargeNormalizedV1:'+row.id;
+      if(meta(db,onceKey,'')!=='done'){
+        publish('FLOW_UNUSUAL_ACTIVITY_QUARANTINE_NORMALIZED',{episode:'E'+row.episode,job_id:row.id,until:new Date(providerUntil).toISOString(),no_charge_streak:streak,message:'Existing repeated no-charge state was upgraded to a 24h protective quarantine instead of continuing hourly retries.'});
+        setMeta(db,onceKey,'done');
+      }
     }
   }catch(e){publish('FLOW_TRANSIENT_COOLDOWN_WARNING',{message:compact(e?.message||e,300)})}
 }
@@ -2524,7 +2567,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);normalizeLiveNoChargeCooldown(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
