@@ -49,6 +49,13 @@ for(const [token,label] of [
 ]) has(provider,token,label);
 must(!provider.includes("await waitFlowReady(page,30000);\n  const editor=await promptEditor(page);"),'Flow composer must not be re-queried immediately after readiness');
 for(const [token,label] of [
+  ["const salt=parseInt(randomUUID().replace(/-/g,'').slice(0,8),16)",'fresh browser session salt'],
+  ["const port=9400+(salt%1000)",'fresh CDP port'],
+  ["await sleep(3000)",'Chrome settle period'],
+  ["connectOverCDP('http://127.0.0.1:'+port,{timeout:15000})",'Frutti-compatible CDP attach']
+]) has(provider,token,label);
+must(!provider.includes('--disk-cache-dir=/tmp/publisher-chrome-cache'),'custom browser cache flags must stay disabled');
+for(const [token,label] of [
   ['function scheduleNoChargeRetry(db,row,opts={})','adaptive no-charge scheduler'],
   ['flow:transientCooldownUntil','provider-wide no-charge cooldown'],
   ['no_charge_streak:streak','no-charge streak persistence'],
