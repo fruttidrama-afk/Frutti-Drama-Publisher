@@ -2408,18 +2408,28 @@ function seedTransientCooldownFromRecentNoCharge(db){
 
 
 function productionCandidate(db){
+  // Recovery always wins, but out-of-order ambiguous rows are quarantined by
+  // normalizeOutOfOrderAmbiguous() before this function runs.
   const inflight=db.prepare("SELECT * FROM factory_items WHERE status='generating' ORDER BY episode LIMIT 1").get();
   if(inflight){
     const last=Date.parse(String(inflight.lastProgressAt||inflight.updatedAt||''))||0;
     const due=Number(inflight.nextTry||0)<=Date.now()||(last>0&&Date.now()-last>60*1000);
     return due?inflight:null;
   }
+
+  // Human REDO remains immediate once its continuity predecessor is recovered.
   const retries=db.prepare("SELECT * FROM factory_items WHERE status IN ('regen_wait','draft') AND retryStrategy IN ('reuse_prompt','revise_prompt') AND reviewFeedback IS NOT NULL AND TRIM(reviewFeedback)<>'' ORDER BY updatedAt,episode").all();
   for(const retry of retries){
     if(Number(retry.nextTry||0)<=Date.now()&&isReviewerRetry(retry)&&serialReady(db,retry))return retry;
   }
-  const rows=db.prepare("SELECT * FROM factory_items WHERE status IN ('draft','regen_wait') AND nextTry<=? AND (reviewFeedback IS NULL OR TRIM(reviewFeedback)='') ORDER BY episode LIMIT 200").all(Date.now());
-  return rows.find(row=>serialReady(db,row))||null;
+
+  // Strict normal head-of-line: NEVER skip an earlier draft just because it is
+  // in retry/cooldown. This is the core generate -> recover -> next guarantee.
+  const first=db.prepare("SELECT * FROM factory_items WHERE status IN ('draft','regen_wait') AND (reviewFeedback IS NULL OR TRIM(reviewFeedback)='') ORDER BY episode LIMIT 1").get();
+  if(!first)return null;
+  if(!serialReady(db,first))return null;
+  if(Number(first.nextTry||0)>Date.now())return null;
+  return first;
 }
 
 const SUPABASE_PASSKEY_BOOTSTRAP=String(process.env.PUBLISHER_SUPABASE_PASSKEY_BOOTSTRAP||'').trim()==='1';
