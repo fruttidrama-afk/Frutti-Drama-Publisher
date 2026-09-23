@@ -77,6 +77,7 @@ has(server,'prompt_integrity','live prompt integrity health');
 has(server,'prompt_show_bible_gate:true','Show Bible prompt safety flag');
 has(server,'atomic_creative_package:true','atomic creative package safety flag');
 has(server,'stable_composer_handoff:true','stable Flow composer health invariant');
+has(server,'native_no_charge_retry:true','native no-charge Retry health invariant');
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
 const publication=read('publication.js');
