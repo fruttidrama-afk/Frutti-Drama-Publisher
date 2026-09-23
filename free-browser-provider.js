@@ -83,16 +83,31 @@ function persistResolvedProject(id,name){
 async function ensureExpectedFlowProject(page){
   const expected=EXPECTED_FLOW_PROJECT_NAME;
   if(!expected)return liveProject();
+
+  const acceptExactProject=async(id,source)=>{
+    const title=await visibleTopProjectTitle(page);
+    const docTitle=compact(await page.title().catch(()=>''),300);
+    const configuredId=String(liveProject().id||'');
+    const titleMatches=title===expected;
+    const docMatches=norm(docTitle).includes(norm(expected));
+    const idMatches=Boolean(configuredId&&String(id)===configuredId);
+    // Flow sometimes hides the editable title control. Exact configured project
+    // UUID is authoritative; visible/document title is an additional check when available.
+    if(titleMatches||docMatches||idMatches){
+      persistResolvedProject(id,expected);
+      publish('FLOW_PROJECT_VERIFIED',{project_name:expected,project_id:id,source,title:title||null,document_title:docTitle||null,message:'Exact expected Flow project verified.'});
+      return{id,url:'https://flow.google.com/project/'+id,name:expected};
+    }
+    return null;
+  };
+
   const currentUrl=String(page.url()||'');
   const m=currentUrl.match(/\/project\/([a-zA-Z0-9-]+)/);
   if(m){
-    const title=await visibleTopProjectTitle(page);
-    if(title===expected){
-      persistResolvedProject(m[1],expected);
-      publish('FLOW_PROJECT_VERIFIED',{project_name:expected,project_id:m[1],message:'Exact expected Flow project verified.'});
-      return{id:m[1],url:'https://flow.google.com/project/'+m[1],name:expected};
-    }
+    const accepted=await acceptExactProject(m[1],'current-project-url');
+    if(accepted)return accepted;
   }
+
   await page.goto('https://flow.google.com/',{waitUntil:'domcontentloaded',timeout:60000});
   await sleep(2200);
   const cards=page.locator('flow-project-card');
@@ -111,20 +126,18 @@ async function ensureExpectedFlowProject(page){
     publish('FLOW_EXPECTED_PROJECT_NOT_FOUND',{message:'Expected project "'+expected+'" not uniquely found. Visible cards='+JSON.stringify(seen.slice(0,20))});
     throw new Error('FLOW_EXPECTED_PROJECT_NOT_FOUND:'+expected+':matches='+matches.length);
   }
-  const chosen=matches[0];
-  const href=chosen.href;
+  const chosen=matches[0],href=chosen.href;
   if(!href)throw new Error('FLOW_EXPECTED_PROJECT_LINK_MISSING:'+expected);
   const absolute=href.startsWith('http')?href:'https://flow.google.com'+href;
   await page.goto(absolute,{waitUntil:'domcontentloaded',timeout:60000});
   await sleep(1600);
   const url=String(page.url()||''),mm=url.match(/\/project\/([a-zA-Z0-9-]+)/);
   if(!mm)throw new Error('FLOW_EXPECTED_PROJECT_NAVIGATION_FAILED:'+expected);
-  const title=await visibleTopProjectTitle(page);
-  if(title!==expected)throw new Error('FLOW_EXPECTED_PROJECT_TITLE_MISMATCH:'+compact(title,120));
-  persistResolvedProject(mm[1],expected);
-  publish('FLOW_PROJECT_RESOLVED',{project_name:expected,project_id:mm[1],message:'Resolved exact Flow project from project grid by name.'});
-  return{id:mm[1],url:'https://flow.google.com/project/'+mm[1],name:expected};
+  const accepted=await acceptExactProject(mm[1],'project-grid-exact-name');
+  if(!accepted)throw new Error('FLOW_EXPECTED_PROJECT_TITLE_MISMATCH:'+compact(await visibleTopProjectTitle(page),120));
+  return accepted;
 }
+
 function modelMatches(v){const text=String(v||'');if(!MODEL_INTENT)return true;if(new RegExp(escapeRe(MODEL_INTENT),'i').test(text))return true;if(/omni/i.test(MODEL_INTENT)&&/omni/i.test(text)){if(/flash/i.test(MODEL_INTENT))return/flash/i.test(text);return true}return false}
 const AFTER_GENERATE = new Set(['GENERATION_STARTED','RETRIEVING','RETRIEVAL_PENDING','RETRIEVED','REVIEW_READY']);
 const AMBIGUOUS = new Set(['SUBMIT_BOUNDARY_ENTERED','SUBMIT_AMBIGUOUS']);
@@ -440,7 +453,7 @@ async function promptEditor(page) {
   // generation composer. Prefer the contenteditable closest to Start generation.
   const content=page.locator('[contenteditable="true"]');
   let best=null,bestScore=-Infinity;
-  const send=page.getByRole('button',{name:/Start generation/i}).last();
+  const send=page.getByRole('button',{name:/Start generation|Iniciar generación/i}).last();
   const sendBox=await send.boundingBox().catch(()=>null);
   for(let i=0;i<await content.count();i++){
     const c=content.nth(i);
@@ -469,11 +482,33 @@ async function classifyPromptTarget(page,editor){
   return'VIDEO_PROMPT_COMPOSER';
 }
 async function ensureCanonicalProjectTitle(page){
-  if(!String(page.url()||'').includes(projectPath()))throw new Error('WRONG_FLOW_PROJECT');const inputs=page.locator('input[aria-label="Editable text"]');let titleInput=null,current='';
-  for(let i=0;i<await inputs.count().catch(()=>0);i++){const el=inputs.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;const b=await el.boundingBox().catch(()=>null);if(!b||b.y>100)continue;titleInput=el;current=String(await el.inputValue().catch(()=>''));break}if(!titleInput)throw new Error('PROJECT_TITLE_CONTROL_NOT_FOUND');if(current.trim()===projectName())return{repaired:false,previous:projectName()};
-  const corrupt=current.length>180||/PRODUCTION PROMPT|GENERATION PROMPT|VIDEO FACTORY|PUBLISHER RUNTIME|DURATION \/ FORMAT|ANTI-GLITCH/i.test(current);if(!corrupt)throw new Error('PROJECT_TITLE_UNEXPECTED_VALUE:'+compact(current,120));const previous=compact(current,180);await titleInput.fill(projectName());await titleInput.press('Enter').catch(()=>{});await page.keyboard.press('Tab').catch(()=>{});
-  const deadline=Date.now()+7000;while(Date.now()<deadline){const value=String(await titleInput.inputValue().catch(()=>''));if(value.trim()===projectName()){publish('PROJECT_TITLE_REPAIRED',{message:'Flow project title restored to configured publisher project.'});return{repaired:true,previous}}await sleep(250)}throw new Error('PROJECT_TITLE_REPAIR_NOT_CONFIRMED');
+  if(!String(page.url()||'').includes(projectPath()))throw new Error('WRONG_FLOW_PROJECT');
+  const inputs=page.locator('input[aria-label="Editable text"]');let titleInput=null,current='';
+  for(let i=0;i<await inputs.count().catch(()=>0);i++){
+    const el=inputs.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
+    const b=await el.boundingBox().catch(()=>null);if(!b||b.y>100)continue;
+    titleInput=el;current=String(await el.inputValue().catch(()=>''));break;
+  }
+  if(!titleInput){
+    return{repaired:false,previous:projectName(),source:'exact-project-url-title-control-hidden'};
+  }
+  if(current.trim()===projectName())return{repaired:false,previous:projectName(),source:'title-input'};
+  const corrupt=current.length>180||/PRODUCTION PROMPT|GENERATION PROMPT|VIDEO FACTORY|PUBLISHER RUNTIME|DURATION \/ FORMAT|ANTI-GLITCH/i.test(current);
+  if(!corrupt)throw new Error('PROJECT_TITLE_UNEXPECTED_VALUE:'+compact(current,120));
+  const previous=compact(current,180);
+  await titleInput.fill(projectName());await titleInput.press('Enter').catch(()=>{});await page.keyboard.press('Tab').catch(()=>{});
+  const deadline=Date.now()+7000;
+  while(Date.now()<deadline){
+    const value=String(await titleInput.inputValue().catch(()=>''));
+    if(value.trim()===projectName()){
+      publish('PROJECT_TITLE_REPAIRED',{message:'Flow project title restored to configured publisher project.'});
+      return{repaired:true,previous,source:'title-input'};
+    }
+    await sleep(250);
+  }
+  throw new Error('PROJECT_TITLE_REPAIR_NOT_CONFIRMED');
 }
+
 async function projectTitleDiagnostic(page){
   try{const rows=await page.evaluate(()=>{const out=[];for(const el of document.querySelectorAll('input,textarea,[contenteditable="true"],button,[role="button"],[role="textbox"],h1,h2,[aria-label]')){const r=el.getBoundingClientRect();if(r.width<4||r.height<4||r.y<0||r.y>220)continue;const text=String((typeof el.value==='string'&&el.value)||el.innerText||el.textContent||'').replace(/\s+/g,' ').trim(),aria=String(el.getAttribute('aria-label')||'').trim(),title=String(el.getAttribute('title')||'').trim();if(!text&&!aria&&!title)continue;out.push({tag:el.tagName.toLowerCase(),text:text.slice(0,180),aria:aria.slice(0,120),title:title.slice(0,120),x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)});if(out.length>=60)break}return out});const diag={at:now(),document_title:compact(await page.title().catch(()=>''),260),url:compact(page.url(),220),candidates:rows};try{fs.writeFileSync(path.join(FACTORY_DIR,'flow-project-title-diagnostic.json'),JSON.stringify(diag,null,2),{mode:0o600})}catch{}publish('PROJECT_TITLE_REPAIR_REQUIRED',{message:'Configured Flow project title could not be verified.',evidence:JSON.stringify(rows.slice(0,8)).slice(0,900)});return diag}catch{return null}
 }
@@ -484,11 +519,22 @@ async function repairProjectTitleIfContaminated(page){
   await titleInput.fill(projectName());await titleInput.press('Enter').catch(()=>{});await page.keyboard.press('Tab').catch(()=>{});await sleep(1000);const after=String(await titleInput.inputValue().catch(()=>'')).replace(/\s+/g,' ').trim();if(after!==projectName())throw new Error('PROJECT_TITLE_REPAIR_NOT_PERSISTED:'+compact(after,120));publish('PROJECT_TITLE_REPAIRED',{message:'Configured Flow project title restored; no generation submitted.'});return{repaired:true,before:compact(current,180),after};
 }
 async function verifyProjectIdentity(page,payload=''){
-  if(!liveProject().id||!String(page.url()||'').includes(projectPath()))throw new Error('WRONG_FLOW_PROJECT');const inputs=page.locator('input[aria-label="Editable text"]');let titleInput=null,titleValue='';
-  for(let i=0;i<await inputs.count().catch(()=>0);i++){const el=inputs.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;const b=await el.boundingBox().catch(()=>null);if(!b||b.y>100)continue;titleInput=el;titleValue=String(await el.inputValue().catch(()=>'')).trim();break}
-  if(!titleInput)throw new Error('PROJECT_TITLE_CONTROL_NOT_FOUND');const prefix=compact(payload,120);if(titleValue!==projectName())throw new Error('PROJECT_TITLE_NOT_CONFIGURED:'+compact(titleValue,120));if(prefix&&titleValue.includes(prefix))throw new Error('PROJECT_TITLE_CONTAMINATED_WITH_PROMPT');
-  return{project:projectName(),project_id:liveProject().id,title_verified:true,source:'exact-project-title-input',document_title_observed:compact(await page.title().catch(()=>''),300)};
+  if(!liveProject().id||!String(page.url()||'').includes(projectPath()))throw new Error('WRONG_FLOW_PROJECT');
+  const inputs=page.locator('input[aria-label="Editable text"]');let titleInput=null,titleValue='';
+  for(let i=0;i<await inputs.count().catch(()=>0);i++){
+    const el=inputs.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
+    const b=await el.boundingBox().catch(()=>null);if(!b||b.y>100)continue;
+    titleInput=el;titleValue=String(await el.inputValue().catch(()=>'')).trim();break;
+  }
+  const prefix=compact(payload,120);
+  if(titleInput){
+    if(titleValue!==projectName())throw new Error('PROJECT_TITLE_NOT_CONFIGURED:'+compact(titleValue,120));
+    if(prefix&&titleValue.includes(prefix))throw new Error('PROJECT_TITLE_CONTAMINATED_WITH_PROMPT');
+    return{project:projectName(),project_id:liveProject().id,title_verified:true,source:'exact-project-title-input',document_title_observed:compact(await page.title().catch(()=>''),300)};
+  }
+  return{project:projectName(),project_id:liveProject().id,title_verified:true,source:'exact-project-url-title-control-hidden',document_title_observed:compact(await page.title().catch(()=>''),300)};
 }
+
 async function waitFlowReady(page,timeout=60000){
   if(!liveProject().id)throw new Error('FLOW_PROJECT_NOT_CONFIGURED');const deadline=Date.now()+timeout;
   while(Date.now()<deadline){const url=String(page.url()||'');if(/accounts\.google\.com|signin|ServiceLogin/i.test(url))throw new Error('FLOW_AUTH_REQUIRED');const text=(await getBody(page)).slice(0,12000);if(/verify it'?s you|captcha|security check|email or phone|enter your password/i.test(text))throw new Error('FLOW_AUTH_CHALLENGE');if(url.includes(projectPath())){try{const editor=await promptEditor(page),send=page.getByRole('button',{name:/Start generation/i}).last();if(await editor.isVisible().catch(()=>false)&&await send.isVisible().catch(()=>false))return editor}catch{}}await sleep(500)}throw new Error('FLOW_NOT_READY:'+compact(page.url(),200));
