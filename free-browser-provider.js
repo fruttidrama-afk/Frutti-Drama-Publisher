@@ -664,8 +664,11 @@ async function launchLocal() {
   // pthread/fork resources and freezing the next episode.
   await stopBrowserInfra();
 
-  const display=':99';
-  const port=9222;
+  // Match the browser-launch cadence proven by the working FruttiDrama runtime:
+  // fresh local X display/debug port per session and a short Chrome settle period.
+  const salt=parseInt(randomUUID().replace(/-/g,'').slice(0,8),16);
+  const display=':'+String(100+(salt%400));
+  const port=9400+(salt%1000);
   let xvfb=null,chrome=null,browser=null;
   let xvfbErr='',chromeErr='';
   const cleanup=async()=>{
@@ -681,7 +684,7 @@ async function launchLocal() {
   try{
     xvfb=spawn('Xvfb',[display,'-screen','0','1024x700x24','-nolisten','tcp','-ac'],{stdio:['ignore','ignore','pipe']});
     xvfb.stderr?.on('data',d=>{xvfbErr=(xvfbErr+String(d)).slice(-1800)});
-    await sleep(650);
+    await sleep(550);
     if(xvfb.exitCode!==null)throw new Error('XVFB_START_FAILED:'+compact(xvfbErr,700));
 
     const env={...process.env,DISPLAY:display};
@@ -693,14 +696,13 @@ async function launchLocal() {
       '--disable-features=IsolateOrigins,site-per-process,CalculateNativeWinOcclusion,OptimizationHints,MediaRouter',
       '--disable-background-networking','--disable-component-update','--disable-sync','--disable-extensions','--disable-default-apps',
       '--metrics-recording-only','--no-first-run','--no-default-browser-check','--password-store=basic',
-      '--disk-cache-dir=/tmp/publisher-chrome-cache','--disk-cache-size=16777216','--media-cache-size=8388608',
       '--js-flags=--max-old-space-size=160','--window-size=1024,700',
       flowUrl()
     ],{env,stdio:['ignore','ignore','pipe']});
     chrome.stderr?.on('data',d=>{chromeErr=(chromeErr+String(d)).slice(-3600)});
 
     let cdpReady=false;
-    for(let i=0;i<100;i++){
+    for(let i=0;i<80;i++){
       await sleep(250);
       if(chrome.exitCode!==null)break;
       try{
@@ -710,7 +712,8 @@ async function launchLocal() {
     }
     if(!cdpReady)throw new Error('CHROME_CDP_NOT_READY:exit='+String(chrome.exitCode)+':stderr='+compact(chromeErr,900)+':xvfb='+compact(xvfbErr,400));
 
-    browser=await chromium.connectOverCDP('http://127.0.0.1:'+port,{timeout:30000});
+    await sleep(3000);
+    browser=await chromium.connectOverCDP('http://127.0.0.1:'+port,{timeout:15000});
     const context=browser.contexts()[0];
     if(!context)throw new Error('CHROME_CDP_CONTEXT_MISSING');
     const pages=context.pages();
