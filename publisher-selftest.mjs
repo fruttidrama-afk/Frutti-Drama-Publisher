@@ -45,7 +45,9 @@ for(const [token,label] of [
   ["status IN ('regen_wait','draft') AND retryStrategy IN ('reuse_prompt','revise_prompt')",'human REDO priority queue'],
   ['creativePackageHash','creative package hash link'],
   ["source:'creative-package'",'review metadata preservation'],
-  ['let editor=await waitFlowReady(page,30000)','stable Flow composer handoff']
+  ['let editor=await waitFlowReady(page,30000)','stable Flow composer handoff'],
+  ['FLOW_FAILED_TILE_RETRY_CLICKED','native no-charge Flow Retry'],
+  ['Retry|Reintentar','localized Flow Retry selector']
 ]) has(provider,token,label);
 must(!provider.includes("await waitFlowReady(page,30000);\n  const editor=await promptEditor(page);"),'Flow composer must not be re-queried immediately after readiness');
 has(runtimeConfig,'EARTH_IN_10_AUTONOMOUS_EPISODES','Earth autonomous geographic ideas');
