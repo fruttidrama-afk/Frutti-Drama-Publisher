@@ -2300,13 +2300,15 @@ function normalizeOutOfOrderAmbiguous(db){
   }
 }
 function noChargeDelayMs(streak){
-  if(streak<=1)return 5*60*1000;
-  if(streak===2)return 15*60*1000;
-  if(streak===3)return 60*60*1000;
-  // Persistent "unusual activity" is no longer treated as a normal transient
-  // failure. Repeated automatic requests can keep the account throttled, so
-  // after three consecutive no-charge rejections the provider enters a full
-  // 24-hour protective quarantine before trying the same serial episode again.
+  // Global Publisher rule for Google Flow "Unusual activity" + "not charged":
+  // 1st alert 30m, 2nd 1h, 3rd 2h, 4th 4h, 5th 8h.
+  // The next mathematical doubling would be 16h, which crosses the operator's
+  // 10-hour ceiling, so from the 6th consecutive alert onward wait a full 24h.
+  if(streak<=1)return 30*60*1000;
+  if(streak===2)return 60*60*1000;
+  if(streak===3)return 2*60*60*1000;
+  if(streak===4)return 4*60*60*1000;
+  if(streak===5)return 8*60*60*1000;
   return 24*60*60*1000;
 }
 function resetFlowTransientCaches(db,row){
@@ -2340,11 +2342,11 @@ function scheduleNoChargeRetry(db,row,opts={}){
   if(streak>=4)resetFlowTransientCaches(db,fresh);
   const delay=noChargeDelayMs(streak);
   const retryAt=Date.now()+delay;
-  const quarantined=streak>=4;
+  const overnight=streak>=6;
   setMeta(db,'flow:transientCooldownUntil',String(retryAt));
   db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=?,nextTry=?,runtimeAttemptCount=runtimeAttemptCount+1,lastProgressAt=?,updatedAt=? WHERE id=?")
-    .run(quarantined?'FLOW_UNUSUAL_ACTIVITY_QUARANTINE — same episode preserved; automatic retry after 24h protective cooldown.':'FLOW_NO_CHARGE — provider cooldown active; same episode remains head-of-line.',retryAt,now(),now(),fresh.id);
-  setLifecycle(db,fresh,quarantined?'UNUSUAL_ACTIVITY_QUARANTINE':'TRANSIENT_NO_CHARGE_RETRY',{
+    .run(overnight?'FLOW_UNUSUAL_ACTIVITY_OVERNIGHT — same episode preserved; next automatic retry after 24h.':'FLOW_NO_CHARGE — exponential provider backoff active; same episode remains head-of-line.',retryAt,now(),now(),fresh.id);
+  setLifecycle(db,fresh,overnight?'UNUSUAL_ACTIVITY_OVERNIGHT':'TRANSIENT_NO_CHARGE_RETRY',{
     prior_generation_id:run,
     submit_mode:String(opts.submitMode||''),
     evidence:String(opts.evidence||opts.reason||''),
@@ -2352,21 +2354,21 @@ function scheduleNoChargeRetry(db,row,opts={}){
     retry_at:new Date(retryAt).toISOString(),
     provider_cooldown_until:new Date(retryAt).toISOString(),
     automatic_submit_forbidden:false,
-    protective_quarantine:quarantined
+    protective_overnight_wait:overnight
   });
-  setMeta(db,'flow:state',quarantined?'PAUSA PROTECTORA':'CONECTADO');
-  setMeta(db,'flow:message',quarantined
-    ?'Google Flow rechazó repetidamente por actividad inusual. La cuenta queda en pausa protectora 24h para no prolongar el bloqueo; E'+fresh.episode+' sigue primero y reintentará automáticamente.'
-    :'Google Flow rechazó sin cargo. Se conserva el mismo episodio y se aplica backoff automático antes del próximo intento.');
-  publish(quarantined?'FLOW_UNUSUAL_ACTIVITY_QUARANTINE':'TRANSIENT_NO_CHARGE_RETRY',{
+  setMeta(db,'flow:state',overnight?'PAUSA PROTECTORA':'CONECTADO');
+  setMeta(db,'flow:message',overnight
+    ?'Google Flow rechazó repetidamente por actividad inusual. E'+fresh.episode+' sigue primero y reintentará automáticamente después de 24h.'
+    :'Google Flow rechazó sin cargo. Se conserva el mismo episodio y se aplica el backoff 30m → 1h → 2h → 4h → 8h antes de escalar a 24h.');
+  publish(overnight?'FLOW_UNUSUAL_ACTIVITY_OVERNIGHT':'TRANSIENT_NO_CHARGE_RETRY',{
     episode:'E'+fresh.episode,
     job_id:fresh.id,
     retry_at:new Date(retryAt).toISOString(),
     no_charge_streak:streak,
     cooldown_minutes:Math.round(delay/60000),
-    message:quarantined
-      ?'Repeated unusual-activity/no-charge responses crossed the safety threshold. Automatic submits are quarantined for 24h so the provider account can recover.'
-      :'Flow explicitly returned no-charge. Adaptive cooldown is active; no other episode may submit before this head-of-line retry.'
+    message:overnight
+      ?'The next exponential interval would exceed 10 hours, so this account waits 24h before the same serial episode is retried.'
+      :'Flow explicitly returned no-charge. Exponential unusual-activity backoff is active; no other episode may submit before this head-of-line retry.'
   });
   return retryAt;
 }
@@ -2376,24 +2378,26 @@ function resetNoChargeBackoff(db,row){
 }
 function normalizeLiveNoChargeCooldown(db){
   try{
-    const rows=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND (error LIKE 'FLOW%NO_CHARGE%' OR error LIKE 'FLOW_UNUSUAL_ACTIVITY_QUARANTINE%') ORDER BY episode").all();
+    const rows=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND (error LIKE 'FLOW%NO_CHARGE%' OR error LIKE 'FLOW_UNUSUAL_ACTIVITY_%') ORDER BY episode").all();
     for(const row of rows){
-      const streakKey='flow:noChargeStreak:'+row.id;
-      const streak=Math.max(0,Number(meta(db,streakKey,'0'))||0);
-      if(streak<4)continue;
-      resetFlowTransientCaches(db,row);
+      const streak=Math.max(0,Number(meta(db,'flow:noChargeStreak:'+row.id,'0'))||0);
+      if(streak<1)continue;
+      if(streak>=4)resetFlowTransientCaches(db,row);
       const base=Date.parse(String(row.lastProgressAt||row.updatedAt||''))||Date.now();
-      const minUntil=base+24*60*60*1000;
-      if(Number(row.nextTry||0)<minUntil){
-        db.prepare("UPDATE factory_items SET nextTry=?,error=?,updatedAt=? WHERE id=?").run(minUntil,'FLOW_UNUSUAL_ACTIVITY_QUARANTINE — same episode preserved; automatic retry after 24h protective cooldown.',now(),row.id);
+      const desiredUntil=base+noChargeDelayMs(streak);
+      if(Math.abs(Number(row.nextTry||0)-desiredUntil)>1000){
+        db.prepare("UPDATE factory_items SET nextTry=?,error=?,updatedAt=? WHERE id=?").run(
+          desiredUntil,
+          streak>=6?'FLOW_UNUSUAL_ACTIVITY_OVERNIGHT — same episode preserved; next automatic retry after 24h.':'FLOW_NO_CHARGE — exponential provider backoff active; same episode remains head-of-line.',
+          now(),row.id
+        );
       }
-      const providerUntil=Math.max(Number(meta(db,'flow:transientCooldownUntil','0'))||0,minUntil);
-      setMeta(db,'flow:transientCooldownUntil',String(providerUntil));
-      setMeta(db,'flow:state','PAUSA PROTECTORA');
-      setMeta(db,'flow:message','Google Flow mantiene un bloqueo de actividad inusual. La automatización no enviará más requests hasta '+new Date(providerUntil).toISOString()+'.');
-      const onceKey='flow:persistentNoChargeNormalizedV1:'+row.id;
+      setMeta(db,'flow:transientCooldownUntil',String(desiredUntil));
+      setMeta(db,'flow:state',streak>=6?'PAUSA PROTECTORA':'CONECTADO');
+      setMeta(db,'flow:message','Unusual Activity backoff activo para E'+row.episode+': intento '+streak+'; próximo retry '+new Date(desiredUntil).toISOString()+'.');
+      const onceKey='flow:unusualBackoffPolicyV2:'+row.id+':'+streak;
       if(meta(db,onceKey,'')!=='done'){
-        publish('FLOW_UNUSUAL_ACTIVITY_QUARANTINE_NORMALIZED',{episode:'E'+row.episode,job_id:row.id,until:new Date(providerUntil).toISOString(),no_charge_streak:streak,message:'Existing repeated no-charge state was upgraded to a 24h protective quarantine instead of continuing hourly retries.'});
+        publish('FLOW_UNUSUAL_ACTIVITY_BACKOFF_NORMALIZED',{episode:'E'+row.episode,job_id:row.id,until:new Date(desiredUntil).toISOString(),no_charge_streak:streak,cooldown_minutes:Math.round(noChargeDelayMs(streak)/60000),message:'Applied global 30m → 1h → 2h → 4h → 8h → 24h unusual-activity policy.'});
         setMeta(db,onceKey,'done');
       }
     }
