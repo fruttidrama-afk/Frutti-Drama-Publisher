@@ -224,7 +224,7 @@ function normalizeUnconfirmedPreGenerationRows(db){
       if(AFTER_GENERATE.has(state))continue;
       const confirmed=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE itemId=? AND credits>0 AND status NOT IN ('no_generation','infra_rejected')").get(row.id)?.n||0);
       if(confirmed>0)continue;
-      if(String(row.status||'')==='draft'&&Number(row.nextTry||0)<=Date.now())continue;
+      if(String(row.status||'')==='draft')continue;
       if(AMBIGUOUS.has(state))continue;
       db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
       setLifecycle(db,row,'UNCONFIRMED_ATTEMPT_RESET',{reconciled_at:now(),automatic_submit_forbidden:false,evidence:'No hard Flow generation evidence or retained media exists.'});
@@ -495,6 +495,29 @@ async function waitFlowReady(page,timeout=60000){
 }
 function cleanChromiumLocks() {
   for (const name of ['SingletonLock','SingletonSocket','SingletonCookie']) try { fs.unlinkSync(path.join(PROFILE_DIR,name)); } catch {}
+  try{
+    for(const name of fs.readdirSync('/tmp')){
+      if(/^\.X\d+-lock$/.test(name))try{fs.unlinkSync(path.join('/tmp',name))}catch{}
+    }
+  }catch{}
+  try{
+    const dir='/tmp/.X11-unix';
+    for(const name of fs.readdirSync(dir)){
+      if(/^X\d+$/.test(name))try{fs.unlinkSync(path.join(dir,name))}catch{}
+    }
+  }catch{}
+}
+function browserInfraPids(){
+  const out=[];let names=[];try{names=fs.readdirSync('/proc')}catch{return out}
+  for(const name of names){
+    if(!/^\d+$/.test(name))continue;
+    const pid=Number(name);if(!pid||pid===process.pid)continue;
+    try{
+      const cmd=fs.readFileSync('/proc/'+name+'/cmdline').toString('utf8').replace(/\0/g,' ');
+      if(/Xvfb|google-chrome|chrome_crashpad_handler|\/chrome\b/i.test(cmd))out.push(pid);
+    }catch{}
+  }
+  return [...new Set(out)];
 }
 function profileChromePids(){
   const out=[];let names=[];try{names=fs.readdirSync('/proc');}catch{return out;}
@@ -508,70 +531,78 @@ function profileChromePids(){
   }
   return [...new Set(out)];
 }
-async function stopProfileChrome(){
-  for(const pid of profileChromePids()){try{process.kill(pid,'SIGTERM');}catch{}}
-  if(profileChromePids().length)await sleep(900);
-  for(const pid of profileChromePids()){try{process.kill(pid,'SIGKILL');}catch{}}
+async function stopBrowserInfra(){
+  const pids=browserInfraPids();
+  for(const pid of pids){try{process.kill(pid,'SIGTERM')}catch{}}
+  if(pids.length)await sleep(700);
+  for(const pid of browserInfraPids()){try{process.kill(pid,'SIGKILL')}catch{}}
   cleanChromiumLocks();
 }
+async function stopProfileChrome(){await stopBrowserInfra()}
 async function launchLocal() {
   if(!fs.existsSync(path.join(PROFILE_DIR,'Default','Cookies')))throw new Error('GFLOW_AUTH_PROFILE_MISSING');
-  await stopProfileChrome();
-  cleanChromiumLocks();
 
-  const salt=parseInt(randomUUID().replace(/-/g,'').slice(0,8),16);
-  const display=':'+String(100+(salt%400));
-  const port=9400+(salt%1000);
-  const xvfb=spawn('Xvfb',[display,'-screen','0','1024x700x24','-nolisten','tcp','-ac'],{stdio:['ignore','ignore','pipe']});
-  let xvfbErr='';xvfb.stderr?.on('data',d=>{xvfbErr=(xvfbErr+String(d)).slice(-1600);});
-  await sleep(550);
-  if(xvfb.exitCode!==null)throw new Error('XVFB_START_FAILED:'+compact(xvfbErr,500));
+  // Exactly one browser/Xvfb pair may exist in this worker. Previous code could
+  // leak Xvfb/Chrome when connectOverCDP timed out, eventually exhausting
+  // pthread/fork resources and freezing the next episode.
+  await stopBrowserInfra();
 
-  const env={...process.env,DISPLAY:display};
-  const chrome=spawn('/usr/bin/google-chrome-stable',[
-    '--user-data-dir='+PROFILE_DIR,
-    '--remote-debugging-address=127.0.0.1','--remote-debugging-port='+port,'--remote-allow-origins=*',
-    '--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-software-rasterizer',
-    '--renderer-process-limit=1','--disable-site-isolation-trials','--no-zygote',
-    '--disable-features=IsolateOrigins,site-per-process,CalculateNativeWinOcclusion,OptimizationHints,MediaRouter',
-    '--disable-background-networking','--disable-component-update','--disable-sync','--disable-extensions','--disable-default-apps',
-    '--metrics-recording-only','--no-first-run','--no-default-browser-check','--password-store=basic',
-    '--disk-cache-dir=/tmp/publisher-chrome-cache','--disk-cache-size=16777216','--media-cache-size=8388608',
-    '--js-flags=--max-old-space-size=160','--window-size=1024,700',
-    flowUrl()
-  ],{env,stdio:['ignore','ignore','pipe']});
-  let chromeErr='';chrome.stderr?.on('data',d=>{chromeErr=(chromeErr+String(d)).slice(-3000);});
-
-  let cdpReady=false;
-  for(let i=0;i<80;i++){
-    await sleep(250);
-    if(chrome.exitCode!==null)break;
-    try{
-      const r=await fetch('http://127.0.0.1:'+port+'/json/version',{signal:AbortSignal.timeout(900)});
-      if(r.ok){cdpReady=true;break;}
-    }catch{}
-  }
-  if(!cdpReady){
-    const exit=chrome.exitCode;
-    try{chrome.kill('SIGTERM');}catch{};try{xvfb.kill('SIGTERM');}catch{};
-    await sleep(250);
-    throw new Error('CHROME_CDP_NOT_READY:exit='+String(exit)+':stderr='+compact(chromeErr,700)+':xvfb='+compact(xvfbErr,300));
-  }
-
-  await sleep(3000);
-  const browser=await chromium.connectOverCDP('http://127.0.0.1:'+port,{timeout:15000});
-  const context=browser.contexts()[0];
-  if(!context)throw new Error('CHROME_CDP_CONTEXT_MISSING');
-  const pages=context.pages();
-  const page=[...pages].reverse().find(p=>String(p.url()).includes('flow.google.com'))||pages[0]||await context.newPage();
-  const close=async()=>{
-    try{await browser.close();}catch{}
-    try{chrome.kill('SIGTERM');}catch{}
-    await sleep(450);
-    try{xvfb.kill('SIGTERM');}catch{}
-    await stopProfileChrome().catch(()=>{});
+  const display=':99';
+  const port=9222;
+  let xvfb=null,chrome=null,browser=null;
+  let xvfbErr='',chromeErr='';
+  const cleanup=async()=>{
+    try{await browser?.close()}catch{}
+    try{chrome?.kill('SIGTERM')}catch{}
+    try{xvfb?.kill('SIGTERM')}catch{}
+    await sleep(300);
+    try{chrome?.kill('SIGKILL')}catch{}
+    try{xvfb?.kill('SIGKILL')}catch{}
+    await stopBrowserInfra().catch(()=>{});
   };
-  return {browser,context,page,close};
+
+  try{
+    xvfb=spawn('Xvfb',[display,'-screen','0','1024x700x24','-nolisten','tcp','-ac'],{stdio:['ignore','ignore','pipe']});
+    xvfb.stderr?.on('data',d=>{xvfbErr=(xvfbErr+String(d)).slice(-1800)});
+    await sleep(650);
+    if(xvfb.exitCode!==null)throw new Error('XVFB_START_FAILED:'+compact(xvfbErr,700));
+
+    const env={...process.env,DISPLAY:display};
+    chrome=spawn('/usr/bin/google-chrome-stable',[
+      '--user-data-dir='+PROFILE_DIR,
+      '--remote-debugging-address=127.0.0.1','--remote-debugging-port='+port,'--remote-allow-origins=*',
+      '--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-software-rasterizer',
+      '--renderer-process-limit=1','--disable-site-isolation-trials','--no-zygote',
+      '--disable-features=IsolateOrigins,site-per-process,CalculateNativeWinOcclusion,OptimizationHints,MediaRouter',
+      '--disable-background-networking','--disable-component-update','--disable-sync','--disable-extensions','--disable-default-apps',
+      '--metrics-recording-only','--no-first-run','--no-default-browser-check','--password-store=basic',
+      '--disk-cache-dir=/tmp/publisher-chrome-cache','--disk-cache-size=16777216','--media-cache-size=8388608',
+      '--js-flags=--max-old-space-size=160','--window-size=1024,700',
+      flowUrl()
+    ],{env,stdio:['ignore','ignore','pipe']});
+    chrome.stderr?.on('data',d=>{chromeErr=(chromeErr+String(d)).slice(-3600)});
+
+    let cdpReady=false;
+    for(let i=0;i<100;i++){
+      await sleep(250);
+      if(chrome.exitCode!==null)break;
+      try{
+        const r=await fetch('http://127.0.0.1:'+port+'/json/version',{signal:AbortSignal.timeout(900)});
+        if(r.ok){cdpReady=true;break}
+      }catch{}
+    }
+    if(!cdpReady)throw new Error('CHROME_CDP_NOT_READY:exit='+String(chrome.exitCode)+':stderr='+compact(chromeErr,900)+':xvfb='+compact(xvfbErr,400));
+
+    browser=await chromium.connectOverCDP('http://127.0.0.1:'+port,{timeout:30000});
+    const context=browser.contexts()[0];
+    if(!context)throw new Error('CHROME_CDP_CONTEXT_MISSING');
+    const pages=context.pages();
+    const page=[...pages].reverse().find(p=>String(p.url()).includes('flow.google.com'))||pages[0]||await context.newPage();
+    return {browser,context,page,close:cleanup};
+  }catch(err){
+    await cleanup();
+    throw err;
+  }
 }
 
 async function seedPersistentProfile(storage, ua='') {
@@ -2103,9 +2134,14 @@ async function processRow(db,row){
 function reconcileAmbiguousNoGeneration(){return false;}
 function serialReady(db,row){
   if(!row)return false;if(!CONFIG.content.serialized||Number(row.episode)<=1)return true;
-  const prev=db.prepare('SELECT status FROM factory_items WHERE episode<? ORDER BY episode DESC LIMIT 1').get(Number(row.episode));if(!prev)return false;
+  const prev=db.prepare('SELECT status,videoPath,remoteUrl,reviewVideoId,flowResult FROM factory_items WHERE episode<? ORDER BY episode DESC LIMIT 1').get(Number(row.episode));if(!prev)return false;
   const gate=CONFIG.content.continuity_gate;if(gate==='none')return true;
-  return['queued','historical','published'].includes(String(prev.status||''));
+  // Serial production handoff occurs when the previous render has been safely
+  // recovered and is available for Review. Human Approve/Redo happens later and
+  // must never block today's next generation.
+  if(['review','queued','historical','published'].includes(String(prev.status||'')))return true;
+  let fr={};try{fr=JSON.parse(String(prev.flowResult||'{}'))||{}}catch{}
+  return Boolean(prev.videoPath||prev.remoteUrl||prev.reviewVideoId||fr?.validated_ftyp);
 }
 function retryTokenOpen(row){
   const token=String(row?.reviewRetryToken||'').trim(),submitted=String(row?.reviewRetrySubmittedToken||'').trim();
@@ -2390,8 +2426,7 @@ async function runProvider(){
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
-    const maintenance=await configurePublisherFactorySupabasePasskeysIfRequested(db);
-    if(maintenance.requested&&!maintenance.done)setMeta(db,'maintenance:supabasePasskeysLastOutcome',maintenance.authRequired?'auth_required':'retryable_error');
+    setMeta(db,'maintenance:supabasePasskeysLastOutcome','deferred_while_content_worker_active');
     const migrated=await migrateProfileOnce(db);if(!migrated)return;
     const goldenRecovery=await recoverGoldenRunIfRequested(db);
     if(goldenRecovery.needed&&!goldenRecovery.done)return;
