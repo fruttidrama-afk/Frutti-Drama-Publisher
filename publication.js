@@ -249,6 +249,33 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   async function auditExistingMetadata(){
     const items=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('cancelled','deleted') ORDER BY episode").all();
     const episode1Title=String(items.find(x=>Number(x.episode)===1)?.title||'');
+    // One-time repair for the live Earth in Ten queue after the old quota handler
+    // moved LOCAL dates for videos that already existed on YouTube. The exact E1
+    // public page was independently verified live; the operator also confirmed E2
+    // is already scheduled in YouTube. Remote API reconciliation remains authoritative
+    // and will correct these fields again after quota resets if YouTube differs.
+    if(isEarthIn10(config)){
+      const verified=[
+        {episode:1,videoId:'b8t40dWR8Wo',state:'published',date:'2026-09-22',privacy:'public',evidence:'live-public-page-verified'},
+        {episode:2,videoId:'ENNYHWE65WE',state:'scheduled',date:'2026-09-23',privacy:'private',evidence:'operator-confirmed-youtube-schedule'}
+      ];
+      for(const v of verified){
+        const item=items.find(x=>Number(x.episode)===v.episode&&String(x.videoId||'')===v.videoId);
+        if(!item)continue;
+        const scheduledAt=zonedLocal(v.date,'19:00',config.schedule.timezone).toISOString();
+        const needs=String(item.status)!==v.state||String(item.scheduledAt)!==scheduledAt||String(item.remotePrivacyStatus||'')!==v.privacy;
+        if(needs){
+          item.scheduledAt=scheduledAt;
+          item.remotePrivacyStatus=v.privacy;
+          item.remotePublishAt=v.state==='scheduled'?scheduledAt:null;
+          item.remoteStatusCheckedAt=now();
+          item.error=null;item.retryAt=0;
+          hist(item,v.state,'Repaired stale local Publishing state after quota-induced schedule drift; evidence='+v.evidence+'. YouTube remains authoritative after quota reset.');
+          save(db,item);
+          console.log('[PUBLICATION LEGACY STATE REPAIRED]',JSON.stringify({episode:item.episode,videoId:item.videoId,status:item.status,scheduledAt:item.scheduledAt,evidence:v.evidence}));
+        }
+      }
+    }
     let corrected=0,factoryCorrected=0,synced=0,quotaRetryAt=0;const report=[];
     for(const item of items){
       const row=db.prepare('SELECT episode,hook,story,prompt,title,description,creativePackageHash,creativePackageId,flowResult FROM factory_items WHERE id=?').get(item.itemId);
