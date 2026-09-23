@@ -89,10 +89,18 @@ function metadata(row,config){
 
 function publicItem(r){return{...r,history:JSON.parse(r.history||'[]'),resumableSession:undefined,filePath:r.filePath?true:false}}
 function hist(row,status,message=''){const h=JSON.parse(row.history||'[]');h.push({status,at:now(),message});row.history=JSON.stringify(h.slice(-120));row.status=status;row.updatedAt=now()}
-function save(db,row){db.prepare(`UPDATE publication_items SET title=?,description=?,scheduledAt=?,uploadAt=?,status=?,filePath=?,fileSize=?,videoId=?,resumableSession=?,playlistId=?,attempts=?,retryAt=?,error=?,history=?,updatedAt=? WHERE id=?`).run(row.title,row.description,row.scheduledAt,row.uploadAt,row.status,row.filePath,row.fileSize,row.videoId,row.resumableSession,row.playlistId,row.attempts,row.retryAt,row.error,row.history,row.updatedAt,row.id)}
+function save(db,row){db.prepare(`UPDATE publication_items SET title=?,description=?,scheduledAt=?,uploadAt=?,status=?,filePath=?,fileSize=?,videoId=?,resumableSession=?,playlistId=?,attempts=?,retryAt=?,error=?,history=?,updatedAt=?,aiDisclosureSyncedAt=?,remotePrivacyStatus=?,remotePublishAt=?,remoteStatusCheckedAt=? WHERE id=?`).run(row.title,row.description,row.scheduledAt,row.uploadAt,row.status,row.filePath,row.fileSize,row.videoId,row.resumableSession,row.playlistId,row.attempts,row.retryAt,row.error,row.history,row.updatedAt,row.aiDisclosureSyncedAt||null,row.remotePrivacyStatus||null,row.remotePublishAt||null,row.remoteStatusCheckedAt||null,row.id)}
 
 export function installPublication({app,db,config,youtubeApi,authedClient,loadToken,dataDir}){
   const publicationDir=path.join(dataDir,'publication');fs.mkdirSync(publicationDir,{recursive:true,mode:0o700});
+  for(const sql of [
+    "ALTER TABLE publication_items ADD COLUMN aiDisclosureSyncedAt TEXT",
+    "ALTER TABLE publication_items ADD COLUMN remotePrivacyStatus TEXT",
+    "ALTER TABLE publication_items ADD COLUMN remotePublishAt TEXT",
+    "ALTER TABLE publication_items ADD COLUMN remoteStatusCheckedAt TEXT"
+  ]){try{db.exec(sql)}catch{}}
+  const remotePollNext=new Map(),aiDisclosureNext=new Map();
+  let connectedChannelId=null;
   let running=false,lastError=null,lastHeartbeat=null;
 
   function enqueue(row){
@@ -120,20 +128,93 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     if(!access)throw new Error('YouTube OAuth access token unavailable.');
     return await fetch(url,{...options,redirect:'manual',signal:AbortSignal.timeout(90000),headers:{...(options.headers||{}),Authorization:'Bearer '+access}});
   }
+  async function connectedChannel(){
+    if(connectedChannelId)return connectedChannelId;
+    const yt=youtubeApi(),id=(await yt.channels.list({part:['id'],mine:true})).data.items?.[0]?.id;
+    if(!id)throw new Error('Connected YouTube channel could not be resolved.');
+    connectedChannelId=String(id);return connectedChannelId;
+  }
+  async function cleanupPublicationMedia(item){
+    if(!item.filePath)return;
+    if(isReviewStorageUri(item.filePath)){try{await deleteReviewObject(item.filePath)}catch{}}
+    else try{fs.rmSync(item.filePath,{force:true})}catch{}
+    item.filePath=null;save(db,item);
+  }
+  async function applyRemoteStatus(item,v,source='YouTube API'){
+    if(!v)throw new Error('YouTube video not found.');
+    const st=v.status||{},privacy=String(st.privacyStatus||''),uploadStatus=String(st.uploadStatus||'');
+    if(['failed','rejected','deleted'].includes(uploadStatus))throw new Error('YouTube rejected the video.');
+    item.remotePrivacyStatus=privacy||null;
+    item.remotePublishAt=st.publishAt||null;
+    item.remoteStatusCheckedAt=now();
+    if(privacy==='public'){
+      if(String(item.status)!=='published')hist(item,'published',source+' confirms PUBLIC.');
+      else item.updatedAt=now();
+      item.error=null;item.retryAt=0;save(db,item);
+      await cleanupPublicationMedia(item);
+      return'published';
+    }
+    if(privacy==='private'&&st.publishAt){
+      const remoteAt=new Date(st.publishAt).toISOString(),changedSchedule=String(item.scheduledAt)!==remoteAt;
+      if(changedSchedule)item.scheduledAt=remoteAt;
+      if(String(item.status)!=='scheduled'||changedSchedule)hist(item,'scheduled',changedSchedule?source+' confirms the private schedule; local date/time was corrected to match YouTube.':source+' confirms private scheduled publication.');
+      else item.updatedAt=now();
+      item.error=null;item.retryAt=0;save(db,item);
+      await cleanupPublicationMedia(item);
+      return'scheduled';
+    }
+    if(privacy==='private'){
+      if(String(item.status)!=='uploaded')hist(item,'uploaded',source+' confirms PRIVATE; scheduling is not yet confirmed.');
+      else item.updatedAt=now();
+      item.error=null;save(db,item);
+      return'uploaded';
+    }
+    throw new Error('Unexpected YouTube privacy status: '+(privacy||'missing'));
+  }
+  async function readRemoteStatus(item){
+    const yt=youtubeApi(),v=(await yt.videos.list({part:['status','snippet'],id:[item.videoId]})).data.items?.[0];
+    return await applyRemoteStatus(item,v,'YouTube API');
+  }
+  async function publicPageFallback(item){
+    if(!item?.videoId)return false;
+    try{
+      const o=await fetch('https://www.youtube.com/oembed?format=json&url='+encodeURIComponent('https://www.youtube.com/watch?v='+item.videoId),{signal:AbortSignal.timeout(12000)});
+      if(!o.ok)return false;
+      const w=await fetch('https://www.youtube.com/watch?v='+encodeURIComponent(item.videoId)+'&hl=en',{signal:AbortSignal.timeout(12000),headers:{'User-Agent':'Mozilla/5.0'}});
+      const body=w.ok?await w.text():'';
+      if(/"isUnlisted"\s*:\s*true/i.test(body))return false;
+      item.remotePrivacyStatus='public';
+      item.remoteStatusCheckedAt=now();
+      if(String(item.status)!=='published')hist(item,'published','YouTube public page confirms the video is publicly reachable while API status sync is unavailable.');
+      item.error=null;item.retryAt=0;save(db,item);
+      await cleanupPublicationMedia(item);
+      return true;
+    }catch{return false}
+  }
 
   async function stageMetadata(item){
-    if(!item.videoId)return;
-    const yt=youtubeApi();const channel=(await yt.channels.list({part:['id'],mine:true})).data.items?.[0]?.id;
+    if(!item.videoId)return null;
+    const yt=youtubeApi(),channel=await connectedChannel();
     const v=(await yt.videos.list({part:['snippet','status'],id:[item.videoId]})).data.items?.[0];
-    if(!v||!channel||v.snippet?.channelId!==channel)throw new Error('El video privado de staging no pertenece al canal conectado.');
-    if(v.status?.privacyStatus!=='private')throw new Error('El staging dejó de ser privado; se bloqueó la programación.');
-    await yt.videos.update({part:['snippet','status'],requestBody:{id:item.videoId,snippet:{title:item.title,description:item.description,categoryId:v.snippet?.categoryId||'24',tags:[...(v.snippet?.tags||[]).filter(x=>!String(x).startsWith('publisher-runtime-')),'publisher-runtime-'+item.id]},status:{privacyStatus:'private',publishAt:item.scheduledAt,selfDeclaredMadeForKids:false,containsSyntheticMedia:true}}});
+    if(!v||v.snippet?.channelId!==channel)throw new Error('El video de staging no pertenece al canal conectado.');
+    if(v.status?.privacyStatus==='public')return await applyRemoteStatus(item,v,'YouTube API');
+    if(v.status?.privacyStatus!=='private')throw new Error('YouTube returned an unexpected staging privacy state.');
+    const remotePublishAt=v.status?.publishAt?new Date(v.status.publishAt).toISOString():null;
+    const copyDiff=String(v.snippet?.title||'')!==String(item.title||'')||String(v.snippet?.description||'')!==String(item.description||'');
+    if(remotePublishAt&&!copyDiff)return await applyRemoteStatus(item,v,'YouTube API');
+    const publishAt=remotePublishAt||item.scheduledAt;
+    const updated=(await yt.videos.update({part:['snippet','status'],requestBody:{
+      id:item.videoId,
+      snippet:{title:item.title,description:item.description,categoryId:v.snippet?.categoryId||'24',tags:[...(v.snippet?.tags||[]).filter(x=>!String(x).startsWith('publisher-runtime-')),'publisher-runtime-'+item.id]},
+      status:{privacyStatus:'private',publishAt,selfDeclaredMadeForKids:false,containsSyntheticMedia:true}
+    }})).data;
+    item.aiDisclosureSyncedAt=now();
+    return await applyRemoteStatus(item,updated||{status:{privacyStatus:'private',publishAt}},'YouTube API update');
   }
 
   async function ensureAiDisclosure(item){
     if(!item?.videoId||item.aiDisclosureSyncedAt)return;
-    const yt=youtubeApi();
-    const current=(await yt.videos.list({part:['status'],id:[item.videoId]})).data.items?.[0];
+    const yt=youtubeApi(),current=(await yt.videos.list({part:['status'],id:[item.videoId]})).data.items?.[0];
     if(!current)throw new Error('YouTube video not found for AI disclosure.');
     const st=current.status||{};
     const next={
@@ -146,29 +227,14 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     };
     if(next.privacyStatus==='private'&&st.publishAt)next.publishAt=st.publishAt;
     await yt.videos.update({part:['status'],requestBody:{id:item.videoId,status:next}});
-    item.aiDisclosureSyncedAt=new Date().toISOString();
-    hist(item,item.status||'queued','YouTube AI/synthetic-content disclosure enabled.');
+    item.aiDisclosureSyncedAt=now();
+    hist(item,item.status||'uploaded','YouTube AI/synthetic-content disclosure enabled and persisted.');
     save(db,item);
   }
 
   async function auditExistingMetadata(){
     const items=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('cancelled','deleted') ORDER BY episode").all();
     const episode1Title=String(items.find(x=>Number(x.episode)===1)?.title||'');
-    // One-off recovery for Earth in Ten after the YouTube quota incident:
-    // E1 is already privately uploaded on YouTube, so at 06:30 ART on 2026-09-23
-    // we only need to confirm/schedule that existing private asset for 19:00.
-    if(isEarthIn10(config)){
-      const first=items.find(x=>Number(x.episode)===1&&String(x.scheduledAt||'').startsWith('2026-09-23')&&x.videoId);
-      if(first){
-        const early=zonedLocal('2026-09-23','06:30',config.schedule.timezone).toISOString();
-        if(first.uploadAt!==early){
-          first.uploadAt=early;
-          hist(first,first.status,'One-off quota recovery: existing private YouTube video will be scheduled at 06:30 ART for 19:00 publication.');
-          save(db,first);
-        }
-        console.log('[EARTH E1 EARLY SCHEDULE]',JSON.stringify({episode:first.episode,videoId:Boolean(first.videoId),uploadAt:early,scheduledAt:first.scheduledAt,status:first.status}));
-      }
-    }
     let corrected=0,factoryCorrected=0,synced=0,quotaRetryAt=0;const report=[];
     for(const item of items){
       const row=db.prepare('SELECT episode,hook,story,prompt,title,description,creativePackageHash,creativePackageId,flowResult FROM factory_items WHERE id=?').get(item.itemId);
@@ -233,7 +299,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     }
     let r=await request(item.resumableSession,{method:'PUT',headers:{'Content-Length':'0','Content-Range':'bytes */'+item.fileSize}});
     while(true){
-      if(r.ok){const j=await r.json();if(!j.id)throw new Error('YouTube did not return videoId.');item.videoId=j.id;item.resumableSession=null;hist(item,'uploaded','Upload complete.');save(db,item);return}
+      if(r.ok){const j=await r.json();if(!j.id)throw new Error('YouTube did not return videoId.');item.videoId=j.id;item.resumableSession=null;item.aiDisclosureSyncedAt=now();if(j.status)await applyRemoteStatus(item,j,'YouTube upload response');else{hist(item,'uploaded','Upload complete.');save(db,item)}return}
       if([404,410].includes(r.status))throw new Error('UPLOAD_SESSION_AMBIGUOUS');
       if(r.status!==308)throw new Error('Upload interrupted ('+r.status+').');
       const range=r.headers.get('range'),offset=range?Number(range.match(/-(\d+)$/)?.[1])+1:0;
@@ -250,17 +316,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   }
 
   async function verify(item){
-    const yt=youtubeApi(),v=(await yt.videos.list({part:['status'],id:[item.videoId]})).data.items?.[0];
-    if(!v)throw new Error('YouTube video not found after upload/staging.');
-    if(['failed','rejected','deleted'].includes(v.status?.uploadStatus))throw new Error('YouTube rejected the video.');
-    if(v.status?.privacyStatus==='public'){hist(item,'published','YouTube confirms PUBLIC.');save(db,item)}
-    else if(v.status?.privacyStatus==='private'&&Date.parse(v.status?.publishAt)===Date.parse(item.scheduledAt)){hist(item,'scheduled','YouTube confirms private scheduled publication.');save(db,item)}
-    else throw new Error('YouTube did not confirm the intended schedule.');
-    if(['scheduled','published'].includes(item.status)&&item.filePath){
-      if(isReviewStorageUri(item.filePath)){try{await deleteReviewObject(item.filePath)}catch{}}
-      else try{fs.rmSync(item.filePath,{force:true})}catch{}
-      item.filePath=null;save(db,item)
-    }
+    return await readRemoteStatus(item);
   }
 
   async function reconcileAmbiguous(item){
@@ -298,7 +354,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     throw new Error('No se encontró un slot de publicación posterior a la recuperación de cuota.');
   }
   function shiftPendingQueueAfter(afterMs){
-    const pending=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('published','scheduled','cancelled','deleted') ORDER BY episode,scheduledAt").all();
+    const pending=db.prepare("SELECT * FROM publication_items WHERE videoId IS NULL AND status NOT IN ('published','scheduled','cancelled','deleted') ORDER BY episode,scheduledAt").all();
     if(!pending.length)return[];
     const pendingIds=new Set(pending.map(x=>String(x.id)));
     const used=new Set(db.prepare("SELECT id,scheduledAt FROM publication_items WHERE status NOT IN ('cancelled','deleted')").all()
@@ -353,36 +409,59 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     if(running)return;running=true;lastHeartbeat=now();lastError=null;
     await migratePendingPublicationMedia();
     try{
-      const items=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('published','cancelled','deleted') ORDER BY scheduledAt").all();
+      const items=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('cancelled','deleted') AND (status<>'published' OR aiDisclosureSyncedAt IS NULL) ORDER BY scheduledAt").all();
       for(const item of items){
-        if(item.retryAt>Date.now())continue;
         try{
-          if(item.videoId&&!item.aiDisclosureSyncedAt)await ensureAiDisclosure(item);
-          if(item.status==='scheduled'){if(Date.now()>=Date.parse(item.scheduledAt)-60000)await verify(item);continue}
+          const t=Date.now();
+          if(item.videoId&&loadToken()&&t>=Number(remotePollNext.get(item.id)||0)){
+            try{
+              const state=await readRemoteStatus(item);
+              remotePollNext.set(item.id,t+(state==='published'?24*60*60*1000:state==='scheduled'?10*60*1000:3*60*1000));
+            }catch(e){
+              const quota=isQuotaExceeded(e);
+              remotePollNext.set(item.id,quota?nextYoutubeQuotaRetry():t+5*60*1000);
+              if(quota)await publicPageFallback(item);
+              else console.log('[PUBLICATION REMOTE STATUS WARNING]',JSON.stringify({episode:item.episode,error:String(e?.message||e).slice(0,500)}));
+            }
+          }
+          if(item.videoId&&!item.aiDisclosureSyncedAt&&loadToken()&&Date.now()>=Number(aiDisclosureNext.get(item.id)||0)){
+            try{await ensureAiDisclosure(item);aiDisclosureNext.delete(item.id)}
+            catch(e){
+              const quota=isQuotaExceeded(e);
+              aiDisclosureNext.set(item.id,quota?nextYoutubeQuotaRetry():Date.now()+15*60*1000);
+              console.log('[PUBLICATION AI DISCLOSURE WAIT]',JSON.stringify({episode:item.episode,quota,error:String(e?.message||e).slice(0,500)}));
+            }
+          }
+          if(item.status==='published')continue;
+          if(item.status==='scheduled')continue;
+          if(item.retryAt>Date.now())continue;
           if(Date.now()<Date.parse(item.uploadAt))continue;
           if(!loadToken())throw new Error('YOUTUBE_AUTH_REQUIRED');
           if(item.resumableSession&&!item.videoId){const resolved=await reconcileAmbiguous(item);if(resolved&&item.status==='attention')continue}
-          if(item.videoId&&['queued','quota_wait','error','uploaded'].includes(String(item.status||''))){
-            await stageMetadata(item);
-            hist(item,'uploaded','Existing private YouTube video confirmed and scheduled for publication.');
+          if(item.videoId&&['queued','quota_wait','error','uploaded','auth_wait'].includes(String(item.status||''))){
+            const state=await stageMetadata(item);
             item.error=null;item.retryAt=0;save(db,item);
+            if(['scheduled','published'].includes(String(state||item.status)))continue;
           }
           if(!item.videoId)await upload(item);
-          await verify(item);item.attempts=0;item.retryAt=0;item.error=null;save(db,item);
+          if(!['scheduled','published'].includes(String(item.status||'')))await verify(item);
+          item.attempts=0;item.retryAt=0;item.error=null;save(db,item);
         }catch(e){
           const raw=String(e?.message||e);item.attempts=Number(item.attempts||0)+1;
           if(isQuotaExceeded(e)){
-            item.status='quota_wait';item.retryAt=nextYoutubeQuotaRetry();
-            item.error='YouTube daily API quota exhausted. Automatic retry is scheduled after the quota reset.';
-            hist(item,item.status,item.error);save(db,item);
-            shiftPendingQueueAfter(item.retryAt);
-            console.log('[PUBLICATION QUOTA WAIT]',JSON.stringify({episode:item.episode,retryAt:new Date(item.retryAt).toISOString()}));
+            const retryAt=nextYoutubeQuotaRetry();
+            item.retryAt=retryAt;
+            item.error='YouTube daily API quota exhausted. Remote state will be reconciled automatically after reset.';
+            if(!['scheduled','published'].includes(String(item.status||'')))hist(item,'quota_wait',item.error);
+            else{item.updatedAt=now();save(db,item)}
+            if(!item.videoId)shiftPendingQueueAfter(retryAt);
+            console.log('[PUBLICATION QUOTA WAIT]',JSON.stringify({episode:item.episode,videoId:Boolean(item.videoId),status:item.status,retryAt:new Date(retryAt).toISOString()}));
           }else if(raw==='YOUTUBE_AUTH_REQUIRED'){
-            item.error=raw;item.status='auth_wait';item.retryAt=0;hist(item,item.status,raw);save(db,item);
+            item.error=raw;if(!['scheduled','published'].includes(String(item.status||'')))item.status='auth_wait';item.retryAt=0;hist(item,item.status,raw);save(db,item);
           }else if(raw==='UPLOAD_SESSION_AMBIGUOUS'){
             item.error=raw;item.status='attention';item.retryAt=0;hist(item,item.status,raw);save(db,item);
           }else{
-            item.error=raw;item.status='error';item.retryAt=Date.now()+Math.min(60*60*1000,60000*Math.pow(2,Math.min(item.attempts,6)));
+            item.error=raw;if(!['scheduled','published'].includes(String(item.status||'')))item.status='error';item.retryAt=Date.now()+Math.min(60*60*1000,60000*Math.pow(2,Math.min(item.attempts,6)));
             hist(item,item.status,raw);save(db,item);
           }
         }
