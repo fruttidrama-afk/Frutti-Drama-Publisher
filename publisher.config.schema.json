@@ -303,10 +303,17 @@
           ]
         },
         "archive_provider": {
-          "enum": [
-            "youtube-private-staging",
-            "local-only"
-          ]
+          "const": "local-only",
+          "description": "Unapproved review media must remain on the Publisher's private persistent volume."
+        },
+        "external_storage_before_approval": {
+          "const": false
+        },
+        "approval_required_before_publication": {
+          "const": true
+        },
+        "reject_purges_external_artifacts": {
+          "const": true
         },
         "hot_originals": {
           "type": "integer",
