@@ -45,18 +45,18 @@ for(const [token,label] of [
   ["status IN ('regen_wait','draft') AND retryStrategy IN ('reuse_prompt','revise_prompt')",'human REDO priority queue'],
   ['creativePackageHash','creative package hash link'],
   ["source:'creative-package'",'review metadata preservation'],
-  ['let editor=await waitFlowReady(page,30000)','stable Flow composer handoff'],
-  ['FLOW_FAILED_TILE_RETRY_CLICKED','native no-charge Flow Retry'],
-  ['Retry|Reintentar','localized Flow Retry selector']
+  ['let editor=await waitFlowReady(page,30000)','stable Flow composer handoff']
 ]) has(provider,token,label);
 must(!provider.includes("await waitFlowReady(page,30000);\n  const editor=await promptEditor(page);"),'Flow composer must not be re-queried immediately after readiness');
 for(const [token,label] of [
   ['function scheduleNoChargeRetry(db,row,opts={})','adaptive no-charge scheduler'],
   ['flow:transientCooldownUntil','provider-wide no-charge cooldown'],
   ['no_charge_streak:streak','no-charge streak persistence'],
-  ["if(providerCooldown>Date.now())return null",'provider cooldown submit gate'],
-  ["if(EXPECTED_FLOW_PROJECT_NAME==='EARTH IN 10')",'Earth repair runtime scope']
+  ["if(providerCooldown>Date.now())return null",'provider cooldown submit gate']
 ]) has(provider,token,label);
+for(const forbidden of ['FLOW_FAILED_TILE_RETRY_CLICKED','clickNativeRetry','repairEarthE10NoGeneration','repairEarthE11KnownNoCharge','repairEarthTodayAfterOperatorConfirmedOnlyFirstRender','realignEarthE11ToFruttiProtocol','rearmEarthE11AfterFullFruttiPort','rearmEarthE11AfterStableComposerFix']){
+  must(!provider.includes(forbidden),'canonical runtime must exclude '+forbidden);
+}
 has(runtimeConfig,'EARTH_IN_10_AUTONOMOUS_EPISODES','Earth autonomous geographic ideas');
 has(runtimeConfig,'enforceEpisodeIntent','Earth episode intent validator');
 has(runtimeConfig,'EARTH_IN_10_CONTENT_GATE','Earth generic prompt block');
@@ -84,7 +84,8 @@ has(server,'prompt_integrity','live prompt integrity health');
 has(server,'prompt_show_bible_gate:true','Show Bible prompt safety flag');
 has(server,'atomic_creative_package:true','atomic creative package safety flag');
 has(server,'stable_composer_handoff:true','stable Flow composer health invariant');
-has(server,'native_no_charge_retry:true','native no-charge Retry health invariant');
+has(server,'native_no_charge_retry:false','native no-charge Retry disabled invariant');
+has(server,'immediate_native_retry_disabled:true','immediate native retry safety invariant');
 has(server,'adaptive_no_charge_backoff:true','adaptive no-charge backoff health invariant');
 has(server,'show_specific_repairs_isolated:true','show-specific repair isolation health invariant');
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
