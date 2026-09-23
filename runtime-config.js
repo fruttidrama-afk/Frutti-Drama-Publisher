@@ -287,7 +287,7 @@ export function enforceEpisodeIntent(db,row){
   if(forced&&String(row?.reviewFeedback||'').trim()){
     const hook=String(forced.hook||'').trim(),story=String(forced.story||'').trim();
     if(hook&&story&&(String(row.hook||'')!==hook||String(row.story||'')!==story)){
-      db.prepare("UPDATE factory_items SET hook=?,story=?,prompt=NULL,promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title=NULL,description=NULL,creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
+      db.prepare("UPDATE factory_items SET hook=?,story=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
         .run(hook,story,new Date().toISOString(),row.id);
       row=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row;
     }
