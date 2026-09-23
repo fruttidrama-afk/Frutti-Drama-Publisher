@@ -12,7 +12,7 @@ import {
   resolveVisualCharacters, buildPrompt, seedInitial, ensureBacklog, enforceEpisodeIntent, materializeCreativePackage, validateEpisodePrompt
 } from './runtime-config.js';
 import { buildPublicationCopy } from './publication-copy.js';
-import { uploadReviewFile, reviewStorageConfigured, reviewStorageRequired } from './review-storage.js';
+
 
 const CHROMIUM_PATH=String(process.env.CHROMIUM_PATH||'/usr/bin/chromium');
 const DATA_DIR=path.resolve(process.env.DATA_DIR||(process.env.RAILWAY_ENVIRONMENT?'/data':'./data'));
@@ -34,18 +34,14 @@ const BOOTSTRAP_LOCK=path.join(FACTORY_DIR,'flow-auth-bootstrap.active.json');
 const STATUS_FILE=path.resolve(process.cwd(),'public','free-browser-status.json');
 const PROVIDER='FreeBrowserProvider';
 async function saveReviewAsset(db,row,localPath,flowResult,stamp=now()){
-  let cloud=null;
-  if(reviewStorageConfigured()||reviewStorageRequired())cloud=await uploadReviewFile(localPath,{itemId:row.id,revision:row.revision});
-  if(cloud){
-    flowResult.review_storage=cloud.provider;
-    db.prepare(`UPDATE factory_items SET status='review',videoPath=NULL,remoteUrl=?,reviewOriginalSize=?,flowResult=?,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?`)
-      .run(cloud.uri,cloud.size,JSON.stringify(flowResult),stamp,stamp,row.id);
-    try{fs.rmSync(localPath,{force:true})}catch{}
-  }else{
-    db.prepare(`UPDATE factory_items SET status='review',videoPath=?,remoteUrl=NULL,flowResult=?,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?`)
-      .run(localPath,JSON.stringify(flowResult),stamp,stamp,row.id);
-  }
-  return cloud;
+  // HARD APPROVAL GATE: an unapproved review render must remain only on the
+  // Publisher's private persistent volume. It must never be uploaded to
+  // YouTube, Supabase review storage, or any other remote destination.
+  flowResult.review_storage='local-volume-until-approval';
+  const size=fs.statSync(localPath).size;
+  db.prepare(`UPDATE factory_items SET status='review',videoPath=?,remoteUrl=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=?,flowResult=?,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?`)
+    .run(localPath,size,JSON.stringify(flowResult),stamp,stamp,row.id);
+  return null;
 }
 
 const INSTANCE_ID=randomUUID();
