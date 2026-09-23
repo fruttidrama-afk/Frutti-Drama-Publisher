@@ -99,3 +99,4 @@ fix=earth-stale-attempt-reset-syntax-1790147874298
 fix=earth-strict-normal-head-of-line-1790148095007
 fix=earth-serial-head-wait-status-1790148314517
 fix=earth-nocharge-progressive-cooldown-no-approval-gate-1790149529441
+fix=earth-fixed-nocharge-cooldown-1790149661434
