@@ -46,8 +46,10 @@ for(const [token,label] of [
   ['creativePackageHash','creative package hash link'],
   ["source:'creative-package'",'review metadata preservation'],
   ['let editor=await waitFlowReady(page,30000)','stable Flow composer handoff'],
-  ['FLOW_UNUSUAL_ACTIVITY_QUARANTINE','persistent unusual-activity quarantine'],
-  ['24*60*60*1000','24h provider quarantine']
+  ['FLOW_UNUSUAL_ACTIVITY_OVERNIGHT','24h unusual-activity fallback'],
+  ['30*60*1000','first unusual-activity delay'],
+  ['8*60*60*1000','fifth unusual-activity delay'],
+  ['24*60*60*1000','24h unusual-activity fallback']
 ]) has(provider,token,label);
 must(!provider.includes("await waitFlowReady(page,30000);\n  const editor=await promptEditor(page);"),'Flow composer must not be re-queried immediately after readiness');
 for(const [token,label] of [
