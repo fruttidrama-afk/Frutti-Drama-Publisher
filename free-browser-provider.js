@@ -1193,20 +1193,9 @@ async function approveFlowPointConsent(page,permission,baselineInventory,baselin
 async function clickSubmitExactlyOnce(page,baselineInventory,baselineVideos,baselineBusy=0){
   const permissionBefore=await permissionSnapshot(page);
 
-  const preBody=await getBody(page).catch(()=>'');
-  const noChargeFailure=/unusual activity|actividad inusual/i.test(preBody)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(preBody);
-  if(noChargeFailure){
-    const retryCandidates=page.getByRole('button',{name:/^(Retry|Reintentar)$/i});
-    for(let i=(await retryCandidates.count().catch(()=>0))-1;i>=0;i--){
-      const retry=retryCandidates.nth(i);
-      if(!(await retry.isVisible().catch(()=>false))||!(await retry.isEnabled().catch(()=>false)))continue;
-      await trustedClick(retry);
-      publish('FLOW_FAILED_TILE_RETRY_CLICKED',{message:'Flow reported unusual activity with no charge. Used Flow’s own Retry action for the failed tile instead of submitting the prompt again.'});
-      await sleep(900);
-      return'flow-failed-tile-retry';
-    }
-  }
-
+  // Old failed tiles remain visible in Flow. They are historical evidence, not
+  // permission to hijack the current submit. Always operate the current composer
+  // exactly as FruttiDrama does; failed-tile Retry is never used as the daily submit.
   const promptTop=page.locator('flow-project-page flow-prompt-box div.prompt-top-row').last();
   if(await promptTop.count().catch(()=>0)&&await promptTop.isVisible().catch(()=>false)){
     await promptTop.click({position:{x:Math.max(5,Math.min(40,(await promptTop.boundingBox().catch(()=>({width:80}))).width-5)),y:8}}).catch(()=>{});
@@ -1252,28 +1241,8 @@ async function clickSubmitExactlyOnce(page,baselineInventory,baselineVideos,base
   }
   const postBody=await getBody(page);
   publish('POST_ARROW_NO_CONSENT',{message:'No generation transition or point-cost confirmation followed the generate click.',body:compact(postBody,1800),buttons:buttons.slice(-35)});
-  if(/unusual activity|actividad inusual/i.test(postBody)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(postBody)){
-    const retryCandidates=page.getByRole('button',{name:/^(Retry|Reintentar)$/i});
-    for(let i=(await retryCandidates.count().catch(()=>0))-1;i>=0;i--){
-      const retry=retryCandidates.nth(i);
-      if(!(await retry.isVisible().catch(()=>false))||!(await retry.isEnabled().catch(()=>false)))continue;
-      await trustedClick(retry);
-      publish('FLOW_FAILED_TILE_RETRY_CLICKED',{message:'Flow explicitly reported no charge, so its own Retry action was clicked once instead of submitting a duplicate prompt.'});
-      const retryDeadline=Date.now()+12000;
-      while(Date.now()<retryDeadline){
-        await sleep(350);
-        const transition=await generationTransitionVisible(page,baselineInventory,baselineVideos,baselineBusy).catch(()=>({started:false}));
-        if(transition.started){
-          publish('FLOW_FAILED_TILE_RETRY_STARTED',{message:'Flow Retry produced hard generation-start evidence.'});
-          return'flow-failed-tile-retry-confirmed';
-        }
-        const retryBody=await getBody(page).catch(()=>'');
-        if(/insufficient credits|not enough credits|cr[eé]ditos insuficientes/i.test(retryBody))throw new Error('FLOW_INSUFFICIENT_CREDITS');
-      }
-      break;
-    }
-    throw new Error('FLOW_TRANSIENT_NO_CHARGE');
-  }
+  // Do not infer the current attempt from a global "unusual activity" tile.
+  // That tile may predate this prompt. Hard generation evidence below is authoritative.
   return'composer-arrow-direct';
 }
 
@@ -1496,7 +1465,8 @@ async function waitGenerationStarted(page,baseline,baselineInventory,baselineBus
     await renderAuthGuard(page);
     const bodyText=await getBody(page).catch(()=>'');
     if(flowCreditFailure(bodyText))throw new Error('FLOW_INSUFFICIENT_CREDITS');
-    if(/unusual activity|actividad inusual/i.test(bodyText)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(bodyText))throw new Error('FLOW_TRANSIENT_NO_CHARGE');
+    // Ignore global historical no-charge warnings here. They can belong to old
+    // tiles; only fresh/busy/downloadable evidence may classify this submit.
     if(/failed to generate|generation failed|couldn't generate|no se pudo generar/i.test(bodyText))throw new Error('FLOW_GENERATION_FAILED');
     const vids=await currentVideos(page);
     const freshVideo=vids.some(v=>v.src&&!baseSrc.has(v.src)&&Number(v.duration||0)>0);
@@ -2214,14 +2184,18 @@ async function processRow(db,row){
 }
 function reconcileAmbiguousNoGeneration(){return false;}
 function serialReady(db,row){
-  if(!row)return false;if(!CONFIG.content.serialized||Number(row.episode)<=1)return true;
-  const prev=db.prepare('SELECT status FROM factory_items WHERE episode<? ORDER BY episode DESC LIMIT 1').get(Number(row.episode));if(!prev)return false;
-  const gate=CONFIG.content.continuity_gate;if(gate==='none')return true;
-  // Strict handoff: the next episode may start only after the previous render
-  // has been recovered into Review (or has already advanced beyond Review).
-  // Approve/Redo is NOT required. Draft/regen rows never count as recovered,
-  // even if stale media fields from an older attempt still exist.
-  return ['review','queued','historical','published'].includes(String(prev.status||''));
+  if(!row)return false;
+  if(!CONFIG.content.serialized||Number(row.episode)<=1)return true;
+  const gate=CONFIG.content.continuity_gate;
+  if(gate==='none')return true;
+  const prev=db.prepare('SELECT status,videoPath,remoteUrl,reviewVideoId,flowResult FROM factory_items WHERE episode=? LIMIT 1').get(Number(row.episode)-1);
+  if(!prev)return false;
+  // Same handoff used by FruttiDrama: recovery is the gate, human Review is not.
+  // As soon as E(n) is safely recovered and can be shown in Review, E(n+1) may
+  // generate. Approval/rejection can happen later and never blocks today's batch.
+  if(['review','queued','historical','published'].includes(String(prev.status||'')))return true;
+  const fr=json(prev.flowResult,{});
+  return Boolean(prev.videoPath||prev.remoteUrl||prev.reviewVideoId||fr?.validated_ftyp);
 }
 function retryTokenOpen(row){
   const token=String(row?.reviewRetryToken||'').trim(),submitted=String(row?.reviewRetrySubmittedToken||'').trim();
@@ -2487,6 +2461,24 @@ function armImmediateNoChargeRetryV2(db){
   return Boolean(row);
 }
 
+function realignEarthE11ToFruttiProtocol(db){
+  const key='repair:earth-e11-frutti-protocol-v1';
+  if(meta(db,key,'')==='done')return false;
+  const row=db.prepare("SELECT * FROM factory_items WHERE episode=11 LIMIT 1").get();
+  if(!row){setMeta(db,key,'done');return false;}
+  const noMedia=!row.videoPath&&!row.remoteUrl&&!row.reviewVideoId;
+  const oldCooldown=/FLOW_TRANSIENT_NO_CHARGE/.test(String(row.error||''))&&Number(row.nextTry||0)>Date.now();
+  if(String(row.status||'')==='draft'&&noMedia&&oldCooldown){
+    db.prepare("UPDATE factory_items SET providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
+    setMeta(db,'flow:transientCooldownUntil','0');
+    setMeta(db,'flow:noChargeStreak:'+row.id,'0');
+    setLifecycle(db,row,'PROTOCOL_REALIGNED_RETRY',{realigned_at:now(),automatic_submit_forbidden:false,evidence:'Removed Earth-only failed-tile/global-cooldown behavior; using FruttiDrama composer submit and recover-to-review handoff.'});
+    publish('PROTOCOL_REALIGNED_RETRY',{episode:'E11',job_id:row.id,message:'Earth E11 re-armed immediately under the same generate → recover → next protocol as FruttiDrama.'});
+  }
+  setMeta(db,key,'done');
+  return true;
+}
+
 function productionCandidate(db){
   // Recovery always wins, but out-of-order ambiguous rows are quarantined by
   // normalizeOutOfOrderAmbiguous() before this function runs.
@@ -2636,7 +2628,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);normalizeLiveNoChargeCooldown(db);seedTransientCooldownFromRecentNoCharge(db);armImmediateNoChargeRetryAfterUpgrade(db);armImmediateNoChargeRetryV2(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db);realignEarthE11ToFruttiProtocol(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);normalizeLiveNoChargeCooldown(db);seedTransientCooldownFromRecentNoCharge(db);armImmediateNoChargeRetryAfterUpgrade(db);armImmediateNoChargeRetryV2(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
@@ -2647,14 +2639,6 @@ async function runProvider(){
     if(goldenRecovery.needed&&!goldenRecovery.done)return;
     const used=effectiveDailyCount(db);row=productionCandidate(db);
     if(row&&String(row.status)==='generating'){publish('RECOVERY_PICKED',{episode:'E'+row.episode,job_id:row.id,state:String(lifecycle(db,row)?.state||''),used_today:used});await processRow(db,row);return}
-    const cooldownUntil=Number(meta(db,'flow:transientCooldownUntil','0'))||0;
-    if(row&&cooldownUntil>Date.now()){
-      setMeta(db,'flow:state','CONECTADO');
-      setMeta(db,'flow:currentStep','transient-cooldown');
-      setMeta(db,'flow:message','Google Flow cooldown activo; el mismo episodio serial se reintentará automáticamente.');
-      publish('FLOW_TRANSIENT_COOLDOWN',{episode:'E'+row.episode,job_id:row.id,until:new Date(cooldownUntil).toISOString(),message:'Waiting out Google Flow unusual-activity cooldown. No later episode will be attempted.'});
-      return;
-    }
     const priorityRetry=isReviewerRetry(row);
     if(used>=dailyProductionLimit()&&!priorityRetry){if(row&&String(lifecycle(db,row)?.state||'').toUpperCase()!=='PREFLIGHT_PASSED'){publish('NEXT_DAY_PREFLIGHT',{episode:'E'+row.episode,job_id:row.id,message:'Daily target complete; validating next job without Send.'});await processRow(db,row);return}setMeta(db,'flow:state','ESPERANDO CRÉDITOS');setMeta(db,'flow:currentStep','daily-limit');setMeta(db,'flow:message','Daily production complete: '+used+'/'+dailyProductionLimit()+'.');publish('DAILY_LIMIT',{used,limit:dailyProductionLimit(),day:artDay(),next_episode:row?('E'+row.episode):null});return}
     if(!row){ensureBacklog(db);row=productionCandidate(db);if(!row){
@@ -2672,18 +2656,14 @@ async function runProvider(){
     const message=compact(err?.stack||err?.message||err,900);
     try{if(db&&row){const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row,lc=lifecycle(db,fresh)||{},state=String(lc.state||'').toUpperCase(),attempts=Number(fresh.runtimeAttemptCount||0)+1,beforeGenerate=!AFTER_GENERATE.has(state)&&!AMBIGUOUS.has(state),baseBackoff=beforeGenerate?10000:60000,capBackoff=beforeGenerate?5*60*1000:60*60*1000,backoff=Math.min(capBackoff,baseBackoff*Math.pow(2,Math.min(attempts-1,6))),nextTry=Date.now()+backoff;if(/FLOW_TRANSIENT_NO_CHARGE/.test(message)){
   const run=String(lc?.generation_id||fresh.providerRunId||'');
-  if(run)try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Google Flow transient unusual-activity rejection; explicitly not charged.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),fresh.id,run)}catch{}
-  const streakKey='flow:noChargeStreak:'+fresh.id;
-  const streak=Math.max(1,(Number(meta(db,streakKey,'0'))||0)+1);
-  setMeta(db,streakKey,String(streak));
-  const cooldownMinutes=Math.min(60,10*Math.pow(2,Math.min(streak-1,3)));
-  const retryAt=Date.now()+cooldownMinutes*60*1000;
-  setMeta(db,'flow:transientCooldownUntil',String(retryAt));
-  db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),'FLOW_TRANSIENT_NO_CHARGE — automatic retry scheduled after '+cooldownMinutes+'m cooldown.',retryAt,now(),fresh.id);
-  setLifecycle(db,fresh,'TRANSIENT_NO_CHARGE_RETRY',{prior_generation_id:run,last_error:message,attempt_count:attempts,no_charge_streak:streak,cooldown_minutes:cooldownMinutes,retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:false});
-  setMeta(db,'flow:state','ESPERANDO FLOW');
-  setMeta(db,'flow:message','Google Flow rechazó temporalmente la generación por actividad inusual sin cobrar puntos. Reintento automático del mismo episodio después del cooldown; no se avanza al siguiente hasta recuperarlo.');
-  publish('TRANSIENT_NO_CHARGE_RETRY',{episode:'E'+fresh.episode,job_id:fresh.id,retry_at:new Date(retryAt).toISOString(),streak,cooldown_minutes:cooldownMinutes,message:'Flow explicitly reported no charge. The same episode will retry automatically after a progressive cooldown; this attempt is not counted.'});
+  if(run)try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Flow explicitly reported no retained generation and no charge.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),fresh.id,run)}catch{}
+  const retryAt=Date.now()+5*60*1000;
+  setMeta(db,'flow:transientCooldownUntil','0');
+  db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),'FLOW_TRANSIENT_NO_CHARGE — same episode retries automatically.',retryAt,now(),fresh.id);
+  setLifecycle(db,fresh,'TRANSIENT_NO_CHARGE_RETRY',{prior_generation_id:run,last_error:message,attempt_count:attempts,retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:false});
+  setMeta(db,'flow:state','CONECTADO');
+  setMeta(db,'flow:message','Flow no retuvo la generación. El mismo episodio reintenta automáticamente; no se avanza al siguiente.');
+  publish('TRANSIENT_NO_CHARGE_RETRY',{episode:'E'+fresh.episode,job_id:fresh.id,retry_at:new Date(retryAt).toISOString(),message:'No retained generation; automatic retry of the same episode remains enabled.'});
 }else if(/FLOW_INSUFFICIENT_CREDITS/.test(message)){
   const run=String(lc?.generation_id||fresh.providerRunId||'');
   if(run)db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Flow reported insufficient credits; no retained video.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),fresh.id,run);
