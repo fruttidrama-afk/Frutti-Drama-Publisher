@@ -171,6 +171,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   let running=false,lastError=null,lastHeartbeat=null;
 
   function enqueue(row){
+    if(String(row?.status||'')!=='review')throw new Error('APPROVAL_GATE: only an explicit human-approved review item may enter publication.');
     const existing=db.prepare('SELECT * FROM publication_items WHERE itemId=?').get(row.id);if(existing)return publicItem(existing);
     const {title,description}=metadata(row,config),scheduledAt=nextSlot(db,config),uploadAt=new Date(new Date(scheduledAt).getTime()-Number(config.schedule.upload_lead_minutes||0)*60000).toISOString(),id=randomUUID();
     let filePath=null,fileSize=0,videoId=row.reviewVideoId||null;
@@ -650,8 +651,62 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     res.setHeader('Cache-Control','private, max-age=0, no-store');
     return res.sendFile(abs);
   }catch(e){res.status(500).json({error:String(e?.message||e)})}});
+  async function purgeRejected(row){
+    const matches=db.prepare("SELECT * FROM publication_items WHERE itemId=? AND status NOT IN ('published','deleted')").all(String(row?.id||''));
+    const deleted=[];
+    for(const item of matches){
+      if(item.videoId){
+        try{
+          const yt=youtubeApi();
+          const remote=(await yt.videos.list({part:['status','snippet'],id:[item.videoId]})).data.items?.[0]||null;
+          const privacy=String(remote?.status?.privacyStatus||'');
+          if(privacy==='public')throw new Error('REFUSE_DELETE_PUBLIC_VIDEO');
+          await yt.videos.delete({id:item.videoId});
+          deleted.push({videoId:item.videoId,privacy:privacy||'unknown'});
+        }catch(e){
+          const m=String(e?.message||e);
+          if(!/videoNotFound|not found|404/i.test(m))throw e;
+        }
+      }
+      await cleanupPublicationMedia(item);
+      db.prepare('DELETE FROM publication_items WHERE id=?').run(item.id);
+    }
+    return{purged:matches.length,remoteDeleted:deleted};
+  }
+
+  async function purgePrivateVideosByTitle(titles=[]){
+    const wanted=[...new Set((titles||[]).map(x=>String(x||'').trim()).filter(Boolean))];
+    if(!wanted.length)return{purged:0,matches:[]};
+    if(!loadToken())throw new Error('YOUTUBE_AUTH_REQUIRED');
+    const yt=youtubeApi();
+    const ch=(await yt.channels.list({part:['contentDetails'],mine:true})).data.items?.[0];
+    const uploads=ch?.contentDetails?.relatedPlaylists?.uploads;
+    if(!uploads)throw new Error('YOUTUBE_UPLOADS_PLAYLIST_NOT_FOUND');
+    const normalize=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+    const targets=wanted.map(x=>normalize(x));
+    const ids=[];let pageToken=undefined;
+    do{
+      const page=await yt.playlistItems.list({part:['contentDetails'],playlistId:uploads,maxResults:50,pageToken});
+      for(const it of page.data.items||[]){const id=it.contentDetails?.videoId;if(id)ids.push(String(id))}
+      pageToken=page.data.nextPageToken||undefined;
+    }while(pageToken&&ids.length<500);
+    const matches=[];
+    for(let i=0;i<ids.length;i+=50){
+      const batch=ids.slice(i,i+50);
+      const r=await yt.videos.list({part:['status','snippet'],id:batch});
+      for(const v of r.data.items||[]){
+        const title=String(v.snippet?.title||''),n=normalize(title),privacy=String(v.status?.privacyStatus||'');
+        const wantedMatch=targets.some(t=>n===t||n.startsWith(t+' ')||t.startsWith(n+' '));
+        if(!wantedMatch||privacy==='public')continue;
+        await yt.videos.delete({id:v.id});
+        matches.push({videoId:v.id,title,privacy});
+      }
+    }
+    return{purged:matches.length,matches};
+  }
+
   app.get('/publication/items',(_req,res)=>res.json({items:db.prepare('SELECT * FROM publication_items ORDER BY scheduledAt').all().map(publicItem),scheduler:{alive:true,lastHeartbeat,lastError,indefinite:true}}));
   app.post('/publication/run',(_req,res)=>{setTimeout(()=>void tick(),0);res.status(202).json({ok:true})});
   const timer=setInterval(()=>void tick(),30000);timer.unref?.();setTimeout(()=>void migratePendingPublicationMedia().then(()=>auditExistingMetadata()).then(()=>tick()).catch(e=>{lastError=String(e?.message||e)}),900).unref?.();
-  return{enqueue,tick,status:()=>({alive:true,running,lastHeartbeat,lastError,indefinite:true}),close:()=>clearInterval(timer)};
+  return{enqueue,purgeRejected,purgePrivateVideosByTitle,tick,status:()=>({alive:true,running,lastHeartbeat,lastError,indefinite:true}),close:()=>clearInterval(timer)};
 }
