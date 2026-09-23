@@ -104,3 +104,4 @@ fix=earth-use-flow-retry-after-no-charge-1790178185114
 fix=earth-post-warning-flow-retry-1790178557367
 fix=earth-frutti-protocol-alignment-1790179354859
 fix=earth-full-frutti-flow-protocol-1790180053334
+fix=remove-earth-extra-composer-requery-1790180520515
