@@ -2181,7 +2181,7 @@ async function runProvider(){
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
     const maintenance=await configurePublisherFactorySupabasePasskeysIfRequested(db);
-    if(maintenance.requested&&!maintenance.done)return;
+    if(maintenance.requested&&!maintenance.done)setMeta(db,'maintenance:supabasePasskeysLastOutcome',maintenance.authRequired?'auth_required':'retryable_error');
     const migrated=await migrateProfileOnce(db);if(!migrated)return;
     const goldenRecovery=await recoverGoldenRunIfRequested(db);
     if(goldenRecovery.needed&&!goldenRecovery.done)return;
