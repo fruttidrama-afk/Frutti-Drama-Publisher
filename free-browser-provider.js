@@ -2397,15 +2397,18 @@ function normalizeLiveNoChargeCooldown(db){
   try{
     const rows=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND error LIKE 'FLOW_TRANSIENT_NO_CHARGE%' ORDER BY episode").all();
     for(const row of rows){
-      const key='flow:noChargeStreak:'+row.id;
-      let streak=Number(meta(db,key,'0'))||0;
-      if(streak<2){streak=2;setMeta(db,key,String(streak))}
+      const streakKey='flow:noChargeStreak:'+row.id;
+      let streak=Number(meta(db,streakKey,'0'))||0;
+      if(streak<2){streak=2;setMeta(db,streakKey,String(streak))}
+      const onceKey='flow:noChargeLegacyCooldownNormalized:'+row.id;
+      if(meta(db,onceKey,'')==='done')continue;
       const minUntil=Date.now()+20*60*1000;
       if(Number(row.nextTry||0)<minUntil){
         db.prepare("UPDATE factory_items SET nextTry=?,error=?,updatedAt=? WHERE id=?").run(minUntil,'FLOW_TRANSIENT_NO_CHARGE — automatic retry scheduled after 20m cooldown.',now(),row.id);
         setMeta(db,'flow:transientCooldownUntil',String(minUntil));
-        publish('FLOW_TRANSIENT_COOLDOWN_EXTENDED',{episode:'E'+row.episode,job_id:row.id,until:new Date(minUntil).toISOString(),message:'Repeated no-charge unusual-activity responses detected. Cooldown extended automatically to stop hammering Flow.'});
+        publish('FLOW_TRANSIENT_COOLDOWN_EXTENDED',{episode:'E'+row.episode,job_id:row.id,until:new Date(minUntil).toISOString(),message:'Repeated no-charge unusual-activity responses detected. Cooldown extended once to stop hammering Flow.'});
       }
+      setMeta(db,onceKey,'done');
     }
   }catch(e){publish('FLOW_TRANSIENT_COOLDOWN_WARNING',{message:compact(e?.message||e,300)})}
 }
