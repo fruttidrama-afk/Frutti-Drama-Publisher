@@ -9,3 +9,6 @@
 - Date-scoped daily overrides, vanished-render reconciliation and insufficient-credit backoff incorporated.
 - Publisher Factory inheritance contract added.
 - Master SOP SHA-256: a2c1e60458c19e5e806e3246e98c5d31e2a6783a9a0cb436d721722d02f09166
+## Runtime hardening — 2026-09-23
+- Fixed FLOW-ERR-017 COMPOSER_REQUERY_RACE by reusing the editor resolved by the Flow readiness gate and reacquiring only through that gate after a transient remount.
+- Publisher Factory runtime contract and self-test now reject the defective readiness-then-immediate-requery pattern.
