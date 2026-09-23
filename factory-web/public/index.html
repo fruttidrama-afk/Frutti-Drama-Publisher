@@ -50,7 +50,7 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
         <div class="field"><label>Timezone</label><input class="input" name="timezone" value="America/Argentina/Buenos_Aires"></div>
         <div class="field"><label>Videos por día</label><input class="input" type="number" min="1" max="20" name="videos_per_day" value="3"></div>
         <div class="field"><label>Duración</label><input class="input" type="number" min="1" max="60" name="duration_seconds" value="10"></div>
-        <div class="field full"><label>Railway account</label><select class="input" id="publisherRailwayConnection" name="railway_connection_id" required><option value="">Connect a Railway account first</option></select><div class="connection-select-note">Este Publisher se va a desplegar en la cuenta de Railway que elijas. El acceso a GitHub sigue la integración disponible en esa cuenta de Railway.</div><button class="btn" type="button" id="addRailwayFromCreate" style="margin-top:8px">ADD ANOTHER RAILWAY ACCOUNT</button></div>
+        <div class="field full"><label>Railway account</label><select class="input" id="publisherRailwayConnection" name="railway_connection_id" required><option value="">Connect a Railway account first</option></select><div class="connection-select-note">Este Publisher se va a desplegar en la cuenta de Railway que elijas. GitHub queda desacoplado: podés usar otra cuenta de GitHub —o ninguna— porque el runtime del Publisher se despliega desde una imagen pública independiente.</div><button class="btn" type="button" id="addRailwayFromCreate" style="margin-top:8px">ADD ANOTHER RAILWAY ACCOUNT</button></div>
       </div>
     </section>
     <section class="create-pane" data-create-pane="1">
