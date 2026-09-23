@@ -50,6 +50,24 @@ body.completed .shell{padding-top:28px}
 .panel{display:none}.panel.active{display:block}
 .review-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.review{background:color-mix(in srgb,var(--surface) 86%,transparent);border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);overflow:hidden;border-radius:20px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}.video{background:#151515;aspect-ratio:9/16;max-height:560px;width:100%;object-fit:contain}.review-body{padding:16px}.review h3{font:600 24px Arial,Helvetica,sans-serif;color:var(--ink);margin:5px 0}.story{font-size:14px;color:var(--muted);line-height:1.5;margin:9px 0 15px}.review-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .table{background:color-mix(in srgb,var(--surface) 86%,transparent);border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:20px;overflow:hidden;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}.row{display:grid;grid-template-columns:70px 1fr 170px 120px;gap:10px;padding:13px 16px;border-top:1px solid var(--line);align-items:center}.row:first-child{border-top:0}.empty{background:color-mix(in srgb,var(--surface) 84%,transparent);border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);padding:32px;text-align:center;color:var(--muted);border-radius:20px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.video-state-list{display:grid;gap:12px}
+.video-state-card{display:grid;grid-template-columns:82px 1fr auto;gap:14px;align-items:center;padding:16px 17px;background:color-mix(in srgb,var(--surface) 87%,transparent);border:1px solid color-mix(in srgb,var(--ink) 15%,transparent);border-radius:20px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);cursor:pointer;transition:.18s transform,.18s border-color,.18s background}
+.video-state-card:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--gold) 54%,transparent);background:color-mix(in srgb,var(--surface) 92%,transparent)}
+.video-state-ep{width:58px;height:58px;border:1px solid color-mix(in srgb,var(--gold) 42%,transparent);display:grid;place-items:center;border-radius:16px;font-weight:900;color:var(--gold);background:color-mix(in srgb,var(--navy) 76%,transparent)}
+.video-state-title{font-size:18px;font-weight:800;line-height:1.2;margin-bottom:5px}.video-state-message{color:var(--muted);line-height:1.42;font-size:13px}.video-state-meta{font-size:11px;color:var(--muted);margin-top:7px;display:flex;gap:9px;flex-wrap:wrap}
+.state-badge{min-width:104px;text-align:center;padding:9px 11px;border-radius:999px;font-size:11px;font-weight:900;letter-spacing:.08em;border:1px solid transparent}
+.state-badge.stock{background:color-mix(in srgb,var(--gold) 18%,transparent);color:var(--gold);border-color:color-mix(in srgb,var(--gold) 32%,transparent)}
+.state-badge.private{background:color-mix(in srgb,#3974b9 19%,transparent);color:color-mix(in srgb,#8fc3ff 88%,var(--ink));border-color:color-mix(in srgb,#5c9de5 30%,transparent)}
+.state-badge.public{background:color-mix(in srgb,#45a56b 20%,transparent);color:#83e3a7;border-color:color-mix(in srgb,#45a56b 34%,transparent)}
+.state-badge.pending{background:color-mix(in srgb,#c8784a 18%,transparent);color:#f2b58d;border-color:color-mix(in srgb,#c8784a 34%,transparent)}
+.state-resolution{display:block;margin-top:7px;font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--muted);text-align:center}
+.stock-view-backdrop{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(3,8,12,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.stock-view-backdrop.open{display:flex}.stock-view-card{width:min(760px,100%);max-height:92dvh;overflow:auto;background:color-mix(in srgb,var(--surface) 94%,var(--navy));border:1px solid color-mix(in srgb,var(--gold) 38%,transparent);border-radius:26px;padding:18px;box-shadow:0 30px 100px rgba(0,0,0,.42)}
+.stock-view-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:14px}.stock-view-head h3{font-size:25px;margin:5px 0 0}.stock-view-media{display:flex;justify-content:center;min-height:220px;background:#05080a;border-radius:20px;overflow:hidden;border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);margin-bottom:14px}.stock-view-media video{display:block;width:100%;max-height:62dvh;aspect-ratio:9/16;object-fit:contain;background:#000}
+.stock-view-placeholder{min-height:280px;width:100%;display:grid;place-items:center;text-align:center;padding:30px;color:var(--muted);line-height:1.5}
+.stock-view-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.stock-view-box{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:15px;padding:12px;background:color-mix(in srgb,var(--surface) 80%,transparent)}.stock-view-box span,.stock-view-text span{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);font-weight:800;margin-bottom:5px}.stock-view-text{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:15px;padding:13px;margin-top:10px;background:color-mix(in srgb,var(--surface) 80%,transparent)}.stock-view-text div{white-space:pre-wrap;line-height:1.5;font-size:13px}
+@media(max-width:720px){.video-state-card{grid-template-columns:60px 1fr}.video-state-card>.state-wrap{grid-column:2;justify-self:start}.video-state-ep{width:50px;height:50px}.stock-view-grid{grid-template-columns:1fr}.stock-view-card{padding:14px;border-radius:22px}}
+
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#111;color:#fff;padding:12px 16px;display:none;z-index:20}
 .redo-modal{position:fixed;inset:0;background:rgba(13,49,82,.32);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:20px;z-index:100}
 .redo-modal.open{display:flex}
@@ -139,7 +157,7 @@ body.completed .shell{padding-top:28px}
       </div>
       <nav class="tabs"><button class="btn tab active" data-tab="review">REVIEW</button><button class="btn tab" data-tab="queue">PUBLISHING</button><button class="btn tab" data-tab="security">SECURITY</button><button class="btn tab" data-tab="setup">EDIT SETUP</button></nav>
       <section class="panel active" id="review"><div id="reviews" class="review-grid"></div></section>
-      <section class="panel" id="queue"><div id="queueBox" class="table"></div></section>
+      <section class="panel" id="queue"><div id="queueBox" class="video-state-list"></div></section>
       <section class="panel" id="security">
   <div class="security-grid">
     <article class="security-card security-wide">
@@ -174,6 +192,24 @@ body.completed .shell{padding-top:28px}
     </div>
   </section>
 </main>
+<div class="stock-view-backdrop" id="stockViewModal" aria-hidden="true">
+  <div class="stock-view-card" role="dialog" aria-modal="true" aria-labelledby="stockViewTitle">
+    <div class="stock-view-head">
+      <div><div class="eyebrow" id="stockViewEpisode">VIDEO</div><h3 id="stockViewTitle">Detalle</h3></div>
+      <button class="btn" id="stockViewClose" type="button">CERRAR</button>
+    </div>
+    <div class="stock-view-media" id="stockViewMedia"></div>
+    <div class="stock-view-grid">
+      <div class="stock-view-box"><span>Estado</span><strong id="stockViewState">—</strong></div>
+      <div class="stock-view-box"><span>Publicación</span><strong id="stockViewDate">—</strong></div>
+      <div class="stock-view-box"><span>Resolución</span><strong id="stockViewResolution">—</strong></div>
+      <div class="stock-view-box"><span>YouTube</span><strong id="stockViewYoutube">—</strong></div>
+    </div>
+    <div class="stock-view-text"><span>Qué está pasando</span><div id="stockViewMessage">—</div></div>
+    <div class="stock-view-text"><span>Título</span><div id="stockViewCopyTitle">—</div></div>
+    <div class="stock-view-text"><span>Descripción</span><div id="stockViewDescription">—</div></div>
+  </div>
+</div>
 <div class="redo-modal" id="redoModal" aria-hidden="true">
   <div class="redo-card" role="dialog" aria-modal="true" aria-labelledby="redoTitle">
     <div class="eyebrow">REDO FEEDBACK</div>
@@ -293,19 +329,65 @@ $('#redoSubmit').onclick=async()=>{if(!redoTarget)return;const feedback=$('#redo
 function renderReviews(items){const box=$('#reviews');box.innerHTML='';if(!items.length){box.innerHTML='<div class="empty">No videos are waiting for review yet.</div>';return}for(const x of items){const c=document.createElement('article');c.className='review';c.innerHTML=(x.videoUrl?'<video class="video" controls playsinline src="'+x.videoUrl+'"></video>':'<div class="video"></div>')+'<div class="review-body"><div class="label">Episode '+x.episode+'</div><h3></h3><div class="story"></div><div class="review-actions"><button class="btn redo">REDO</button><button class="btn primary approve">APPROVE</button></div></div>';c.querySelector('h3').textContent=x.title||x.hook;c.querySelector('.story').textContent=x.description||x.story;c.querySelector('.approve').onclick=()=>decide(x.id,c);c.querySelector('.redo').onclick=()=>openRedo(x.id,c);box.append(c)}}
 async function decide(id,card){for(const b of card.querySelectorAll('button'))b.disabled=true;try{await api('/factory/'+id+'/approve',{method:'POST',body:'{}'});toast('Approved');await load()}catch(e){toast(e.message);for(const b of card.querySelectorAll('button'))b.disabled=false}}
 function publicationUi(x){
-  const s=String(x.status||'').toLowerCase(),hasVideo=Boolean(x.videoId);
-  if(s==='published')return{label:'CONFIRMADO · PÚBLICO',detail:'YouTube confirma que el video ya está público.'};
-  if(s==='scheduled')return{label:'CONFIRMADO · PRIVADO',detail:'Subido en privado y programación confirmada por YouTube.'};
-  if(s==='uploaded')return{label:'PRIVADO · VERIFICANDO',detail:'El video ya está en YouTube en privado; falta confirmar la programación.'};
-  if(s==='uploading')return{label:'SUBIENDO EN PRIVADO',detail:'La subida a YouTube está en curso.'};
-  if(s==='quota_wait')return{label:hasVideo?'YOUTUBE · SINCRONIZANDO ESTADO':'PENDIENTE · ESPERANDO CUOTA',detail:hasVideo?'El video ya existe en YouTube. El panel no supone que siga privado: sincronizará el estado remoto real (público o programado) en cuanto YouTube responda.':'Todavía no fue subido. Reintento automático cuando YouTube renueve la cuota diaria.'};
-  if(s==='queued')return{label:'PENDIENTE',detail:'Aprobado y en cola para subir en privado.'};
-  if(s==='auth_wait')return{label:'ERROR · YOUTUBE DESCONECTADO',detail:'Hay que reconectar YouTube antes de continuar.'};
-  if(s==='attention')return{label:'REVISAR',detail:x.error||'La publicación necesita revisión antes de continuar.'};
-  if(s==='error')return{label:'ERROR',detail:x.error||'YouTube devolvió un error de publicación.'};
-  return{label:(s||'PENDIENTE').replaceAll('_',' ').toUpperCase(),detail:x.error||''};
+  const key=String(x.canonicalStatus||'pending'),label=String(x.canonicalLabel||'PENDIENTE');
+  const detail=String(x.canonicalMessage||x.error||'El video está esperando el siguiente paso del proceso.');
+  const resolution=String(x.canonicalResolution||'automatic');
+  return{key,label,detail,resolution,actionRequired:Boolean(x.canonicalActionRequired)};
 }
-function renderQueue(items){const box=$('#queueBox');box.innerHTML='';if(!items.length){box.innerHTML='<div class="empty">No scheduled videos yet.</div>';return}for(const x of items){const st=publicationUi(x),r=document.createElement('div');r.className='row';r.innerHTML='<strong>E'+x.episode+'</strong><div><strong></strong><div></div></div><div></div><div></div>';r.children[1].querySelector('strong').textContent=x.title;r.children[1].querySelector('div').textContent=st.detail;r.children[2].textContent=fmt(x.scheduledAt);r.children[3].textContent=st.label;box.append(r)}}
+function resolutionText(st){
+  if(st.resolution==='action_required')return'REQUIERE ACCIÓN';
+  if(st.resolution==='automatic')return'SE RESUELVE SOLO';
+  return'SIN ACCIÓN PENDIENTE';
+}
+function closeStockView(){const m=$('#stockViewModal');m.classList.remove('open');m.setAttribute('aria-hidden','true');$('#stockViewMedia').innerHTML=''}
+function openStockView(x){
+  const st=publicationUi(x),m=$('#stockViewModal'),media=$('#stockViewMedia');
+  $('#stockViewEpisode').textContent='EPISODIO '+x.episode;
+  $('#stockViewTitle').textContent=x.title||('Episode '+x.episode);
+  $('#stockViewState').textContent=st.label;
+  $('#stockViewDate').textContent=fmt(x.scheduledAt);
+  $('#stockViewResolution').textContent=resolutionText(st);
+  $('#stockViewYoutube').textContent=x.videoId||'Todavía no subido';
+  $('#stockViewMessage').textContent=st.detail;
+  $('#stockViewCopyTitle').textContent=x.title||'—';
+  $('#stockViewDescription').textContent=x.description||'—';
+  media.innerHTML='';
+  if(x.stockVideoUrl){
+    const v=document.createElement('video');v.controls=true;v.playsInline=true;v.preload='metadata';v.src=x.stockVideoUrl;media.append(v);
+  }else{
+    const p=document.createElement('div');p.className='stock-view-placeholder';
+    p.textContent=st.key==='stock'
+      ?'La copia de Stock no está disponible en este momento.'
+      :st.key==='private'
+        ?'Este video ya fue subido a YouTube y está privado. La copia de Stock puede haberse liberado después del upload.'
+        :st.key==='public'
+          ?'Este video ya está publicado en YouTube.'
+          :'Todavía no hay un MP4 de Stock reproducible para este estado.';
+    media.append(p);
+  }
+  m.classList.add('open');m.setAttribute('aria-hidden','false');
+}
+$('#stockViewClose').onclick=closeStockView;
+$('#stockViewModal').onclick=e=>{if(e.target===e.currentTarget)closeStockView()};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#stockViewModal').classList.contains('open'))closeStockView()});
+function renderQueue(items){
+  const box=$('#queueBox');box.innerHTML='';
+  if(!items.length){box.innerHTML='<div class="empty">Todavía no hay videos en Publishing.</div>';return}
+  for(const x of items){
+    const st=publicationUi(x),r=document.createElement('article');
+    r.className='video-state-card';r.tabIndex=0;r.setAttribute('role','button');
+    const when=fmt(x.scheduledAt);
+    r.innerHTML='<div class="video-state-ep">E'+x.episode+'</div><div><div class="video-state-title"></div><div class="video-state-message"></div><div class="video-state-meta"><span></span><span>Tocá para abrir detalles'+(x.stockVideoUrl?' y reproducir el video':'')+'</span></div></div><div class="state-wrap"><div class="state-badge"></div><span class="state-resolution"></span></div>';
+    r.querySelector('.video-state-title').textContent=x.title||('Episode '+x.episode);
+    r.querySelector('.video-state-message').textContent=st.detail;
+    r.querySelector('.video-state-meta span').textContent=when;
+    const badge=r.querySelector('.state-badge');badge.className='state-badge '+st.key;badge.textContent=st.label;
+    r.querySelector('.state-resolution').textContent=resolutionText(st);
+    r.onclick=()=>openStockView(x);
+    r.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openStockView(x)}};
+    box.append(r);
+  }
+}
 for(const b of document.querySelectorAll('[data-tab]'))b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));b.classList.add('active');$('#'+b.dataset.tab).classList.add('active');if(b.dataset.tab==='setup'){document.body.classList.remove('completed');window.scrollTo({top:0,behavior:'smooth'})}else{if($('#ready').classList.contains('show'))document.body.classList.add('completed');if(b.dataset.tab==='security')loadSecurity().catch(e=>toast(e.message))}};
 load().catch(e=>toast(e.message));setInterval(()=>load().catch(()=>{}),30000);
 </script>
