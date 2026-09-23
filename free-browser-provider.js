@@ -2055,6 +2055,34 @@ function quarantinePriorDayAmbiguous(db){
   return quarantined;
 }
 
+function quarantineStaleReviewerRetryAmbiguous(db){
+  const rows=db.prepare("SELECT * FROM factory_items WHERE status='generating' AND retryStrategy IN ('reuse_prompt','revise_prompt') AND reviewRetryToken IS NOT NULL AND reviewRetrySubmittedToken=reviewRetryToken ORDER BY episode").all();
+  let held=0;
+  for(const row of rows){
+    const lc=lifecycle(db,row)||{};
+    if(String(lc.state||'').toUpperCase()!=='SUBMIT_AMBIGUOUS')continue;
+    const reauth=Number(lc.retry_reauthorization_count||0);
+    if(reauth<1)continue;
+    const boundary=Date.parse(String(lc.submit_boundary_at||lc.reconciled_at||row.lastProgressAt||row.updatedAt||''));
+    if(!Number.isFinite(boundary)||Date.now()-boundary<15*60*1000)continue;
+    db.prepare("UPDATE factory_items SET status='manual_hold',nextTry=0,error=?,lastProgressAt=?,updatedAt=? WHERE id=?")
+      .run('REDO quedó ambiguo incluso después del único reintento limpio permitido. Se mantiene bloqueado contra duplicados y deja de frenar la producción diaria.',now(),now(),row.id);
+    setLifecycle(db,row,'MANUAL_HOLD_STALE_REDO_AMBIGUOUS',{
+      ...lc,
+      held_at:now(),
+      automatic_submit_forbidden:true,
+      automatic_recovery_forbidden:false,
+      daily_production_unblocked:true,
+      reviewer_retry:true,
+      retry_token:String(row.reviewRetryToken||'')
+    });
+    publish('STALE_REDO_AMBIGUOUS_QUARANTINED',{episode:'E'+row.episode,job_id:row.id,message:'Stale REDO ambiguity quarantined after the single allowed clean retry. No duplicate Generate will be sent; daily production is unblocked.'});
+    held++;
+  }
+  return held;
+}
+
+
 function productionCandidate(db){
   const inflight=db.prepare("SELECT * FROM factory_items WHERE status='generating' ORDER BY episode LIMIT 1").get();
   if(inflight){
@@ -2194,7 +2222,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);quarantinePriorDayAmbiguous(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
