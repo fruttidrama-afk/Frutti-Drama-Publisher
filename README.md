@@ -44,6 +44,7 @@ Publisher Factory does not mark a Railway deployment ready unless `/factory/heal
 - project-grid recovery enabled;
 - Review metadata required;
 - Golden Test required;
+- stable Flow composer handoff enabled;
 - strict serial gate enabled.
 
 FruttiDrama's production generation logic is treated as reference-only unless a separate explicit task authorizes changes.
