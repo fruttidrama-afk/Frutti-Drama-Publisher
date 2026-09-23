@@ -111,3 +111,5 @@ fix=native-flow-nocharge-retry-publisher-factory-gate
 fix=deploy-nocharge-backoff-and-earth-repair-scoping
 fix=adaptive-no-charge-provider-backoff
 fix=isolate-earth-forensic-repairs-from-generic-publishers
+fix=frutti-single-submit-boundary-no-native-retry
+fix=purge-earth-one-off-repairs-from-canonical-runtime
