@@ -330,7 +330,10 @@
       "type": "object",
       "required": [
         "timezone",
-        "indefinite"
+        "indefinite",
+        "generation_strategy",
+        "posting_times",
+        "upload_lead_minutes"
       ],
       "properties": {
         "timezone": {
@@ -349,8 +352,8 @@
           }
         },
         "upload_lead_minutes": {
-          "type": "integer",
-          "minimum": 0
+          "const": 390,
+          "description": "Upload to YouTube as plain PRIVATE 390 minutes before the configured posting time."
         }
       }
     },
@@ -365,7 +368,13 @@
           "items": {
             "type": "object",
             "required": [
-              "type"
+              "type",
+              "privacy_before_publish",
+              "release_mode",
+              "use_publish_at",
+              "metadata_final_before_upload",
+              "preserve_private_lead_window",
+              "contains_synthetic_media"
             ],
             "properties": {
               "type": {
@@ -374,10 +383,7 @@
                 ]
               },
               "privacy_before_publish": {
-                "enum": [
-                  "private",
-                  "unlisted"
-                ]
+                "const": "private"
               },
               "playlist_strategy": {
                 "type": "string"
@@ -397,6 +403,22 @@
               "contains_synthetic_media": {
                 "const": true,
                 "description": "Always disclose AI-generated or meaningfully altered synthetic media to YouTube."
+              },
+              "release_mode": {
+                "const": "private_then_public_at_posting_time",
+                "description": "At release time perform a direct PRIVATE → PUBLIC transition."
+              },
+              "use_publish_at": {
+                "const": false,
+                "description": "Never pre-schedule the YouTube video with status.publishAt."
+              },
+              "metadata_final_before_upload": {
+                "const": true,
+                "description": "Upload the video with its final title and description already set."
+              },
+              "preserve_private_lead_window": {
+                "const": true,
+                "description": "Do not mutate video metadata/privacy during the private lead window."
               }
             }
           }
