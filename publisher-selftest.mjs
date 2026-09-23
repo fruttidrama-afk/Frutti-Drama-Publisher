@@ -50,6 +50,13 @@ for(const [token,label] of [
   ['Retry|Reintentar','localized Flow Retry selector']
 ]) has(provider,token,label);
 must(!provider.includes("await waitFlowReady(page,30000);\n  const editor=await promptEditor(page);"),'Flow composer must not be re-queried immediately after readiness');
+for(const [token,label] of [
+  ['function scheduleNoChargeRetry(db,row,opts={})','adaptive no-charge scheduler'],
+  ['flow:transientCooldownUntil','provider-wide no-charge cooldown'],
+  ['no_charge_streak:streak','no-charge streak persistence'],
+  ["if(providerCooldown>Date.now())return null",'provider cooldown submit gate'],
+  ["if(EXPECTED_FLOW_PROJECT_NAME==='EARTH IN 10')",'Earth repair runtime scope']
+]) has(provider,token,label);
 has(runtimeConfig,'EARTH_IN_10_AUTONOMOUS_EPISODES','Earth autonomous geographic ideas');
 has(runtimeConfig,'enforceEpisodeIntent','Earth episode intent validator');
 has(runtimeConfig,'EARTH_IN_10_CONTENT_GATE','Earth generic prompt block');
@@ -78,6 +85,8 @@ has(server,'prompt_show_bible_gate:true','Show Bible prompt safety flag');
 has(server,'atomic_creative_package:true','atomic creative package safety flag');
 has(server,'stable_composer_handoff:true','stable Flow composer health invariant');
 has(server,'native_no_charge_retry:true','native no-charge Retry health invariant');
+has(server,'adaptive_no_charge_backoff:true','adaptive no-charge backoff health invariant');
+has(server,'show_specific_repairs_isolated:true','show-specific repair isolation health invariant');
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
 const publication=read('publication.js');
