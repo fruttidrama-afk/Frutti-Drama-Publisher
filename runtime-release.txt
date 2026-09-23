@@ -118,3 +118,4 @@ fix=restore-complete-frutti-post-submit-helper-chain
 fix=complete-frutti-post-submit-helper-chain
 fix=frutti-browser-launch-parity
 fix=persistent-unusual-activity-24h-quarantine
+fix=unusual-activity-backoff-30m-1h-2h-4h-8h-24h
