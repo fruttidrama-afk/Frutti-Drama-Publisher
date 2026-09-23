@@ -1,4 +1,6 @@
 FROM node:24-bookworm-slim
+LABEL org.opencontainers.image.source="https://github.com/fruttidrama-afk/Frutti-Drama-Publisher"
+LABEL org.opencontainers.image.description="Publisher Factory autonomous publisher runtime"
 WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends chromium ffmpeg xvfb xdotool scrot ca-certificates curl gnupg fonts-liberation fonts-noto-color-emoji \
