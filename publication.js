@@ -180,16 +180,18 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   async function publicPageFallback(item){
     if(!item?.videoId)return false;
     try{
-      const o=await fetch('https://www.youtube.com/oembed?format=json&url='+encodeURIComponent('https://www.youtube.com/watch?v='+item.videoId),{signal:AbortSignal.timeout(12000)});
-      if(!o.ok)return false;
-      const w=await fetch('https://www.youtube.com/watch?v='+encodeURIComponent(item.videoId)+'&hl=en',{signal:AbortSignal.timeout(12000),headers:{'User-Agent':'Mozilla/5.0'}});
-      const body=w.ok?await w.text():'';
-      if(/"isUnlisted"\s*:\s*true/i.test(body))return false;
+      const w=await fetch('https://www.youtube.com/watch?v='+encodeURIComponent(item.videoId)+'&hl=en&bpctr=9999999999',{signal:AbortSignal.timeout(15000),headers:{'User-Agent':'Mozilla/5.0'}});
+      if(!w.ok)return false;
+      const body=await w.text();
+      const playable=/"playabilityStatus"\s*:\s*\{[^{}]{0,800}"status"\s*:\s*"OK"/i.test(body)||/"status"\s*:\s*"OK"[^]{0,1600}"videoDetails"/i.test(body);
+      const unlisted=/"isUnlisted"\s*:\s*true/i.test(body);
+      const privateMarker=/"status"\s*:\s*"LOGIN_REQUIRED"|"reason"\s*:\s*"Private video"/i.test(body);
+      if(!playable||unlisted||privateMarker)return false;
       item.remotePrivacyStatus='public';
       item.remoteStatusCheckedAt=now();
-      if(String(item.status)!=='published')hist(item,'published','YouTube public page confirms the video is publicly reachable while API status sync is unavailable.');
+      if(String(item.status)!=='published')hist(item,'published','YouTube watch page confirms the video is publicly playable while API quota is unavailable.');
       item.error=null;item.retryAt=0;save(db,item);
-      console.log('[PUBLICATION PUBLIC FALLBACK]',JSON.stringify({episode:item.episode,videoId:item.videoId,state:'published'}));
+      console.log('[PUBLICATION PUBLIC FALLBACK]',JSON.stringify({episode:item.episode,videoId:item.videoId,state:'published',evidence:'watch-page-playable'}));
       await cleanupPublicationMedia(item);
       return true;
     }catch{return false}
