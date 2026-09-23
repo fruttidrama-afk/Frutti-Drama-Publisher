@@ -32,14 +32,11 @@ for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY
   must(provider.includes(token),'provider contract missing '+token);
 }
 must(!provider.includes("await waitFlowReady(page,30000);\n  const editor=await promptEditor(page);"),'provider must not re-query the Flow composer immediately after readiness');
-for(const token of ['function scheduleNoChargeRetry(db,row,opts={})','flow:transientCooldownUntil','no_charge_streak:streak',"if(providerCooldown>Date.now())return null","if(EXPECTED_FLOW_PROJECT_NAME==='EARTH IN 10')"]){
-  must(provider.includes(token),'provider no-charge/generic-runtime contract missing '+token);
+for(const token of ['function scheduleNoChargeRetry(db,row,opts={})','flow:transientCooldownUntil','no_charge_streak:streak',"if(providerCooldown>Date.now())return null"]){
+  must(provider.includes(token),'provider no-charge runtime contract missing '+token);
 }
-for(const fn of ['repairEarthE10NoGeneration','repairEarthE11KnownNoCharge','repairEarthTodayAfterOperatorConfirmedOnlyFirstRender','realignEarthE11ToFruttiProtocol','rearmEarthE11AfterFullFruttiPort','rearmEarthE11AfterStableComposerFix']){
-  const start=provider.indexOf('function '+fn+'(');
-  must(start>=0,'missing Earth repair '+fn);
-  const body=provider.slice(start,start+520);
-  must(body.includes("EXPECTED_FLOW_PROJECT_NAME!=='EARTH IN 10'"),'Earth repair must be project-scoped: '+fn);
+for(const forbidden of ['FLOW_FAILED_TILE_RETRY_CLICKED','clickNativeRetry','repairEarthE10NoGeneration','repairEarthE11KnownNoCharge','repairEarthTodayAfterOperatorConfirmedOnlyFirstRender','realignEarthE11ToFruttiProtocol','rearmEarthE11AfterFullFruttiPort','rearmEarthE11AfterStableComposerFix']){
+  must(!provider.includes(forbidden),'canonical Publisher runtime contains forbidden immediate-retry/show-forensic token '+forbidden);
 }
 for(const token of ['EARTH_IN_10_AUTONOMOUS_EPISODES','enforceEpisodeIntent','effectiveVideoVisualStyle','publisherWebStyleLeak','materializeCreativePackage','validateEpisodePrompt','SHOW_BIBLE_REQUIRED','PROMPT_QUALITY_GATE']){
   must(runtimeConfig.includes(token),'runtime content contract missing '+token);
@@ -47,7 +44,7 @@ for(const token of ['EARTH_IN_10_AUTONOMOUS_EPISODES','enforceEpisodeIntent','ef
 for(const token of ['runtime_knowledge','creativePackageHash','creativePackageId','knowledge:flowSopLoaded','automation:exactlyOnceSubmit','automation:strictSerialGeneration']){
   must(init.includes(token),'runtime-init contract missing '+token);
 }
-for(const token of ["app.get('/factory/knowledge'","automation_safety","stable_composer_handoff:true","native_no_charge_retry:true","adaptive_no_charge_backoff:true","show_specific_repairs_isolated:true","replacement creative package required","prompt_integrity","prompt_show_bible_gate:true","atomic_creative_package:true","prompts_rematerialized:true","signedReviewUrl","deleteReviewObject"]){
+for(const token of ["app.get('/factory/knowledge'","automation_safety","stable_composer_handoff:true","native_no_charge_retry:false","immediate_native_retry_disabled:true","adaptive_no_charge_backoff:true","show_specific_repairs_isolated:true","replacement creative package required","prompt_integrity","prompt_show_bible_gate:true","atomic_creative_package:true","prompts_rematerialized:true","signedReviewUrl","deleteReviewObject"]){
   must(server.includes(token),'server contract missing '+token);
 }
 for(const token of ['earthPromptIsEpisodeBound','episode-generation-prompt','creativePackageDigest','quota_wait','shiftPendingQueueAfter','stored-package']){
