@@ -111,16 +111,23 @@ has(publication,'creativePackageDigest','repaired creative package hash');
 has(publication,'quota_wait','YouTube quota-aware publication state');
 has(publication,'shiftPendingQueueAfter','quota recovery preserves publication order');
 has(publication,'stored-package','legacy/non-Earth package copy fallback');
-has(server,'uploadReviewFile','private cloud review archival');
-has(server,'signedReviewUrl','private cloud review playback');
-has(server,'deleteReviewObject','private cloud review cleanup');
-has(publication,'readReviewRange','publication streams from private cloud storage');
+has(server,'approval_before_external_storage:true','pre-approval external storage is forbidden');
+has(server,'reject_purges_external_artifacts:true','rejection purge safety flag');
+has(server,'purgeRejected','reject endpoint purges any accidental publication artifacts');
+has(publication,'APPROVAL_GATE','publication enqueue requires explicit approval');
+has(publication,'purgeRejected','rejected publication artifacts are purged');
+has(publication,'purgePrivateVideosByTitle','operator cleanup can delete legacy private orphan uploads');
+has(publication,'readReviewRange','approved publication may stream from private cloud storage');
 
 const schema=JSON.parse(read('publisher.config.schema.json'));
 must(schema.properties?.schedule?.properties?.generation_strategy?.const==='sequential','Publisher Factory must enforce sequential Flow generation');
 must(schema.properties?.automation?.properties?.exactly_once_submit?.const===true,'schema exactly-once invariant');
 must(schema.properties?.automation?.properties?.strict_serial_generation?.const===true,'schema strict serial invariant');
 must(schema.properties?.knowledge?.properties?.flow_sop_version?.const==='FLOW-SOP-v1.0','schema SOP inheritance version');
+must(schema.properties?.review?.properties?.archive_provider?.const==='local-only','unapproved review media must stay local');
+must(schema.properties?.review?.properties?.external_storage_before_approval?.const===false,'external review storage before approval must be forbidden');
+must(schema.properties?.review?.properties?.approval_required_before_publication?.const===true,'publication must require explicit approval');
+must(schema.properties?.review?.properties?.reject_purges_external_artifacts?.const===true,'rejection must purge external artifacts');
 
 console.log(JSON.stringify({
   ok:true,
