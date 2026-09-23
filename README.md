@@ -45,9 +45,9 @@ Publisher Factory does not mark a Railway deployment ready unless `/factory/heal
 - Review metadata required;
 - Golden Test required;
 - stable Flow composer handoff enabled;
-- native no-charge Flow Retry enabled;
+- immediate native no-charge Retry disabled (FruttiDrama-compatible single-submit boundary);
 - adaptive provider-wide no-charge backoff enabled;
-- show-specific forensic repairs isolated from generic Publishers;
+- show-specific forensic repair code absent from generic Publishers;
 - strict serial gate enabled.
 
 FruttiDrama's production generation logic is treated as reference-only unless a separate explicit task authorizes changes.
