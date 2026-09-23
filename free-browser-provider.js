@@ -2328,6 +2328,34 @@ function repairEarthE11KnownNoCharge(db){
   return false;
 }
 
+function repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db){
+  const key='repair:earth-2026-09-23-only-e10-rendered-v1';
+  if(meta(db,key,'')==='done')return false;
+
+  // Operator verified live in Google Flow that only the first successful render
+  // of the day exists. All later E11+ attempts produced no retained generation.
+  // Clear those stale pre/reconciliation states once, then let strict serial
+  // production restart from E11. Review/queued/published rows are never touched.
+  const rows=db.prepare("SELECT * FROM factory_items WHERE episode>=11 AND status NOT IN ('review','queued','historical','published') AND (reviewFeedback IS NULL OR TRIM(reviewFeedback)='') ORDER BY episode").all();
+  let repaired=0;
+  for(const row of rows){
+    try{
+      db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Operator confirmed no retained Google Flow render after today\\'s first successful episode.',updatedAt=? WHERE itemId=? AND status NOT IN ('review','completed')").run(now(),row.id);
+    }catch{}
+    db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?")
+      .run(now(),now(),row.id);
+    setLifecycle(db,row,'OPERATOR_CONFIRMED_NO_GENERATION_RESET',{
+      repaired_at:now(),
+      automatic_submit_forbidden:false,
+      operator_evidence:'Only today\\'s first successful Earth in Ten render is present in Google Flow; later attempts retained no generation.'
+    });
+    repaired++;
+  }
+  setMeta(db,key,'done');
+  if(repaired)publish('TODAY_STALE_ATTEMPTS_RESET',{repaired,message:'Cleared stale E11+ no-generation states after operator verification. Strict serial production resumes from E11 only.'});
+  return repaired>0;
+}
+
 function normalizeOutOfOrderAmbiguous(db){
   // Any ambiguous submit for episode N that was created before N-1 reached
   // Review is a legacy sequencing violation. Preserve the submit evidence and
@@ -2518,7 +2546,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);seedTransientCooldownFromRecentNoCharge(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);seedTransientCooldownFromRecentNoCharge(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
