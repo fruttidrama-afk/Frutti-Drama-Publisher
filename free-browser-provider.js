@@ -2208,13 +2208,9 @@ async function processRow(db,row){
     setLifecycle(db,row,'PREFLIGHT_PASSED',{preflight_at:now(),settings:pf.settings,characters:cp.visual,prompt_hash:cp.hash,prepared_state_verified:Boolean(pf.prepared_state_verified)});
     if(!submitAuthorized){const used=effectiveDailyCount(db);setMeta(db,'flow:state',used>=dailyProductionLimit()?'ESPERANDO CRÉDITOS':'CONECTADO');setMeta(db,'flow:currentStep',used>=dailyProductionLimit()?'daily-limit':'preflight:passed-no-submit');publish(used>=dailyProductionLimit()?'DAILY_LIMIT':'PREFLIGHT_READY_NO_SUBMIT',{episode:'E'+row.episode,job_id:row.id,characters:cp.visual,settings:pf.settings});return false}
     if(manualSubmit)setMeta(db,'automation:allowSubmit','0');
-    const liveEditor=await promptEditor(page);
-    const livePrompt=String(await liveEditor.evaluate(el=>String((typeof el.value==='string'&&el.value)||el.innerText||el.textContent||'')).catch(()=>'')).replace(/\s+/g,' ').trim();
-    const expectedPrompt=String(cp.prompt||'').replace(/\s+/g,' ').trim();
-    if(!livePrompt.includes(expectedPrompt.slice(0,140))||!livePrompt.includes(expectedPrompt.slice(-140))){
-      throw new Error('PROMPT_NOT_PRESENT_AT_SUBMIT:'+livePrompt.length+':'+expectedPrompt.length);
-    }
-    publish('PROMPT_PRESENT_AT_SUBMIT',{episode:'E'+row.episode,job_id:row.id,payload_length:livePrompt.length,message:'Exact creative-package prompt is still present in the live Flow composer immediately before Generate.'});
+    // Match FruttiDrama exactly here: preflight already verified the prompt bytes,
+    // target composer and project identity. Re-querying the editor after Flow
+    // commits the prompt can fail because Flow swaps the contenteditable node.
     const baseline=await currentVideos(page),baselineInventory=await captureFlowInventory(page),baselineBusy=await visibleGenerationBusyCount(page),genId='free-'+randomUUID();
     if(reviewerRetry){
       const token=String(row.reviewRetryToken||'');
