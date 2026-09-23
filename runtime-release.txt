@@ -84,3 +84,4 @@ fix=daily-rollover-unblock-stale-ambiguous-generation
 fix=free-browser-supabase-interactive-login-handoff
 fix=earth-stale-redo-unblock-1790138366844
 fix=flow-submit-confirmation-hard-start-1790141114331
+fix=flow-diagnostic-contract-1790141351195
