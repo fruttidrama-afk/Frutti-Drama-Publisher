@@ -2052,6 +2052,125 @@ function productionCandidate(db){
   if(String(blocker.reviewFeedback||'').trim())return null;
   return blocker;
 }
+const SUPABASE_PASSKEY_BOOTSTRAP=String(process.env.PUBLISHER_SUPABASE_PASSKEY_BOOTSTRAP||'').trim()==='1';
+const SUPABASE_PASSKEY_PROJECT_REF=String(process.env.PUBLISHER_SUPABASE_PASSKEY_PROJECT_REF||'wrflttnmlrsuzuukdhtf').trim();
+const SUPABASE_PASSKEY_STATE=path.join(FACTORY_DIR,'supabase-passkey-bootstrap.json');
+
+function readSupabasePasskeyState(){
+  try{return JSON.parse(fs.readFileSync(SUPABASE_PASSKEY_STATE,'utf8'))||{}}catch{return{}}
+}
+function writeSupabasePasskeyState(v){
+  try{fs.writeFileSync(SUPABASE_PASSKEY_STATE,JSON.stringify(v,null,2),{mode:0o600})}catch{}
+}
+async function configurePublisherFactorySupabasePasskeysIfRequested(db){
+  if(!SUPABASE_PASSKEY_BOOTSTRAP)return{requested:false,done:false};
+  const prior=readSupabasePasskeyState();
+  if(prior?.done===true){
+    setMeta(db,'maintenance:supabasePasskeys','done');
+    return{requested:true,done:true};
+  }
+  const lastAttempt=Date.parse(String(prior?.attempted_at||''))||0;
+  if(prior?.status==='auth_required'&&Date.now()-lastAttempt<30*60*1000){
+    setMeta(db,'maintenance:supabasePasskeys','auth_required');
+    return{requested:true,done:false,authRequired:true};
+  }
+
+  const target='https://supabase.com/dashboard/project/'+encodeURIComponent(SUPABASE_PASSKEY_PROJECT_REF)+'/auth/passkeys';
+  let session=null;
+  try{
+    publish('SUPABASE_PASSKEY_BOOTSTRAP_START',{target,message:'FreeBrowserProvider is opening Supabase Passkeys settings.'});
+    session=await launchLocal();
+    const page=await session.context.newPage();
+    await page.goto(target,{waitUntil:'domcontentloaded',timeout:60000});
+    await sleep(3500);
+    const url=String(page.url()||'');
+    const body=compact(await page.locator('body').innerText().catch(()=>''),6000);
+    const authScreen=/sign in|log in|continue with github|continue with google|welcome back/i.test(body)&&!/relying party|enable passkey authentication|passkeys/i.test(body);
+    if(//sign-in|/login/i.test(url)||authScreen){
+      const state={done:false,status:'auth_required',attempted_at:now(),url};
+      writeSupabasePasskeyState(state);
+      setMeta(db,'maintenance:supabasePasskeys','auth_required');
+      publish('SUPABASE_PASSKEY_AUTH_REQUIRED',{url,message:'FreeBrowserProvider reached Supabase, but its persistent browser profile is not authenticated to the Supabase dashboard. No credentials were guessed and no paid browser fallback was used.'});
+      return{requested:true,done:false,authRequired:true};
+    }
+
+    const findInput=async(pattern)=>{
+      const byLabel=page.getByLabel(pattern).first();
+      if(await byLabel.count().catch(()=>0)&&await byLabel.isVisible().catch(()=>false))return byLabel;
+      const labels=page.locator('label');
+      for(let i=0;i<Math.min(await labels.count().catch(()=>0),80);i++){
+        const l=labels.nth(i),txt=compact(await l.innerText().catch(()=>''),240);
+        if(!pattern.test(txt))continue;
+        const id=await l.getAttribute('for').catch(()=>null);
+        if(id){const el=page.locator('#'+CSS.escape(id)).first();if(await el.count().catch(()=>0))return el}
+        const el=l.locator('input,textarea').first();if(await el.count().catch(()=>0))return el;
+      }
+      return null;
+    };
+
+    const display=await findInput(/Relying Party Display Name|Display Name/i);
+    const rpId=await findInput(/Relying Party ID|RP ID/i);
+    const origins=await findInput(/Relying Party Origins|Origins/i);
+    if(!display||!rpId||!origins)throw new Error('SUPABASE_PASSKEY_FIELDS_NOT_FOUND');
+
+    const switches=page.getByRole('switch');
+    let toggle=null;
+    for(let i=0;i<Math.min(await switches.count().catch(()=>0),20);i++){
+      const sw=switches.nth(i);
+      const label=compact((await sw.getAttribute('aria-label').catch(()=>''))+' '+(await sw.textContent().catch(()=>'')),240);
+      if(/passkey/i.test(label)){toggle=sw;break}
+    }
+    if(!toggle){
+      const checkbox=page.locator('input[type="checkbox"]').first();
+      if(await checkbox.count().catch(()=>0))toggle=checkbox;
+    }
+    if(!toggle)throw new Error('SUPABASE_PASSKEY_ENABLE_CONTROL_NOT_FOUND');
+
+    const checked=await toggle.isChecked().catch(async()=>String(await toggle.getAttribute('aria-checked').catch(()=>''))==='true');
+    if(!checked)await toggle.click();
+
+    await display.fill('Publisher Factory');
+    await rpId.fill('fruttidrama-afk.github.io');
+    await origins.fill('https://fruttidrama-afk.github.io');
+
+    const saveCandidates=[
+      page.getByRole('button',{name:/save/i}).last(),
+      page.getByRole('button',{name:/update/i}).last(),
+      page.getByRole('button',{name:/apply/i}).last()
+    ];
+    let saved=false;
+    for(const b of saveCandidates){
+      if(await b.count().catch(()=>0)&&await b.isVisible().catch(()=>false)&&await b.isEnabled().catch(()=>false)){
+        await b.click();saved=true;break;
+      }
+    }
+    if(!saved)throw new Error('SUPABASE_PASSKEY_SAVE_BUTTON_NOT_FOUND');
+
+    await sleep(1800);
+    const finalDisplay=String(await display.inputValue().catch(()=>'')).trim();
+    const finalRp=String(await rpId.inputValue().catch(()=>'')).trim();
+    const finalOrigins=String(await origins.inputValue().catch(()=>'')).trim();
+    const finalChecked=await toggle.isChecked().catch(async()=>String(await toggle.getAttribute('aria-checked').catch(()=>''))==='true');
+    if(!finalChecked||finalDisplay!=='Publisher Factory'||finalRp!=='fruttidrama-afk.github.io'||!finalOrigins.includes('https://fruttidrama-afk.github.io')){
+      throw new Error('SUPABASE_PASSKEY_POST_SAVE_VERIFICATION_FAILED');
+    }
+
+    const state={done:true,status:'configured',attempted_at:now(),configured_at:now(),rp_display_name:finalDisplay,rp_id:finalRp,rp_origins:finalOrigins};
+    writeSupabasePasskeyState(state);
+    setMeta(db,'maintenance:supabasePasskeys','done');
+    publish('SUPABASE_PASSKEY_BOOTSTRAP_DONE',{message:'Publisher Factory passkeys enabled through FreeBrowserProvider.',rp_id:finalRp,rp_origins:finalOrigins});
+    return{requested:true,done:true};
+  }catch(err){
+    const message=compact(err?.stack||err?.message||err,900);
+    writeSupabasePasskeyState({done:false,status:'retryable_error',attempted_at:now(),error:message});
+    setMeta(db,'maintenance:supabasePasskeys','retryable_error');
+    publish('SUPABASE_PASSKEY_BOOTSTRAP_ERROR',{message});
+    return{requested:true,done:false,error:message};
+  }finally{
+    try{await session?.close()}catch{}
+  }
+}
+
 async function runProvider(){
   if(bootstrapOwnsProfile()){publish('AUTH_BOOTSTRAP_ACTIVE',{message:'Flow bootstrap owns the persistent browser profile; provider is paused.'});return}
   if(!acquireLock())return;let db,row=null;
@@ -2061,6 +2180,8 @@ async function runProvider(){
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
+    const maintenance=await configurePublisherFactorySupabasePasskeysIfRequested(db);
+    if(maintenance.requested&&!maintenance.done)return;
     const migrated=await migrateProfileOnce(db);if(!migrated)return;
     const goldenRecovery=await recoverGoldenRunIfRequested(db);
     if(goldenRecovery.needed&&!goldenRecovery.done)return;
