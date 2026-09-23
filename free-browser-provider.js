@@ -2347,7 +2347,7 @@ function repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db){
     setLifecycle(db,row,'OPERATOR_CONFIRMED_NO_GENERATION_RESET',{
       repaired_at:now(),
       automatic_submit_forbidden:false,
-      operator_evidence:'Only today\\'s first successful Earth in Ten render is present in Google Flow; later attempts retained no generation.'
+      operator_evidence:"Only today's first successful Earth in Ten render is present in Google Flow; later attempts retained no generation."
     });
     repaired++;
   }
