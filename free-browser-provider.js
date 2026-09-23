@@ -449,38 +449,83 @@ function persistReviewMetadata(db,row,flowResult={}){
 async function getBody(page) { return await page.locator('body').innerText().catch(()=> ''); }
 
 async function promptEditor(page) {
-  // Flow exposes another visible input named "Editable text" that is not the
-  // generation composer. Prefer the contenteditable closest to Start generation.
-  const content=page.locator('[contenteditable="true"]');
+  const content=page.locator('[contenteditable="true"],textarea');
   let best=null,bestScore=-Infinity;
-  const send=page.getByRole('button',{name:/Start generation|Iniciar generación/i}).last();
-  const sendBox=await send.boundingBox().catch(()=>null);
-  for(let i=0;i<await content.count();i++){
-    const c=content.nth(i);
-    if(!(await c.isVisible().catch(()=>false)))continue;
-    const box=await c.boundingBox().catch(()=>null);
-    if(!box)continue;
-    const area=box.width*box.height;
-    const dy=sendBox?Math.abs((box.y+box.height/2)-(sendBox.y+sendBox.height/2)):0;
-    const score=area-dy*1000;
-    if(score>bestScore){bestScore=score;best=c;}
+  for(let i=0;i<await content.count().catch(()=>0);i++){
+    const el=content.nth(i);
+    if(!(await el.isVisible().catch(()=>false)))continue;
+    const box=await el.boundingBox().catch(()=>null);
+    if(!box||box.y<180||box.width<180)continue;
+    const ph=compact((await el.getAttribute('placeholder').catch(()=>''))+' '+(await el.getAttribute('aria-label').catch(()=>'')),180);
+    let score=box.width*box.height;
+    if(/What do you want to create|Qué quieres crear|Que quieres crear|prompt|create/i.test(ph))score+=500000;
+    if(box.y>300)score+=100000;
+    if(score>bestScore){bestScore=score;best=el}
   }
   if(best)return best;
-  const old=page.getByPlaceholder('What do you want to create?').last();
-  if(await old.count().catch(()=>0)&&await old.isVisible().catch(()=>false))return old;
+  const placeholders=[
+    page.getByPlaceholder(/What do you want to create\?/i).last(),
+    page.getByPlaceholder(/Qué quieres crear\?/i).last(),
+    page.getByPlaceholder(/Que quieres crear\?/i).last()
+  ];
+  for(const el of placeholders){
+    if(await el.count().catch(()=>0)&&await el.isVisible().catch(()=>false))return el;
+  }
   throw new Error('FLOW_PROMPT_EDITOR_NOT_FOUND');
 }
-
-
+async function generationSendButton(page,editor=null){
+  const host=page.locator('flow-project-page flow-prompt-box flow-generate-icon-button').last();
+  if(await host.count().catch(()=>0)&&await host.isVisible().catch(()=>false)){
+    const nested=host.locator('button,[role="button"]').last();
+    if(await nested.count().catch(()=>0)&&await nested.isVisible().catch(()=>false))return nested;
+    const icon=host.locator('mat-icon').last();
+    if(await icon.count().catch(()=>0)&&await icon.isVisible().catch(()=>false)){
+      const parent=icon.locator('xpath=ancestor::button[1]').first();
+      if(await parent.count().catch(()=>0)&&await parent.isVisible().catch(()=>false))return parent;
+    }
+    return host;
+  }
+  const named=page.getByRole('button',{name:/Start generation|Iniciar generaci[oó]n/i}).last();
+  if(await named.count().catch(()=>0)&&await named.isVisible().catch(()=>false))return named;
+  if(editor===null)editor=await promptEditor(page).catch(()=>false);
+  const er=editor?await editor.boundingBox().catch(()=>null):null;
+  const buttons=page.locator('button,[role="button"]');
+  let best=null,bestScore=-Infinity,bestLabel='';
+  for(let i=0;i<await buttons.count().catch(()=>0);i++){
+    const b=buttons.nth(i);
+    if(!(await b.isVisible().catch(()=>false)))continue;
+    const box=await b.boundingBox().catch(()=>null);if(!box)continue;
+    const label=compact(
+      ((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+
+      ((await b.getAttribute('title').catch(()=>''))||'')+' '+
+      ((await b.innerText().catch(()=>''))||'')+' '+
+      ((await b.textContent().catch(()=>''))||''),220
+    );
+    const n=norm(label);
+    const semantic=/start generation|iniciar generaci|generar|generate|arrow forward|arrow_forward|send|enviar/.test(n);
+    if(!semantic)continue;
+    if(/more options|mas opciones|más opciones|settings|configur|download|descargar|export|help|ayuda|more vert|more_vert/.test(n))continue;
+    let score=10000;
+    if(er){
+      const dy=Math.abs((box.y+box.height/2)-(er.y+er.height/2));
+      if(box.x>=er.x+er.width*0.55)score+=3500;
+      score-=dy*8;
+    }
+    if(score>bestScore){bestScore=score;best=b;bestLabel=label}
+  }
+  if(!best)throw new Error('GENERATION_SEND_BUTTON_NOT_FOUND:'+compact(bestLabel,120));
+  return best;
+}
 async function classifyPromptTarget(page,editor){
   const box=await editor.boundingBox().catch(()=>null);
-  const send=page.getByRole('button',{name:/Start generation/i}).last();
-  const sendBox=await send.boundingBox().catch(()=>null);
+  const send=await generationSendButton(page,editor).catch(()=>null);
+  const sendBox=send?await send.boundingBox().catch(()=>null):null;
   if(!box||!sendBox)return'OTHER';
   const dy=Math.abs((box.y+box.height/2)-(sendBox.y+sendBox.height/2));
   if(box.y<140||dy>220)return'OTHER';
   return'VIDEO_PROMPT_COMPOSER';
 }
+
 async function ensureCanonicalProjectTitle(page){
   if(!String(page.url()||'').includes(projectPath()))throw new Error('WRONG_FLOW_PROJECT');
   const inputs=page.locator('input[aria-label="Editable text"]');let titleInput=null,current='';
@@ -536,9 +581,35 @@ async function verifyProjectIdentity(page,payload=''){
 }
 
 async function waitFlowReady(page,timeout=60000){
-  if(!liveProject().id)throw new Error('FLOW_PROJECT_NOT_CONFIGURED');const deadline=Date.now()+timeout;
-  while(Date.now()<deadline){const url=String(page.url()||'');if(/accounts\.google\.com|signin|ServiceLogin/i.test(url))throw new Error('FLOW_AUTH_REQUIRED');const text=(await getBody(page)).slice(0,12000);if(/verify it'?s you|captcha|security check|email or phone|enter your password/i.test(text))throw new Error('FLOW_AUTH_CHALLENGE');if(url.includes(projectPath())){try{const editor=await promptEditor(page),send=page.getByRole('button',{name:/Start generation/i}).last();if(await editor.isVisible().catch(()=>false)&&await send.isVisible().catch(()=>false))return editor}catch{}}await sleep(500)}throw new Error('FLOW_NOT_READY:'+compact(page.url(),200));
+  if(!liveProject().id)throw new Error('FLOW_PROJECT_NOT_CONFIGURED');
+  const deadline=Date.now()+timeout;
+  while(Date.now()<deadline){
+    const url=String(page.url()||'');
+    if(/accounts\.google\.com|signin|ServiceLogin/i.test(url))throw new Error('FLOW_AUTH_REQUIRED');
+    const text=(await getBody(page)).slice(0,12000);
+    if(/verify it'?s you|verifica que eres t[uú]|captcha|security check|verificaci[oó]n de seguridad|email or phone|enter your password/i.test(text))throw new Error('FLOW_AUTH_CHALLENGE');
+    if(url.includes(projectPath())){
+      try{
+        const editor=await promptEditor(page);
+        const send=await generationSendButton(page,editor);
+        if(await editor.isVisible().catch(()=>false)&&await send.isVisible().catch(()=>false))return editor;
+      }catch{}
+    }
+    await sleep(500);
+  }
+  const body=compact(await getBody(page).catch(()=>''),2200);
+  const title=compact(await page.title().catch(()=>''),300);
+  const buttons=[];
+  const bl=page.locator('button,[role="button"]');
+  for(let i=0;i<Math.min(await bl.count().catch(()=>0),80);i++){
+    const b=bl.nth(i);if(!(await b.isVisible().catch(()=>false)))continue;
+    const label=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||''),160);
+    if(label)buttons.push(label);
+  }
+  publish('FLOW_READY_DIAGNOSTIC',{url:compact(page.url(),220),title,body,buttons:buttons.slice(0,30)});
+  throw new Error('FLOW_NOT_READY:'+compact(page.url(),200)+':title='+title+':body='+compact(body,900));
 }
+
 function cleanChromiumLocks() {
   for (const name of ['SingletonLock','SingletonSocket','SingletonCookie']) try { fs.unlinkSync(path.join(PROFILE_DIR,name)); } catch {}
   try{
@@ -702,52 +773,67 @@ async function trustedClick(locator){
   return true;
 }
 async function settingsButton(page) {
-  const direct=page.getByRole('button',{name:/Settings trigger|Settings|Generation settings|Video settings/i}).last();
+  const direct=page.getByRole('button',{name:/Settings trigger|Settings|Generation settings|Video settings|Configuraci[oó]n|Ajustes/i}).last();
   if(await direct.count().catch(()=>0)&&await direct.isVisible().catch(()=>false))return direct;
-  const buttons=page.locator('button');let best=null,bestScore=-1,bestDesc='';
+  const buttons=page.locator('button,[role="button"]');
+  let best=null,bestScore=-Infinity,bestDesc='';
   for(let i=0;i<await buttons.count().catch(()=>0);i++){
-    const b=buttons.nth(i);if(!(await b.isVisible().catch(()=>false)))continue;
-    const desc=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.getAttribute('title').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||''),240),n=norm(desc);
-    if(/start generation|generate|add ingredients|clear prompt|download|share/i.test(desc))continue;
-    let score=0;if(/setting|configur/.test(n))score+=7;if(/video/.test(n))score+=4;if(n.includes(norm(ASPECT_RATIO)))score+=4;if(n.includes(norm(DURATION_LABEL)))score+=3;if(n.includes(norm(OUTPUT_LABEL)))score+=2;if(/model|resolution|aspect|duration|output/.test(n))score+=2;
-    const box=await b.boundingBox().catch(()=>null);if(box&&box.y>350)score+=1;
+    const b=buttons.nth(i);
+    if(!(await b.isVisible().catch(()=>false)))continue;
+    const box=await b.boundingBox().catch(()=>null);if(!box)continue;
+    const desc=compact(
+      ((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+
+      ((await b.getAttribute('title').catch(()=>''))||'')+' '+
+      ((await b.innerText().catch(()=>''))||'')+' '+
+      ((await b.textContent().catch(()=>''))||''),320
+    );
+    const n=norm(desc);
+    if(/start generation|generate|generar|arrow forward|arrow_forward|add ingredient|clear prompt|download|descargar|share|compartir/.test(n))continue;
+    let score=0;
+    if(/setting|configur|ajuste/.test(n))score+=8;
+    if(/video/.test(n))score+=5;
+    if(/720p/.test(n))score+=4;
+    if(/crop 9 16|9 16/.test(n))score+=4;
+    if(/\bx1\b/.test(n))score+=3;
+    if(/\b(?:8|10)\s*s\b/.test(n))score+=2;
+    if(box.y>300)score+=1;
     if(score>bestScore){bestScore=score;best=b;bestDesc=desc}
   }
-  if(best&&bestScore>=4)return best;
-  const samples=[];for(let i=0;i<Math.min(await buttons.count().catch(()=>0),50);i++){const b=buttons.nth(i);if(!(await b.isVisible().catch(()=>false)))continue;const d=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||''),100);if(d)samples.push(d)}
-  throw new Error('FLOW_SETTINGS_BUTTON_NOT_FOUND:'+compact(samples.join(' | '),650));
+  if(best&&bestScore>=5)return best;
+  throw new Error('FLOW_SETTINGS_BUTTON_NOT_FOUND:'+compact(bestDesc,260));
 }
 async function ensureSettingsOpen(page){
   const visibleSetting=async()=>{
-    const radio=page.getByRole('radio',{name:/Video/i}).last();
-    if(await radio.count().catch(()=>0)&&await radio.isVisible().catch(()=>false))return true;
-    const ratio=page.getByText(new RegExp('^'+escapeRe(ASPECT_RATIO)+'$','i')).last();
-    if(await ratio.count().catch(()=>0)&&await ratio.isVisible().catch(()=>false))return true;
+    const video=page.getByRole('radio',{name:/Video/i}).last();
+    if(await video.count().catch(()=>0)&&await video.isVisible().catch(()=>false))return true;
+    const candidates=page.getByText(/^(?:9:16|720p|8\s*s|10\s*s|x1)$/i);
+    for(let i=(await candidates.count().catch(()=>0))-1;i>=0;i--){
+      if(await candidates.nth(i).isVisible().catch(()=>false))return true;
+    }
     return false;
   };
   if(await visibleSetting())return;
   const b=await settingsButton(page);
-  await clickInteractive(b);
+  await trustedClick(b);
   const deadline=Date.now()+6500;
   while(Date.now()<deadline){if(await visibleSetting())return;await sleep(180)}
-  throw new Error('FLOW_SETTINGS_MENU_NOT_OPEN:'+compact(await b.innerText().catch(()=>''),180));
+  throw new Error('FLOW_SETTINGS_MENU_NOT_OPEN:'+compact(await b.innerText().catch(()=>''),220));
 }
 async function clickRadio(page,re,label){
   const radios=page.getByRole('radio',{name:re});
   for(let i=(await radios.count().catch(()=>0))-1;i>=0;i--){
     const r=radios.nth(i);if(!(await r.isVisible().catch(()=>false)))continue;
     const checked=await r.getAttribute('aria-checked').catch(()=>null);
-    if(checked!=='true')await clickInteractive(r);
+    if(checked!=='true')await trustedClick(r);
     await sleep(300);
     const after=await r.getAttribute('aria-checked').catch(()=>null);
     if(after==='true'||after===null)return true;
   }
-  const roles=['button','option','menuitem','tab'];
-  for(const role of roles){
+  for(const role of ['button','option','menuitem','tab']){
     const loc=page.getByRole(role,{name:re});
     for(let i=(await loc.count().catch(()=>0))-1;i>=0;i--){
       const el=loc.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
-      await clickInteractive(el);await sleep(320);return true;
+      await trustedClick(el);await sleep(320);return true;
     }
   }
   const exact=page.getByText(re);
@@ -755,131 +841,88 @@ async function clickRadio(page,re,label){
     const el=exact.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
     await clickInteractive(el);await sleep(320);return true;
   }
-  const body=compact(await getBody(page),1200);
-  throw new Error('FLOW_SETTING_NOT_FOUND:'+label+':'+body);
+  throw new Error('FLOW_SETTING_NOT_FOUND:'+label+':'+compact(await getBody(page),900));
 }
 async function configureFlow(page){
   await waitFlowReady(page,60000);
   await ensureSettingsOpen(page);
   await clickRadio(page,/Video/i,'Video');
-  await clickRadio(page,new RegExp('^'+escapeRe(ASPECT_RATIO)+'$','i'),ASPECT_RATIO);
+  await clickRadio(page,/9\s*:\s*16|9_16|crop_9_16/i,'9:16');
 
-  const modelTokens=norm(MODEL_INTENT).split(' ').filter(x=>x.length>2);
   let modelButton=null,currentModel='';
-  const directModel=page.getByRole('button',{name:/Select model family|Model|Omni|Veo|Flash/i});
-  for(let i=(await directModel.count().catch(()=>0))-1;i>=0;i--){
-    const btn=directModel.nth(i);
-    if(!(await btn.isVisible().catch(()=>false)))continue;
-    const txt=compact(((await btn.getAttribute('aria-label').catch(()=>''))||'')+' '+((await btn.innerText().catch(()=>''))||''),220);
-    if(/model|omni|veo|flash/i.test(txt)){modelButton=btn;currentModel=txt;break}
+  const buttons=page.locator('button,[role="button"]');
+  let modelScore=-Infinity;
+  for(let i=0;i<await buttons.count().catch(()=>0);i++){
+    const b=buttons.nth(i);if(!(await b.isVisible().catch(()=>false)))continue;
+    const txt=compact(
+      ((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+
+      ((await b.getAttribute('title').catch(()=>''))||'')+' '+
+      ((await b.innerText().catch(()=>''))||'')+' '+
+      ((await b.textContent().catch(()=>''))||''),240
+    );
+    const n=norm(txt);
+    let score=0;
+    if(/select model family|model|modelo/.test(n))score+=6;
+    if(/omni/.test(n))score+=6;
+    if(/flash/.test(n))score+=3;
+    if(/veo/.test(n))score+=2;
+    if(/settings|configur|720p|9 16|x1/.test(n))score-=3;
+    if(score>modelScore){modelScore=score;modelButton=b;currentModel=txt}
   }
-  if(!modelButton){
-    const buttons=page.locator('button');let scoreBest=-1;
-    for(let i=0;i<await buttons.count().catch(()=>0);i++){
-      const btn=buttons.nth(i);
-      if(!(await btn.isVisible().catch(()=>false)))continue;
-      const txt=compact(((await btn.getAttribute('aria-label').catch(()=>''))||'')+' '+((await btn.getAttribute('title').catch(()=>''))||'')+' '+((await btn.innerText().catch(()=>''))||''),240),n=norm(txt);
-      let score=modelTokens.filter(t=>n.includes(t)).length*3;
-      if(/model|omni|veo|flash/.test(n))score+=4;
-      if(/aspect|duration|resolution|output|settings/.test(n))score-=2;
-      if(score>scoreBest){scoreBest=score;modelButton=btn;currentModel=txt}
-    }
-    if(scoreBest<3)modelButton=null;
-  }
-  if(modelButton&&!modelMatches(currentModel)){
-    await clickInteractive(modelButton);await sleep(350);
-    const candidates=[];
+  const modelOk=/omni\s*1\.1\s*flash/i.test(currentModel)||(/omni/i.test(currentModel)&&/flash/i.test(currentModel));
+  if(modelButton&&modelScore>=4&&!modelOk){
+    await trustedClick(modelButton);await sleep(400);
+    let chosen=null;
     for(const role of ['menuitem','option','radio','button']){
       const loc=page.getByRole(role);
-      for(let i=0;i<await loc.count().catch(()=>0);i++){
-        const opt=loc.nth(i);
-        if(!(await opt.isVisible().catch(()=>false)))continue;
-        const txt=compact(((await opt.getAttribute('aria-label').catch(()=>''))||'')+' '+((await opt.innerText().catch(()=>''))||''),180),n=norm(txt);
-        let score=modelTokens.filter(t=>n.includes(t)).length;
-        if(/omni/i.test(MODEL_INTENT)&&/omni/i.test(txt))score+=3;
-        if(/veo/i.test(MODEL_INTENT)&&/veo/i.test(txt))score+=3;
-        if(/flash/i.test(MODEL_INTENT)&&/flash/i.test(txt))score+=2;
-        if(score>0)candidates.push({o:opt,txt,score});
+      for(let i=(await loc.count().catch(()=>0))-1;i>=0;i--){
+        const o=loc.nth(i);if(!(await o.isVisible().catch(()=>false)))continue;
+        const txt=compact(((await o.getAttribute('aria-label').catch(()=>''))||'')+' '+((await o.innerText().catch(()=>''))||'')+' '+((await o.textContent().catch(()=>''))||''),180);
+        if(/omni\s*1\.1\s*flash/i.test(txt)||(/omni/i.test(txt)&&/flash/i.test(txt))){chosen=o;currentModel=txt;break}
       }
+      if(chosen)break;
     }
-    candidates.sort((x,y)=>y.score-x.score);
-    const chosen=candidates[0];
-    if(!chosen)throw new Error('FLOW_MODEL_INTENT_NOT_FOUND:'+MODEL_INTENT);
-    await clickInteractive(chosen.o);await sleep(450);currentModel=chosen.txt;
-  }else if(!modelButton){
-    const body=compact(await getBody(page),5000);
-    const line=body.split(/\n|\|/).find(x=>modelMatches(x));
-    if(!line)throw new Error('FLOW_VIDEO_MODEL_NOT_VERIFIED:'+MODEL_INTENT+':'+body.slice(0,700));
-    currentModel=compact(line,200);
-  }
-  if(!modelMatches(currentModel))throw new Error('FLOW_VIDEO_MODEL_MISMATCH:'+MODEL_INTENT+':'+compact(currentModel,220));
-  if(/omni/i.test(MODEL_INTENT)&&/flash/i.test(MODEL_INTENT)&&!(/omni/i.test(currentModel)&&/flash/i.test(currentModel))){
-    const settingsText=compact(await getBody(page),5000);
-    if(!(/omni/i.test(settingsText)&&/flash/i.test(settingsText)))throw new Error('FLOW_OMNI_FLASH_NOT_ACTIVE:'+compact(currentModel,220));
-    currentModel='Omni Flash';
+    if(!chosen)throw new Error('FLOW_MODEL_OMNI_FLASH_NOT_FOUND:'+compact(await getBody(page),900));
+    await trustedClick(chosen);await sleep(450);
+  }else if(!modelOk){
+    const body=compact(await getBody(page),4500);
+    if(!(/omni/i.test(body)&&/flash/i.test(body)))throw new Error('FLOW_MODEL_OMNI_FLASH_NOT_VERIFIED:'+body.slice(0,900));
+    currentModel='Omni 1.1 Flash';
   }
 
-  let resolutionApplied='default';
-  const resRe=new RegExp(escapeRe(RESOLUTION_INTENT),'i');
-  const resRadio=page.getByRole('radio',{name:resRe}).last();
-  if(await resRadio.count().catch(()=>0)&&await resRadio.isVisible().catch(()=>false)){
-    if((await resRadio.getAttribute('aria-checked').catch(()=>null))!=='true')await clickInteractive(resRadio);
-    await sleep(250);resolutionApplied=RESOLUTION_INTENT;
-  }else{
-    const exact=page.getByText(resRe).last();
-    if(await exact.count().catch(()=>0)&&await exact.isVisible().catch(()=>false)){
-      await clickInteractive(exact);await sleep(250);resolutionApplied=RESOLUTION_INTENT;
-    }else{
-      publish('FLOW_SETTING_DEFAULT',{setting:'resolution',requested:RESOLUTION_INTENT,message:'Resolution control is not exposed by this Flow model; keeping the model default.'});
-    }
-  }
-
-  let durationApplied='prompt-enforced';
-  try{
-    await clickRadio(page,new RegExp('^'+escapeRe(DURATION_LABEL)+'$','i'),DURATION_LABEL);
-    durationApplied=DURATION_LABEL;
-  }catch(e){
-    if(!String(e?.message||e).startsWith('FLOW_SETTING_NOT_FOUND:'))throw e;
-    publish('FLOW_SETTING_DEFAULT',{setting:'duration',requested:DURATION_LABEL,message:'Duration control is not exposed by this Flow model; exact duration remains enforced in the generation prompt.'});
-  }
-
-  let outputApplied='default';
-  try{
-    await clickRadio(page,new RegExp('^'+escapeRe(OUTPUT_LABEL)+'$','i'),OUTPUT_LABEL);
-    outputApplied=OUTPUT_LABEL;
-  }catch(e){
-    if(!String(e?.message||e).startsWith('FLOW_SETTING_NOT_FOUND:'))throw e;
-    publish('FLOW_SETTING_DEFAULT',{setting:'output_count',requested:OUTPUT_LABEL,message:'Output-count control is not exposed by this Flow model; keeping the model default.'});
-  }
-
-  if(CONFIG.characters.length){
-    const ingredients=page.getByRole('radio',{name:/Ingredients/i}).last();
-    if(await ingredients.count().catch(()=>0)&&await ingredients.isVisible().catch(()=>false)){
-      if((await ingredients.getAttribute('aria-checked').catch(()=>null))!=='true')await clickInteractive(ingredients);
-      await sleep(300);
-    }
-  }
+  await clickRadio(page,/720p/i,'720p');
+  await clickRadio(page,/^10\s*s$/i,'10s');
+  await clickRadio(page,/^x?\s*1$/i,'x1');
 
   let label='';
   try{label=compact(await(await settingsButton(page)).innerText(),300)}catch{}
-  const save=page.getByRole('button',{name:/^Save$/i}).last();
-  if(await save.count().catch(()=>0)&&await save.isVisible().catch(()=>false)){await clickInteractive(save);await sleep(500)}
-  const closeButtons=page.getByRole('button',{name:/^close$|close settings|cerrar/i});
-  for(let i=(await closeButtons.count().catch(()=>0))-1;i>=0;i--){const x=closeButtons.nth(i);if(await x.isVisible().catch(()=>false)){await clickInteractive(x);await sleep(300);break}}
+  const save=page.getByRole('button',{name:/^(Save|Guardar)$/i}).last();
+  if(await save.count().catch(()=>0)&&await save.isVisible().catch(()=>false)){await trustedClick(save);await sleep(450)}
+  const close=page.getByRole('button',{name:/^close$|close settings|cerrar/i}).last();
+  if(await close.count().catch(()=>0)&&await close.isVisible().catch(()=>false)){await trustedClick(close);await sleep(300)}
   await page.keyboard.press('Escape').catch(()=>{});
   await sleep(350);
-  const applied={label:label||'settings-applied',mode:'Video',ratio:ASPECT_RATIO,model:currentModel,resolution:resolutionApplied,duration:durationApplied,count:outputApplied,ingredients:CONFIG.characters.length>0};
+
+  let summary=label;
+  try{summary=compact(await(await settingsButton(page)).innerText(),340)||summary}catch{}
+  const body=compact(await getBody(page),5000);
+  const combined=summary+' '+body;
+  if(!/video/i.test(combined)||!/720p/i.test(combined)||!/(?:10\s*s|10s)/i.test(combined)||!/(?:9\s*:\s*16|9_16|crop_9_16)/i.test(combined)||!(/\bx1\b/i.test(combined)||/\bx\s*1\b/i.test(combined))){
+    throw new Error('FLOW_SETTINGS_NOT_CONFIRMED:'+compact(summary||body,700));
+  }
+  const applied={label:summary||'settings-applied',mode:'Video',ratio:'9:16',model:'Omni 1.1 Flash',resolution:'720p',duration:'10s',count:'x1',ingredients:false};
   publish('FLOW_SETTINGS_APPLIED',{message:JSON.stringify(applied)});
   return applied;
 }
+
 async function ingredientCount(page){
   return await page.locator('[aria-label="Ingredient"]').count().catch(()=>0);
 }
 async function clearComposer(page){
   await waitFlowReady(page,30000);
-  const clear=page.getByRole('button',{name:/Clear prompt/i}).last();
+  const clear=page.getByRole('button',{name:/Clear prompt|Limpiar prompt|Borrar prompt|Limpiar indicaci[oó]n/i}).last();
   if(await clear.count().catch(()=>0)&&await clear.isVisible().catch(()=>false)){
-    await clear.click().catch(()=>{});
+    await trustedClick(clear).catch(()=>{});
     await sleep(500);
   }
   const editor=await promptEditor(page);
@@ -888,15 +931,19 @@ async function clearComposer(page){
   const deadline=Date.now()+4000;
   while(Date.now()<deadline){
     if(await ingredientCount(page)===0)return true;
-    const remove=page.locator('[aria-label="Ingredient"]');
+    const remove=page.locator('[aria-label="Ingredient"],[aria-label="Ingrediente"]');
     if(await remove.count().catch(()=>0)){
-      await remove.last().click().catch(()=>{});
+      const chip=remove.last();
+      const removeButton=chip.getByRole('button',{name:/remove|delete|quitar|eliminar|cerrar|close/i}).last();
+      if(await removeButton.count().catch(()=>0)&&await removeButton.isVisible().catch(()=>false))await trustedClick(removeButton).catch(()=>{});
+      else await chip.click().catch(()=>{});
       await sleep(250);
     }else break;
   }
   if(await ingredientCount(page)!==0)throw new Error('FLOW_PROMPT_CLEAR_FAILED');
   return true;
 }
+
 async function composerAdd(page) {
   const named=page.getByRole('button',{name:/Add ingredients to the prompt box/i}).last();
   if(!(await named.count().catch(()=>0))||!(await named.isVisible().catch(()=>false)))throw new Error('ADD_INGREDIENTS_BUTTON_NOT_FOUND');
@@ -1190,60 +1237,87 @@ async function approveFlowPointConsent(page,permission,baselineInventory,baselin
 }
 
 // runtime-contract marker: flow-generate-icon-button / arrow_forward
-async function clickSubmitExactlyOnce(page,baselineInventory,baselineVideos,baselineBusy=0){
-  const permissionBefore=await permissionSnapshot(page);
-
-  // Old failed tiles remain visible in Flow. They are historical evidence, not
-  // permission to hijack the current submit. Always operate the current composer
-  // exactly as FruttiDrama does; failed-tile Retry is never used as the daily submit.
-  const promptTop=page.locator('flow-project-page flow-prompt-box div.prompt-top-row').last();
-  if(await promptTop.count().catch(()=>0)&&await promptTop.isVisible().catch(()=>false)){
-    await promptTop.click({position:{x:Math.max(5,Math.min(40,(await promptTop.boundingBox().catch(()=>({width:80}))).width-5)),y:8}}).catch(()=>{});
-    await sleep(180);
+async function findGenerationConsentAction(page){
+  const buttons=page.locator('button,[role="button"],[role="option"],[tabindex="0"]');
+  const ranked=[];
+  for(let i=0;i<Math.min(await buttons.count().catch(()=>0),220);i++){
+    const b=buttons.nth(i);
+    if(!(await b.isVisible().catch(()=>false))||!(await b.isEnabled().catch(()=>false)))continue;
+    const box=await b.boundingBox().catch(()=>null);if(!box)continue;
+    const label=compact(
+      ((await b.innerText().catch(()=>''))||'')+' '+
+      ((await b.textContent().catch(()=>''))||'')+' '+
+      ((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+
+      ((await b.getAttribute('title').catch(()=>''))||''),220
+    );
+    const n=norm(label);
+    if(!/^(si|sí|yes|generar|generate|confirmar|confirm|continuar|continue|aprobar|approve)(\b|\s|,|\.)/.test(n)&&
+       !/(si|sí|yes).*(generar|generate)|(generar|generate).*(video|15|puntos|points|creditos|credits)/.test(n))continue;
+    let context='';
+    try{
+      context=await b.evaluate(el=>{
+        const clean=s=>String(s||'').replace(/\s+/g,' ').trim();
+        let p=el;
+        for(let depth=0;depth<7&&p;depth++,p=p.parentElement){
+          const t=clean(p.innerText||p.textContent||'');
+          if(t.length>=20&&t.length<=1800)return t;
+        }
+        return clean(document.body?.innerText||'').slice(-1800);
+      });
+    }catch{}
+    const cn=norm(context);
+    const generationContext=/(generar|generate|generation|video)/.test(cn);
+    const costContext=/(15\s*(puntos|points|creditos|credits)|cuesta|cost|usar.*puntos|use.*points|consumir.*puntos|consume.*points)/.test(cn);
+    if(!generationContext||!costContext)continue;
+    let score=0;
+    if(/generar|generate/.test(n))score+=12;
+    if(/^(si|sí|yes)\b/.test(n))score+=10;
+    if(/confirm|aprobar|approve/.test(n))score+=8;
+    if(/15\s*(puntos|points|creditos|credits)/.test(cn))score+=8;
+    score+=Math.min(5,box.y/180);
+    ranked.push({el:b,label,context:compact(context,900),score,box});
   }
+  ranked.sort((a,b)=>b.score-a.score||b.box.y-a.box.y);
+  return ranked[0]||null;
+}
+async function clickSubmitExactlyOnce(page){
+  const send=await generationSendButton(page,false);
+  if(!(await send.isVisible().catch(()=>false))||!(await send.isEnabled().catch(()=>false)))throw new Error('START_GENERATION_BUTTON_NOT_READY');
+  await trustedClick(send);
+  publish('SUBMIT_ARROW_CLICKED',{message:'Flow generation send control clicked exactly once.',control:compact(((await send.getAttribute('aria-label').catch(()=>''))||'')+' '+((await send.innerText().catch(()=>''))||''),140)});
 
-  let icon=page.locator('flow-project-page flow-prompt-box flow-generate-icon-button mat-icon').last();
-  if(!(await icon.count().catch(()=>0))||!(await icon.isVisible().catch(()=>false))){
-    icon=page.getByRole('img',{name:/Iniciar generación|Start generation/i}).last();
-  }
-  if(!(await icon.count().catch(()=>0))||!(await icon.isVisible().catch(()=>false)))throw new Error('FLOW_GENERATE_ARROW_NOT_FOUND');
-
-  let target=icon.locator('xpath=ancestor::button[1]').first();
-  if(!(await target.count().catch(()=>0))||!(await target.isVisible().catch(()=>false))){
-    target=icon.locator('xpath=ancestor::*[@role="button"][1]').first();
-  }
-  if(!(await target.count().catch(()=>0))||!(await target.isVisible().catch(()=>false))){
-    target=icon.locator('xpath=ancestor::flow-generate-icon-button[1]').first();
-  }
-  if(!(await target.count().catch(()=>0))||!(await target.isVisible().catch(()=>false)))target=icon;
-
-  await trustedClick(target);
-  publish('SUBMIT_ARROW_CLICKED',{message:'Interactive Flow generate control clicked exactly once.',control:compact(((await target.getAttribute('aria-label').catch(()=>''))||'')+' '+((await target.innerText().catch(()=>''))||''),180)});
-
-  const consentDeadline=Date.now()+9000;
-  while(Date.now()<consentDeadline){
-    await sleep(250);
-    const permission=await newPermissionMessage(page,permissionBefore);
-    if(permission){
-      const consent=await approveFlowPointConsent(page,permission,baselineInventory,baselineVideos,baselineBusy);
-      return'composer-arrow-'+consent.mode;
+  const deadline=Date.now()+9000;
+  while(Date.now()<deadline){
+    const action=await findGenerationConsentAction(page);
+    if(action){
+      await trustedClick(action.el);
+      publish('POINT_CONSENT_CLICKED',{label:compact(action.label,140),context:compact(action.context,500),message:'Flow point-cost confirmation accepted exactly once.'});
+      await sleep(700);
+      return'confirmation-point-cost';
     }
-    const transition=await generationTransitionVisible(page,baselineInventory,baselineVideos,baselineBusy);
-    if(transition.started)return'composer-arrow-direct-confirmed';
+    const dialogs=page.getByRole('dialog');
+    for(let d=(await dialogs.count().catch(()=>0))-1;d>=0;d--){
+      const dialog=dialogs.nth(d);
+      if(!(await dialog.isVisible().catch(()=>false)))continue;
+      const gen=dialog.getByRole('button',{name:/^(Generate|Generar|Confirm|Confirmar)$/i}).last();
+      if(await gen.count().catch(()=>0)&&await gen.isVisible().catch(()=>false)&&await gen.isEnabled().catch(()=>false)){
+        await trustedClick(gen);
+        publish('POINT_CONSENT_CLICKED',{label:compact(await gen.innerText().catch(()=>''),120),message:'Flow generation confirmation accepted exactly once.'});
+        await sleep(700);
+        return'confirmation-dialog';
+      }
+    }
+    await sleep(200);
   }
-
-  const buttons=[];
+  const visibleButtons=[];
   const bs=page.locator('button,[role="button"]');
-  for(let i=0;i<Math.min(await bs.count().catch(()=>0),100);i++){
+  for(let i=0;i<Math.min(await bs.count().catch(()=>0),80);i++){
     const b=bs.nth(i);if(!(await b.isVisible().catch(()=>false)))continue;
-    const label=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||''),180);
-    if(label)buttons.push(label);
+    const label=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||''),160);
+    if(label)visibleButtons.push(label);
   }
-  const postBody=await getBody(page);
-  publish('POST_ARROW_NO_CONSENT',{message:'No generation transition or point-cost confirmation followed the generate click.',body:compact(postBody,1800),buttons:buttons.slice(-35)});
-  // Do not infer the current attempt from a global "unusual activity" tile.
-  // That tile may predate this prompt. Hard generation evidence below is authoritative.
-  return'composer-arrow-direct';
+  publish('POST_ARROW_NO_CONSENT',{message:'No point-cost confirmation was detected after the generation arrow.',body:compact(await getBody(page),1600),buttons:visibleButtons.slice(-30)});
+  return'start-generation-direct';
 }
 
 async function renderAuthGuard(page){
@@ -1458,61 +1532,38 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
   return{mode:'wait'};
 }
 async function waitGenerationStarted(page,baseline,baselineInventory,baselineBusy=0,timeout=90000){
-  const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean)),startedAt=Date.now(),deadline=startedAt+timeout;
-  const baseVideoTiles=Number(baselineInventory?.video_tile_count||0);
-  let lastEvidence='',sawProvisionalTile=false,provisionalSince=0,vanishedSince=0,lastTileProbeAt=0;
+  const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean));
+  const beforeInv=baselineInventory||{signatures:[],tile_count:0};
+  const startedAt=Date.now(),deadline=startedAt+timeout;
+  let lastEvidence='';
   while(Date.now()<deadline){
     await renderAuthGuard(page);
-    const bodyText=await getBody(page).catch(()=>'');
-    if(flowCreditFailure(bodyText))throw new Error('FLOW_INSUFFICIENT_CREDITS');
-    // Ignore global historical no-charge warnings here. They can belong to old
-    // tiles; only fresh/busy/downloadable evidence may classify this submit.
-    if(/failed to generate|generation failed|couldn't generate|no se pudo generar/i.test(bodyText))throw new Error('FLOW_GENERATION_FAILED');
     const vids=await currentVideos(page);
     const freshVideo=vids.some(v=>v.src&&!baseSrc.has(v.src)&&Number(v.duration||0)>0);
     const inv=await captureFlowInventory(page);
-    const busyCount=await visibleGenerationBusyCount(page).catch(()=>0);
-    const bodyBusy=/generating|processing|rendering|creating video|generando|procesando|upscaling|preparing video|preparando video/i.test(bodyText);
-    const hardBusy=Number(busyCount||0)>Number(baselineBusy||0)||bodyBusy;
-    const tileCount=Number(inv.video_tile_count||0),newVideoTile=tileCount>baseVideoTiles;
+    const send=await generationSendButton(page,false).catch(()=>null);
+    const sendVisible=send?await send.isVisible().catch(()=>false):false;
+    const sendDisabled=send?await send.isDisabled().catch(()=>false):true;
+    const visibleBusy=await visibleGenerationBusyCount(page);
+    const busyIncrease=visibleBusy>Number(baselineBusy||0);
     const elapsed=Date.now()-startedAt;
-    lastEvidence=`freshPlayableVideo=${freshVideo}; busy=${hardBusy}; busyCount=${baselineBusy}->${busyCount}; videoTiles=${baseVideoTiles}->${tileCount}; allTiles=${baselineInventory?.tile_count||0}->${inv.tile_count||0}; elapsedMs=${elapsed}`;
 
-    // Hard evidence only. A transient Flow grid node is NOT proof that a
-    // generation exists: Flow virtualizes/replaces tile DOM while updating.
-    if(freshVideo||hardBusy){
-      return{started:true,evidence:lastEvidence,videos:vids,inventory:inv,render_complete:freshVideo};
+    let downloadableFresh=false,downloadSignal='';
+    if(Number(beforeInv?.tile_count||0)>0&&elapsed>2500&&elapsed%5000<1100){
+      const probe=await openUniqueFreshInventoryResult(page,beforeInv).catch(()=>null);
+      downloadableFresh=Boolean(probe?.ready);
+      downloadSignal=String(probe?.signal||'');
+      if(probe?.opened&&!probe?.ready)await page.keyboard.press('Escape').catch(()=>{});
     }
 
-    if(newVideoTile){
-      sawProvisionalTile=true;
-      vanishedSince=0;
-      if(!provisionalSince)provisionalSince=Date.now();
-      // A tile becomes hard render evidence only when its editor exposes an
-      // enabled Download control. Visible-but-disabled controls do not count.
-      if(Date.now()-lastTileProbeAt>5000){
-        lastTileProbeAt=Date.now();
-        const probe=await openLatestExpectedVideoTile(page,baselineInventory).catch(()=>null);
-        if(probe?.ready){
-          return{started:true,evidence:lastEvidence+'; enabledDownload=true',videos:vids,inventory:inv,render_complete:true};
-        }
-      }
-      if(Date.now()-provisionalSince>8*60*1000){
-        return{started:false,evidence:lastEvidence+'; provisional tile never became downloadable; submit remains locked for recovery-only reconciliation'};
-      }
-    }else if(sawProvisionalTile){
-      if(!vanishedSince)vanishedSince=Date.now();
-      // The supposed new tile appeared, then vanished, while Flow reports no
-      // busy state and no playable media. Treat that as no retained generation
-      // instead of blocking the head-of-line episode for 20+ minutes.
-      if(Date.now()-vanishedSince>45000){
-        return{started:false,evidence:lastEvidence+'; provisional tile vanished; this is ambiguous, not proof that Generate did nothing'};
-      }
-    }
-    await sleep(1200);
+    const started=freshVideo||busyIncrease||downloadableFresh;
+    lastEvidence='freshVideo='+freshVideo+'; busy='+visibleBusy+'; baselineBusy='+baselineBusy+'; busyIncrease='+busyIncrease+'; downloadableFresh='+downloadableFresh+'; downloadSignal='+downloadSignal+'; sendVisible='+sendVisible+'; sendDisabled='+sendDisabled+'; elapsedMs='+elapsed+'; tiles='+Number(beforeInv.tile_count||0)+'->'+Number(inv.tile_count||0);
+    if(started)return{started:true,evidence:lastEvidence,videos:vids,inventory:inv};
+    await sleep(1000);
   }
-  return{started:false,evidence:'No hard Flow generation evidence appeared after the submit boundary. '+lastEvidence};
+  return{started:false,evidence:'No hard Flow generation evidence appeared. '+lastEvidence};
 }
+
 function firstFreshRendered(vids,baseline){
   const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean));
   const fresh=(vids||[]).filter(v=>v.readyState>=2&&v.duration>0&&v.src&&!baseSrc.has(v.src));
@@ -2157,6 +2208,13 @@ async function processRow(db,row){
     setLifecycle(db,row,'PREFLIGHT_PASSED',{preflight_at:now(),settings:pf.settings,characters:cp.visual,prompt_hash:cp.hash,prepared_state_verified:Boolean(pf.prepared_state_verified)});
     if(!submitAuthorized){const used=effectiveDailyCount(db);setMeta(db,'flow:state',used>=dailyProductionLimit()?'ESPERANDO CRÉDITOS':'CONECTADO');setMeta(db,'flow:currentStep',used>=dailyProductionLimit()?'daily-limit':'preflight:passed-no-submit');publish(used>=dailyProductionLimit()?'DAILY_LIMIT':'PREFLIGHT_READY_NO_SUBMIT',{episode:'E'+row.episode,job_id:row.id,characters:cp.visual,settings:pf.settings});return false}
     if(manualSubmit)setMeta(db,'automation:allowSubmit','0');
+    const liveEditor=await promptEditor(page);
+    const livePrompt=String(await liveEditor.evaluate(el=>String((typeof el.value==='string'&&el.value)||el.innerText||el.textContent||'')).catch(()=>'')).replace(/\s+/g,' ').trim();
+    const expectedPrompt=String(cp.prompt||'').replace(/\s+/g,' ').trim();
+    if(!livePrompt.includes(expectedPrompt.slice(0,140))||!livePrompt.includes(expectedPrompt.slice(-140))){
+      throw new Error('PROMPT_NOT_PRESENT_AT_SUBMIT:'+livePrompt.length+':'+expectedPrompt.length);
+    }
+    publish('PROMPT_PRESENT_AT_SUBMIT',{episode:'E'+row.episode,job_id:row.id,payload_length:livePrompt.length,message:'Exact creative-package prompt is still present in the live Flow composer immediately before Generate.'});
     const baseline=await currentVideos(page),baselineInventory=await captureFlowInventory(page),baselineBusy=await visibleGenerationBusyCount(page),genId='free-'+randomUUID();
     if(reviewerRetry){
       const token=String(row.reviewRetryToken||'');
@@ -2169,8 +2227,18 @@ async function processRow(db,row){
     const consentMode=/approve-always/i.test(submitMode)?'ALWAYS_APPROVED':(/approve-once|confirm-generate/i.test(submitMode)?'PER_GENERATION':(priorConsent==='ALWAYS_APPROVED'?'ALWAYS_APPROVED':'NO_DIALOG_OBSERVED'));
     setMeta(db,'flow:consentMode',consentMode);
     setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null,automatic_submit_forbidden:true});
-    const started=await waitGenerationStarted(page,baseline,baselineInventory,baselineBusy,12*60*1000);
+    const started=await waitGenerationStarted(page,baseline,baselineInventory,baselineBusy,90000);
     if(!started.started){
+      const bodyAfter=await getBody(page).catch(()=>'');
+      const explicitNoCharge=/unusual activity|actividad inusual/i.test(bodyAfter)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(bodyAfter);
+      if(explicitNoCharge){
+        const retryAt=Date.now()+15*60*1000;
+        db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=?,nextTry=?,runtimeAttemptCount=runtimeAttemptCount+1,lastProgressAt=?,updatedAt=? WHERE id=?")
+          .run('FLOW_NO_CHARGE — same episode will retry automatically after a protective cooldown.',retryAt,now(),now(),row.id);
+        setLifecycle(db,row,'TRANSIENT_NO_CHARGE_RETRY',{prior_generation_id:genId,submit_mode:submitMode,evidence:started.evidence,retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:false});
+        publish('TRANSIENT_NO_CHARGE_RETRY',{episode:'E'+row.episode,job_id:row.id,retry_at:new Date(retryAt).toISOString(),message:'Flow did not start or charge this generation. The same episode remains head-of-line and will retry automatically; later episodes remain blocked.'});
+        return false;
+      }
       const retryAt=Date.now()+30000;
       setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{generation_id:genId,submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,last_error:'No hard Flow generation evidence after submit. Read-only reconciliation required before any new Generate.',retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:true});
       db.prepare("UPDATE factory_items SET status='generating',error=?,nextTry=?,updatedAt=? WHERE id=?").run('SUBMIT_AMBIGUOUS — reconciliation pending; Generate is locked.',retryAt,now(),row.id);
@@ -2479,6 +2547,25 @@ function realignEarthE11ToFruttiProtocol(db){
   return true;
 }
 
+function rearmEarthE11AfterFullFruttiPort(db){
+  const key='repair:earth-e11-full-frutti-port-v1';
+  if(meta(db,key,'')==='done')return false;
+  const row=db.prepare("SELECT * FROM factory_items WHERE episode=11 LIMIT 1").get();
+  if(!row){setMeta(db,key,'done');return false;}
+  const lc=lifecycle(db,row)||{};
+  const confirmed=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE itemId=? AND credits>0 AND status NOT IN ('no_generation','infra_rejected')").get(row.id)?.n||0);
+  const noMedia=!row.videoPath&&!row.remoteUrl&&!row.reviewVideoId;
+  if(noMedia&&confirmed===0&&['generating','draft'].includes(String(row.status||''))){
+    db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?")
+      .run(now(),now(),row.id);
+    setMeta(db,'flow:transientCooldownUntil','0');
+    setLifecycle(db,row,'FULL_FRUTTI_PROTOCOL_REARMED',{prior_state:String(lc.state||''),rearmed_at:now(),automatic_submit_forbidden:false,evidence:'No hard Flow start/retained render exists; Earth browser interaction layer now matches the working FruttiDrama protocol.'});
+    publish('FULL_FRUTTI_PROTOCOL_REARMED',{episode:'E11',job_id:row.id,message:'E11 re-armed once under the same composer/settings/send/start-confirmation protocol that completed FruttiDrama today.'});
+  }
+  setMeta(db,key,'done');
+  return true;
+}
+
 function productionCandidate(db){
   // Recovery always wins, but out-of-order ambiguous rows are quarantined by
   // normalizeOutOfOrderAmbiguous() before this function runs.
@@ -2628,7 +2715,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db);realignEarthE11ToFruttiProtocol(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);normalizeLiveNoChargeCooldown(db);seedTransientCooldownFromRecentNoCharge(db);armImmediateNoChargeRetryAfterUpgrade(db);armImmediateNoChargeRetryV2(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db);realignEarthE11ToFruttiProtocol(db);rearmEarthE11AfterFullFruttiPort(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
