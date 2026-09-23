@@ -1,3 +1,4 @@
+// RELEASE: approval-gated review media + rejection purge v1
 
 import fs from 'node:fs';
 import path from 'node:path';
