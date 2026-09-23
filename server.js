@@ -202,6 +202,25 @@ function authedClient(){const c=oauthClient();if(!loadToken())throw new Error('Y
 function youtubeApi(){return google.youtube({version:'v3',auth:authedClient()})}
 
 const publication=installPublication({app,db,config:CONFIG,youtubeApi,authedClient,loadToken,dataDir:DIR});
+function diagnosticConfiguredEpisodes(){
+  const raw=String(process.env.PUBLISHER_DIAG_EPISODES||'').trim();if(!raw)return;
+  for(const ep of raw.split(',').map(x=>Number(x.trim())).filter(Number.isFinite)){
+    const row=db.prepare('SELECT * FROM factory_items WHERE episode=? ORDER BY season DESC LIMIT 1').get(ep);
+    if(!row)continue;
+    const pub=db.prepare('SELECT id,itemId,episode,title,status,filePath,fileSize,videoId,scheduledAt,uploadAt,error FROM publication_items WHERE itemId=? LIMIT 1').get(row.id)||null;
+    let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
+    let lc={};try{lc=JSON.parse(String(metaGet('flow:generationLifecycle:'+row.id,'{}')))||{}}catch{}
+    console.log('[EPISODE RECOVERY DIAGNOSTIC]',JSON.stringify({
+      episode:ep,factoryId:row.id,status:row.status,hook:row.hook,title:row.title,
+      promptHash:row.promptHash,creativePackageId:row.creativePackageId,reviewContentHash:row.reviewContentHash,
+      hasVideoPath:Boolean(row.videoPath&&fs.existsSync(row.videoPath)),hasRemoteUrl:Boolean(row.remoteUrl),
+      flow:{generation_id:flow.generation_id||null,generation_started_at:flow.generation_started_at||null,retrieval_evidence:flow.retrieval_evidence||null,content_hash:flow.content_hash||null,size:flow.size||null},
+      lifecycle:{state:lc.state||null,generation_id:lc.generation_id||null,generation_started_at:lc.generation_started_at||null,submit_boundary_at:lc.submit_boundary_at||null,baseline_count:Array.isArray(lc.baseline)?lc.baseline.length:0,baseline_inventory:lc.baseline_inventory||null},
+      publication:pub?{id:pub.id,status:pub.status,videoId:pub.videoId,title:pub.title,filePath:Boolean(pub.filePath),fileSize:pub.fileSize,scheduledAt:pub.scheduledAt,uploadAt:pub.uploadAt,error:pub.error}:null
+    }));
+  }
+}
+setTimeout(()=>{try{diagnosticConfiguredEpisodes()}catch(e){console.error('[EPISODE RECOVERY DIAGNOSTIC ERROR]',String(e?.message||e))}},2500).unref?.();
 async function purgeConfiguredRejectedPrivateVideos(){
   const raw=String(process.env.PUBLISHER_PURGE_PRIVATE_TITLES||'').trim();
   if(!raw)return;
