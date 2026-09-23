@@ -2675,7 +2675,11 @@ async function recoverApprovedPublicationMedia(){
         candidates.push({i,sig,score:wanted&&n.includes(wanted)?1000:0});
       }
       candidates.sort((a,b)=>b.score-a.score||a.i-b.i);
-      return candidates;
+      // Approved-media recovery is intentionally conservative. Never scan or
+      // accept an unrelated Flow tile merely because its byte size happens to
+      // match. The configured signature must correlate the tile first.
+      return wanted?candidates.filter(x=>x.score>0):[];
+
     };
 
     for(const target of pending){
@@ -2696,12 +2700,26 @@ async function recoverApprovedPublicationMedia(){
         if(!(await visibleDownloadButton(page).catch(()=>null))){await page.keyboard.press('Escape').catch(()=>{});continue}
         const tmp=path.join(recoveryDir,'e'+target.episode+'-'+randomUUID()+'.mp4');
         try{
-          const dl=await downloadResult(page,{uiReady:true,signal:'approved-media-size-recovery'},tmp);
-          const valid=validateMp4(tmp);
+          let dl=await downloadResult(page,{uiReady:true,signal:'approved-media-size-recovery'},tmp);
+          let valid=validateMp4(tmp),matchedPath=tmp;
           publish('APPROVED_MEDIA_RECOVERY_CANDIDATE',{episode:'E'+target.episode,signature:compact(cand.sig,180),size:valid.size,expected_size:target.expectedSize,download_method:dl.method});
-          if(Number(valid.size)!==Number(target.expectedSize)){try{fs.rmSync(tmp,{force:true})}catch{};await page.keyboard.press('Escape').catch(()=>{});continue}
+          if(Number(valid.size)!==Number(target.expectedSize)){
+            // Historical approved items were often saved as Flow's 1080p
+            // Upscaled asset. If the native 720p bytes do not match, retry the
+            // SAME correlated tile at the preferred quality; never move to an
+            // unrelated tile.
+            const preferred=path.join(recoveryDir,'e'+target.episode+'-'+randomUUID()+'-preferred.mp4');
+            const p=await immediateDownloadChoice(page,preferred,{preferWanted:true});
+            if(p.ok){
+              const pv=validateMp4(preferred);
+              publish('APPROVED_MEDIA_RECOVERY_PREFERRED_CANDIDATE',{episode:'E'+target.episode,signature:compact(cand.sig,180),size:pv.size,expected_size:target.expectedSize,download_method:p.method});
+              if(Number(pv.size)===Number(target.expectedSize)){try{fs.rmSync(tmp,{force:true})}catch{};matchedPath=preferred;valid=pv;dl=p}
+              else try{fs.rmSync(preferred,{force:true})}catch{}
+            }else publish('APPROVED_MEDIA_RECOVERY_PREFERRED_WAIT',{episode:'E'+target.episode,signature:compact(cand.sig,160),reason:String(p.reason||'preferred-quality-unavailable')});
+          }
+          if(Number(valid.size)!==Number(target.expectedSize)){try{fs.rmSync(tmp,{force:true})}catch{};if(matchedPath!==tmp)try{fs.rmSync(matchedPath,{force:true})}catch{};await page.keyboard.press('Escape').catch(()=>{});continue}
           const dest=path.join(publicationDir,target.item.id+'.mp4');
-          fs.copyFileSync(tmp,dest);try{fs.rmSync(tmp,{force:true})}catch{}
+          fs.copyFileSync(matchedPath,dest);try{fs.rmSync(matchedPath,{force:true})}catch{}
           let history=[];try{history=JSON.parse(String(target.item.history||'[]'))||[]}catch{}
           history.push({status:'queued',at:now(),message:'Exact approved media recovered from its existing Google Flow asset after the private YouTube staging copy was lost. No new generation was created.'});
           db.prepare(`UPDATE publication_items SET status='queued',filePath=?,fileSize=?,videoId=NULL,resumableSession=NULL,attempts=0,retryAt=0,error=NULL,history=?,updatedAt=?,aiDisclosureSyncedAt=NULL,remotePrivacyStatus=NULL,remotePublishAt=NULL,remoteStatusCheckedAt=NULL WHERE id=?`)
