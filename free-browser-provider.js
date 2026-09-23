@@ -1289,7 +1289,32 @@ async function findGenerationConsentAction(page){
   ranked.sort((a,b)=>b.score-a.score||b.box.y-a.box.y);
   return ranked[0]||null;
 }
-async function clickSubmitExactlyOnce(page){
+async function clickSubmitExactlyOnce(page,baselineInventory=null,baselineVideos=[],baselineBusy=0){
+  const noChargeVisible=async()=>{
+    const body=await getBody(page).catch(()=>'');
+    return /unusual activity|actividad inusual/i.test(body)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(body);
+  };
+  const clickNativeRetry=async(stage)=>{
+    if(!(await noChargeVisible()))return false;
+    const retryCandidates=page.getByRole('button',{name:/^(Retry|Reintentar)$/i});
+    for(let i=(await retryCandidates.count().catch(()=>0))-1;i>=0;i--){
+      const retry=retryCandidates.nth(i);
+      if(!(await retry.isVisible().catch(()=>false))||!(await retry.isEnabled().catch(()=>false)))continue;
+      await trustedClick(retry);
+      publish('FLOW_FAILED_TILE_RETRY_CLICKED',{stage,message:'Flow explicitly reported no charge. Used the native Retry action for the failed tile instead of submitting a duplicate prompt.'});
+      await sleep(900);
+      return true;
+    }
+    return false;
+  };
+
+  // A prior no-charge tile is safe to retry: Flow explicitly says that attempt
+  // was not charged and did not create a retained generation. Prefer its native
+  // Retry action before crossing a new composer submit boundary.
+  if(await clickNativeRetry('pre-submit')){
+    return'flow-failed-tile-retry';
+  }
+
   const send=await generationSendButton(page,false);
   if(!(await send.isVisible().catch(()=>false))||!(await send.isEnabled().catch(()=>false)))throw new Error('START_GENERATION_BUTTON_NOT_READY');
   await trustedClick(send);
@@ -1316,8 +1341,24 @@ async function clickSubmitExactlyOnce(page){
         return'confirmation-dialog';
       }
     }
+    // Flow can reject immediately with a no-charge failed tile. In that case,
+    // retry that exact tile once instead of waiting and later submitting again.
+    if(await clickNativeRetry('post-submit-warning')){
+      const retryDeadline=Date.now()+12000;
+      while(Date.now()<retryDeadline){
+        await sleep(350);
+        const transition=await generationTransitionVisible(page,baselineInventory,baselineVideos,baselineBusy).catch(()=>({started:false}));
+        if(transition.started){
+          publish('FLOW_FAILED_TILE_RETRY_STARTED',{message:'Native Flow Retry produced hard generation-start evidence.'});
+          return'flow-failed-tile-retry-confirmed';
+        }
+        if(await noChargeVisible())break;
+      }
+      return'flow-failed-tile-retry';
+    }
     await sleep(200);
   }
+
   const visibleButtons=[];
   const bs=page.locator('button,[role="button"]');
   for(let i=0;i<Math.min(await bs.count().catch(()=>0),80);i++){
@@ -1325,7 +1366,12 @@ async function clickSubmitExactlyOnce(page){
     const label=compact(((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.innerText().catch(()=>''))||''),160);
     if(label)visibleButtons.push(label);
   }
-  publish('POST_ARROW_NO_CONSENT',{message:'No point-cost confirmation was detected after the generation arrow.',body:compact(await getBody(page),1600),buttons:visibleButtons.slice(-30)});
+  const postBody=await getBody(page).catch(()=>'');
+  publish('POST_ARROW_NO_CONSENT',{message:'No point-cost confirmation was detected after the generation arrow.',body:compact(postBody,1600),buttons:visibleButtons.slice(-30)});
+
+  if(await clickNativeRetry('post-consent-timeout')){
+    return'flow-failed-tile-retry';
+  }
   return'start-generation-direct';
 }
 
@@ -1547,6 +1593,10 @@ async function waitGenerationStarted(page,baseline,baselineInventory,baselineBus
   let lastEvidence='';
   while(Date.now()<deadline){
     await renderAuthGuard(page);
+    const bodyText=await getBody(page).catch(()=>'');
+    if(/unusual activity|actividad inusual/i.test(bodyText)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(bodyText)){
+      return{started:false,evidence:'FLOW_TRANSIENT_NO_CHARGE: Flow explicitly reported that the attempt was not charged.'};
+    }
     const vids=await currentVideos(page);
     const freshVideo=vids.some(v=>v.src&&!baseSrc.has(v.src)&&Number(v.duration||0)>0);
     const inv=await captureFlowInventory(page);
