@@ -2102,7 +2102,7 @@ async function configurePublisherFactorySupabasePasskeysIfRequested(db){
         const l=labels.nth(i),txt=compact(await l.innerText().catch(()=>''),240);
         if(!pattern.test(txt))continue;
         const id=await l.getAttribute('for').catch(()=>null);
-        if(id){const el=page.locator('#'+CSS.escape(id)).first();if(await el.count().catch(()=>0))return el}
+        if(id){const safeId=String(id).replace(/\\/g,'\\\\').replace(/"/g,'\\"');const el=page.locator('[id="'+safeId+'"]').first();if(await el.count().catch(()=>0))return el}
         const el=l.locator('input,textarea').first();if(await el.count().catch(()=>0))return el;
       }
       return null;
