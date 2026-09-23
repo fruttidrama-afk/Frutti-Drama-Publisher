@@ -69,3 +69,4 @@ fix=lifecycle-state-authority,repair-reauthorized-redo-state
 fix=youtube-authoritative-publication-state,quota-safe-state-sync,persist-ai-disclosure
 audit=publication-remote-state-reconciliation
 fix=quota-free-public-youtube-watch-page-reconciliation
+fix=quota-free-oembed-watch-public-reconciliation
