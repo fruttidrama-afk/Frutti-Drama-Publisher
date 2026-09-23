@@ -97,3 +97,4 @@ fix=earth-same-episode-cooldown-out-of-order-quarantine-1790147593720
 fix=earth-reset-stale-attempts-after-operator-confirmed-single-render-1790147772277
 fix=earth-stale-attempt-reset-syntax-1790147874298
 fix=earth-strict-normal-head-of-line-1790148095007
+fix=earth-serial-head-wait-status-1790148314517
