@@ -16,7 +16,7 @@ import {
 import { CONFIG,PROJECT_ID,PROJECT_NAME,PROJECT_URL,DAILY_LIMIT,TIMEZONE,ideaForEpisode,ensureBacklog } from './runtime-config.js';
 import { installPublication } from './publication.js';
 import { buildPublicationCopy } from './publication-copy.js';
-import { uploadReviewFile, signedReviewUrl, deleteReviewObject, isReviewStorageUri, reviewStorageConfigured, reviewStorageRequired } from './review-storage.js';
+import { signedReviewUrl, deleteReviewObject, isReviewStorageUri } from './review-storage.js';
 
 google.options({timeout:90000,retry:false});
 const app=express(),PORT=Number(process.env.PORT||8080);
@@ -171,6 +171,17 @@ function authedClient(){const c=oauthClient();if(!loadToken())throw new Error('Y
 function youtubeApi(){return google.youtube({version:'v3',auth:authedClient()})}
 
 const publication=installPublication({app,db,config:CONFIG,youtubeApi,authedClient,loadToken,dataDir:DIR});
+async function purgeConfiguredRejectedPrivateVideos(){
+  const raw=String(process.env.PUBLISHER_PURGE_PRIVATE_TITLES||'').trim();
+  if(!raw)return;
+  const key='operator:purge-private-titles:'+createHash('sha256').update(raw).digest('hex').slice(0,20);
+  if(metaGet(key,'')==='done')return;
+  const titles=raw.split('|').map(x=>x.trim()).filter(Boolean);
+  const result=await publication.purgePrivateVideosByTitle(titles);
+  metaSet(key,'done');
+  console.log('[REJECTED PRIVATE VIDEO PURGE]',JSON.stringify(result));
+}
+setTimeout(()=>void purgeConfiguredRejectedPrivateVideos().catch(e=>console.error('[REJECTED PRIVATE VIDEO PURGE ERROR]',String(e?.message||e))),4500).unref?.();
 
 app.get('/integrations/youtube',secure,(req,res)=>{const y=ytSecrets(),redirect=origin(req)+'/oauth2callback',configured=Boolean(y.client_id&&y.client_secret),connected=Boolean(loadToken()),show=String(CONFIG.identity.show_name||CONFIG.identity.publisher_name||'Publisher'),brand=brandPublic(),theme=brand.theme||{},esc=x=>String(x||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');const chooser=u=>'https://accounts.google.com/AccountChooser?hl=es&continue='+encodeURIComponent(u);const links={api:chooser('https://console.cloud.google.com/apis/library/youtube.googleapis.com'),branding:chooser('https://console.cloud.google.com/auth/branding'),audience:chooser('https://console.cloud.google.com/auth/audience'),data:chooser('https://console.cloud.google.com/auth/scopes'),clients:chooser('https://console.cloud.google.com/auth/clients'),credentials:chooser('https://console.cloud.google.com/apis/credentials')};res.send(`<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f7f6f2"><title>Conectar YouTube</title>
@@ -391,6 +402,9 @@ app.post('/factory/:id/reject',async(req,res)=>{
  const feedback=String(req.body?.feedback||'').replace(/[\u0000-\u001f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,1200);
  if(feedback.length<3)return res.status(400).json({error:'Explain briefly what went wrong before REDO.'});
  const strategy=classifyReviewFeedback(feedback),token=randomBytes(24).toString('hex'),rev=Number(r.revision||0)+1,stamp=now();
+ // Rejection is destructive for the rejected media: remove any accidental
+ // publication record / private remote upload before regenerating.
+ await publication.purgeRejected(r);
  if(isReviewStorageUri(r.remoteUrl)){try{await deleteReviewObject(r.remoteUrl)}catch{}}
  if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{}
  if(strategy==='revise_prompt'){
@@ -459,7 +473,7 @@ function health(){
  const bibleMismatchEpisodes=activeBible?activePromptRows.filter(x=>String(x.prompt||'').trim()&&!String(x.prompt||'').includes(activeBible)).map(x=>Number(x.episode)):[];
  const promptIntegrity={ok:emptyActivePrompts.length===0&&bibleMismatchEpisodes.length===0,empty_active_prompts:emptyActivePrompts.length,empty_prompt_episodes:emptyActivePrompts.slice(0,20),show_bible_mismatches:bibleMismatchEpisodes.length,show_bible_mismatch_episodes:bibleMismatchEpisodes.slice(0,20)};
  const knowledge={flow_sop_version:metaGet('knowledge:flowSopVersion',''),flow_sop_sha256:metaGet('knowledge:flowSopSha256',''),declared_sha256:metaGet('knowledge:flowSopDeclaredSha256',''),loaded:metaGet('knowledge:flowSopLoaded','false')==='true',document_count:Number(metaGet('knowledge:flowSopDocumentCount','0')||0),inherit_to_publisher:metaGet('knowledge:inheritToPublisher','false')==='true'};
- return{ok:true,at:now(),runtime_version:'publisher-runtime-v1',publisher_enabled:metaGet('automation:factoryEnabled','false')==='true',show:CONFIG.identity.show_name,scheduler_alive:true,scheduler:publication.status(),scheduler_no_end_date:true,worker_alive:workerAlive,automation_provider:'FreeBrowserProvider',generation_provider:'GoogleFlowProvider',publication_provider:'YouTubeProvider',tinyfish_required:false,tinyfish_fallback:false,knowledge,flow:(()=>{const lf=liveFlowConfig();return{configured:Boolean(lf.project_id),authenticated:Boolean(flowAuth()?.ok),project_id:lf.project_id||null,project_name:lf.project_name||null,project_url:lf.project_url||null}})(),current_job:current||null,queue:counts,completed_today:completed,daily_target:dailyTarget,remaining_today:Math.max(0,dailyTarget-completed),daily_override_active:dailyTarget!==DAILY_LIMIT,provider_health:p?.state||null,last_generation:db.prepare("SELECT createdAt FROM factory_generations ORDER BY createdAt DESC LIMIT 1").get()?.createdAt||null,last_review_ready:db.prepare("SELECT updatedAt FROM factory_items WHERE status='review' ORDER BY updatedAt DESC LIMIT 1").get()?.updatedAt||null,last_publication:db.prepare("SELECT updatedAt,status,videoId FROM publication_items ORDER BY updatedAt DESC LIMIT 1").get()||null,serial_gate:{enabled:true,creative_serialized:Boolean(CONFIG.content.serialized),gate:'review_ready',strict:true},automation_safety:{exactly_once_submit:metaGet('automation:exactlyOnceSubmit','false')==='true',strict_serial_generation:metaGet('automation:strictSerialGeneration','false')==='true',project_grid_recovery:metaGet('automation:projectGridRecovery','false')==='true',review_metadata_required:metaGet('automation:reviewMetadataRequired','false')==='true',golden_test_required:metaGet('automation:goldenTestRequired','false')==='true',stable_composer_handoff:true,frutti_browser_launch_parity:true,native_no_charge_retry:false,immediate_native_retry_disabled:true,adaptive_no_charge_backoff:true,unusual_activity_exponential_backoff:true,show_specific_repairs_isolated:true,prompt_show_bible_gate:true,atomic_creative_package:true},prompt_integrity:promptIntegrity,storage:storage(),security:{configured:configured(),passkeys:authState().passkeys.length,active_sessions:authState().sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).length}};
+ return{ok:true,at:now(),runtime_version:'publisher-runtime-v1',publisher_enabled:metaGet('automation:factoryEnabled','false')==='true',show:CONFIG.identity.show_name,scheduler_alive:true,scheduler:publication.status(),scheduler_no_end_date:true,worker_alive:workerAlive,automation_provider:'FreeBrowserProvider',generation_provider:'GoogleFlowProvider',publication_provider:'YouTubeProvider',tinyfish_required:false,tinyfish_fallback:false,knowledge,flow:(()=>{const lf=liveFlowConfig();return{configured:Boolean(lf.project_id),authenticated:Boolean(flowAuth()?.ok),project_id:lf.project_id||null,project_name:lf.project_name||null,project_url:lf.project_url||null}})(),current_job:current||null,queue:counts,completed_today:completed,daily_target:dailyTarget,remaining_today:Math.max(0,dailyTarget-completed),daily_override_active:dailyTarget!==DAILY_LIMIT,provider_health:p?.state||null,last_generation:db.prepare("SELECT createdAt FROM factory_generations ORDER BY createdAt DESC LIMIT 1").get()?.createdAt||null,last_review_ready:db.prepare("SELECT updatedAt FROM factory_items WHERE status='review' ORDER BY updatedAt DESC LIMIT 1").get()?.updatedAt||null,last_publication:db.prepare("SELECT updatedAt,status,videoId FROM publication_items ORDER BY updatedAt DESC LIMIT 1").get()||null,serial_gate:{enabled:true,creative_serialized:Boolean(CONFIG.content.serialized),gate:'review_ready',strict:true},automation_safety:{exactly_once_submit:metaGet('automation:exactlyOnceSubmit','false')==='true',strict_serial_generation:metaGet('automation:strictSerialGeneration','false')==='true',project_grid_recovery:metaGet('automation:projectGridRecovery','false')==='true',review_metadata_required:metaGet('automation:reviewMetadataRequired','false')==='true',golden_test_required:metaGet('automation:goldenTestRequired','false')==='true',stable_composer_handoff:true,frutti_browser_launch_parity:true,native_no_charge_retry:false,immediate_native_retry_disabled:true,adaptive_no_charge_backoff:true,unusual_activity_exponential_backoff:true,show_specific_repairs_isolated:true,prompt_show_bible_gate:true,atomic_creative_package:true,approval_before_external_storage:true,reject_purges_external_artifacts:true},prompt_integrity:promptIntegrity,storage:storage(),security:{configured:configured(),passkeys:authState().passkeys.length,active_sessions:authState().sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).length}};
 }
 app.get('/factory/health',(req,res)=>res.json(health()));
 app.get('/factory/knowledge',(req,res)=>{
@@ -467,29 +481,13 @@ app.get('/factory/knowledge',(req,res)=>{
   res.json({ok:true,knowledge:health().knowledge,documents:rows});
 });
 
-async function archiveReviewOriginal(row){
- if(isReviewStorageUri(row.remoteUrl))return true;
- if(!row.videoPath||!fs.existsSync(row.videoPath))return false;
- if(!reviewStorageConfigured()){
-   if(reviewStorageRequired())throw new Error('REVIEW_STORAGE_REQUIRED_NOT_CONFIGURED');
-   return false;
- }
- const original=fs.statSync(row.videoPath).size;
- const cloud=await uploadReviewFile(row.videoPath,{itemId:row.id,revision:row.revision});
- db.prepare("UPDATE factory_items SET remoteUrl=?,reviewVideoId=NULL,reviewArchivedAt=?,reviewOriginalSize=?,reviewPreviewSize=NULL,reviewArchiveError=NULL,videoPath=NULL,updatedAt=? WHERE id=?")
-   .run(cloud.uri,now(),cloud.size||original,now(),row.id);
- try{fs.rmSync(row.videoPath,{force:true})}catch{}
- return true;
-}
-let archiveBusy=false;
+// HARD APPROVAL GATE: review media stays on the Publisher volume until the
+// operator approves it. No pre-approval Supabase/YouTube staging is allowed.
+async function archiveReviewOriginal(_row){return false}
 async function storageTick(){
- if(archiveBusy)return;archiveBusy=true;
- try{
-   const rows=db.prepare("SELECT * FROM factory_items WHERE status='review' AND videoPath IS NOT NULL ORDER BY updatedAt DESC").all();
-   for(const r of rows){try{await archiveReviewOriginal(r)}catch(e){db.prepare('UPDATE factory_items SET reviewArchiveError=?,updatedAt=? WHERE id=?').run(String(e.message).slice(0,600),now(),r.id)}}
- }finally{archiveBusy=false}
+  // Deliberately no remote archival for status='review'.
+  return;
 }
-setInterval(()=>void storageTick(),5*60*1000).unref?.();setTimeout(()=>void storageTick(),30000).unref?.();
 
 app.get('/api/status',(req,res)=>{const h=health(),youtubeConnected=Boolean(loadToken()),flowConnected=Boolean(h.flow.configured&&h.flow.authenticated),bibleConfigured=Boolean(String(CONFIG.content.creative_bible||'').trim()),ready=youtubeConnected&&flowConnected&&bibleConfigured;if(ready)activateReadyAutomation();res.json({health:health(),brand:brandPublic(),youtube:{oauthConfigured:Boolean(ytSecrets().client_id&&ytSecrets().client_secret),connected:youtubeConnected},flowBootstrap:'/flow/bootstrap',onboarding:{youtube:youtubeConnected,flow:flowConnected,bible:bibleConfigured,ready}})});
 app.get('/api/show-bible',(req,res)=>res.json({creative_bible:String(CONFIG.content.creative_bible||'')}));
