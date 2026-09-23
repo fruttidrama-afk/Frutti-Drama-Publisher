@@ -1193,6 +1193,20 @@ async function approveFlowPointConsent(page,permission,baselineInventory,baselin
 async function clickSubmitExactlyOnce(page,baselineInventory,baselineVideos,baselineBusy=0){
   const permissionBefore=await permissionSnapshot(page);
 
+  const preBody=await getBody(page).catch(()=>'');
+  const noChargeFailure=/unusual activity|actividad inusual/i.test(preBody)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(preBody);
+  if(noChargeFailure){
+    const retryCandidates=page.getByRole('button',{name:/^(Retry|Reintentar)$/i});
+    for(let i=(await retryCandidates.count().catch(()=>0))-1;i>=0;i--){
+      const retry=retryCandidates.nth(i);
+      if(!(await retry.isVisible().catch(()=>false))||!(await retry.isEnabled().catch(()=>false)))continue;
+      await trustedClick(retry);
+      publish('FLOW_FAILED_TILE_RETRY_CLICKED',{message:'Flow reported unusual activity with no charge. Used Flow’s own Retry action for the failed tile instead of submitting the prompt again.'});
+      await sleep(900);
+      return'flow-failed-tile-retry';
+    }
+  }
+
   const promptTop=page.locator('flow-project-page flow-prompt-box div.prompt-top-row').last();
   if(await promptTop.count().catch(()=>0)&&await promptTop.isVisible().catch(()=>false)){
     await promptTop.click({position:{x:Math.max(5,Math.min(40,(await promptTop.boundingBox().catch(()=>({width:80}))).width-5)),y:8}}).catch(()=>{});
@@ -2426,6 +2440,19 @@ function seedTransientCooldownFromRecentNoCharge(db){
 }
 
 
+function armImmediateNoChargeRetryAfterUpgrade(db){
+  const key='repair:flow-no-charge-retry-button-v1';
+  if(meta(db,key,'')==='done')return false;
+  const row=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND error LIKE 'FLOW_TRANSIENT_NO_CHARGE%' ORDER BY episode LIMIT 1").get();
+  if(row){
+    db.prepare("UPDATE factory_items SET nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
+    setMeta(db,'flow:transientCooldownUntil','0');
+    publish('NO_CHARGE_RETRY_REARMED',{episode:'E'+row.episode,job_id:row.id,message:'Cleared the old cooldown once so Flow’s own failed-tile Retry action can run immediately after this runtime upgrade.'});
+  }
+  setMeta(db,key,'done');
+  return Boolean(row);
+}
+
 function productionCandidate(db){
   // Recovery always wins, but out-of-order ambiguous rows are quarantined by
   // normalizeOutOfOrderAmbiguous() before this function runs.
@@ -2575,7 +2602,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);normalizeLiveNoChargeCooldown(db);seedTransientCooldownFromRecentNoCharge(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);normalizeLiveNoChargeCooldown(db);seedTransientCooldownFromRecentNoCharge(db);armImmediateNoChargeRetryAfterUpgrade(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
