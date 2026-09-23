@@ -17,3 +17,4 @@
 - Isolated all Earth in Ten forensic repair routines behind the exact EARTH IN 10 project identity so generated Publishers cannot inherit Earth-specific state mutations.
 - Removed immediate native failed-tile Retry from the reusable Flow submit path and restored the exact FruttiDrama single-submit boundary: one Send, observe, then back off on explicit no-charge.
 - Removed all one-off Earth E10/E11 forensic repair functions from the canonical Publisher Factory runtime after their persistent-state repairs were completed.
+- Aligned the canonical browser launch cadence with the proven FruttiDrama runtime: fresh X display/CDP port per session, 3-second Chrome settle before CDP attach, and no custom cache fingerprint flags.
