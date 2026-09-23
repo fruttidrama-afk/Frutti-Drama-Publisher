@@ -2576,7 +2576,16 @@ async function runProvider(){
     }
     const priorityRetry=isReviewerRetry(row);
     if(used>=dailyProductionLimit()&&!priorityRetry){if(row&&String(lifecycle(db,row)?.state||'').toUpperCase()!=='PREFLIGHT_PASSED'){publish('NEXT_DAY_PREFLIGHT',{episode:'E'+row.episode,job_id:row.id,message:'Daily target complete; validating next job without Send.'});await processRow(db,row);return}setMeta(db,'flow:state','ESPERANDO CRÉDITOS');setMeta(db,'flow:currentStep','daily-limit');setMeta(db,'flow:message','Daily production complete: '+used+'/'+dailyProductionLimit()+'.');publish('DAILY_LIMIT',{used,limit:dailyProductionLimit(),day:artDay(),next_episode:row?('E'+row.episode):null});return}
-    if(!row){ensureBacklog(db);row=productionCandidate(db);if(!row){const blocker=db.prepare("SELECT episode,status,nextTry,error FROM factory_items WHERE status NOT IN ('review','queued','historical','published') ORDER BY episode LIMIT 1").get();setMeta(db,'flow:state','CONECTADO');setMeta(db,'flow:currentStep','idle');publish('IDLE',{message:blocker?('Head-of-line E'+blocker.episode+' status='+blocker.status+' nextTry='+blocker.nextTry+' error='+compact(blocker.error||'',180)):'No production candidate yet.'});return}}
+    if(!row){ensureBacklog(db);row=productionCandidate(db);if(!row){
+      const waiting=db.prepare("SELECT episode,status,nextTry,error FROM factory_items WHERE status IN ('draft','regen_wait') AND (reviewFeedback IS NULL OR TRIM(reviewFeedback)='') ORDER BY episode LIMIT 1").get();
+      setMeta(db,'flow:state','CONECTADO');setMeta(db,'flow:currentStep',waiting&&Number(waiting.nextTry||0)>Date.now()?'serial-backoff':'idle');
+      const message=waiting
+        ? ('Serial head-of-line E'+waiting.episode+' '+(Number(waiting.nextTry||0)>Date.now()?('waiting until '+new Date(Number(waiting.nextTry)).toISOString()):('status='+waiting.status))+(waiting.error?' error='+compact(waiting.error,180):''))
+        : 'No production candidate yet.';
+      setMeta(db,'flow:message',message);
+      publish(waiting&&Number(waiting.nextTry||0)>Date.now()?'SERIAL_HEAD_WAIT':'IDLE',{episode:waiting?('E'+waiting.episode):null,next_try:waiting?.nextTry||0,message});
+      return
+    }}
     publish(priorityRetry?'REVIEW_RETRY_PICKED':'PRODUCTION_PICKED',{episode:'E'+row.episode,job_id:row.id,used_today:used,remaining_today:Math.max(0,dailyProductionLimit()-used),daily_limit_bypassed:priorityRetry});await processRow(db,row);
   }catch(err){
     const message=compact(err?.stack||err?.message||err,900);
