@@ -48,6 +48,7 @@ Publisher Factory does not mark a Railway deployment ready unless `/factory/heal
 - FruttiDrama-compatible browser launch cadence enabled;
 - immediate native no-charge Retry disabled (FruttiDrama-compatible single-submit boundary);
 - adaptive provider-wide no-charge backoff enabled;
+- persistent unusual-activity quarantine enabled after repeated no-charge rejections;
 - show-specific forensic repair code absent from generic Publishers;
 - strict serial gate enabled.
 
