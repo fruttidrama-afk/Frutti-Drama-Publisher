@@ -2228,6 +2228,25 @@ function repairEarthE10NoGeneration(db){
   return noResult;
 }
 
+function repairEarthE11KnownNoCharge(db){
+  const key='repair:earth-e11-known-no-charge-v1';
+  if(meta(db,key,'')==='done')return false;
+  const row=db.prepare("SELECT * FROM factory_items WHERE episode=11 LIMIT 1").get();
+  if(!row){setMeta(db,key,'done');return false;}
+  const lc=lifecycle(db,row)||{};
+  if(String(row.status||'')==='generating'&&String(lc.state||'').toUpperCase()==='SUBMIT_AMBIGUOUS'){
+    const run=String(lc.generation_id||row.providerRunId||'');
+    if(run)try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Known Google Flow no-charge unusual-activity rejection.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),row.id,run)}catch{}
+    db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
+    setLifecycle(db,row,'KNOWN_NO_CHARGE_REPAIRED',{prior_generation_id:run,repaired_at:now(),automatic_submit_forbidden:false,evidence:'Live Flow UI explicitly reported unusual activity and that this generation was not charged.'});
+    publish('KNOWN_NO_CHARGE_REPAIRED',{episode:'E11',job_id:row.id,message:'Verified no-charge E11 attempt cleared. Automatic production can retry immediately under the repaired detector.'});
+    setMeta(db,key,'done');
+    return true;
+  }
+  setMeta(db,key,'done');
+  return false;
+}
+
 function productionCandidate(db){
   const inflight=db.prepare("SELECT * FROM factory_items WHERE status='generating' ORDER BY episode LIMIT 1").get();
   if(inflight){
@@ -2367,7 +2386,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
