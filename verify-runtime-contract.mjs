@@ -32,6 +32,10 @@ for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY
   must(provider.includes(token),'provider contract missing '+token);
 }
 must(!provider.includes("await waitFlowReady(page,30000);\n  const editor=await promptEditor(page);"),'provider must not re-query the Flow composer immediately after readiness');
+for(const token of ["const salt=parseInt(randomUUID().replace(/-/g,'').slice(0,8),16)","const port=9400+(salt%1000)","await sleep(3000)","connectOverCDP('http://127.0.0.1:'+port,{timeout:15000})"]){
+  must(provider.includes(token),'Frutti-compatible browser launch contract missing '+token);
+}
+must(!provider.includes('--disk-cache-dir=/tmp/publisher-chrome-cache'),'canonical browser launch must not add custom disk-cache fingerprint flags');
 for(const token of ['function scheduleNoChargeRetry(db,row,opts={})','flow:transientCooldownUntil','no_charge_streak:streak',"if(providerCooldown>Date.now())return null"]){
   must(provider.includes(token),'provider no-charge runtime contract missing '+token);
 }
