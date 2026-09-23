@@ -91,3 +91,4 @@ fix=flow-transient-no-charge-retry-1790142206357
 fix=flow-percent-progress-recovery-1790142406327
 fix=earth-e11-known-no-charge-repair-1790142701449
 fix=earth-serial-review-handoff-browser-resource-cleanup-1790146580102
+fix=earth-hidden-flow-title-control-1790146822730
