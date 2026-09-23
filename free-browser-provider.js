@@ -1252,7 +1252,28 @@ async function clickSubmitExactlyOnce(page,baselineInventory,baselineVideos,base
   }
   const postBody=await getBody(page);
   publish('POST_ARROW_NO_CONSENT',{message:'No generation transition or point-cost confirmation followed the generate click.',body:compact(postBody,1800),buttons:buttons.slice(-35)});
-  if(/unusual activity|actividad inusual/i.test(postBody)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(postBody))throw new Error('FLOW_TRANSIENT_NO_CHARGE');
+  if(/unusual activity|actividad inusual/i.test(postBody)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(postBody)){
+    const retryCandidates=page.getByRole('button',{name:/^(Retry|Reintentar)$/i});
+    for(let i=(await retryCandidates.count().catch(()=>0))-1;i>=0;i--){
+      const retry=retryCandidates.nth(i);
+      if(!(await retry.isVisible().catch(()=>false))||!(await retry.isEnabled().catch(()=>false)))continue;
+      await trustedClick(retry);
+      publish('FLOW_FAILED_TILE_RETRY_CLICKED',{message:'Flow explicitly reported no charge, so its own Retry action was clicked once instead of submitting a duplicate prompt.'});
+      const retryDeadline=Date.now()+12000;
+      while(Date.now()<retryDeadline){
+        await sleep(350);
+        const transition=await generationTransitionVisible(page,baselineInventory,baselineVideos,baselineBusy).catch(()=>({started:false}));
+        if(transition.started){
+          publish('FLOW_FAILED_TILE_RETRY_STARTED',{message:'Flow Retry produced hard generation-start evidence.'});
+          return'flow-failed-tile-retry-confirmed';
+        }
+        const retryBody=await getBody(page).catch(()=>'');
+        if(/insufficient credits|not enough credits|cr[eé]ditos insuficientes/i.test(retryBody))throw new Error('FLOW_INSUFFICIENT_CREDITS');
+      }
+      break;
+    }
+    throw new Error('FLOW_TRANSIENT_NO_CHARGE');
+  }
   return'composer-arrow-direct';
 }
 
@@ -2453,6 +2474,19 @@ function armImmediateNoChargeRetryAfterUpgrade(db){
   return Boolean(row);
 }
 
+function armImmediateNoChargeRetryV2(db){
+  const key='repair:flow-no-charge-post-failure-retry-v2';
+  if(meta(db,key,'')==='done')return false;
+  const row=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND error LIKE 'FLOW_TRANSIENT_NO_CHARGE%' ORDER BY episode LIMIT 1").get();
+  if(row){
+    db.prepare("UPDATE factory_items SET nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
+    setMeta(db,'flow:transientCooldownUntil','0');
+    publish('NO_CHARGE_RETRY_V2_REARMED',{episode:'E'+row.episode,job_id:row.id,message:'Testing Flow’s own Retry action immediately after the no-charge warning, without another duplicate prompt submit.'});
+  }
+  setMeta(db,key,'done');
+  return Boolean(row);
+}
+
 function productionCandidate(db){
   // Recovery always wins, but out-of-order ambiguous rows are quarantined by
   // normalizeOutOfOrderAmbiguous() before this function runs.
@@ -2602,7 +2636,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);normalizeLiveNoChargeCooldown(db);seedTransientCooldownFromRecentNoCharge(db);armImmediateNoChargeRetryAfterUpgrade(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);repairEarthE10NoGeneration(db);repairEarthE11KnownNoCharge(db);repairEarthTodayAfterOperatorConfirmedOnlyFirstRender(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);normalizeLiveNoChargeCooldown(db);seedTransientCooldownFromRecentNoCharge(db);armImmediateNoChargeRetryAfterUpgrade(db);armImmediateNoChargeRetryV2(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
