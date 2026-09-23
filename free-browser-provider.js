@@ -1048,8 +1048,11 @@ async function visibleGenerationBusyCount(page){
   const busy=page.locator('text=/Generating|Processing|Rendering|Creating video|Generando|Procesando|Starting generation|Initiating|Creando video|Preparando video/i');
   let n=0;
   for(let i=0;i<Math.min(await busy.count().catch(()=>0),80);i++)if(await busy.nth(i).isVisible().catch(()=>false))n++;
+  const progress=page.locator('text=/^(?:[1-9]|[1-9][0-9])%$/');
+  for(let i=0;i<Math.min(await progress.count().catch(()=>0),40);i++)if(await progress.nth(i).isVisible().catch(()=>false))n++;
   return n;
 }
+
 async function generationTransitionVisible(page,baselineInventory,baselineVideos,baselineBusy=0){
   const inv=await captureFlowInventory(page);
   const vids=await currentVideos(page);
@@ -1308,6 +1311,15 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
   const age=Number.isFinite(boundary)?Date.now()-boundary:0;
   const currentInv=await captureFlowInventory(page);
   const body=(await getBody(page)).slice(0,14000);
+  if(/unusual activity|actividad inusual/i.test(body)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(body)){
+    const run=String(lc?.generation_id||row.providerRunId||'');
+    if(run)try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Google Flow transient unusual-activity rejection; explicitly not charged.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),row.id,run)}catch{}
+    const retryAt=Date.now()+5*60*1000;
+    db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error='FLOW_TRANSIENT_NO_CHARGE — automatic retry scheduled.',nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run(retryAt,now(),now(),row.id);
+    setLifecycle(db,row,'TRANSIENT_NO_CHARGE_RETRY',{prior_generation_id:run,reconciled_at:now(),retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:false});
+    publish('TRANSIENT_NO_CHARGE_RETRY',{episode:'E'+row.episode,job_id:row.id,retry_at:new Date(retryAt).toISOString(),message:'Recovered an ambiguous no-charge rejection. It will retry automatically and is not counted as a generation.'});
+    return{mode:'wait'};
+  }
   const busy=currentInv.busy||/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation/i.test(body);
   const fresh=inventoryHasNew(currentInv,baselineInv);
   if(fresh||busy){
