@@ -508,7 +508,10 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
           if(item.status==='published')continue;
           if(item.retryAt>Date.now())continue;
           const releaseAt=Date.parse(item.scheduledAt),uploadAt=Date.parse(item.uploadAt),clock=Date.now();
-          if(clock<uploadAt)continue;
+          // uploadAt only gates videos that have not been uploaded yet.
+          // Existing YouTube videos must be eligible for migration immediately,
+          // even if a legacy local uploadAt field drifted to a wrong date.
+          if(!item.videoId&&clock<uploadAt)continue;
           if(!loadToken())throw new Error('YOUTUBE_AUTH_REQUIRED');
           if(item.resumableSession&&!item.videoId){const resolved=await reconcileAmbiguous(item);if(resolved&&item.status==='attention')continue}
 
