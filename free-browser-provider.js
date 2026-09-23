@@ -2086,7 +2086,7 @@ async function configurePublisherFactorySupabasePasskeysIfRequested(db){
     const url=String(page.url()||'');
     const body=compact(await page.locator('body').innerText().catch(()=>''),6000);
     const authScreen=/sign in|log in|continue with github|continue with google|welcome back/i.test(body)&&!/relying party|enable passkey authentication|passkeys/i.test(body);
-    if(//sign-in|/login/i.test(url)||authScreen){
+    if(/\/sign-in|\/login/i.test(url)||authScreen){
       const state={done:false,status:'auth_required',attempted_at:now(),url};
       writeSupabasePasskeyState(state);
       setMeta(db,'maintenance:supabasePasskeys','auth_required');
