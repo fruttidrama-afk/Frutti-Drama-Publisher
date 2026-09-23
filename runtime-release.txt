@@ -107,3 +107,4 @@ fix=earth-full-frutti-flow-protocol-1790180053334
 fix=remove-earth-extra-composer-requery-1790180520515
 fix=stable-composer-handoff-publisher-factory-regression-gate
 fix=earth-e11-rearm-after-stable-composer-handoff
+fix=native-flow-nocharge-retry-publisher-factory-gate
