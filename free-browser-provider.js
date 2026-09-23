@@ -2617,6 +2617,123 @@ async function runProvider(){
 }else{db.prepare("UPDATE factory_items SET status='draft',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id);setLifecycle(db,fresh,'FAILED_BEFORE_GENERATE',{last_error:message,attempt_count:attempts,retry_at:new Date(nextTry).toISOString()})}}if(db&&!/FLOW_TRANSIENT_NO_CHARGE|FLOW_INSUFFICIENT_CREDITS/.test(message)){setMeta(db,'flow:state',/FLOW_AUTH/.test(message)?'REQUIERE REAUTENTICACIÓN':'ERROR');setMeta(db,'flow:message',message)}}catch{}publish(/FLOW_TRANSIENT_NO_CHARGE/.test(message)?'FLOW_COOLDOWN':'ERROR',{message,episode:row?('E'+row.episode):null});
   }finally{try{db?.close()}catch{}releaseLock()}
 }
+
+async function recoverApprovedPublicationMedia(){
+  const raw=String(process.env.PUBLISHER_RECOVER_APPROVED_FLOW_JSON||'').trim();
+  if(!raw)return;
+  let spec={};try{spec=JSON.parse(raw)||{}}catch(e){publish('APPROVED_MEDIA_RECOVERY_CONFIG_ERROR',{message:compact(e?.message||e,400)});return}
+  const targets=Object.entries(spec).map(([episode,v])=>({
+    episode:Number(episode),
+    signature:String(v?.signature||'').trim(),
+    expectedSize:Number(v?.expectedSize||0)
+  })).filter(x=>Number.isInteger(x.episode)&&x.episode>0);
+  if(!targets.length)return;
+  const recoveryKey='operator:approved-flow-recovery:'+sha(raw).slice(0,20);
+  let db=null,session=null;
+  if(!acquireLock()){publish('APPROVED_MEDIA_RECOVERY_WAIT',{message:'Flow browser is busy; approved-media recovery will retry later.'});return}
+  try{
+    db=dbOpen();
+    if(meta(db,recoveryKey,'')==='done')return;
+    const pending=[];
+    for(const t of targets){
+      const item=db.prepare("SELECT * FROM publication_items WHERE episode=? AND status NOT IN ('published','cancelled','deleted') ORDER BY createdAt DESC LIMIT 1").get(t.episode);
+      const row=item?db.prepare("SELECT * FROM factory_items WHERE id=?").get(item.itemId):null;
+      if(!item||!row)continue;
+      if(item.filePath&&((String(item.filePath).startsWith('supabase://'))||fs.existsSync(String(item.filePath))))continue;
+      const expectedSize=Number(item.fileSize||t.expectedSize||0);
+      if(!expectedSize)continue;
+      pending.push({...t,item,row,expectedSize});
+    }
+    if(!pending.length){setMeta(db,recoveryKey,'done');return}
+
+    session=await launchLocal();
+    const page=session.page||session.context.pages()[0]||await session.context.newPage();
+    await ensureExpectedFlowProject(page);
+    if(!String(page.url()).includes(projectPath()))await page.goto(flowUrl(),{waitUntil:'domcontentloaded',timeout:60000});
+    await waitFlowReady(page,60000);
+    await renderAuthGuard(page);
+
+    const publicationDir=path.join(FACTORY_DIR,'publication');
+    const recoveryDir=path.join(FACTORY_DIR,'approved-flow-recovery');
+    fs.mkdirSync(publicationDir,{recursive:true,mode:0o700});
+    fs.mkdirSync(recoveryDir,{recursive:true,mode:0o700});
+    const usedSignatures=new Set();
+
+    const scanCandidates=async(target)=>{
+      const tiles=page.locator('flow-grid-tile-container').filter({has:page.locator('flow-video-tile')});
+      const candidates=[];
+      const count=Math.min(await tiles.count().catch(()=>0),120);
+      const wanted=norm(target.signature);
+      for(let i=0;i<count;i++){
+        const tile=tiles.nth(i);if(!(await tile.isVisible().catch(()=>false)))continue;
+        const sig=compact(
+          String(await tile.getAttribute('aria-label').catch(()=>'')||'')+' '+
+          String(await tile.innerText().catch(()=>'')||'')+' '+
+          String(await tile.textContent().catch(()=>'')||''),500
+        );
+        const n=norm(sig);
+        candidates.push({i,sig,score:wanted&&n.includes(wanted)?1000:0});
+      }
+      candidates.sort((a,b)=>b.score-a.score||a.i-b.i);
+      return candidates;
+    };
+
+    for(const target of pending){
+      let recovered=false;
+      const candidates=await scanCandidates(target);
+      for(const cand of candidates){
+        const dedupeKey=target.episode+':'+cand.i+':'+cand.sig;
+        if(usedSignatures.has(dedupeKey))continue;
+        const tiles=page.locator('flow-grid-tile-container').filter({has:page.locator('flow-video-tile')});
+        const tile=tiles.nth(cand.i);
+        if(!(await tile.isVisible().catch(()=>false)))continue;
+        await tile.scrollIntoViewIfNeeded().catch(()=>{});
+        await tile.hover().catch(()=>{});
+        const footer=tile.locator('flow-tile-hover-footer').first();
+        if(await footer.count().catch(()=>0)&&await footer.isVisible().catch(()=>false))await footer.click({force:true,timeout:5000}).catch(()=>{});
+        else await tile.click({force:true,timeout:5000}).catch(()=>{});
+        await sleep(1000);
+        if(!(await visibleDownloadButton(page).catch(()=>null))){await page.keyboard.press('Escape').catch(()=>{});continue}
+        const tmp=path.join(recoveryDir,'e'+target.episode+'-'+randomUUID()+'.mp4');
+        try{
+          const dl=await downloadResult(page,{uiReady:true,signal:'approved-media-size-recovery'},tmp);
+          const valid=validateMp4(tmp);
+          publish('APPROVED_MEDIA_RECOVERY_CANDIDATE',{episode:'E'+target.episode,signature:compact(cand.sig,180),size:valid.size,expected_size:target.expectedSize,download_method:dl.method});
+          if(Number(valid.size)!==Number(target.expectedSize)){try{fs.rmSync(tmp,{force:true})}catch{};await page.keyboard.press('Escape').catch(()=>{});continue}
+          const dest=path.join(publicationDir,target.item.id+'.mp4');
+          fs.copyFileSync(tmp,dest);try{fs.rmSync(tmp,{force:true})}catch{}
+          let history=[];try{history=JSON.parse(String(target.item.history||'[]'))||[]}catch{}
+          history.push({status:'queued',at:now(),message:'Exact approved media recovered from its existing Google Flow asset after the private YouTube staging copy was lost. No new generation was created.'});
+          db.prepare(`UPDATE publication_items SET status='queued',filePath=?,fileSize=?,videoId=NULL,resumableSession=NULL,attempts=0,retryAt=0,error=NULL,history=?,updatedAt=?,aiDisclosureSyncedAt=NULL,remotePrivacyStatus=NULL,remotePublishAt=NULL,remoteStatusCheckedAt=NULL WHERE id=?`)
+            .run(dest,valid.size,JSON.stringify(history.slice(-120)),now(),target.item.id);
+          usedSignatures.add(dedupeKey);recovered=true;
+          publish('APPROVED_MEDIA_RECOVERED',{episode:'E'+target.episode,publication_id:target.item.id,signature:compact(cand.sig,180),size:valid.size,expected_size:target.expectedSize,scheduled_at:target.item.scheduledAt});
+          await page.keyboard.press('Escape').catch(()=>{});
+          break;
+        }catch(e){
+          try{fs.rmSync(tmp,{force:true})}catch{}
+          publish('APPROVED_MEDIA_RECOVERY_CANDIDATE_ERROR',{episode:'E'+target.episode,signature:compact(cand.sig,160),message:compact(e?.message||e,500)});
+          await page.keyboard.press('Escape').catch(()=>{});
+        }
+      }
+      if(!recovered)publish('APPROVED_MEDIA_RECOVERY_NOT_FOUND',{episode:'E'+target.episode,expected_size:target.expectedSize,signature:target.signature});
+    }
+    const left=targets.filter(t=>{
+      const item=db.prepare("SELECT filePath FROM publication_items WHERE episode=? AND status NOT IN ('published','cancelled','deleted') ORDER BY createdAt DESC LIMIT 1").get(t.episode);
+      return !item?.filePath;
+    });
+    if(!left.length)setMeta(db,recoveryKey,'done');
+  }catch(e){
+    publish('APPROVED_MEDIA_RECOVERY_ERROR',{message:compact(e?.stack||e?.message||e,900)});
+  }finally{
+    try{await session?.close()}catch{}
+    try{db?.close()}catch{}
+    releaseLock();
+  }
+}
+setTimeout(()=>{void recoverApprovedPublicationMedia()},5000).unref?.();
+setInterval(()=>{void recoverApprovedPublicationMedia()},10*60*1000).unref?.();
+
 globalThis.__publisherRunProvider=()=>{void runProvider();};
 setTimeout(()=>{void runProvider()},12000);
 setInterval(()=>{void runProvider()},20*1000).unref();
