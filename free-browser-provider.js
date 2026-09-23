@@ -1587,17 +1587,48 @@ async function clickAndCaptureDownload(page,option,localPath,timeout=60000){
   }catch{}
 
   const playwrightDownload=page.waitForEvent('download',{timeout}).catch(()=>null);
+  let playwrightHandled=false;
   await trustedClick(option);
 
   const deadline=Date.now()+timeout;
   let seenPath='',seenSize=-1,stable=0;
   while(Date.now()<deadline){
-    const dl=await Promise.race([playwrightDownload,sleep(300).then(()=>null)]);
-    if(dl){
-      await dl.saveAs(localPath);
-      page.off('response',responseHandler);
-      try{await cdp?.detach()}catch{}
-      return true;
+    if(!playwrightHandled){
+      const dl=await Promise.race([playwrightDownload,sleep(300).then(()=>null)]);
+      if(dl){
+        playwrightHandled=true;
+        try{
+          await dl.saveAs(localPath);
+          page.off('response',responseHandler);
+          try{await cdp?.detach()}catch{}
+          publish('DOWNLOAD_PLAYWRIGHT_CAPTURED',{message:'Captured Flow download through Playwright saveAs.'});
+          return true;
+        }catch(e){
+          publish('PLAYWRIGHT_SAVEAS_FAILED',{message:compact(e?.message||e,700)});
+          // Browser.setDownloadBehavior moves the file out of Playwright's
+          // transient artifact directory in attached Chrome sessions. Keep
+          // polling the durable CDP download directory instead of aborting.
+          try{
+            const stream=await dl.createReadStream().catch(()=>null);
+            if(stream){
+              await new Promise((resolve,reject)=>{
+                const out=fs.createWriteStream(localPath,{mode:0o600});
+                stream.on('error',reject);out.on('error',reject);out.on('finish',resolve);stream.pipe(out);
+              });
+              const st=fs.statSync(localPath);
+              if(st.size>100000){
+                page.off('response',responseHandler);
+                try{await cdp?.detach()}catch{}
+                publish('DOWNLOAD_STREAM_CAPTURED',{message:'Recovered Flow download from Playwright stream ('+st.size+' bytes).'});
+                return true;
+              }
+              try{fs.rmSync(localPath,{force:true})}catch{}
+            }
+          }catch(streamErr){
+            publish('PLAYWRIGHT_STREAM_FAILED',{message:compact(streamErr?.message||streamErr,500)});
+          }
+        }
+      }
     }
 
     let names=[];try{names=fs.readdirSync(dir)}catch{}
