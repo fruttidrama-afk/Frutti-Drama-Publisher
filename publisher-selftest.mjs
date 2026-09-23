@@ -45,7 +45,9 @@ for(const [token,label] of [
   ["status IN ('regen_wait','draft') AND retryStrategy IN ('reuse_prompt','revise_prompt')",'human REDO priority queue'],
   ['creativePackageHash','creative package hash link'],
   ["source:'creative-package'",'review metadata preservation'],
-  ['let editor=await waitFlowReady(page,30000)','stable Flow composer handoff']
+  ['let editor=await waitFlowReady(page,30000)','stable Flow composer handoff'],
+  ['FLOW_UNUSUAL_ACTIVITY_QUARANTINE','persistent unusual-activity quarantine'],
+  ['24*60*60*1000','24h provider quarantine']
 ]) has(provider,token,label);
 must(!provider.includes("await waitFlowReady(page,30000);\n  const editor=await promptEditor(page);"),'Flow composer must not be re-queried immediately after readiness');
 for(const [token,label] of [
