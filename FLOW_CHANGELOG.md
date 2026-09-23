@@ -1,3 +1,12 @@
+## 2026-09-23 — Hard human-approval publication gate
+
+- A Flow render in `REVIEW_READY` remains only on the Publisher's private persistent volume.
+- Before explicit human `APPROVE`, the MP4 must not be uploaded to YouTube, Supabase review storage, or any other external destination.
+- `APPROVE` is the only transition allowed to create a publication/stock item.
+- `REJECT / REDO` deletes the rejected local media, purges any accidental non-public remote artifact, preserves only the minimum retry/feedback state, and generates a replacement.
+- Prompt/story feedback defaults to a revised creative package; purely stochastic rendering defects may reuse the creative intent.
+- Publisher Factory must enforce this invariant in every generated Publisher.
+
 # FLOW CHANGELOG
 
 ## FLOW-SOP-v1.0 — 2026-09-21
