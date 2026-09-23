@@ -1003,8 +1003,10 @@ async function attachCharacter(page,name){
   return{name,before,after,exact_option:true,confirmation_clicked:Boolean(add)};
 }
 async function fillPrompt(page,cp){
-  await waitFlowReady(page,30000);
-  const editor=await promptEditor(page);
+  // Composer stability invariant: waitFlowReady already resolves the live
+  // generation editor. Do not immediately re-query it; Flow can remount the
+  // contenteditable node after settings changes and create a transient race.
+  let editor=await waitFlowReady(page,30000);
   const payload=String(cp.prompt||'').replace(/\s+/g,' ').trim();
   if(payload.length<700)throw new Error('PROMPT_PAYLOAD_TOO_SHORT');
   const target=await classifyPromptTarget(page,editor);
@@ -1022,7 +1024,14 @@ async function fillPrompt(page,cp){
     return String(raw||'').replace(/\s+/g,' ').trim();
   };
 
-  await editor.fill(payload).catch(()=>{});
+  try{
+    await editor.fill(payload);
+  }catch{
+    // If Flow remounted the composer between readiness and fill, reacquire it
+    // through the same readiness gate instead of a naked promptEditor query.
+    editor=await waitFlowReady(page,30000);
+    await editor.fill(payload);
+  }
   await sleep(500);
   let value=await read();
   const first=payload.slice(0,140),last=payload.slice(-140);
