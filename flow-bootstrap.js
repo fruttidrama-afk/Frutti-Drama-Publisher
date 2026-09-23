@@ -11,6 +11,9 @@ const DIR=path.join(DATA_DIR,'publisher-runtime');
 const PROFILE_DIR=path.join(DIR,'flow-profile');
 const BOOTSTRAP_LOCK=path.join(DIR,'flow-auth-bootstrap.active.json');
 const PROVIDER_LOCK=path.join(DIR,'free-browser-provider.lock');
+const SUPABASE_PASSKEY_STATE=path.join(DIR,'supabase-passkey-bootstrap.json');
+const SUPABASE_PASSKEY_PROJECT_REF=String(process.env.PUBLISHER_SUPABASE_PASSKEY_PROJECT_REF||'wrflttnmlrsuzuukdhtf').trim();
+const SUPABASE_PASSKEY_URL='https://supabase.com/dashboard/project/'+encodeURIComponent(SUPABASE_PASSKEY_PROJECT_REF)+'/auth/passkeys';
 const DISPLAY=':94';
 const VIEW={width:1024,height:700};
 const DEBUG_PORT=9334;
@@ -156,6 +159,8 @@ ${verified?'<div class="success"><b>✓ Google Flow ya fue verificado.</b><br>Pr
 <form method="post" action="/flow/bootstrap/demo-stop"><button type="submit">■ STOP SOP RECORDING</button></form>
 <form method="post" action="/flow/bootstrap/start-page"><button class="primary" type="submit">1 · ABRIR GOOGLE</button></form>
 <form method="post" action="/flow/bootstrap/project-page"><button class="primary" type="submit">3 · ABRIR GOOGLE FLOW</button></form>
+<form method="post" action="/flow/bootstrap/supabase-passkeys-page"><button class="primary" type="submit">ABRIR SUPABASE PASSKEYS</button></form>
+<form method="post" action="/flow/bootstrap/supabase-passkeys-done"><button type="submit">YA INICIÉ SESIÓN EN SUPABASE</button></form>
 <form method="get" action="/flow/bootstrap"><button type="submit">ACTUALIZAR NAVEGADOR</button></form>
 <form method="post" action="/flow/bootstrap/finish-page"><button class="primary" type="submit">5 · VERIFICAR CONEXIÓN</button></form>
 </div>
@@ -186,7 +191,9 @@ if(!globalThis.__publisherFlowBootstrapInstalled){
   app.post('/flow/bootstrap/demo-stop',async(_req,res)=>{await demoState('FINAL_STATE');console.log('[FLOW SOP DEMO] '+JSON.stringify({step:demoStep+1,at:new Date().toISOString(),action:'DEMO_STOP',started_at:demoStartedAt}));demoActive=false;go(res,'Grabación SOP detenida. Ya quedaron registrados los pasos de la demostración.')});
   app.post('/flow/bootstrap/start-page',async(_req,res)=>{try{await start();go(res,'Google está abierto. Usá la pantalla remota de abajo para iniciar sesión.')}catch(e){go(res,'',e?.message||e)}});
   app.post('/flow/bootstrap/project-page',async(_req,res)=>{try{await navigate(PROJECT_ID?PROJECT_URL:'https://flow.google.com/');go(res,'Google Flow está abierto. Elegí o creá un proyecto en la pantalla remota.')}catch(e){go(res,'',e?.message||e)}});
-  app.get('/flow/bootstrap/screen.png',async(_req,res)=>{try{if(!pids().length||!windowId()){res.status(409).type('image/svg+xml').send('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="700"><rect width="100%" height="100%" fill="#eee"/><text x="512" y="350" text-anchor="middle" font-family="Arial" font-size="30" fill="#555">Navegador cerrado</text></svg>');return}const png=shot();res.set('Cache-Control','no-store, max-age=0');res.type('png').send(png)}catch(e){res.status(500).type('text').send(compact(e?.message||e,500))}});
+  app.post('/flow/bootstrap/supabase-passkeys-page',async(_req,res)=>{try{await navigate(SUPABASE_PASSKEY_URL);go(res,'Supabase está abierto en el navegador remoto. Iniciá sesión con tu cuenta habitual y dejá abierta la página de Passkeys.')}catch(e){go(res,'',e?.message||e)}});
+   app.post('/flow/bootstrap/supabase-passkeys-done',async(_req,res)=>{try{try{fs.rmSync(SUPABASE_PASSKEY_STATE,{force:true})}catch{}await stop();go(res,'Sesión de Supabase guardada. FreeBrowserProvider va a reintentar la configuración de passkeys automáticamente.')}catch(e){go(res,'',e?.message||e)}});
+   app.get('/flow/bootstrap/screen.png',async(_req,res)=>{try{if(!pids().length||!windowId()){res.status(409).type('image/svg+xml').send('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="700"><rect width="100%" height="100%" fill="#eee"/><text x="512" y="350" text-anchor="middle" font-family="Arial" font-size="30" fill="#555">Navegador cerrado</text></svg>');return}const png=shot();res.set('Cache-Control','no-store, max-age=0');res.type('png').send(png)}catch(e){res.status(500).type('text').send(compact(e?.message||e,500))}});
   app.get('/flow/bootstrap/view',(_req,res)=>{try{
     if(!pids().length||!windowId())return res.type('html').send('<!doctype html><html><body style="font-family:Arial;background:#eee;padding:20px">Navegador remoto cerrado.</body></html>');
     res.set('Cache-Control','no-store, max-age=0');
