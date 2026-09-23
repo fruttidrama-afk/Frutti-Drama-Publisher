@@ -2029,29 +2029,47 @@ function auditRedoState(db){
   if(consumed)throw new Error('REDO_STATE_INVARIANT_FAILED:'+consumed);
 }
 
+function quarantinePriorDayAmbiguous(db){
+  const today=artDay();
+  const rows=db.prepare("SELECT * FROM factory_items WHERE status='generating' ORDER BY episode").all();
+  let quarantined=0;
+  for(const row of rows){
+    const lc=lifecycle(db,row)||{},state=String(lc.state||'').toUpperCase();
+    if(!AMBIGUOUS.has(state))continue;
+    const boundary=String(lc.submit_boundary_at||lc.reconciled_at||row.lastProgressAt||row.updatedAt||'');
+    const d=new Date(boundary);
+    if(!Number.isFinite(d.getTime())||artDay(d)>=today)continue;
+    db.prepare("UPDATE factory_items SET status='manual_hold',nextTry=0,error=?,lastProgressAt=?,updatedAt=? WHERE id=?")
+      .run('Previous-day ambiguous submit quarantined automatically. Generate remains locked for this episode; daily production may continue with later episodes.',now(),now(),row.id);
+    setLifecycle(db,row,'MANUAL_HOLD_PRIOR_DAY_AMBIGUOUS',{
+      ...lc,
+      quarantined_at:now(),
+      quarantined_from_state:state,
+      automatic_submit_forbidden:true,
+      automatic_recovery_forbidden:false,
+      daily_production_unblocked:true
+    });
+    publish('PRIOR_DAY_AMBIGUOUS_QUARANTINED',{episode:'E'+row.episode,job_id:row.id,message:'Old ambiguous submit moved out of the daily production head-of-line. No duplicate Generate will be sent.'});
+    quarantined++;
+  }
+  return quarantined;
+}
+
 function productionCandidate(db){
-  // First finish any generation that already crossed the submit boundary.
   const inflight=db.prepare("SELECT * FROM factory_items WHERE status='generating' ORDER BY episode LIMIT 1").get();
   if(inflight){
     const last=Date.parse(String(inflight.lastProgressAt||inflight.updatedAt||''))||0;
     const due=Number(inflight.nextTry||0)<=Date.now()||(last>0&&Date.now()-last>60*1000);
     return due?inflight:null;
   }
-  // Human REDO is the highest-priority new generation. It must not wait behind
-  // ordinary backlog or the daily autonomous target: reviewer feedback is acted
-  // on immediately and the replacement returns to Review the same day.
   const retries=db.prepare("SELECT * FROM factory_items WHERE status IN ('regen_wait','draft') AND retryStrategy IN ('reuse_prompt','revise_prompt') AND reviewFeedback IS NOT NULL AND TRIM(reviewFeedback)<>'' ORDER BY updatedAt,episode").all();
   for(const retry of retries){
-    if(Number(retry.nextTry||0)<=Date.now()&&isReviewerRetry(retry))return retry;
+    if(Number(retry.nextTry||0)<=Date.now()&&isReviewerRetry(retry)&&serialReady(db,retry))return retry;
   }
-  const blocker=db.prepare("SELECT * FROM factory_items WHERE status NOT IN ('review','queued','historical','published','generating') ORDER BY episode LIMIT 1").get();
-  if(!blocker)return null;
-  const due=Number(blocker.nextTry||0)<=Date.now();
-  if(!['draft','regen_wait'].includes(String(blocker.status||'')))return null;
-  if(!due)return null;
-  if(String(blocker.reviewFeedback||'').trim())return null;
-  return blocker;
+  const rows=db.prepare("SELECT * FROM factory_items WHERE status IN ('draft','regen_wait') AND nextTry<=? AND (reviewFeedback IS NULL OR TRIM(reviewFeedback)='') ORDER BY episode LIMIT 200").all(Date.now());
+  return rows.find(row=>serialReady(db,row))||null;
 }
+
 const SUPABASE_PASSKEY_BOOTSTRAP=String(process.env.PUBLISHER_SUPABASE_PASSKEY_BOOTSTRAP||'').trim()==='1';
 const SUPABASE_PASSKEY_PROJECT_REF=String(process.env.PUBLISHER_SUPABASE_PASSKEY_PROJECT_REF||'wrflttnmlrsuzuukdhtf').trim();
 const SUPABASE_PASSKEY_STATE=path.join(FACTORY_DIR,'supabase-passkey-bootstrap.json');
@@ -2176,7 +2194,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);quarantinePriorDayAmbiguous(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
