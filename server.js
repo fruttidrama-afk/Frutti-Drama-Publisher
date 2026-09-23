@@ -20,6 +20,7 @@ import { uploadReviewFile, signedReviewUrl, deleteReviewObject, isReviewStorageU
 
 google.options({timeout:90000,retry:false});
 const app=express(),PORT=Number(process.env.PORT||8080);
+app.set('trust proxy',1);
 const DATA_DIR=path.resolve(process.env.DATA_DIR||'/data'),DIR=path.join(DATA_DIR,'publisher-runtime'),DB_PATH=path.join(DIR,'factory.sqlite');
 const AUTH_PATH=path.join(DIR,'auth.json'),SECRET_PATH=path.join(DIR,'secrets.json'),YT_TOKEN_PATH=path.join(DIR,'youtube-token.json');
 const SESSION_COOKIE='publisher_session',TTL=365*24*60*60*1000;
@@ -68,7 +69,15 @@ function secure(req,res,next){
 }
 
 const rp=()=>String(process.env.RAILWAY_PUBLIC_DOMAIN||process.env.PUBLISHER_PUBLIC_DOMAIN||'localhost').replace(/^https?:\/\//,'').split('/')[0];
-const origin=req=>String(process.env.PUBLISHER_PUBLIC_URL||(req.protocol+'://'+req.get('host'))).replace(/\/$/,'');
+const origin=req=>{
+  const configured=String(process.env.PUBLISHER_PUBLIC_URL||'').trim().replace(/\/$/,'');
+  if(configured)return configured;
+  const railway=String(process.env.RAILWAY_PUBLIC_DOMAIN||process.env.PUBLISHER_PUBLIC_DOMAIN||'').trim().replace(/^https?:\/\//,'').split('/')[0];
+  if(railway)return 'https://'+railway;
+  const forwarded=String(req.headers['x-forwarded-proto']||'').split(',')[0].trim();
+  const proto=forwarded||req.protocol||'http';
+  return (proto+'://'+req.get('host')).replace(/\/$/,'');
+};
 const regChallenges=new Map(),authChallenges=new Map();
 function passkeysPublic(){return authState().passkeys.map(x=>({id:x.id,name:x.name||'Passkey',createdAt:x.createdAt,lastUsedAt:x.lastUsedAt,deviceType:x.deviceType,backedUp:Boolean(x.backedUp)}))}
 
