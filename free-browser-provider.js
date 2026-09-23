@@ -1331,6 +1331,105 @@ async function clickSubmitExactlyOnce(page){
   return'start-generation-direct';
 }
 
+async function renderAuthGuard(page){
+  const url=String(page.url()||'');
+  if(/accounts\.google\.com|signin|ServiceLogin/i.test(url))throw new Error('FLOW_AUTH_REQUIRED_DURING_RENDER');
+  const text=(await getBody(page)).slice(0,12000);
+  if(/verify it'?s you|verifica que eres t[uú]|captcha|security check|verificaci[oó]n de seguridad/i.test(text))throw new Error('FLOW_AUTH_CHALLENGE_DURING_RENDER');
+  return true;
+}
+
+async function captureFlowInventory(page){
+  try{
+    return await page.evaluate(()=>{
+      const tiles=[...document.querySelectorAll('flow-grid-tile-container')].filter(el=>{const r=el.getBoundingClientRect();return r.width>20&&r.height>20;});
+      const sigs=tiles.map(el=>String(el.getAttribute('aria-label')||el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,220)).filter(Boolean);
+      const body=String(document.body?.innerText||'').replace(/\s+/g,' ').trim();
+      return{tile_count:tiles.length,ordered_signatures:sigs.slice(0,120),signatures:[...new Set(sigs)].slice(0,120),busy:/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation/i.test(body)};
+    });
+  }catch{return{tile_count:0,ordered_signatures:[],signatures:[],busy:false}}
+}
+
+function inventoryHasNew(current,baseline){
+  if(!baseline)return false;
+  if(Number(current?.tile_count||0)>Number(baseline?.tile_count||0))return true;
+  const before=new Set(Array.isArray(baseline?.signatures)?baseline.signatures:[]);
+  return (Array.isArray(current?.signatures)?current.signatures:[]).some(x=>!before.has(x));
+}
+
+async function reconcileAmbiguousGeneric(page,row,lc,db){
+  const baselineInv=lc?.baseline_inventory||null;
+  const boundary=Date.parse(String(lc?.submit_boundary_at||''));
+  const age=Number.isFinite(boundary)?Date.now()-boundary:0;
+  const currentInv=await captureFlowInventory(page);
+  const body=(await getBody(page)).slice(0,14000);
+  const busy=currentInv.busy||/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation/i.test(body);
+  const baselineUsable=Boolean(baselineInv&&Number(baselineInv.tile_count||0)>0&&Array.isArray(baselineInv.signatures)&&baselineInv.signatures.length>0);
+  const fresh=baselineUsable&&inventoryHasNew(currentInv,baselineInv);
+
+  // A persisted Flow result is stronger evidence than an unusable/virtualized
+  // baseline. Correlate the rendered tile to this episode before keeping the
+  // job indefinitely in SUBMIT_AMBIGUOUS.
+  if(!busy&&age>=20000){
+    const correlated=await openEpisodeCorrelatedResult(page,row).catch(()=>null);
+    if(correlated?.found){
+      const startedAt=String(lc?.generation_started_at||lc?.submit_boundary_at||now());
+      const next=setLifecycle(db,row,'GENERATION_STARTED',{...lc,generation_started_at:startedAt,evidence:'ambiguous-reconciled-by-'+correlated.signal,matched_label:correlated.label,matched_terms:correlated.matched,reconciled_at:now(),automatic_submit_forbidden:true});
+      db.prepare("UPDATE factory_items SET status='generating',error=NULL,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
+      const runId=String(next.generation_id||row.providerRunId||'');
+      if(runId){
+        const exists=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE itemId=? AND runId=?").get(row.id,runId)?.n||0);
+        if(!exists)try{db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)").run(randomUUID(),row.id,artDay(new Date(startedAt)),sha(String(row.promptHash||'')+':'+runId),CREDITS_PER_GENERATION,'running',runId,startedAt,now(),'automatic')}catch{}
+      }
+      publish('AMBIGUOUS_CORRELATED_RENDER',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,label:correlated.label,matched:correlated.matched,signal:correlated.signal});
+      return{mode:'retrieve',lifecycle:next};
+    }
+    publish('AMBIGUOUS_CORRELATION_DIAGNOSTIC',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,terms:episodeRecoveryTerms(row),samples:(currentInv?.ordered_signatures||currentInv?.signatures||[]).slice(0,18)});
+  }
+
+  if(fresh||busy){
+    const startedAt=String(lc?.generation_started_at||now());
+    const next=setLifecycle(db,row,'GENERATION_STARTED',{...lc,generation_started_at:startedAt,evidence:`ambiguous-reconciled:fresh=${fresh};busy=${busy};tiles=${baselineInv?.tile_count||0}->${currentInv.tile_count}`,reconciled_at:now()});
+    db.prepare("UPDATE factory_items SET status='generating',error=NULL,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
+    publish('AMBIGUOUS_RECONCILED_GENERATION',{episode:`T${row.season}E${row.episode}`,job_id:row.id,evidence:next.evidence});
+    return{mode:'retrieve',lifecycle:next};
+  }
+  if(baselineInv&&age>=5*60*1000){
+    const before=Array.isArray(baselineInv.signatures)?baselineInv.signatures:[];
+    const after=Array.isArray(currentInv.signatures)?currentInv.signatures:[];
+    const sameCount=Number(currentInv.tile_count||0)===Number(baselineInv.tile_count||0);
+    const sameSigs=before.length===after.length&&before.every(x=>after.includes(x));
+    if(sameCount&&sameSigs&&!busy){
+      if(reviewerRetryTokenConsumed(row)){
+        db.prepare("UPDATE factory_items SET status='manual_hold',providerRunId=NULL,error=?,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(
+          'Rehacer enviado pero Flow no confirmó resultado. El token quedó consumido y NO se reenviará automáticamente; se requiere un nuevo Rehacer humano.',
+          now(),now(),row.id
+        );
+        setLifecycle(db,row,'MANUAL_HOLD_SUBMIT_NOT_CONFIRMED',{
+          ...lc,
+          reconciled_at:now(),
+          evidence:`No new Flow result after ${Math.round(age/1000)}s; inventory unchanged at ${currentInv.tile_count} tiles.`,
+          automatic_submit_forbidden:true,
+          reviewer_retry:true,
+          retry_token:String(row.reviewRetryToken||'')
+        });
+        publish('REVIEW_RETRY_NOT_CONFIRMED_HOLD',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Reviewer retry token is consumed. Flow showed no result; automatic resubmit is forbidden until a new human Rehacer request.'});
+        return{mode:'wait'};
+      }
+      const retryAt=Date.now()+60000;
+      db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run(retryAt,now(),now(),row.id);
+      setLifecycle(db,row,'RECONCILED_NO_GENERATION',{prior_generation_id:String(lc?.generation_id||row.providerRunId||''),submit_boundary_at:String(lc?.submit_boundary_at||''),reconciled_at:now(),evidence:`No new Flow result after ${Math.round(age/1000)}s; inventory unchanged at ${currentInv.tile_count} tiles.`,retry_at:new Date(retryAt).toISOString()});
+      publish('AMBIGUOUS_RECONCILED_NO_GENERATION',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Flow inventory unchanged; automatic episode generation may retry after backoff.'});
+      return{mode:'wait'};
+    }
+  }
+  const retryAt=Date.now()+60000;
+  db.prepare("UPDATE factory_items SET status='generating',error=?,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run('SUBMIT_AMBIGUOUS — reconciliation pending; no automatic resubmit',retryAt,now(),now(),row.id);
+  setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{...lc,last_error:'Reconciliation pending; Generate remains forbidden.',retry_at:new Date(retryAt).toISOString(),last_inventory:currentInv});
+  publish('SUBMIT_AMBIGUOUS',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Read-only Flow reconciliation pending. No Generate will be clicked.'});
+  return{mode:'wait'};
+}
+
 async function waitGenerationStarted(page,baseline,baselineInventory,baselineBusy=0,timeout=90000){
   const baseSrc=new Set((baseline||[]).map(v=>v.src).filter(Boolean));
   const beforeInv=baselineInventory||{signatures:[],tile_count:0};
