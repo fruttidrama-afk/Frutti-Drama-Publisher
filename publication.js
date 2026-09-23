@@ -690,19 +690,20 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       for(const it of page.data.items||[]){const id=it.contentDetails?.videoId;if(id)ids.push(String(id))}
       pageToken=page.data.nextPageToken||undefined;
     }while(pageToken&&ids.length<500);
-    const matches=[];
+    const matches=[],privateInventory=[];
     for(let i=0;i<ids.length;i+=50){
       const batch=ids.slice(i,i+50);
       const r=await yt.videos.list({part:['status','snippet'],id:batch});
       for(const v of r.data.items||[]){
         const title=String(v.snippet?.title||''),n=normalize(title),privacy=String(v.status?.privacyStatus||'');
+        if(privacy==='private')privateInventory.push({videoId:v.id,title,privacy,publishedAt:v.snippet?.publishedAt||null});
         const wantedMatch=targets.some(t=>n===t||n.startsWith(t+' ')||t.startsWith(n+' '));
         if(!wantedMatch||privacy==='public')continue;
         await yt.videos.delete({id:v.id});
         matches.push({videoId:v.id,title,privacy});
       }
     }
-    return{purged:matches.length,matches};
+    return{purged:matches.length,matches,privateInventory:privateInventory.slice(0,100)};
   }
 
   app.get('/publication/items',(_req,res)=>res.json({items:db.prepare('SELECT * FROM publication_items ORDER BY scheduledAt').all().map(publicItem),scheduler:{alive:true,lastHeartbeat,lastError,indefinite:true}}));
