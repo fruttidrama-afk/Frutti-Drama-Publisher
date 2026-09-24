@@ -2332,21 +2332,32 @@ function scheduleNoChargeRetry(db,row,opts={}){
   const fresh=db.prepare("SELECT * FROM factory_items WHERE id=?").get(row.id)||row;
   const run=String(opts.run||lifecycle(db,fresh)?.generation_id||fresh.providerRunId||'');
   if(run)try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Google Flow explicitly reported no retained generation and no charge.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),fresh.id,run)}catch{}
-  const streakKey='flow:noChargeStreak:'+fresh.id;
-  const streak=Math.max(0,Number(meta(db,streakKey,'0'))||0)+1;
-  setMeta(db,streakKey,String(streak));
+
+  // IMPORTANT: Unusual Activity belongs to the Google/Flow provider account,
+  // not to an episode. The streak and cooldown are therefore provider-wide.
+  const providerStreakKey='flow:noChargeStreak:provider';
+  const streak=Math.max(0,Number(meta(db,providerStreakKey,'0'))||0)+1;
+  setMeta(db,providerStreakKey,String(streak));
+  // Keep a row counter only for diagnostics; it never controls retry timing.
+  setMeta(db,'flow:noChargeStreak:'+fresh.id,String(Math.max(0,Number(meta(db,'flow:noChargeStreak:'+fresh.id,'0'))||0)+1));
+
   if(streak>=4)resetFlowTransientCaches(db,fresh);
   const delay=noChargeDelayMs(streak);
-  const retryAt=Date.now()+delay;
+  const requestedRetryAt=Date.now()+delay;
+  const existingUntil=Number(meta(db,'flow:transientCooldownUntil','0'))||0;
+  // Provider cooldown is monotonic until a hard generation start resets it.
+  // A stale/older row may NEVER shorten a newer cooldown.
+  const retryAt=Math.max(existingUntil,requestedRetryAt);
   const overnight=streak>=6;
   setMeta(db,'flow:transientCooldownUntil',String(retryAt));
+
   db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=?,nextTry=?,runtimeAttemptCount=runtimeAttemptCount+1,lastProgressAt=?,updatedAt=? WHERE id=?")
     .run(overnight?'FLOW_UNUSUAL_ACTIVITY_OVERNIGHT — same episode preserved; next automatic retry after 24h.':'FLOW_NO_CHARGE — exponential provider backoff active; same episode remains head-of-line.',retryAt,now(),now(),fresh.id);
   setLifecycle(db,fresh,overnight?'UNUSUAL_ACTIVITY_OVERNIGHT':'TRANSIENT_NO_CHARGE_RETRY',{
     prior_generation_id:run,
     submit_mode:String(opts.submitMode||''),
     evidence:String(opts.evidence||opts.reason||''),
-    no_charge_streak:streak,
+    provider_no_charge_streak:streak,
     retry_at:new Date(retryAt).toISOString(),
     provider_cooldown_until:new Date(retryAt).toISOString(),
     automatic_submit_forbidden:false,
@@ -2354,48 +2365,74 @@ function scheduleNoChargeRetry(db,row,opts={}){
   });
   setMeta(db,'flow:state',overnight?'PAUSA PROTECTORA':'CONECTADO');
   setMeta(db,'flow:message',overnight
-    ?'Google Flow rechazó repetidamente por actividad inusual. E'+fresh.episode+' sigue primero y reintentará automáticamente después de 24h.'
-    :'Google Flow rechazó sin cargo. Se conserva el mismo episodio y se aplica el backoff 30m → 1h → 2h → 4h → 8h antes de escalar a 24h.');
+    ?'Google Flow rechazó repetidamente por actividad inusual. El proveedor completo queda en espera 24h; E'+fresh.episode+' sigue pendiente.'
+    :'Google Flow rechazó sin cargo. Backoff global del proveedor activo: 30m → 1h → 2h → 4h → 8h → 24h.');
   publish(overnight?'FLOW_UNUSUAL_ACTIVITY_OVERNIGHT':'TRANSIENT_NO_CHARGE_RETRY',{
     episode:'E'+fresh.episode,
     job_id:fresh.id,
     retry_at:new Date(retryAt).toISOString(),
-    no_charge_streak:streak,
-    cooldown_minutes:Math.round(delay/60000),
+    provider_no_charge_streak:streak,
+    cooldown_minutes:Math.round((retryAt-Date.now())/60000),
     message:overnight
-      ?'The next exponential interval would exceed 10 hours, so this account waits 24h before the same serial episode is retried.'
-      :'Flow explicitly returned no-charge. Exponential unusual-activity backoff is active; no other episode may submit before this head-of-line retry.'
+      ?'Provider-wide unusual-activity streak crossed the 10h ceiling. No episode or REDO may submit for 24h.'
+      :'Provider-wide unusual-activity backoff is active. No episode or REDO may bypass it.'
   });
   return retryAt;
 }
 function resetNoChargeBackoff(db,row){
-  setMeta(db,'flow:noChargeStreak:'+row.id,'0');
+  // Reset only after hard generation-start evidence.
+  setMeta(db,'flow:noChargeStreak:provider','0');
+  if(row)setMeta(db,'flow:noChargeStreak:'+row.id,'0');
   setMeta(db,'flow:transientCooldownUntil','0');
 }
 function normalizeLiveNoChargeCooldown(db){
   try{
     const rows=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND (error LIKE 'FLOW%NO_CHARGE%' OR error LIKE 'FLOW_UNUSUAL_ACTIVITY_%') ORDER BY episode").all();
+
+    // One-time migration from the old per-episode streak model. Use the largest
+    // existing streak as a conservative floor; never sum historical rows.
+    let providerStreak=Math.max(0,Number(meta(db,'flow:noChargeStreak:provider','0'))||0);
+    if(providerStreak<1){
+      try{
+        const legacy=db.prepare("SELECT key,value FROM factory_meta WHERE key LIKE 'flow:noChargeStreak:%' AND key<>'flow:noChargeStreak:provider'").all();
+        providerStreak=Math.max(0,...legacy.map(x=>Number(x.value)||0));
+        if(providerStreak>0)setMeta(db,'flow:noChargeStreak:provider',String(providerStreak));
+      }catch{}
+    }
+    if(providerStreak<1||!rows.length)return;
+
+    const currentUntil=Number(meta(db,'flow:transientCooldownUntil','0'))||0;
+    let desiredUntil=currentUntil;
     for(const row of rows){
-      const streak=Math.max(0,Number(meta(db,'flow:noChargeStreak:'+row.id,'0'))||0);
-      if(streak<1)continue;
-      if(streak>=4)resetFlowTransientCaches(db,row);
+      if(providerStreak>=4)resetFlowTransientCaches(db,row);
       const base=Date.parse(String(row.lastProgressAt||row.updatedAt||''))||Date.now();
-      const desiredUntil=base+noChargeDelayMs(streak);
-      if(Math.abs(Number(row.nextTry||0)-desiredUntil)>1000){
+      desiredUntil=Math.max(desiredUntil,base+noChargeDelayMs(providerStreak),Number(row.nextTry||0));
+    }
+    // Critical invariant: normalization may extend but NEVER shorten provider cooldown.
+    setMeta(db,'flow:transientCooldownUntil',String(desiredUntil));
+
+    for(const row of rows){
+      if(Number(row.nextTry||0)<desiredUntil){
         db.prepare("UPDATE factory_items SET nextTry=?,error=?,updatedAt=? WHERE id=?").run(
           desiredUntil,
-          streak>=6?'FLOW_UNUSUAL_ACTIVITY_OVERNIGHT — same episode preserved; next automatic retry after 24h.':'FLOW_NO_CHARGE — exponential provider backoff active; same episode remains head-of-line.',
+          providerStreak>=6?'FLOW_UNUSUAL_ACTIVITY_OVERNIGHT — provider-wide wait; next automatic retry after 24h.':'FLOW_NO_CHARGE — provider-wide exponential backoff active.',
           now(),row.id
         );
       }
-      setMeta(db,'flow:transientCooldownUntil',String(desiredUntil));
-      setMeta(db,'flow:state',streak>=6?'PAUSA PROTECTORA':'CONECTADO');
-      setMeta(db,'flow:message','Unusual Activity backoff activo para E'+row.episode+': intento '+streak+'; próximo retry '+new Date(desiredUntil).toISOString()+'.');
-      const onceKey='flow:unusualBackoffPolicyV2:'+row.id+':'+streak;
-      if(meta(db,onceKey,'')!=='done'){
-        publish('FLOW_UNUSUAL_ACTIVITY_BACKOFF_NORMALIZED',{episode:'E'+row.episode,job_id:row.id,until:new Date(desiredUntil).toISOString(),no_charge_streak:streak,cooldown_minutes:Math.round(noChargeDelayMs(streak)/60000),message:'Applied global 30m → 1h → 2h → 4h → 8h → 24h unusual-activity policy.'});
-        setMeta(db,onceKey,'done');
-      }
+    }
+    setMeta(db,'flow:state',providerStreak>=6?'PAUSA PROTECTORA':'CONECTADO');
+    setMeta(db,'flow:message','Unusual Activity global: streak '+providerStreak+'; ningún episodio puede enviar hasta '+new Date(desiredUntil).toISOString()+'.');
+
+    const onceKey='flow:providerWideBackoffV3:'+providerStreak+':'+desiredUntil;
+    if(meta(db,onceKey,'')!=='done'){
+      publish('FLOW_PROVIDER_WIDE_BACKOFF_NORMALIZED',{
+        provider_no_charge_streak:providerStreak,
+        until:new Date(desiredUntil).toISOString(),
+        cooldown_minutes:Math.max(0,Math.round((desiredUntil-Date.now())/60000)),
+        blocked_rows:rows.map(r=>'E'+r.episode).slice(0,30),
+        message:'Provider-wide cooldown is monotonic. Older rows cannot shorten it and no other episode may submit during the wait.'
+      });
+      setMeta(db,onceKey,'done');
     }
   }catch(e){publish('FLOW_TRANSIENT_COOLDOWN_WARNING',{message:compact(e?.message||e,300)})}
 }
