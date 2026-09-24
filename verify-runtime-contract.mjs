@@ -14,6 +14,7 @@ const runtimeConfig=read('runtime-config.js');
 const init=read('runtime-init.js');
 const server=read('server.js');
 const publication=read('publication.js');
+const facebookPublication=read('publication-facebook.js');
 
 const sha=createHash('sha256').update(master).digest('hex');
 must(sop.sop_id==='FLOW-SOP-v1.0','wrong SOP version');
@@ -59,6 +60,12 @@ for(const token of ['saveReviewAsset','local-volume-until-approval','remoteUrl=N
 }
 for(const token of ['isReviewStorageUri','readReviewRange','deleteReviewObject','containsSyntheticMedia:true','APPROVAL_GATE','purgeRejected','purgePrivateVideosByTitle']){
   must(publication.includes(token),'publication/approval/rejection contract missing '+token);
+}
+for(const token of ["APPROVAL_GATE","me/video_reels","upload_phase:'start'","Authorization:'OAuth '","video_state:'PUBLISHED'","fields:'status'","FACEBOOK_AUTH_REQUIRED","purgeRejected"]){
+  must(facebookPublication.includes(token),'Facebook Reels runtime contract missing '+token);
+}
+for(const token of ["/integrations/platform","/integrations/facebook","/facebook/oauth/callback","pages_show_list,pages_read_engagement,pages_manage_posts","FacebookReelsProvider","selectedPublicationProvider","facebookConnected"]){
+  must(server.includes(token),'Facebook connection/runtime server contract missing '+token);
 }
 
 console.log(JSON.stringify({
