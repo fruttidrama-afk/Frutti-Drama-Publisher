@@ -1,22 +1,22 @@
 {
   "name": "Publisher Factory",
   "short_name": "Publisher Factory",
-  "start_url": "./",
+  "start_url": "./?pwa=12",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f8f7f3",
   "theme_color": "#ffffff",
   "icons": [
     {
-      "src": "./app-icon.svg?v=5",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "./apple-touch-icon.png?v=12",
+      "sizes": "180x180",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./app-icon.svg?v=5",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "./apple-touch-icon.png?v=12",
+      "sizes": "180x180",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ]
