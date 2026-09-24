@@ -228,7 +228,7 @@ async function list(){
     if(p.status==="deploying"){hasDeploying=true;ensureProgressBox(c);setTimeout(()=>refreshDeployCard(p,c),0)}
     if(p.railway_domain&&p.status==="deployed"){
       const cfg=document.createElement("button");cfg.className="btn";cfg.textContent="CONFIGURE CONNECTIONS";cfg.onclick=()=>configurePublisher(p.id);tb.append(cfg);
-      const a=document.createElement("a");a.className="btn";a.textContent="OPEN PUBLISHER";a.target="_blank";a.href="https://"+p.railway_domain;tb.append(a);
+      const a=document.createElement("button");a.className="btn";a.textContent="OPEN PUBLISHER";a.onclick=()=>configurePublisher(p.id);tb.append(a);
       const m=document.createElement("button");m.className="btn";m.textContent="MODIFY WITH AI · OPTIONAL";m.onclick=()=>openModify(p);tb.append(m)
     }
     const del=document.createElement("button");del.className="btn danger";del.textContent="DELETE";del.onclick=()=>deletePublisher(p);tb.append(del);box.append(c)
