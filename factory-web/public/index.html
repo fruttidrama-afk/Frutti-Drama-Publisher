@@ -341,7 +341,8 @@ function assertPublisherRuntimeContract(config){
      a.inherit_flow_sop!==true||a.exactly_once_submit!==true||a.strict_serial_generation!==true||
      a.project_grid_recovery!==true||a.current_consent_only!==true||a.review_metadata_required!==true||
      a.golden_test_required!==true||r.archive_provider!=="local-only"||r.external_storage_before_approval!==false||r.approval_required_before_publication!==true||r.reject_purges_external_artifacts!==true||s.indefinite!==true||s.generation_strategy!=="sequential"||
-     Number(s.upload_lead_minutes)!==390||
+     (config?.publication?.selected_provider==="youtube"&&Number(s.upload_lead_minutes)!==390)||
+     (config?.publication?.selected_provider==="facebook"&&Number(s.upload_lead_minutes)<0)||
      !Array.isArray(config?.publication?.providers)||!Array.isArray(config?.publication?.allowed_providers)||
      !config.publication.allowed_providers.includes("youtube")||!config.publication.allowed_providers.includes("facebook")||
      (config.publication.selected_provider!==null&&!["youtube","facebook"].includes(config.publication.selected_provider))||
