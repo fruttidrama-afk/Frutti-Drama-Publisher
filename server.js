@@ -258,6 +258,34 @@ async function metaGraph(pathname,{method='GET',params={},token=null}={}){
   return j;
 }
 
+async function discoverFacebookPages(userToken){
+  const byId=new Map();
+  const absorb=async(rows=[])=>{
+    for(const raw of rows||[]){
+      if(!raw?.id)continue;
+      let p={id:String(raw.id),name:String(raw.name||raw.id),access_token:raw.access_token?String(raw.access_token):null,tasks:Array.isArray(raw.tasks)?raw.tasks:[]};
+      if(!p.access_token){
+        try{
+          const full=await metaGraph(p.id,{params:{fields:'id,name,access_token,tasks'},token:userToken});
+          p={...p,...full,id:String(full.id||p.id),name:String(full.name||p.name),access_token:full.access_token?String(full.access_token):p.access_token,tasks:Array.isArray(full.tasks)?full.tasks:p.tasks};
+        }catch{}
+      }
+      const prev=byId.get(p.id);
+      byId.set(p.id,{...(prev||{}),...p,access_token:p.access_token||prev?.access_token||null});
+    }
+  };
+  const direct=await metaGraph('me/accounts',{params:{fields:'id,name,access_token,tasks',limit:100},token:userToken}).catch(()=>({data:[]}));
+  await absorb(direct.data||[]);
+  const businesses=await metaGraph('me/businesses',{params:{fields:'id,name',limit:100},token:userToken}).catch(()=>({data:[]}));
+  for(const b of businesses.data||[]){
+    for(const edge of ['owned_pages','client_pages']){
+      const r=await metaGraph(String(b.id)+'/'+edge,{params:{fields:'id,name,tasks',limit:100},token:userToken}).catch(()=>({data:[]}));
+      await absorb(r.data||[]);
+    }
+  }
+  return [...byId.values()].filter(p=>p.access_token);
+}
+
 const youtubePublication=installPublication({app,db,config:CONFIG,youtubeApi,authedClient,loadToken,dataDir:DIR,isEnabled:()=>selectedPublicationProvider()==='youtube'});
 const facebookPublication=installFacebookPublication({db,config:CONFIG,dataDir:DIR,loadFacebookConnection:facebookConnection,isEnabled:()=>selectedPublicationProvider()==='facebook'});
 const publication={
@@ -443,7 +471,7 @@ app.get('/integrations/facebook/login',secure,(req,res)=>{
     saveFbSecrets({oauth_state:state,oauth_state_exp:Date.now()+15*60*1000,redirect_uri:redirect});
     const u=new URL('https://www.facebook.com/'+metaGraphVersion()+'/dialog/oauth');
     u.searchParams.set('client_id',String(f.app_id));u.searchParams.set('redirect_uri',redirect);u.searchParams.set('state',state);
-    u.searchParams.set('scope','pages_show_list,pages_read_engagement,pages_manage_posts');u.searchParams.set('auth_type','rerequest');
+    u.searchParams.set('scope','pages_show_list,pages_read_engagement,pages_manage_posts,business_management');u.searchParams.set('auth_type','rerequest');u.searchParams.set('return_scopes','true');
     res.redirect(u.toString());
   }catch(e){res.status(400).send(String(e?.message||e))}
 });
@@ -459,9 +487,8 @@ app.get('/facebook/oauth/callback',async(req,res)=>{
       const long=await metaGraph('oauth/access_token',{params:{grant_type:'fb_exchange_token',client_id:f.app_id,client_secret:f.app_secret,fb_exchange_token:userToken}});
       if(long.access_token){userToken=String(long.access_token);expires=Number(long.expires_in||expires||0)}
     }catch{}
-    const acc=await metaGraph('me/accounts',{params:{fields:'id,name,access_token,tasks',limit:100},token:userToken});
-    const pages=(acc.data||[]).filter(p=>p?.id&&p?.access_token).map(p=>({id:String(p.id),name:String(p.name||p.id),access_token:String(p.access_token),tasks:Array.isArray(p.tasks)?p.tasks:[]}));
-    if(!pages.length)throw new Error('No managed Facebook Pages were returned. Check Pages permissions and your role on the Page.');
+    const pages=await discoverFacebookPages(userToken);
+    if(!pages.length)throw new Error('No managed Facebook Pages were returned. Make sure pages_show_list and business_management were granted, then reconnect Facebook.');
     saveFbSecrets({user_token:userToken,token_expires_at:expires?Date.now()+expires*1000:null,page_options:pages,oauth_state:null,oauth_state_exp:0});
     setPublicationProvider('facebook');
     res.redirect('/integrations/facebook');
