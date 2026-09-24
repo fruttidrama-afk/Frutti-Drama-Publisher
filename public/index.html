@@ -109,7 +109,7 @@ body.completed .shell{padding-top:28px}
   <section class="hero" id="setupHero">
     <div class="eyebrow">ONE-TIME SETUP</div>
     <h1 id="title">Connect three things.<br>That’s it.</h1>
-    <p class="lede">Para dejar este Publisher funcionando, solamente conectá tu canal de YouTube, conectá Google Flow y pegá el Show Bible completo.</p>
+    <p class="lede">Para dejar este Publisher funcionando, elegí YouTube o Facebook como plataforma de publicación, conectá Google Flow y confirmá el Show Bible.</p>
   </section>
 
   <div class="connection-help" id="connectionHelp">
@@ -118,16 +118,16 @@ body.completed .shell{padding-top:28px}
   </div>
 
   <section class="setup-grid" id="setupGrid">
-    <article class="setup-card" id="youtubeCard">
+    <article class="setup-card" id="publicationCard">
       <div class="num">01</div>
-      <h2>YouTube</h2>
-      <p>Conectá el canal donde este Publisher va a subir, programar y publicar los videos.</p>
-      <div class="state" id="youtubeState">CHECKING…</div>
+      <h2 id="publicationTitle">Publishing</h2>
+      <p id="publicationText">Elegí YouTube o Facebook y conectá el canal o Página donde este Publisher va a publicar.</p>
+      <div class="state" id="publicationState">CHECKING…</div>
       <div class="setup-actions">
-        <a class="btn primary" href="/integrations/youtube" id="youtubeButton">CONNECT YOUTUBE</a>
-        <a class="setup-link" href="/integrations/youtube">Abrir guía paso a paso de YouTube</a>
+        <a class="btn primary" href="/integrations/platform" id="publicationButton">CHOOSE PLATFORM</a>
+        <a class="setup-link" href="/integrations/platform">Elegir plataforma, hora y conexión</a>
       </div>
-      <div class="outside"><b>¿Vas a salir de esta página?</b> Solamente para abrir Google Cloud o elegir tu cuenta de Google. La guía de YouTube contiene todos los links y te indica qué copiar.</div>
+      <div class="outside"><b>Dos opciones, una sola activa.</b> Google Flow siempre genera; la publicación puede ir a YouTube o a una Página de Facebook.</div>
     </article>
 
     <article class="setup-card" id="flowCard">
@@ -162,7 +162,7 @@ body.completed .shell{padding-top:28px}
       </div>
       <div class="status-grid">
         <div class="status"><div class="label">Google Flow</div><div class="value" id="flowValue">—</div><div id="flowDetail"></div></div>
-        <div class="status"><div class="label">YouTube</div><div class="value" id="ytValue">—</div><div id="ytDetail"></div></div>
+        <div class="status"><div class="label" id="publicationLabel">Publishing</div><div class="value" id="publicationValue">—</div><div id="publicationDetail"></div></div>
         <div class="status"><div class="label">Today</div><div class="value" id="dailyValue">—</div><div id="dailyDetail"></div></div>
         <div class="status"><div class="label">Worker</div><div class="value" id="workerValue">—</div><div>FreeBrowserProvider</div></div>
       </div>
@@ -199,7 +199,7 @@ body.completed .shell{padding-top:28px}
     </article>
   </div>
 </section>
-<section class="panel" id="setup"><div class="empty">Use the three setup cards above to change YouTube, Google Flow or the Show Bible.</div></section>
+<section class="panel" id="setup"><div class="empty">Use the three setup cards above to change the publication platform, Google Flow or the Show Bible.</div></section>
     </div>
   </section>
 </main>
@@ -284,12 +284,19 @@ function applyBrand(b,show='Publisher'){
   const meta=document.querySelector('meta[name="theme-color"]');if(meta&&t.primary)meta.content=t.primary;
 }
 async function load(){
-  const s=await api('/api/status'),h=s.health,o=s.onboarding||{};applyBrand(s.brand||{},h.show||'Publisher');
+  const s=await api('/api/status'),h=s.health,o=s.onboarding||{},pub=s.publication||{},selected=pub.selected||null;applyBrand(s.brand||{},h.show||'Publisher');
   document.title=h.show||'Publisher';
-  paintCard('#youtubeCard','#youtubeState',!!o.youtube,'CONNECTED ✓','NOT CONNECTED');
+  paintCard('#publicationCard','#publicationState',!!o.publication,'CONNECTED ✓',selected?('CONNECT '+selected.toUpperCase()):'CHOOSE YOUTUBE OR FACEBOOK');
   paintCard('#flowCard','#flowState',!!o.flow,'CONNECTED ✓','NOT CONNECTED');
   paintCard('#bibleCard','#bibleState',!!o.bible,'SAVED ✓','NOT SAVED');
-  $('#youtubeButton').textContent=o.youtube?'YOUTUBE CONNECTED ✓':'CONNECT YOUTUBE';
+  $('#publicationTitle').textContent=selected==='facebook'?'Facebook':selected==='youtube'?'YouTube':'Publishing';
+  $('#publicationText').textContent=selected==='facebook'
+    ?'Conectá la Página de Facebook donde este Publisher va a publicar Reels automáticamente.'
+    :selected==='youtube'
+      ?'Conectá el canal de YouTube donde este Publisher va a publicar automáticamente.'
+      :'Elegí YouTube o Facebook y conectá el destino de publicación.';
+  $('#publicationButton').textContent=o.publication?(selected||'PUBLICATION').toUpperCase()+' CONNECTED ✓':(selected?'CONNECT '+selected.toUpperCase():'CHOOSE PLATFORM');
+  $('#publicationButton').href=o.publication?'/integrations/platform':selected==='facebook'?'/integrations/facebook':selected==='youtube'?'/integrations/youtube':'/integrations/platform';
   $('#flowButton').textContent=o.flow?'GOOGLE FLOW CONNECTED ✓':'CONNECT GOOGLE FLOW';
   if(!$('#bible').dataset.loaded){const b=await api('/api/show-bible');$('#bible').value=b.creative_bible||'';$('#bible').dataset.loaded='1'}
   if(o.ready){
@@ -297,19 +304,21 @@ async function load(){
     $('#ready').classList.add('show');
     $('#showTitle').textContent=h.show;
     $('#successTitle').textContent=(h.show||'Your Publisher')+' is ready.';
-    $('#successText').textContent='Everything is connected. Automation is running in the background and the first generated videos will appear in Review as soon as they are ready.';
+    $('#successText').textContent='Everything is connected. Automation is running in the background and approved videos will publish automatically on schedule.';
     $('#publisherUrlText').textContent=location.origin;
     $('#flowValue').textContent='Connected';$('#flowDetail').textContent=h.flow.project_name||h.flow.project_id||'Flow';
-    $('#ytValue').textContent='Connected';$('#ytDetail').textContent='YouTubeProvider';
+    $('#publicationLabel').textContent=selected==='facebook'?'Facebook':'YouTube';
+    $('#publicationValue').textContent='Connected';
+    $('#publicationDetail').textContent=selected==='facebook'?(s.facebook?.pageName||'Facebook Page'):'YouTube channel';
     $('#dailyValue').textContent=h.completed_today+' / '+h.daily_target;$('#dailyDetail').textContent=h.remaining_today+' remaining';
     $('#workerValue').textContent=h.worker_alive?'Active':'Starting';
-    const [cards,pub]=await Promise.all([api('/factory/cards'),api('/publication/items')]);
-    renderReviews(cards.cards||[]);renderQueue(pub.items||[]);
+    const [cards,pubItems]=await Promise.all([api('/factory/cards'),api('/publication/items')]);
+    renderReviews(cards.cards||[]);renderQueue(pubItems.items||[]);
   }else{document.body.classList.remove('completed');$('#ready').classList.remove('show')}
 }
 
 $('#copyPublisherLink').onclick=async()=>{try{await navigator.clipboard.writeText(location.origin);toast('Publisher link copied')}catch{toast(location.origin)}};
-$('#installApp').onclick=async()=>{if(window.matchMedia('(display-mode: standalone)').matches||navigator.standalone){toast('Already installed');return}if(deferredInstallPrompt){deferredInstallPrompt.prompt();await deferredInstallPrompt.userChoice.catch(()=>{});deferredInstallPrompt=null;return}$('#installModal').classList.add('open');$('#installModal').setAttribute('aria-hidden','false')};
+const installAppButton=$('#installApp');if(installAppButton)installAppButton.style.display='none';
 $('#installClose').onclick=()=>{$('#installModal').classList.remove('open');$('#installModal').setAttribute('aria-hidden','true')};
 $('#installModal').onclick=e=>{if(e.target===e.currentTarget)$('#installClose').click()};
 $('#saveBible').onclick=async()=>{const b=$('#bible').value.trim();$('#saveBible').disabled=true;try{await api('/api/show-bible',{method:'POST',body:JSON.stringify({creative_bible:b})});toast('Show Bible saved');await load()}catch(e){toast(e.message)}finally{$('#saveBible').disabled=false}};
