@@ -205,7 +205,7 @@ function youtubeApi(){return google.youtube({version:'v3',auth:authedClient()})}
 
 function fbSecrets(){const s=secrets();return s.facebook||{}}
 function saveFbSecrets(v){const s=secrets();s.facebook={...(s.facebook||{}),...v};saveSecrets(s)}
-function metaGraphVersion(){return String(process.env.META_GRAPH_VERSION||'v25.0').replace(/^\/+|\/+$/g,'')}
+function metaGraphVersion(){return String(process.env.META_GRAPH_VERSION||'v26.0').replace(/^\/+|\/+$/g,'')}
 function selectedPublicationProvider(){
   const v=String(CONFIG.publication?.selected_provider||'').toLowerCase();
   return ['youtube','facebook'].includes(v)?v:null;
@@ -313,7 +313,7 @@ function integrationShell({title,body,brand=brandPublic()}){
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="${esc(t.primary||'#123d28')}"><title>${esc(title)}</title>
 <style>
 :root{--p:${esc(t.primary||'#123d28')};--s:${esc(t.secondary||'#5f8c61')};--a:${esc(t.accent||'#8bbd70')};--bg:${esc(t.background||'#071a12')};--surface:${esc(t.surface||'#10261a')};--text:${esc(t.text||'#f3f8f0')};--muted:color-mix(in srgb,var(--text) 68%,transparent);--line:color-mix(in srgb,var(--text) 16%,transparent)}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 10% 0%,color-mix(in srgb,var(--s) 26%,transparent),transparent 34%),linear-gradient(145deg,var(--p),var(--bg));color:var(--text);font-family:Arial,sans-serif;padding:calc(18px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom));min-height:100vh}.wrap{max-width:900px;margin:auto}.top{display:flex;align-items:center;gap:13px;margin-bottom:20px}.top img{width:70px;height:70px;object-fit:contain;border-radius:18px;background:color-mix(in srgb,var(--surface) 84%,transparent)}.top strong{font-size:26px}.eyebrow{font-size:11px;letter-spacing:.18em;color:var(--a);font-weight:800}.card{background:color-mix(in srgb,var(--surface) 88%,transparent);border:1px solid var(--line);border-radius:24px;padding:20px;margin:14px 0;box-shadow:0 18px 54px rgba(0,0,0,.18);backdrop-filter:blur(16px)}h1{font-size:clamp(38px,7vw,62px);line-height:.98;margin:7px 0 12px}h2{margin:0 0 8px;font-size:26px}.muted{color:var(--muted);line-height:1.55}.btn{min-height:48px;padding:0 16px;border-radius:14px;border:1px solid var(--a);background:transparent;color:var(--text);font-weight:800;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.btn.primary{background:var(--a);color:#102014;border-color:var(--a)}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}input,select{width:100%;min-height:50px;border:1px solid var(--line);background:color-mix(in srgb,var(--surface) 92%,#000);color:var(--text);border-radius:12px;padding:0 12px;font:inherit}label{display:grid;gap:7px;font-size:12px;font-weight:800;margin:10px 0}.radio{display:flex;gap:10px;align-items:center;border:1px solid var(--line);padding:14px;border-radius:14px;margin:8px 0}.radio input{width:auto;min-height:0}.ok{color:#b8efad}.warn{color:#f2cf85}.code{word-break:break-all;background:#08120d;border:1px solid var(--line);padding:12px;border-radius:12px;font:12px ui-monospace,monospace}.pages{display:grid;gap:8px;margin-top:12px}.page{display:flex;gap:10px;align-items:center;border:1px solid var(--line);padding:12px;border-radius:14px}.page input{width:auto;min-height:0}.back{color:var(--text);text-decoration:none;font-weight:800}.small{font-size:12px}</style></head><body><main class="wrap"><a class="back" href="/">← VOLVER AL PUBLISHER</a><div class="top">${brand.logo_url?'<img src="'+esc(brand.logo_url)+'" alt="">':''}<div><div class="eyebrow">PUBLISHER CONNECTIONS</div><strong>${esc(CONFIG.identity.show_name||'Publisher')}</strong></div></div>${body}</main></body></html>`;
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 10% 0%,color-mix(in srgb,var(--s) 26%,transparent),transparent 34%),linear-gradient(145deg,var(--p),var(--bg));color:var(--text);font-family:Arial,sans-serif;padding:calc(18px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom));min-height:100vh}.wrap{max-width:900px;margin:auto}.top{display:flex;align-items:center;gap:13px;margin-bottom:20px}.top img{width:70px;height:70px;object-fit:contain;border-radius:18px;background:color-mix(in srgb,var(--surface) 84%,transparent)}.top strong{font-size:26px}.eyebrow{font-size:11px;letter-spacing:.18em;color:var(--a);font-weight:800}.card{background:color-mix(in srgb,var(--surface) 88%,transparent);border:1px solid var(--line);border-radius:24px;padding:20px;margin:14px 0;box-shadow:0 18px 54px rgba(0,0,0,.18);backdrop-filter:blur(16px)}h1{font-size:clamp(38px,7vw,62px);line-height:.98;margin:7px 0 12px}h2{margin:0 0 8px;font-size:26px}.muted{color:var(--muted);line-height:1.55}.btn{min-height:48px;padding:0 16px;border-radius:14px;border:1px solid var(--a);background:transparent;color:var(--text);font-weight:800;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.btn.primary{background:var(--a);color:#102014;border-color:var(--a)}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}input,select{width:100%;min-height:50px;border:1px solid var(--line);background:color-mix(in srgb,var(--surface) 92%,#000);color:var(--text);border-radius:12px;padding:0 12px;font:inherit}label{display:grid;gap:7px;font-size:12px;font-weight:800;margin:10px 0}.radio{display:flex;gap:10px;align-items:center;border:1px solid var(--line);padding:14px;border-radius:14px;margin:8px 0}.radio input{width:auto;min-height:0}.ok{color:#b8efad}.warn{color:#f2cf85}.code{word-break:break-all;background:#08120d;border:1px solid var(--line);padding:12px;border-radius:12px;font:12px ui-monospace,monospace}.pages{display:grid;gap:8px;margin-top:12px}.page{display:flex;gap:10px;align-items:center;border:1px solid var(--line);padding:12px;border-radius:14px}.page input{width:auto;min-height:0}.back{color:var(--text);text-decoration:none;font-weight:800}.small{font-size:12px}.guide{display:grid;gap:12px}.guide-step{display:grid;grid-template-columns:42px minmax(0,1fr);gap:13px;align-items:start;padding:14px 0;border-top:1px solid var(--line)}.guide-step:first-child{border-top:0;padding-top:0}.guide-num{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:color-mix(in srgb,var(--a) 22%,transparent);border:1px solid color-mix(in srgb,var(--a) 45%,transparent);font-weight:900}.guide-step h3{margin:2px 0 6px;font-size:18px}.guide-step p{margin:0;color:var(--muted);line-height:1.5}.callout{padding:14px;border-radius:16px;border:1px solid color-mix(in srgb,var(--a) 38%,transparent);background:color-mix(in srgb,var(--a) 9%,var(--surface));margin:12px 0}.callout b{color:var(--text)}.copyrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:stretch}.copyrow .code{margin:0}.copybtn{min-height:44px}.perm{font-family:ui-monospace,monospace;font-size:12px;background:#08120d;border:1px solid var(--line);padding:7px 9px;border-radius:9px;display:inline-block;margin:3px 4px 3px 0}.checklist{display:grid;gap:8px;margin:12px 0}.checkitem{display:flex;gap:9px;align-items:flex-start}.checkdot{width:18px;height:18px;border-radius:50%;border:1px solid var(--a);display:grid;place-items:center;font-size:11px;margin-top:1px;flex:0 0 auto}.statusbar{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin:16px 0}.statuspill{border:1px solid var(--line);border-radius:12px;padding:9px 8px;text-align:center;font-size:11px;font-weight:800}.statuspill.done{background:color-mix(in srgb,#63c174 16%,var(--surface));border-color:#63c174}.statuspill.current{background:color-mix(in srgb,var(--a) 14%,var(--surface));border-color:var(--a)}details{border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-top:9px;background:color-mix(in srgb,var(--surface) 92%,transparent)}summary{cursor:pointer;font-weight:800}.note{font-size:13px;color:var(--muted);line-height:1.55}.external{display:inline-flex;align-items:center;gap:7px}@media(max-width:620px){.statusbar{grid-template-columns:1fr 1fr}.copyrow{grid-template-columns:1fr}.guide-step{grid-template-columns:34px minmax(0,1fr)}.guide-num{width:30px;height:30px}}</style></head><body><main class="wrap"><a class="back" href="/">← VOLVER AL PUBLISHER</a><div class="top">${brand.logo_url?'<img src="'+esc(brand.logo_url)+'" alt="">':''}<div><div class="eyebrow">PUBLISHER CONNECTIONS</div><strong>${esc(CONFIG.identity.show_name||'Publisher')}</strong></div></div>${body}</main></body></html>`;
 }
 
 app.get('/integrations/platform',secure,(req,res)=>{
@@ -338,20 +338,93 @@ app.post('/integrations/platform',secure,(req,res)=>{
 
 app.get('/integrations/facebook',secure,(req,res)=>{
   const f=fbSecrets(),connected=facebookConnected(),callback=origin(req)+'/facebook/oauth/callback',pages=Array.isArray(f.page_options)?f.page_options:[],appConfigured=Boolean(f.app_id&&f.app_secret);
-  let body=`<div class="eyebrow">FACEBOOK REELS</div><h1>Conectá tu Página.</h1><p class="muted">El Publisher usa la API oficial de Meta para crear y publicar Reels. Necesita una app de Meta y permisos de Página. Los tokens y el App Secret quedan cifrados dentro del volumen privado de este Publisher.</p>`;
-  body+=`<div class="card"><h2>1 · Meta App</h2><p class="muted">En Meta for Developers, usá una app que tenga Facebook Login y acceso a Pages. Pedí <b>pages_show_list</b>, <b>pages_read_engagement</b> y <b>pages_manage_posts</b>. Agregá esta URI exacta como Valid OAuth Redirect URI:</p><div class="code">${callback}</div>
-  <form method="post" action="/integrations/facebook/app">
-    <label>App ID<input name="app_id" value="${f.app_id?String(f.app_id).replace(/"/g,'&quot;'):''}" required></label>
-    <label>App Secret<input type="password" name="app_secret" placeholder="${f.app_secret?'••••••••••••':'Paste App Secret'}" ${f.app_secret?'':'required'}></label>
-    <div class="actions"><button class="btn primary" type="submit">${appConfigured?'UPDATE META APP':'SAVE META APP'}</button></div>
-  </form></div>`;
-  body+=`<div class="card"><h2>2 · Facebook Login</h2><p class="muted">${appConfigured?'Autorizá Publisher Factory para ver las Páginas que administrás y publicar Reels en la que elijas.':'Primero guardá App ID y App Secret.'}</p><div class="actions">${appConfigured?'<a class="btn primary" href="/integrations/facebook/login">LOGIN WITH FACEBOOK</a>':''}</div></div>`;
-  if(pages.length){
-    body+=`<div class="card"><h2>3 · Elegí la Página</h2><form method="post" action="/integrations/facebook/page"><div class="pages">${pages.map(p=>'<label class="page"><input type="radio" name="page_id" value="'+String(p.id).replace(/"/g,'&quot;')+'" '+(String(f.page_id||'')===String(p.id)?'checked':'')+' required><span><b>'+String(p.name||p.id).replace(/</g,'&lt;')+'</b><br><span class="muted small">Page ID '+String(p.id).replace(/</g,'&lt;')+'</span></span></label>').join('')}</div><div class="actions"><button class="btn primary" type="submit">USE THIS PAGE</button></div></form></div>`;
-  }
-  body+=`<div class="card"><h2>Estado</h2>${connected?'<p class="ok"><b>CONNECTED ✓</b> · '+String(f.page_name||f.page_id).replace(/</g,'&lt;')+'</p><p class="muted">Los Reels aprobados quedarán en Stock local hasta la hora de publicación. En ese momento el scheduler los sube y publica automáticamente.</p><form method="post" action="/integrations/facebook/disconnect"><button class="btn" type="submit">DISCONNECT FACEBOOK</button></form>':'<p class="warn"><b>NOT CONNECTED</b></p>'}</div>`;
+  const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const step=connected?4:pages.length?3:appConfigured?2:1;
+  let body=`
+  <div class="eyebrow">FACEBOOK REELS · PASO A PASO</div>
+  <h1>Conectá tu Página sin adivinar nada.</h1>
+  <p class="muted">No necesitás descargar ninguna “app de Meta” ni buscar una API key. Todo se hace desde <b>Meta for Developers</b> en el navegador. Los dos datos que este Publisher necesita son <b>App ID</b> y <b>App Secret</b>; después Facebook Login devuelve tu Página y un Page Access Token automáticamente.</p>
+  <div class="callout"><b>Importante:</b> iniciá sesión en Meta con la misma cuenta de Facebook que tiene acceso de administración a la Página que querés conectar. Para usar tu propia Página mientras vos sos administradora/desarrolladora de la app, podés hacer la conexión en modo desarrollo; si en el futuro permitís que personas ajenas conecten sus Páginas, Meta puede exigir Advanced Access/App Review para esos permisos.</div>
+  <div class="statusbar">
+    <div class="statuspill ${step>=1?'current':''}">1 · META APP</div>
+    <div class="statuspill ${step>=2?'current':''}">2 · LOGIN</div>
+    <div class="statuspill ${step>=3?'current':''}">3 · PÁGINA</div>
+    <div class="statuspill ${connected?'done':''}">4 · LISTO</div>
+  </div>
+
+  <div class="card">
+    <h2>Antes de empezar</h2>
+    <div class="checklist">
+      <div class="checkitem"><span class="checkdot">✓</span><span>Usá Safari o Chrome. <b>No hay ninguna aplicación para descargar.</b></span></div>
+      <div class="checkitem"><span class="checkdot">✓</span><span>Tené abierta la cuenta de Facebook que administra tu Página.</span></div>
+      <div class="checkitem"><span class="checkdot">✓</span><span>La Página debe permitirte crear contenido/publicaciones.</span></div>
+      <div class="checkitem"><span class="checkdot">✓</span><span>Dejá esta pestaña del Publisher abierta; vas a volver para pegar dos datos.</span></div>
+    </div>
+    <div class="actions"><a class="btn primary external" target="_blank" rel="noopener" href="https://developers.facebook.com/apps/">ABRIR META FOR DEVELOPERS ↗</a></div>
+  </div>
+
+  <div class="card">
+    <h2>1 · Crear la Meta App</h2>
+    <div class="guide">
+      <div class="guide-step"><div class="guide-num">1</div><div><h3>Entrá a Meta for Developers</h3><p>Tocá <b>My Apps / Mis apps</b> y después <b>Create App / Crear app</b>. Si es la primera vez, Meta puede pedirte activar tu cuenta de desarrollador y verificar datos básicos.</p></div></div>
+      <div class="guide-step"><div class="guide-num">2</div><div><h3>Elegí un caso de uso con Facebook Login</h3><p>Si Meta muestra “Authenticate and request data from users with Facebook Login”, “Facebook Login” o una opción equivalente para iniciar sesión y pedir permisos, elegila. No necesitás una app móvil nativa: este Publisher usa OAuth web.</p></div></div>
+      <div class="guide-step"><div class="guide-num">3</div><div><h3>Poné un nombre reconocible</h3><p>Por ejemplo <b>Dinnie Publisher</b>. Completá los datos mínimos que Meta te pida y creá la app.</p></div></div>
+      <div class="guide-step"><div class="guide-num">4</div><div><h3>Copiá App ID y App Secret</h3><p>Dentro de la app, abrí <b>App settings → Basic</b>. Copiá <b>App ID</b>. En <b>App Secret</b>, tocá Show y copiá el valor. Eso reemplaza lo que mucha gente llama informalmente “API key”.</p></div></div>
+    </div>
+    <form method="post" action="/integrations/facebook/app">
+      <label>App ID<input name="app_id" inputmode="numeric" autocomplete="off" value="${f.app_id?esc(f.app_id):''}" placeholder="Ej. 123456789012345" required></label>
+      <label>App Secret<input type="password" name="app_secret" autocomplete="off" placeholder="${f.app_secret?'Ya guardado · dejalo vacío para conservarlo':'Pegá el App Secret'}" ${f.app_secret?'':'required'}></label>
+      <div class="actions"><button class="btn primary" type="submit">${appConfigured?'GUARDAR / ACTUALIZAR':'GUARDAR META APP'}</button></div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>2 · Activar Facebook Login y permisos</h2>
+    <div class="guide">
+      <div class="guide-step"><div class="guide-num">1</div><div><h3>Agregá Facebook Login si no aparece</h3><p>En el panel de tu Meta App buscá <b>Add product / Add use case</b> y agregá <b>Facebook Login</b>. Si ya vino incluido con el caso de uso, seguí al paso siguiente.</p></div></div>
+      <div class="guide-step"><div class="guide-num">2</div><div><h3>Configurá esta URL de retorno</h3><p>Entrá a la configuración de Facebook Login y buscá <b>Valid OAuth Redirect URIs</b>. Pegá exactamente esta dirección, guardá los cambios y dejá habilitado Web OAuth Login.</p>
+        <div class="copyrow"><div class="code" id="fbCallback">${esc(callback)}</div><button class="btn copybtn" type="button" onclick="navigator.clipboard.writeText(document.getElementById('fbCallback').textContent).then(()=>{this.textContent='COPIADO ✓';setTimeout(()=>this.textContent='COPIAR',1400)})">COPIAR</button></div>
+      </div></div>
+      <div class="guide-step"><div class="guide-num">3</div><div><h3>Comprobá los permisos de Página</h3><p>En <b>App Review → Permissions and Features</b> o dentro de la configuración del caso de uso, buscá estos tres permisos:</p>
+        <div><span class="perm">pages_show_list</span><span class="perm">pages_read_engagement</span><span class="perm">pages_manage_posts</span></div>
+        <p class="note"><b>pages_show_list</b> permite listar las Páginas que administrás; <b>pages_read_engagement</b> es dependencia para la información de la Página; <b>pages_manage_posts</b> permite crear/publicar videos y Reels. No desactives ninguno cuando Facebook te pida autorización.</p>
+      </div></div>
+      <div class="guide-step"><div class="guide-num">4</div><div><h3>Volvé acá y conectá Facebook</h3><p>Cuando App ID, App Secret y Redirect URI estén listos, tocá el botón de abajo. Facebook te va a preguntar con qué cuenta continuar y qué permisos conceder.</p></div></div>
+    </div>
+    <div class="actions">${appConfigured?'<a class="btn primary" href="/integrations/facebook/login">LOGIN WITH FACEBOOK</a>':'<span class="warn"><b>Primero guardá App ID + App Secret arriba.</b></span>'}</div>
+  </div>
+
+  <div class="card">
+    <h2>3 · Elegir la Página</h2>
+    ${pages.length
+      ?'<p class="muted">Facebook ya devolvió las Páginas disponibles para esta cuenta. Elegí la que querés que publique Dinnie.</p><form method="post" action="/integrations/facebook/page"><div class="pages">'+pages.map(p=>'<label class="page"><input type="radio" name="page_id" value="'+esc(p.id)+'" '+(String(f.page_id||'')===String(p.id)?'checked':'')+' required><span><b>'+esc(p.name||p.id)+'</b><br><span class="muted small">Page ID '+esc(p.id)+'</span></span></label>').join('')+'</div><div class="actions"><button class="btn primary" type="submit">USE THIS PAGE</button></div></form>'
+      :'<p class="muted">Todavía no hay Páginas para elegir. Después de <b>LOGIN WITH FACEBOOK</b>, esta sección se completa sola.</p>'}
+  </div>
+
+  <div class="card">
+    <h2>4 · Verificación final</h2>
+    ${connected
+      ?'<p class="ok"><b>CONNECTED ✓</b> · '+esc(f.page_name||f.page_id)+'</p><div class="checklist"><div class="checkitem"><span class="checkdot">✓</span><span>Page Access Token guardado.</span></div><div class="checkitem"><span class="checkdot">✓</span><span>FacebookReelsProvider listo para el scheduler.</span></div><div class="checkitem"><span class="checkdot">✓</span><span>Los videos rechazados no se envían a Facebook.</span></div><div class="checkitem"><span class="checkdot">✓</span><span>Los videos aprobados quedan en Stock y se publican a la hora configurada.</span></div></div><div class="actions"><a class="btn primary" href="/">VOLVER AL PUBLISHER</a><form method="post" action="/integrations/facebook/disconnect"><button class="btn" type="submit">DISCONNECT FACEBOOK</button></form></div>'
+      :'<p class="warn"><b>FACEBOOK TODAVÍA NO ESTÁ CONECTADO.</b></p><p class="muted">Completá los pasos de arriba en orden. El Publisher no empieza a publicar hasta que la Página quede confirmada.</p>'}
+  </div>
+
+  <div class="card">
+    <h2>Si algo no aparece como en la guía</h2>
+    <details><summary>No encuentro “Facebook Login”</summary><p class="note">Meta cambia los nombres de los menús con frecuencia. Buscá dentro de <b>Use cases / Casos de uso</b> una opción que permita <b>authenticate users with Facebook Login</b>, o usá <b>Add product</b> si tu panel todavía muestra productos.</p></details>
+    <details><summary>Facebook Login vuelve pero no aparece mi Página</summary><p class="note">Comprobá que hayas iniciado sesión con la cuenta que administra esa Página, que tengas permiso para crear contenido y que hayas concedido <b>pages_show_list</b>, <b>pages_read_engagement</b> y <b>pages_manage_posts</b>. Si modificaste permisos, repetí LOGIN WITH FACEBOOK para volver a consentirlos.</p></details>
+    <details><summary>Me dice que la Redirect URI no coincide</summary><p class="note">Copiá la URL de retorno de esta misma pantalla, sin agregar ni quitar barras, espacios o http/https. Debe coincidir exactamente con <b>Valid OAuth Redirect URIs</b> en Meta.</p></details>
+    <details><summary>¿Tengo que mandar la app a revisión?</summary><p class="note">Para pruebas/uso propio, la cuenta que figura como administradora o desarrolladora de la Meta App puede usar la app en modo desarrollo con sus activos permitidos. Si más adelante querés que usuarios que no tienen rol en esa Meta App conecten sus propias Páginas, prepará Advanced Access/App Review para los permisos de Pages.</p></details>
+  </div>
+
+  <div class="card"><h2>Qué hace el Publisher después</h2><p class="muted">Cuando apruebes un Reel, el archivo pasa a Stock. A la hora programada, el scheduler inicia la sesión de Reels, sube el MP4, finaliza la publicación como <b>PUBLISHED</b> y verifica el estado remoto. Antes de APPROVE, el video permanece únicamente en el volumen privado del Publisher.</p></div>
+
+  <script>
+    document.querySelectorAll('a[target="_blank"]').forEach(a=>a.addEventListener('click',()=>{a.rel='noopener noreferrer'}));
+  </script>
+  `;
   res.send(integrationShell({title:'Connect Facebook',body}));
 });
+
 app.post('/integrations/facebook/app',secure,(req,res)=>{
   try{
     const app_id=String(req.body.app_id||'').trim(),provided=String(req.body.app_secret||'').trim(),old=fbSecrets();
