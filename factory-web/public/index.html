@@ -59,9 +59,9 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
     </section>
     <section class="create-pane" data-create-pane="2">
       <h3>Branding</h3>
-      <p class="muted">Danos dos cosas: una imagen de referencia para diseñar la página y tu logo real para usarlo en la web, favicon e ícono PWA.</p>
+      <p class="muted">Danos dos cosas: una referencia de diseño y tu logo real. Si elegís Web / layout reference, la captura funciona como especificación visual: Publisher Factory traduce paleta, composición, tarjetas, jerarquía y estilo a componentes web reales; la imagen nunca se muestra como fondo.</p>
       <div class="fields">
-        <div class="field full"><label>Cómo usar la referencia</label><select class="input" id="referenceMode" name="reference_mode"><option value="web_design">Web / layout reference — copiar lenguaje visual, paleta y composición</option><option value="show_reference">Show / visual reference — diseñar la página desde el universo visual del show</option></select></div>
+        <div class="field full"><label>Cómo usar la referencia</label><select class="input" id="referenceMode" name="reference_mode"><option value="web_design">Web / layout reference — convertir el diseño en UI real; nunca usar la captura como fondo</option><option value="show_reference">Show / visual reference — diseñar la página desde el universo visual del show</option></select></div>
         <div class="field full reference-box"><label>1 · Imagen de referencia</label><input id="referenceImage" type="file" accept="image/png,image/jpeg,image/webp" required><div class="reference-status" id="referenceStatus">Puede ser una captura de una web o una imagen del show.</div></div>
         <div class="field full reference-box"><label>2 · Logo oficial</label><input id="logoImage" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" required><div class="reference-status" id="logoStatus">Usaremos este logo tal cual para la página y para crear los iconos PWA con una zona segura correcta.</div><img id="logoUploadPreview" class="logo-upload-preview" alt="Logo preview"></div>
       </div>
@@ -253,7 +253,7 @@ async function waitDeployJob(jobId,publisherId,b){
   throw Error("Railway is still processing the same deployment. Do not press DEPLOY again; CHECK DEPLOY only refreshes its status.")
 }
 async function resumeDeploy(id,b){b.disabled=true;try{const j=await latestJob(id);if(!j){b.disabled=false;b.textContent="DEPLOY";return deploy(id,b)}if(j.state==="deployed"){await list();return}await waitDeployJob(j.id,id,b)}catch(e){alert(e.message);await list()}finally{b.disabled=false}}
-async function configurePublisher(id){try{const j=await latestJob(id),url=j?.detail?.setupUrl;if(!url)throw Error("Setup link unavailable. Redeploy this Publisher to generate a new setup link.");window.open(url,"_blank")}catch(e){alert(e.message)}}
+async function configurePublisher(id){try{const j=await latestJob(id),url=j?.detail?.setupUrl;if(!url)throw Error("Setup link unavailable. Redeploy this Publisher to generate a new setup link.");location.assign(url)}catch(e){alert(e.message)}}
 async function deploy(id,b){if(!railwayConnections.length){openRailway();return}b.disabled=true;b.textContent="STARTING…";try{const d=await rail("deploy",{method:"POST",body:JSON.stringify({publisherId:id})});await list();if(!d.jobId)throw Error("Deployment job was not created.");await waitDeployJob(d.jobId,id,b)}catch(e){alert(e.message);await list()}finally{b.disabled=false}}
 function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
 function rgbHex(r,g,b){return "#"+[r,g,b].map(x=>Math.round(clamp(x,0,255)).toString(16).padStart(2,"0")).join("")}
@@ -320,7 +320,7 @@ async function uploadBrandAssets(folder,name){
   const bucket=sb.storage.from("publisher-branding");
   for(const [path,blob,type] of [[refPath,referenceFile,referenceFile.type],[logoPath,logoFile,logoFile.type||"application/octet-stream"],[icon180Path,icons[0],"image/png"],[icon192Path,icons[1],"image/png"],[icon512Path,icons[2],"image/png"]]){const {error}=await bucket.upload(path,blob,{contentType:type,upsert:true,cacheControl:"3600"});if(error)throw error}
   const pub=p=>bucket.getPublicUrl(p).data.publicUrl;
-  return {reference_mode:mode,reference_image_url:pub(refPath),reference_dimensions:{width:a.width,height:a.height},analysis:{dominant_colors:a.colors,layout_mode:mode==="web_design"?"reference-led-editorial":"show-led-immersive"},logo_url:pub(logoPath),logo_source:"uploaded",icon_180_url:pub(icon180Path),icon_192_url:pub(icon192Path),icon_512_url:pub(icon512Path),maskable_icon_url:pub(icon512Path),safe_area_ratio:.72,theme:a.theme,generated_from_reference:true,generated_at:new Date().toISOString()}
+  return {reference_mode:mode,reference_image_url:pub(refPath),render_reference_image:mode!=="web_design",reference_usage:mode==="web_design"?"design-spec-only":"visual-brand-source",reference_dimensions:{width:a.width,height:a.height},analysis:{dominant_colors:a.colors,layout_mode:mode==="web_design"?"functional-dashboard-from-reference":"show-led-immersive"},logo_url:pub(logoPath),logo_source:"uploaded",icon_180_url:pub(icon180Path),icon_192_url:pub(icon192Path),icon_512_url:pub(icon512Path),maskable_icon_url:pub(icon512Path),safe_area_ratio:.72,theme:a.theme,generated_from_reference:true,generated_at:new Date().toISOString()}
 }
 function inferShowStructure(bible){
   const n=String(bible||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g," ");
