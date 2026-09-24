@@ -43,7 +43,7 @@ export function loadConfig(){
       ...(env.publication||{}),
       ...(persisted.publication||{}),
       allowed_providers:Array.isArray(env.publication?.allowed_providers)?env.publication.allowed_providers:(persisted.publication?.allowed_providers||['youtube','facebook']),
-      selected_provider:(env.publication?.selected_provider!=null?env.publication.selected_provider:(persisted.publication?.selected_provider??null)),
+      selected_provider:(persisted.publication?.selected_provider!=null?persisted.publication.selected_provider:(env.publication?.selected_provider??null)),
       providers:Array.isArray(persisted.publication?.providers)&&persisted.publication.providers.length
         ?persisted.publication.providers
         :(env.publication?.providers||[])
