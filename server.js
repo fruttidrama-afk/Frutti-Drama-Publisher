@@ -653,6 +653,21 @@ app.post('/factory/disable',(req,res)=>{metaSet('automation:factoryEnabled','fal
 app.post('/factory/preflight',(req,res)=>{metaSet('automation:allowSubmit','0');const r=db.prepare("SELECT id,episode,status FROM factory_items WHERE status IN ('draft','regen_wait') ORDER BY episode LIMIT 1").get();res.status(202).json({ok:true,next:r||null,note:'Provider will run preflight only; Generate remains disabled.'})});
 app.post('/factory/test-generation',(req,res)=>{metaSet('automation:factoryEnabled','false');metaSet('automation:allowSubmit','1');res.status(202).json({ok:true,one_test_submit_authorized:true})});
 app.post('/factory/run',(req,res)=>{res.status(202).json({ok:true})});
+app.post('/factory/generate-extra',(req,res)=>{
+ try{
+  const count=Math.max(1,Math.min(20,Math.trunc(Number(req.body?.count)||1)));
+  const day=publisherDay(),current=activeDailyTarget(day),target=current+count;
+  metaSet('automation:manualDailyTarget:'+day,String(target));
+  metaSet('automation:factoryEnabled','true');
+  metaSet('flow:state','CONECTADO');
+  metaSet('flow:currentStep','manual-extra-requested');
+  metaSet('flow:message','Operator requested '+count+' extra video(s) today. Daily target is now '+target+'.');
+  ensureBacklog(db);
+  const completed=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND status IN ('review','completed') AND COALESCE(generationKind,'automatic')<>'review_retry'").get(day)?.n||0);
+  setTimeout(()=>{try{globalThis.__publisherRunProvider?.()}catch{}},50).unref?.();
+  res.status(202).json({ok:true,day,added:count,daily_target:target,completed_today:completed,remaining_today:Math.max(0,target-completed)});
+ }catch(e){res.status(400).json({error:e.message})}
+});
 
 function storage(){
  try{const st=fs.statfsSync(DATA_DIR),block=Number(st.bsize||st.frsize||4096),total=Number(st.blocks||0)*block,free=Number(st.bavail??st.bfree??0)*block;return{total_bytes:total,free_bytes:free,used_bytes:total-free,free_percent:total?Math.round(free/total*1000)/10:null}}catch{return null}
@@ -682,12 +697,16 @@ function activateReadyAutomation(){
     return true;
   }catch{return false}
 }
-function activeDailyTarget(){
+function publisherDay(){
+ return new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+}
+function activeDailyTarget(day=publisherDay()){
  const base=Math.max(1,Number(DAILY_LIMIT||1));
  const overrideDay=String(process.env.PUBLISHER_DAILY_LIMIT_OVERRIDE_DAY||'').trim();
  const overrideCount=Math.max(base,Number(process.env.PUBLISHER_DAILY_LIMIT_OVERRIDE_COUNT||0)||0);
- const today=new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
- return overrideDay===today&&overrideCount>base?overrideCount:base;
+ const envTarget=overrideDay===day&&overrideCount>base?overrideCount:base;
+ const manualTarget=Math.max(0,Number(metaGet('automation:manualDailyTarget:'+day,'0'))||0);
+ return Math.max(base,envTarget,manualTarget);
 }
 function health(){
  const counts={};for(const r of db.prepare('SELECT status,COUNT(*) n FROM factory_items GROUP BY status').all())counts[r.status]=Number(r.n);
