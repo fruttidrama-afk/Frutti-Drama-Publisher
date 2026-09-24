@@ -57,6 +57,7 @@ body.completed .shell{padding-top:28px}
 .ready-badge{font-size:11px;letter-spacing:.08em;background:color-mix(in srgb,var(--greenbg) 88%,transparent);border:1px solid color-mix(in srgb,var(--green) 55%,transparent);color:var(--green);padding:10px 12px;font-weight:800;border-radius:999px}.launch-card{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;border:1px solid color-mix(in srgb,var(--ink) 16%,transparent);background:linear-gradient(135deg,color-mix(in srgb,var(--surface) 88%,transparent),color-mix(in srgb,var(--navy) 38%,transparent));padding:24px;margin-bottom:22px;border-radius:24px;box-shadow:0 20px 60px color-mix(in srgb,#000 28%,transparent);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}.launch-card h3{font:500 clamp(30px,5vw,46px)/1 Arial,Helvetica,sans-serif;letter-spacing:.02em;color:var(--ink);margin:4px 0 9px}.launch-card p{margin:0;color:var(--muted);line-height:1.55;max-width:690px}.launch-actions{display:grid;gap:8px;min-width:220px}.install-modal{position:fixed;inset:0;z-index:120;background:rgba(13,49,82,.34);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:20px}.install-modal.open{display:flex}.install-card{width:min(520px,100%);background:var(--surface);border:1px solid var(--line);padding:24px;box-shadow:0 24px 80px rgba(0,0,0,.18)}.install-card h3{font:400 34px Georgia,serif;color:var(--navy);margin:0 0 10px}.install-card ol{padding-left:22px;color:var(--muted);line-height:1.6}.copy-link{font-size:12px;word-break:break-all;color:var(--muted);margin-top:8px}
 .status-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
 .status{background:color-mix(in srgb,var(--surface) 82%,transparent);border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);padding:18px;border-radius:20px;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}.label{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:var(--gold);font-weight:800}.value{font-size:24px;font-weight:800;color:var(--ink);margin:10px 0 3px}
+.extra-generate{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;margin:0 0 18px;padding:18px 20px;border-radius:20px;border:1px solid color-mix(in srgb,var(--gold) 35%,transparent);background:color-mix(in srgb,var(--surface) 86%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}.extra-generate h3{margin:3px 0 5px;font-size:19px;color:var(--ink)}.extra-generate p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.extra-controls{display:flex;gap:8px;align-items:center}.extra-controls input{width:76px;min-height:42px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);padding:0 10px;font:inherit;font-weight:800;text-align:center}@media(max-width:620px){.extra-generate{grid-template-columns:1fr}.extra-controls{width:100%}.extra-controls .btn{flex:1}}
 .tabs{display:flex;gap:8px;margin:18px 0}.tab.active{background:var(--navy);color:#fff;border-color:var(--navy)}
 .panel{display:none}.panel.active{display:block}
 .review-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.review{background:color-mix(in srgb,var(--surface) 86%,transparent);border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);overflow:hidden;border-radius:20px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}.video{background:#151515;aspect-ratio:9/16;max-height:560px;width:100%;object-fit:contain}.review-body{padding:16px}.review h3{font:600 24px Arial,Helvetica,sans-serif;color:var(--ink);margin:5px 0}.story{font-size:14px;color:var(--muted);line-height:1.5;margin:9px 0 15px}.review-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -166,6 +167,10 @@ body.completed .shell{padding-top:28px}
         <div class="status"><div class="label">Today</div><div class="value" id="dailyValue">—</div><div id="dailyDetail"></div></div>
         <div class="status"><div class="label">Worker</div><div class="value" id="workerValue">—</div><div>FreeBrowserProvider</div></div>
       </div>
+      <div class="extra-generate">
+        <div><div class="eyebrow">EXTRA PRODUCTION</div><h3>Generate more videos today</h3><p>Add videos to today’s production without changing tomorrow’s normal daily target.</p></div>
+        <div class="extra-controls"><input id="extraGenerateCount" type="number" min="1" max="20" step="1" value="2" inputmode="numeric" aria-label="Extra videos"><button class="btn primary" id="extraGenerateBtn" type="button">GENERATE EXTRA</button></div>
+      </div>
       <nav class="tabs"><button class="btn tab active" data-tab="review">REVIEW</button><button class="btn tab" data-tab="queue">PUBLISHING</button><button class="btn tab" data-tab="security">SECURITY</button><button class="btn tab" data-tab="setup">EDIT SETUP</button></nav>
       <section class="panel active" id="review"><div id="reviews" class="review-grid"></div></section>
       <section class="panel" id="queue"><div id="queueBox" class="video-state-list"></div></section>
@@ -238,6 +243,14 @@ window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredIns
 function toast(x){const t=$('#toast');t.textContent=x;t.style.display='block';setTimeout(()=>t.style.display='none',2300)}
 async function api(u,o={}){const r=await fetch(u,{headers:{'Content-Type':'application/json',...(o.headers||{})},...o}),j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j}
 function fmt(v){if(!v)return'—';try{return new Intl.DateTimeFormat('es-AR',{dateStyle:'medium',timeStyle:'short'}).format(new Date(v))}catch{return v}}
+async function generateExtraToday(){
+ const input=$('#extraGenerateCount'),btn=$('#extraGenerateBtn');
+ const count=Math.max(1,Math.min(20,Math.trunc(Number(input?.value)||1)));
+ if(input)input.value=String(count);if(btn)btn.disabled=true;
+ try{const r=await api('/factory/generate-extra',{method:'POST',body:JSON.stringify({count})});toast(count+' extra video'+(count===1?'':'s')+' added for today · target '+r.daily_target);await load()}
+ catch(e){toast(e.message)}
+ finally{if(btn)btn.disabled=false}
+}
 function fromB64url(v){const s=String(v||'').replace(/-/g,'+').replace(/_/g,'/'),p=s+'='.repeat((4-s.length%4)%4),raw=atob(p),out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out}
 function toB64url(v){let s='';for(const x of new Uint8Array(v))s+=String.fromCharCode(x);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
 async function loadSecurity(){
@@ -318,6 +331,7 @@ async function load(){
 }
 
 $('#copyPublisherLink').onclick=async()=>{try{await navigator.clipboard.writeText(location.origin);toast('Publisher link copied')}catch{toast(location.origin)}};
+$('#extraGenerateBtn').onclick=()=>generateExtraToday();
 const installAppButton=$('#installApp');if(installAppButton)installAppButton.style.display='none';
 $('#installClose').onclick=()=>{$('#installModal').classList.remove('open');$('#installModal').setAttribute('aria-hidden','true')};
 $('#installModal').onclick=e=>{if(e.target===e.currentTarget)$('#installClose').click()};
