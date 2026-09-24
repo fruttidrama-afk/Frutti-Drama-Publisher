@@ -50,6 +50,8 @@ export function loadConfig(){
     branding:{
       reference_mode:clean(c.branding?.reference_mode||'',40)||null,
       reference_image_url:clean(c.branding?.reference_image_url||'',2000)||null,
+      render_reference_image:c.branding?.reference_mode==='web_design'?false:(c.branding?.render_reference_image!==false),
+      reference_usage:clean(c.branding?.reference_usage||(c.branding?.reference_mode==='web_design'?'design-spec-only':'visual-brand-source'),80),
       logo_url:clean(c.branding?.logo_url||'',2000)||null,
       logo_source:clean(c.branding?.logo_source||'',40)||null,
       icon_180_url:clean(c.branding?.icon_180_url||'',2000)||null,
