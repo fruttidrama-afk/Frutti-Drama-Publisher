@@ -26,6 +26,10 @@ on:
       - ".github/workflows/publish-runtime-image.yml"
   workflow_dispatch:
 
+concurrency:
+  group: publisher-runtime-image-main
+  cancel-in-progress: true
+
 permissions:
   contents: read
   packages: write
