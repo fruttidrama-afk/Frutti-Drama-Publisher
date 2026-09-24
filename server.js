@@ -16,6 +16,7 @@ import {
 } from '@simplewebauthn/server';
 import { CONFIG,PROJECT_ID,PROJECT_NAME,PROJECT_URL,DAILY_LIMIT,TIMEZONE,ideaForEpisode,ensureBacklog,materializeCreativePackage } from './runtime-config.js';
 import { installPublication } from './publication.js';
+import { installFacebookPublication } from './publication-facebook.js';
 import { buildPublicationCopy } from './publication-copy.js';
 import { signedReviewUrl, deleteReviewObject, isReviewStorageUri } from './review-storage.js';
 
@@ -189,7 +190,7 @@ app.get('/apple-touch-icon.png',(req,res)=>{res.set('Cache-Control','no-store, m
 app.get('/manifest.webmanifest',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');const b=brandPublic(),icons=[];if(b.icon_192_url)icons.push({src:b.icon_192_url,sizes:'192x192',type:'image/png',purpose:'any'});if(b.icon_512_url)icons.push({src:b.icon_512_url,sizes:'512x512',type:'image/png',purpose:'any'});if(b.maskable_icon_url)icons.push({src:b.maskable_icon_url,sizes:'512x512',type:'image/png',purpose:'maskable'});if(!icons.length)icons.push({src:'/brand/logo.svg',sizes:'any',type:'image/svg+xml',purpose:'any'});res.type('application/manifest+json').send(JSON.stringify({name:CONFIG.identity.show_name||CONFIG.identity.publisher_name,short_name:CONFIG.identity.show_name||CONFIG.identity.publisher_name,start_url:'/',scope:'/',display:'standalone',background_color:b.theme.background,theme_color:b.theme.primary,icons}))});
 
 app.use((req,res,next)=>{
- if(['/setup','/setup/activate','/login','/auth/public-info','/auth/pin','/auth/passkeys/options','/auth/passkeys/verify','/oauth2callback','/factory/health','/brand/logo.svg','/apple-touch-icon.png','/manifest.webmanifest'].includes(req.path))return next();
+ if(['/setup','/setup/activate','/login','/auth/public-info','/auth/pin','/auth/passkeys/options','/auth/passkeys/verify','/oauth2callback','/facebook/oauth/callback','/factory/health','/brand/logo.svg','/apple-touch-icon.png','/manifest.webmanifest'].includes(req.path))return next();
  if(req.path.startsWith('/public/'))return next();
  return secure(req,res,next);
 });
@@ -202,7 +203,79 @@ function oauthClient(){const y=ytSecrets();if(!y.client_id||!y.client_secret||!y
 function authedClient(){const c=oauthClient();if(!loadToken())throw new Error('YouTube is not connected.');return c}
 function youtubeApi(){return google.youtube({version:'v3',auth:authedClient()})}
 
-const publication=installPublication({app,db,config:CONFIG,youtubeApi,authedClient,loadToken,dataDir:DIR});
+function fbSecrets(){const s=secrets();return s.facebook||{}}
+function saveFbSecrets(v){const s=secrets();s.facebook={...(s.facebook||{}),...v};saveSecrets(s)}
+function metaGraphVersion(){return String(process.env.META_GRAPH_VERSION||'v25.0').replace(/^\/+|\/+$/g,'')}
+function selectedPublicationProvider(){
+  const v=String(CONFIG.publication?.selected_provider||'').toLowerCase();
+  return ['youtube','facebook'].includes(v)?v:null;
+}
+function facebookConnection(){
+  const f=fbSecrets();
+  return{page_id:f.page_id||null,page_name:f.page_name||null,page_access_token:f.page_access_token||null,user_token:f.user_token||null,token_expires_at:f.token_expires_at||null};
+}
+function facebookConnected(){const f=facebookConnection();return Boolean(f.page_id&&f.page_access_token)}
+function publicationConnected(){
+  const p=selectedPublicationProvider();
+  if(p==='facebook')return facebookConnected();
+  if(p==='youtube')return Boolean(loadToken());
+  return false;
+}
+function defaultProviderConfig(type){
+  if(type==='facebook'){
+    const dinnie=/dinnie|dinosaur/i.test(String(CONFIG.identity?.show_name||''));
+    return{type:'facebook',hashtags:dinnie?['#DinnieTheDinosaur','#KidsAnimation','#Reels','#Viral']:['#Reels'],upload_lead_minutes:0,contains_synthetic_media:true};
+  }
+  return{type:'youtube',privacy_before_publish:'private',release_mode:'private_then_public_at_posting_time',use_publish_at:false,metadata_final_before_upload:true,preserve_private_lead_window:true,contains_synthetic_media:true,hashtags:[]};
+}
+function persistRuntimeConfig(){
+  fs.writeFileSync(path.join(DATA_DIR,'publisher-config.json'),JSON.stringify(CONFIG,null,2),{mode:0o600});
+}
+function setPublicationProvider(type,{postingTime=null}={}){
+  if(!['youtube','facebook'].includes(type))throw new Error('Choose YouTube or Facebook.');
+  CONFIG.publication=CONFIG.publication||{};
+  CONFIG.publication.allowed_providers=['youtube','facebook'];
+  CONFIG.publication.selected_provider=type;
+  const existing=(CONFIG.publication.providers||[]).find(x=>x.type===type);
+  CONFIG.publication.providers=[existing||defaultProviderConfig(type)];
+  CONFIG.schedule=CONFIG.schedule||{};
+  if(postingTime){
+    const t=String(postingTime).trim();if(!/^\d{2}:\d{2}$/.test(t))throw new Error('Posting time must use HH:MM.');
+    CONFIG.schedule.posting_times=[t];
+  }
+  CONFIG.schedule.timezone=CONFIG.schedule.timezone||CONFIG.identity?.timezone||'UTC';
+  CONFIG.schedule.upload_lead_minutes=type==='facebook'?0:Number(CONFIG.schedule.upload_lead_minutes??390);
+  persistRuntimeConfig();
+  return type;
+}
+async function metaGraph(pathname,{method='GET',params={},token=null}={}){
+  const u=new URL('https://graph.facebook.com/'+metaGraphVersion()+'/'+String(pathname).replace(/^\/+/,'')); 
+  for(const [k,v] of Object.entries(params||{}))if(v!==undefined&&v!==null)u.searchParams.set(k,String(v));
+  if(token)u.searchParams.set('access_token',token);
+  const r=await fetch(u,{method,signal:AbortSignal.timeout(90000)});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok||j?.error){const e=j?.error||{};throw new Error('Facebook Graph: '+String(e.message||('HTTP '+r.status)))}
+  return j;
+}
+
+const youtubePublication=installPublication({app,db,config:CONFIG,youtubeApi,authedClient,loadToken,dataDir:DIR,isEnabled:()=>selectedPublicationProvider()==='youtube'});
+const facebookPublication=installFacebookPublication({db,config:CONFIG,dataDir:DIR,loadFacebookConnection:facebookConnection,isEnabled:()=>selectedPublicationProvider()==='facebook'});
+const publication={
+  enqueue(row){
+    const p=selectedPublicationProvider();
+    if(p==='facebook')return facebookPublication.enqueue(row);
+    if(p==='youtube')return youtubePublication.enqueue(row);
+    throw new Error('Choose and connect a publication platform before approving a video.');
+  },
+  async purgeRejected(row){
+    const a=await youtubePublication.purgeRejected(row).catch(()=>({purged:0}));
+    const b=await facebookPublication.purgeRejected(row).catch(()=>({purged:0}));
+    return{youtube:a,facebook:b};
+  },
+  purgePrivateVideosByTitle:titles=>youtubePublication.purgePrivateVideosByTitle(titles),
+  tick:()=>selectedPublicationProvider()==='facebook'?facebookPublication.tick():youtubePublication.tick(),
+  status:()=>selectedPublicationProvider()==='facebook'?facebookPublication.status():youtubePublication.status()
+};
 function diagnosticConfiguredEpisodes(){
   const raw=String(process.env.PUBLISHER_DIAG_EPISODES||'').trim();if(!raw)return;
   for(const ep of raw.split(',').map(x=>Number(x.trim())).filter(Number.isFinite)){
