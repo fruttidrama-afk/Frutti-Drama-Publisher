@@ -31,7 +31,14 @@ export function loadConfig(){
     generation,
     automation:{...(persisted.automation||{}),...(env.automation||{})},
     review:{...(persisted.review||{}),...(env.review||{})},
-    schedule:{...(persisted.schedule||{}),...(env.schedule||{})},
+    schedule:{
+      ...(env.schedule||{}),
+      ...(persisted.schedule||{}),
+      timezone:persisted.schedule?.timezone||env.schedule?.timezone||env.identity?.timezone||persisted.identity?.timezone||'UTC',
+      posting_times:Array.isArray(persisted.schedule?.posting_times)&&persisted.schedule.posting_times.length
+        ?persisted.schedule.posting_times
+        :(env.schedule?.posting_times||['19:00'])
+    },
     publication:{
       ...(env.publication||{}),
       ...(persisted.publication||{}),
