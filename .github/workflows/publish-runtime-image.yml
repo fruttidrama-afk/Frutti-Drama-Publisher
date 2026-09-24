@@ -12,6 +12,7 @@ on:
       - "free-browser-provider.js"
       - "flow-bootstrap.js"
       - "publication.js"
+      - "publication-facebook.js"
       - "publication-copy.js"
       - "review-storage.js"
       - "public/**"
