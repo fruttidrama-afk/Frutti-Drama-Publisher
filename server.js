@@ -307,6 +307,108 @@ async function purgeConfiguredRejectedPrivateVideos(){
 }
 setTimeout(()=>void purgeConfiguredRejectedPrivateVideos().catch(e=>console.error('[REJECTED PRIVATE VIDEO PURGE ERROR]',String(e?.message||e))),4500).unref?.();
 
+
+function integrationShell({title,body,brand=brandPublic()}){
+  const t=brand.theme||{},esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="${esc(t.primary||'#123d28')}"><title>${esc(title)}</title>
+<style>
+:root{--p:${esc(t.primary||'#123d28')};--s:${esc(t.secondary||'#5f8c61')};--a:${esc(t.accent||'#8bbd70')};--bg:${esc(t.background||'#071a12')};--surface:${esc(t.surface||'#10261a')};--text:${esc(t.text||'#f3f8f0')};--muted:color-mix(in srgb,var(--text) 68%,transparent);--line:color-mix(in srgb,var(--text) 16%,transparent)}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 10% 0%,color-mix(in srgb,var(--s) 26%,transparent),transparent 34%),linear-gradient(145deg,var(--p),var(--bg));color:var(--text);font-family:Arial,sans-serif;padding:calc(18px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom));min-height:100vh}.wrap{max-width:900px;margin:auto}.top{display:flex;align-items:center;gap:13px;margin-bottom:20px}.top img{width:70px;height:70px;object-fit:contain;border-radius:18px;background:color-mix(in srgb,var(--surface) 84%,transparent)}.top strong{font-size:26px}.eyebrow{font-size:11px;letter-spacing:.18em;color:var(--a);font-weight:800}.card{background:color-mix(in srgb,var(--surface) 88%,transparent);border:1px solid var(--line);border-radius:24px;padding:20px;margin:14px 0;box-shadow:0 18px 54px rgba(0,0,0,.18);backdrop-filter:blur(16px)}h1{font-size:clamp(38px,7vw,62px);line-height:.98;margin:7px 0 12px}h2{margin:0 0 8px;font-size:26px}.muted{color:var(--muted);line-height:1.55}.btn{min-height:48px;padding:0 16px;border-radius:14px;border:1px solid var(--a);background:transparent;color:var(--text);font-weight:800;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.btn.primary{background:var(--a);color:#102014;border-color:var(--a)}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}input,select{width:100%;min-height:50px;border:1px solid var(--line);background:color-mix(in srgb,var(--surface) 92%,#000);color:var(--text);border-radius:12px;padding:0 12px;font:inherit}label{display:grid;gap:7px;font-size:12px;font-weight:800;margin:10px 0}.radio{display:flex;gap:10px;align-items:center;border:1px solid var(--line);padding:14px;border-radius:14px;margin:8px 0}.radio input{width:auto;min-height:0}.ok{color:#b8efad}.warn{color:#f2cf85}.code{word-break:break-all;background:#08120d;border:1px solid var(--line);padding:12px;border-radius:12px;font:12px ui-monospace,monospace}.pages{display:grid;gap:8px;margin-top:12px}.page{display:flex;gap:10px;align-items:center;border:1px solid var(--line);padding:12px;border-radius:14px}.page input{width:auto;min-height:0}.back{color:var(--text);text-decoration:none;font-weight:800}.small{font-size:12px}</style></head><body><main class="wrap"><a class="back" href="/">← VOLVER AL PUBLISHER</a><div class="top">${brand.logo_url?'<img src="'+esc(brand.logo_url)+'" alt="">':''}<div><div class="eyebrow">PUBLISHER CONNECTIONS</div><strong>${esc(CONFIG.identity.show_name||'Publisher')}</strong></div></div>${body}</main></body></html>`;
+}
+
+app.get('/integrations/platform',secure,(req,res)=>{
+  const selected=selectedPublicationProvider(),time=String(CONFIG.schedule?.posting_times?.[0]||'19:00'),tz=String(CONFIG.schedule?.timezone||CONFIG.identity?.timezone||'UTC');
+  const body=`<div class="eyebrow">PUBLICATION PLATFORM</div><h1>Elegí dónde publicar.</h1><p class="muted">Google Flow es siempre el generador. La publicación puede ir a YouTube o Facebook. Podés cambiar la plataforma antes de aprobar contenido.</p>
+  <form method="post" action="/integrations/platform" class="card">
+    <label class="radio"><input type="radio" name="provider" value="youtube" ${selected==='youtube'?'checked':''} required><span><b>YouTube</b><br><span class="muted small">Subida privada + publicación automática a la hora configurada.</span></span></label>
+    <label class="radio"><input type="radio" name="provider" value="facebook" ${selected==='facebook'?'checked':''} required><span><b>Facebook</b><br><span class="muted small">Publicación automática de Reels en una Página administrada por vos.</span></span></label>
+    <label>Hora diaria de publicación<input type="time" name="posting_time" value="${time}" required></label>
+    <div class="muted small">Zona horaria: ${tz}</div>
+    <div class="actions"><button class="btn primary" type="submit">SAVE + CONNECT</button></div>
+  </form>`;
+  res.send(integrationShell({title:'Publication platform',body}));
+});
+app.post('/integrations/platform',secure,(req,res)=>{
+  try{
+    const provider=String(req.body.provider||'').trim().toLowerCase(),postingTime=String(req.body.posting_time||'').trim();
+    setPublicationProvider(provider,{postingTime});
+    return res.redirect(provider==='facebook'?'/integrations/facebook':'/integrations/youtube');
+  }catch(e){res.status(400).send(String(e?.message||e))}
+});
+
+app.get('/integrations/facebook',secure,(req,res)=>{
+  const f=fbSecrets(),connected=facebookConnected(),callback=origin(req)+'/facebook/oauth/callback',pages=Array.isArray(f.page_options)?f.page_options:[],appConfigured=Boolean(f.app_id&&f.app_secret);
+  let body=`<div class="eyebrow">FACEBOOK REELS</div><h1>Conectá tu Página.</h1><p class="muted">El Publisher usa la API oficial de Meta para crear y publicar Reels. Necesita una app de Meta y permisos de Página. Los tokens y el App Secret quedan cifrados dentro del volumen privado de este Publisher.</p>`;
+  body+=`<div class="card"><h2>1 · Meta App</h2><p class="muted">En Meta for Developers, usá una app que tenga Facebook Login y acceso a Pages. Pedí <b>pages_show_list</b>, <b>pages_read_engagement</b> y <b>pages_manage_posts</b>. Agregá esta URI exacta como Valid OAuth Redirect URI:</p><div class="code">${callback}</div>
+  <form method="post" action="/integrations/facebook/app">
+    <label>App ID<input name="app_id" value="${f.app_id?String(f.app_id).replace(/"/g,'&quot;'):''}" required></label>
+    <label>App Secret<input type="password" name="app_secret" placeholder="${f.app_secret?'••••••••••••':'Paste App Secret'}" ${f.app_secret?'':'required'}></label>
+    <div class="actions"><button class="btn primary" type="submit">${appConfigured?'UPDATE META APP':'SAVE META APP'}</button></div>
+  </form></div>`;
+  body+=`<div class="card"><h2>2 · Facebook Login</h2><p class="muted">${appConfigured?'Autorizá Publisher Factory para ver las Páginas que administrás y publicar Reels en la que elijas.':'Primero guardá App ID y App Secret.'}</p><div class="actions">${appConfigured?'<a class="btn primary" href="/integrations/facebook/login">LOGIN WITH FACEBOOK</a>':''}</div></div>`;
+  if(pages.length){
+    body+=`<div class="card"><h2>3 · Elegí la Página</h2><form method="post" action="/integrations/facebook/page"><div class="pages">${pages.map(p=>'<label class="page"><input type="radio" name="page_id" value="'+String(p.id).replace(/"/g,'&quot;')+'" '+(String(f.page_id||'')===String(p.id)?'checked':'')+' required><span><b>'+String(p.name||p.id).replace(/</g,'&lt;')+'</b><br><span class="muted small">Page ID '+String(p.id).replace(/</g,'&lt;')+'</span></span></label>').join('')}</div><div class="actions"><button class="btn primary" type="submit">USE THIS PAGE</button></div></form></div>`;
+  }
+  body+=`<div class="card"><h2>Estado</h2>${connected?'<p class="ok"><b>CONNECTED ✓</b> · '+String(f.page_name||f.page_id).replace(/</g,'&lt;')+'</p><p class="muted">Los Reels aprobados quedarán en Stock local hasta la hora de publicación. En ese momento el scheduler los sube y publica automáticamente.</p><form method="post" action="/integrations/facebook/disconnect"><button class="btn" type="submit">DISCONNECT FACEBOOK</button></form>':'<p class="warn"><b>NOT CONNECTED</b></p>'}</div>`;
+  res.send(integrationShell({title:'Connect Facebook',body}));
+});
+app.post('/integrations/facebook/app',secure,(req,res)=>{
+  try{
+    const app_id=String(req.body.app_id||'').trim(),provided=String(req.body.app_secret||'').trim(),old=fbSecrets();
+    const app_secret=provided||String(old.app_secret||'');
+    if(!app_id||!app_secret)throw new Error('App ID and App Secret are required.');
+    setPublicationProvider('facebook');
+    saveFbSecrets({app_id,app_secret,redirect_uri:origin(req)+'/facebook/oauth/callback'});
+    res.redirect('/integrations/facebook');
+  }catch(e){res.status(400).send(String(e?.message||e))}
+});
+app.get('/integrations/facebook/login',secure,(req,res)=>{
+  try{
+    const f=fbSecrets();if(!f.app_id||!f.app_secret)throw new Error('Save Meta App credentials first.');
+    const state=randomBytes(24).toString('base64url'),redirect=origin(req)+'/facebook/oauth/callback';
+    saveFbSecrets({oauth_state:state,oauth_state_exp:Date.now()+15*60*1000,redirect_uri:redirect});
+    const u=new URL('https://www.facebook.com/'+metaGraphVersion()+'/dialog/oauth');
+    u.searchParams.set('client_id',String(f.app_id));u.searchParams.set('redirect_uri',redirect);u.searchParams.set('state',state);
+    u.searchParams.set('scope','pages_show_list,pages_read_engagement,pages_manage_posts');u.searchParams.set('auth_type','rerequest');
+    res.redirect(u.toString());
+  }catch(e){res.status(400).send(String(e?.message||e))}
+});
+app.get('/facebook/oauth/callback',async(req,res)=>{
+  try{
+    const f=fbSecrets(),state=String(req.query.state||''),code=String(req.query.code||'');
+    if(!code||!f.oauth_state||!safeEq(state,String(f.oauth_state))||Number(f.oauth_state_exp||0)<Date.now())throw new Error('Facebook OAuth state invalid or expired.');
+    const redirect=String(f.redirect_uri||origin(req)+'/facebook/oauth/callback');
+    const short=await metaGraph('oauth/access_token',{params:{client_id:f.app_id,client_secret:f.app_secret,redirect_uri:redirect,code}});
+    if(!short.access_token)throw new Error('Facebook did not return an access token.');
+    let userToken=String(short.access_token),expires=Number(short.expires_in||0);
+    try{
+      const long=await metaGraph('oauth/access_token',{params:{grant_type:'fb_exchange_token',client_id:f.app_id,client_secret:f.app_secret,fb_exchange_token:userToken}});
+      if(long.access_token){userToken=String(long.access_token);expires=Number(long.expires_in||expires||0)}
+    }catch{}
+    const acc=await metaGraph('me/accounts',{params:{fields:'id,name,access_token,tasks',limit:100},token:userToken});
+    const pages=(acc.data||[]).filter(p=>p?.id&&p?.access_token).map(p=>({id:String(p.id),name:String(p.name||p.id),access_token:String(p.access_token),tasks:Array.isArray(p.tasks)?p.tasks:[]}));
+    if(!pages.length)throw new Error('No managed Facebook Pages were returned. Check Pages permissions and your role on the Page.');
+    saveFbSecrets({user_token:userToken,token_expires_at:expires?Date.now()+expires*1000:null,page_options:pages,oauth_state:null,oauth_state_exp:0});
+    setPublicationProvider('facebook');
+    res.redirect('/integrations/facebook');
+  }catch(e){res.status(400).send('Facebook OAuth failed: '+String(e?.message||e))}
+});
+app.post('/integrations/facebook/page',secure,async(req,res)=>{
+  try{
+    const f=fbSecrets(),id=String(req.body.page_id||''),pages=Array.isArray(f.page_options)?f.page_options:[],page=pages.find(p=>String(p.id)===id);
+    if(!page)throw new Error('Choose one of the Pages returned by Facebook Login.');
+    const verified=await metaGraph(page.id,{params:{fields:'id,name'},token:page.access_token});
+    saveFbSecrets({page_id:String(verified.id||page.id),page_name:String(verified.name||page.name||page.id),page_access_token:String(page.access_token)});
+    setPublicationProvider('facebook');
+    res.redirect('/integrations/facebook');
+  }catch(e){res.status(400).send('Facebook Page connection failed: '+String(e?.message||e))}
+});
+app.post('/integrations/facebook/disconnect',secure,(req,res)=>{
+  const old=fbSecrets();
+  saveFbSecrets({app_id:old.app_id||null,app_secret:old.app_secret||null,redirect_uri:old.redirect_uri||null,user_token:null,token_expires_at:null,page_options:[],page_id:null,page_name:null,page_access_token:null,oauth_state:null,oauth_state_exp:0});
+  res.redirect('/integrations/facebook');
+});
+
 app.get('/integrations/youtube',secure,(req,res)=>{const y=ytSecrets(),redirect=origin(req)+'/oauth2callback',configured=Boolean(y.client_id&&y.client_secret),connected=Boolean(loadToken()),show=String(CONFIG.identity.show_name||CONFIG.identity.publisher_name||'Publisher'),brand=brandPublic(),theme=brand.theme||{},esc=x=>String(x||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');const chooser=u=>'https://accounts.google.com/AccountChooser?hl=es&continue='+encodeURIComponent(u);const links={api:chooser('https://console.cloud.google.com/apis/library/youtube.googleapis.com'),branding:chooser('https://console.cloud.google.com/auth/branding'),audience:chooser('https://console.cloud.google.com/auth/audience'),data:chooser('https://console.cloud.google.com/auth/scopes'),clients:chooser('https://console.cloud.google.com/auth/clients'),credentials:chooser('https://console.cloud.google.com/apis/credentials')};res.send(`<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f7f6f2"><title>Conectar YouTube</title>
 <style>
