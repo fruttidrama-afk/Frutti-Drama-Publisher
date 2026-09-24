@@ -32,7 +32,15 @@ export function loadConfig(){
     automation:{...(persisted.automation||{}),...(env.automation||{})},
     review:{...(persisted.review||{}),...(env.review||{})},
     schedule:{...(persisted.schedule||{}),...(env.schedule||{})},
-    publication:env.publication||persisted.publication,
+    publication:{
+      ...(env.publication||{}),
+      ...(persisted.publication||{}),
+      allowed_providers:Array.isArray(env.publication?.allowed_providers)?env.publication.allowed_providers:(persisted.publication?.allowed_providers||['youtube','facebook']),
+      selected_provider:(env.publication?.selected_provider!=null?env.publication.selected_provider:(persisted.publication?.selected_provider??null)),
+      providers:Array.isArray(persisted.publication?.providers)&&persisted.publication.providers.length
+        ?persisted.publication.providers
+        :(env.publication?.providers||[])
+    },
     security:{...(persisted.security||{}),...(env.security||{})}
   };
   const identity=c.identity||{},content=c.content||{},review=c.review||{},schedule=c.schedule||{};
@@ -108,8 +116,16 @@ export function loadConfig(){
     },
     automation:{provider:'free-browser-provider',persistent_profile:true,tinyfish_required:false,semantic_field_safety:true,external_reality_reconciliation:true,...(c.automation||{})},
     review:{mode:clean(review.mode||'review',40),archive_provider:clean(review.archive_provider||'private-cloud-storage',80),hot_originals:Number(review.hot_originals??2),archive_below_free_percent:Number(review.archive_below_free_percent??45)},
-    schedule:{timezone:clean(schedule.timezone||identity.timezone||'UTC',100),indefinite:true,generation_strategy:'sequential',posting_times:['19:00'],upload_lead_minutes:390},
-    publication:c.publication||{providers:[{type:'youtube'}]},
+    schedule:{
+      timezone:clean(schedule.timezone||identity.timezone||'UTC',100),
+      indefinite:true,
+      generation_strategy:'sequential',
+      posting_times:Array.isArray(schedule.posting_times)&&schedule.posting_times.length
+        ?[...new Set(schedule.posting_times.map(v=>clean(v,5)).filter(v=>/^\d{2}:\d{2}$/.test(v)))].slice(0,20)
+        :['19:00'],
+      upload_lead_minutes:Math.max(0,Math.min(1440,Number(schedule.upload_lead_minutes??390)))
+    },
+    publication:c.publication||{allowed_providers:['youtube','facebook'],selected_provider:null,providers:[]},
     security:c.security||{passkeys:true,recovery_pin:true,session_management:true}
   };
   fs.mkdirSync(DATA_DIR,{recursive:true,mode:0o700});
