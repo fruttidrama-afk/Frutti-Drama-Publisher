@@ -461,6 +461,15 @@
             "null"
           ]
         },
+        "render_reference_image": {
+          "type": "boolean"
+        },
+        "reference_usage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "logo_url": {
           "type": [
             "string",
