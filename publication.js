@@ -88,37 +88,37 @@ function metadata(row,config){
 }
 
 function canonicalPublicationState(r){
-  const s=String(r?.status||'').toLowerCase(),remote=String(r?.remotePrivacyStatus||'').toLowerCase(),hasVideo=Boolean(r?.videoId);
+  const s=String(r?.status||'').toLowerCase(),remote=String(r?.remotePrivacyStatus||'').toLowerCase(),hasVideo=Boolean(r?.videoId),platform=String(r?.provider||'youtube').toLowerCase()==='facebook'?'Facebook':'YouTube';
   if(remote==='public'||s==='published')return{
     key:'public',label:'PÚBLICO',
-    message:'YouTube confirma que este video ya está público.',
+    message:''+platform+' confirma que este video ya está público.'',
     resolution:'none',actionRequired:false
   };
   if(hasVideo&&(remote==='private'||['uploaded','scheduled','quota_wait'].includes(s)))return{
     key:'private',label:'PRIVADO',
     message:s==='quota_wait'
-      ?'El video ya está en YouTube y sigue privado. El sistema volverá a sincronizarlo automáticamente cuando se renueve la cuota.'
-      :'El video ya está en YouTube y permanece privado hasta la hora de publicación.',
+      ?'El video ya está en '+platform+' y sigue privado. El sistema volverá a sincronizarlo automáticamente.'
+      :'El video ya está en '+platform+' y permanece privado hasta la hora de publicación.',
     resolution:s==='quota_wait'?'automatic':'none',actionRequired:false
   };
   if(!hasVideo&&s==='queued')return{
     key:'stock',label:'EN STOCK',
-    message:'El video está guardado en el Publisher y todavía no fue subido a YouTube.',
+    message:'El video está guardado en el Publisher y todavía no fue enviado a '+platform+'.',
     resolution:'automatic',actionRequired:false
   };
   if(!hasVideo&&s==='quota_wait')return{
     key:'pending',label:'PENDIENTE',
-    message:'Todavía no se pudo subir a YouTube porque la cuota diaria está agotada. Se reintentará automáticamente.',
+    message:'Todavía no se pudo enviar a '+platform+'. Se reintentará automáticamente.',
     resolution:'automatic',actionRequired:false
   };
   if(s==='uploading')return{
     key:'pending',label:'PENDIENTE',
-    message:'La subida privada a YouTube está en curso. No requiere intervención.',
+    message:'La subida a '+platform+' está en curso. No requiere intervención.',
     resolution:'automatic',actionRequired:false
   };
   if(s==='auth_wait')return{
     key:'pending',label:'ERROR',
-    message:'YouTube necesita reconexión OAuth antes de continuar.',
+    message:''+platform+' necesita reconexión antes de continuar.',
     resolution:'action_required',actionRequired:true
   };
   if(s==='attention')return{
@@ -158,13 +158,14 @@ function publicItem(r){
 function hist(row,status,message=''){const h=JSON.parse(row.history||'[]');h.push({status,at:now(),message});row.history=JSON.stringify(h.slice(-120));row.status=status;row.updatedAt=now()}
 function save(db,row){db.prepare(`UPDATE publication_items SET title=?,description=?,scheduledAt=?,uploadAt=?,status=?,filePath=?,fileSize=?,videoId=?,resumableSession=?,playlistId=?,attempts=?,retryAt=?,error=?,history=?,updatedAt=?,aiDisclosureSyncedAt=?,remotePrivacyStatus=?,remotePublishAt=?,remoteStatusCheckedAt=? WHERE id=?`).run(row.title,row.description,row.scheduledAt,row.uploadAt,row.status,row.filePath,row.fileSize,row.videoId,row.resumableSession,row.playlistId,row.attempts,row.retryAt,row.error,row.history,row.updatedAt,row.aiDisclosureSyncedAt||null,row.remotePrivacyStatus||null,row.remotePublishAt||null,row.remoteStatusCheckedAt||null,row.id)}
 
-export function installPublication({app,db,config,youtubeApi,authedClient,loadToken,dataDir}){
+export function installPublication({app,db,config,youtubeApi,authedClient,loadToken,dataDir,isEnabled=()=>true}){
   const publicationDir=path.join(dataDir,'publication');fs.mkdirSync(publicationDir,{recursive:true,mode:0o700});
   for(const sql of [
     "ALTER TABLE publication_items ADD COLUMN aiDisclosureSyncedAt TEXT",
     "ALTER TABLE publication_items ADD COLUMN remotePrivacyStatus TEXT",
     "ALTER TABLE publication_items ADD COLUMN remotePublishAt TEXT",
-    "ALTER TABLE publication_items ADD COLUMN remoteStatusCheckedAt TEXT"
+    "ALTER TABLE publication_items ADD COLUMN remoteStatusCheckedAt TEXT",
+    "ALTER TABLE publication_items ADD COLUMN provider TEXT"
   ]){try{db.exec(sql)}catch{}}
   const remotePollNext=new Map(),aiDisclosureNext=new Map();
   let connectedChannelId=null;
@@ -188,6 +189,8 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     const item={id,itemId:row.id,episode:Number(row.episode),title,description,scheduledAt,uploadAt,status:'queued',filePath,fileSize,videoId,resumableSession:null,playlistId:null,attempts:0,retryAt:0,error:null,history:JSON.stringify([{status:'queued',at:now(),message:'Approved for publication.'}]),createdAt:now(),updatedAt:now()};
     db.prepare('INSERT INTO publication_items(id,itemId,episode,title,description,scheduledAt,uploadAt,status,filePath,fileSize,videoId,resumableSession,playlistId,attempts,retryAt,error,history,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
       .run(item.id,item.itemId,item.episode,item.title,item.description,item.scheduledAt,item.uploadAt,item.status,item.filePath,item.fileSize,item.videoId,item.resumableSession,item.playlistId,item.attempts,item.retryAt,item.error,item.history,item.createdAt,item.updatedAt);
+    db.prepare("UPDATE publication_items SET provider='youtube' WHERE id=?").run(item.id);
+    item.provider='youtube';
     return publicItem(item);
   }
 
@@ -323,7 +326,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   }
 
   async function auditExistingMetadata(){
-    const items=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('cancelled','deleted') ORDER BY episode").all();
+    const items=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'youtube')='youtube' AND status NOT IN ('cancelled','deleted') ORDER BY episode").all();
     const episode1Title=String(items.find(x=>Number(x.episode)===1)?.title||'');
     // One-time repair for the live Earth in Ten queue after the old quota handler
     // moved LOCAL dates for videos that already existed on YouTube. The exact E1
@@ -495,10 +498,10 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     throw new Error('No se encontró un slot de publicación posterior a la recuperación de cuota.');
   }
   function shiftPendingQueueAfter(afterMs){
-    const pending=db.prepare("SELECT * FROM publication_items WHERE videoId IS NULL AND status NOT IN ('published','scheduled','cancelled','deleted') ORDER BY episode,scheduledAt").all();
+    const pending=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'youtube')='youtube' AND videoId IS NULL AND status NOT IN ('published','scheduled','cancelled','deleted') ORDER BY episode,scheduledAt").all();
     if(!pending.length)return[];
     const pendingIds=new Set(pending.map(x=>String(x.id)));
-    const used=new Set(db.prepare("SELECT id,scheduledAt FROM publication_items WHERE status NOT IN ('cancelled','deleted')").all()
+    const used=new Set(db.prepare("SELECT id,scheduledAt FROM publication_items WHERE COALESCE(provider,'youtube')='youtube' AND status NOT IN ('cancelled','deleted')").all()
       .filter(x=>!pendingIds.has(String(x.id))).map(x=>String(x.scheduledAt)));
     const shifted=[];let cursor=afterMs;
     for(const item of pending){
@@ -520,7 +523,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     if(cloudMigrationRunning||(!reviewStorageConfigured()&&!reviewStorageRequired()))return;
     cloudMigrationRunning=true;
     try{
-      const rows=db.prepare("SELECT * FROM publication_items WHERE filePath IS NOT NULL AND filePath<>'' AND status NOT IN ('published','cancelled','deleted') ORDER BY episode").all();
+      const rows=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'youtube')='youtube' AND filePath IS NOT NULL AND filePath<>'' AND status NOT IN ('published','cancelled','deleted') ORDER BY episode").all();
       for(const item of rows){
         if(isReviewStorageUri(item.filePath)||item.videoId)continue;
         if(!fs.existsSync(item.filePath))continue;
@@ -547,10 +550,10 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     console.log('[PUBLICATION STORAGE AUDIT]',JSON.stringify(auditRows));
   }catch{}
   async function tick(){
-    if(running)return;running=true;lastHeartbeat=now();lastError=null;
+    if(!isEnabled()||running)return;running=true;lastHeartbeat=now();lastError=null;
     await migratePendingPublicationMedia();
     try{
-      const items=db.prepare("SELECT * FROM publication_items WHERE status NOT IN ('cancelled','deleted') AND (status<>'published' OR aiDisclosureSyncedAt IS NULL) ORDER BY scheduledAt").all();
+      const items=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'youtube')='youtube' AND status NOT IN ('cancelled','deleted') AND (status<>'published' OR aiDisclosureSyncedAt IS NULL) ORDER BY scheduledAt").all();
       for(const item of items){
         try{
           const t=Date.now();
@@ -652,7 +655,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     return res.sendFile(abs);
   }catch(e){res.status(500).json({error:String(e?.message||e)})}});
   async function purgeRejected(row){
-    const matches=db.prepare("SELECT * FROM publication_items WHERE itemId=? AND status NOT IN ('published','deleted')").all(String(row?.id||''));
+    const matches=db.prepare("SELECT * FROM publication_items WHERE itemId=? AND COALESCE(provider,'youtube')='youtube' AND status NOT IN ('published','deleted')").all(String(row?.id||''));
     const deleted=[];
     for(const item of matches){
       if(item.videoId){
