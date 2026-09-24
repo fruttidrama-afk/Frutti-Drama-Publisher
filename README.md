@@ -49,6 +49,7 @@ Publisher Factory does not mark a Railway deployment ready unless `/factory/heal
 - immediate native no-charge Retry disabled (FruttiDrama-compatible single-submit boundary);
 - adaptive provider-wide no-charge backoff enabled;
 - unusual-activity exponential backoff enabled: 30m → 1h → 2h → 4h → 8h, then 24h when the next doubling would exceed 10h;
+- unusual-activity streak and cooldown are provider/account-wide, not per episode; older rows may extend but can never shorten an active cooldown;
 - show-specific forensic repair code absent from generic Publishers;
 - strict serial gate enabled.
 
