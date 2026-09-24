@@ -343,7 +343,8 @@ app.get('/integrations/facebook',secure,(req,res)=>{
   let body=`
   <div class="eyebrow">FACEBOOK REELS · PASO A PASO</div>
   <h1>Conectá tu Página sin adivinar nada.</h1>
-  <p class="muted">No necesitás descargar ninguna “app de Meta” ni buscar una API key. Todo se hace desde <b>Meta for Developers</b> en el navegador. Los dos datos que este Publisher necesita son <b>App ID</b> y <b>App Secret</b>; después Facebook Login devuelve tu Página y un Page Access Token automáticamente.</p>
+  <p class="muted">No necesitás descargar ninguna “app de Meta” ni buscar una API key. Todo se hace desde <b>Meta for Developers</b> en el navegador. Los dos datos que este Publisher necesita son <b>App ID</b> y <b>App Secret</b>; después Facebook Login devuelve las <b>Páginas</b> que administra tu cuenta y un Page Access Token para la Página que elijas.</p>
+  <div class="callout"><b>Para Dinnie:</b> iniciá sesión con la cuenta personal <b>Dimi Dimi</b> solamente para autorizar el acceso. <b>No vamos a publicar en el perfil personal.</b> En el paso 3 seleccioná la Página <b>Dimi de Dinosaur</b>. El Publisher publica exclusivamente en la Página seleccionada.</div>
   <div class="callout"><b>Importante:</b> iniciá sesión en Meta con la misma cuenta de Facebook que tiene acceso de administración a la Página que querés conectar. Para usar tu propia Página mientras vos sos administradora/desarrolladora de la app, podés hacer la conexión en modo desarrollo; si en el futuro permitís que personas ajenas conecten sus Páginas, Meta puede exigir Advanced Access/App Review para esos permisos.</div>
   <div class="statusbar">
     <div class="statuspill ${step>=1?'current':''}">1 · META APP</div>
@@ -397,7 +398,7 @@ app.get('/integrations/facebook',secure,(req,res)=>{
   <div class="card">
     <h2>3 · Elegir la Página</h2>
     ${pages.length
-      ?'<p class="muted">Facebook ya devolvió las Páginas disponibles para esta cuenta. Elegí la que querés que publique Dinnie.</p><form method="post" action="/integrations/facebook/page"><div class="pages">'+pages.map(p=>'<label class="page"><input type="radio" name="page_id" value="'+esc(p.id)+'" '+(String(f.page_id||'')===String(p.id)?'checked':'')+' required><span><b>'+esc(p.name||p.id)+'</b><br><span class="muted small">Page ID '+esc(p.id)+'</span></span></label>').join('')+'</div><div class="actions"><button class="btn primary" type="submit">USE THIS PAGE</button></div></form>'
+      ?'<p class="muted">Facebook ya devolvió las Páginas administradas por tu cuenta personal. <b>No elijas el perfil personal Dimi Dimi.</b> Para Dinnie, seleccioná la Página <b>Dimi de Dinosaur</b>.</p><form method="post" action="/integrations/facebook/page"><div class="pages">'+pages.map(p=>'<label class="page"><input type="radio" name="page_id" value="'+esc(p.id)+'" '+(String(f.page_id||'')===String(p.id)?'checked':'')+' required><span><b>'+esc(p.name||p.id)+'</b>'+(String(p.name||'').toLowerCase()==='dimi de dinosaur'?'<br><span class="ok small"><b>PÁGINA ESPERADA PARA DINNIE ✓</b></span>':'')+'<br><span class="muted small">Page ID '+esc(p.id)+'</span></span></label>').join('')+'</div><div class="actions"><button class="btn primary" type="submit">USE THIS PAGE</button></div></form>'
       :'<p class="muted">Todavía no hay Páginas para elegir. Después de <b>LOGIN WITH FACEBOOK</b>, esta sección se completa sola.</p>'}
   </div>
 
