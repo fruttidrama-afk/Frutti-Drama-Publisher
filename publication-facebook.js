@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { buildPublicationCopy } from './publication-copy.js';
 
 const now=()=>new Date().toISOString();
-const GRAPH_VERSION=String(process.env.META_GRAPH_VERSION||'v25.0').replace(/^\/+|\/+$/g,'');
+const GRAPH_VERSION=String(process.env.META_GRAPH_VERSION||'v26.0').replace(/^\/+|\/+$/g,'');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
 function fmtParts(date,tz){
