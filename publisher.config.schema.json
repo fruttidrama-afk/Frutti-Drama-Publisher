@@ -359,8 +359,10 @@
           }
         },
         "upload_lead_minutes": {
-          "const": 390,
-          "description": "Upload to YouTube as plain PRIVATE 390 minutes before the configured posting time."
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1440,
+          "description": "Provider-specific lead time. YouTube defaults to 390 minutes; Facebook Reels may publish at the scheduled runtime moment."
         }
       }
     },
@@ -370,64 +372,107 @@
         "providers"
       ],
       "properties": {
+        "allowed_providers": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "youtube",
+              "facebook"
+            ]
+          }
+        },
+        "selected_provider": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "youtube",
+            "facebook",
+            null
+          ]
+        },
         "providers": {
           "type": "array",
           "items": {
-            "type": "object",
-            "required": [
-              "type",
-              "privacy_before_publish",
-              "release_mode",
-              "use_publish_at",
-              "metadata_final_before_upload",
-              "preserve_private_lead_window",
-              "contains_synthetic_media"
-            ],
-            "properties": {
-              "type": {
-                "enum": [
-                  "youtube"
-                ]
-              },
-              "privacy_before_publish": {
-                "const": "private"
-              },
-              "playlist_strategy": {
-                "type": "string"
-              },
-              "title_rules": {
-                "type": "string"
-              },
-              "description_rules": {
-                "type": "string"
-              },
-              "hashtags": {
-                "type": "array",
-                "items": {
-                  "type": "string"
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "type",
+                  "privacy_before_publish",
+                  "release_mode",
+                  "use_publish_at",
+                  "metadata_final_before_upload",
+                  "preserve_private_lead_window",
+                  "contains_synthetic_media"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "youtube"
+                  },
+                  "privacy_before_publish": {
+                    "const": "private"
+                  },
+                  "playlist_strategy": {
+                    "type": "string"
+                  },
+                  "title_rules": {
+                    "type": "string"
+                  },
+                  "description_rules": {
+                    "type": "string"
+                  },
+                  "hashtags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "contains_synthetic_media": {
+                    "const": true
+                  },
+                  "release_mode": {
+                    "const": "private_then_public_at_posting_time"
+                  },
+                  "use_publish_at": {
+                    "const": false
+                  },
+                  "metadata_final_before_upload": {
+                    "const": true
+                  },
+                  "preserve_private_lead_window": {
+                    "const": true
+                  }
                 }
               },
-              "contains_synthetic_media": {
-                "const": true,
-                "description": "Always disclose AI-generated or meaningfully altered synthetic media to YouTube."
-              },
-              "release_mode": {
-                "const": "private_then_public_at_posting_time",
-                "description": "At release time perform a direct PRIVATE → PUBLIC transition."
-              },
-              "use_publish_at": {
-                "const": false,
-                "description": "Never pre-schedule the YouTube video with status.publishAt."
-              },
-              "metadata_final_before_upload": {
-                "const": true,
-                "description": "Upload the video with its final title and description already set."
-              },
-              "preserve_private_lead_window": {
-                "const": true,
-                "description": "Do not mutate video metadata/privacy during the private lead window."
+              {
+                "type": "object",
+                "required": [
+                  "type",
+                  "contains_synthetic_media"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "facebook"
+                  },
+                  "hashtags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "upload_lead_minutes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1440
+                  },
+                  "contains_synthetic_media": {
+                    "const": true
+                  }
+                }
               }
-            }
+            ]
           }
         }
       }
