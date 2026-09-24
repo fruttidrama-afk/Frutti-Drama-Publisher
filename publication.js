@@ -88,10 +88,11 @@ function metadata(row,config){
 }
 
 function canonicalPublicationState(r){
-  const s=String(r?.status||'').toLowerCase(),remote=String(r?.remotePrivacyStatus||'').toLowerCase(),hasVideo=Boolean(r?.videoId),platform=String(r?.provider||'youtube').toLowerCase()==='facebook'?'Facebook':'YouTube';
+  const s=String(r?.status||'').toLowerCase(),remote=String(r?.remotePrivacyStatus||'').toLowerCase(),hasVideo=Boolean(r?.videoId);
+  const platform=String(r?.provider||'youtube').toLowerCase()==='facebook'?'Facebook':'YouTube';
   if(remote==='public'||s==='published')return{
     key:'public',label:'PÚBLICO',
-    message:''+platform+' confirma que este video ya está público.'',
+    message:platform+' confirma que este video ya está público.',
     resolution:'none',actionRequired:false
   };
   if(hasVideo&&(remote==='private'||['uploaded','scheduled','quota_wait'].includes(s)))return{
@@ -111,14 +112,14 @@ function canonicalPublicationState(r){
     message:'Todavía no se pudo enviar a '+platform+'. Se reintentará automáticamente.',
     resolution:'automatic',actionRequired:false
   };
-  if(s==='uploading')return{
+  if(['uploading','publishing','processing'].includes(s))return{
     key:'pending',label:'PENDIENTE',
-    message:'La subida a '+platform+' está en curso. No requiere intervención.',
+    message:platform+' está procesando este video. No requiere intervención.',
     resolution:'automatic',actionRequired:false
   };
   if(s==='auth_wait')return{
     key:'pending',label:'ERROR',
-    message:''+platform+' necesita reconexión antes de continuar.',
+    message:platform+' necesita reconexión antes de continuar.',
     resolution:'action_required',actionRequired:true
   };
   if(s==='attention')return{
@@ -130,7 +131,7 @@ function canonicalPublicationState(r){
     const automatic=Number(r?.retryAt||0)>Date.now();
     return{
       key:'pending',label:automatic?'PENDIENTE':'ERROR',
-      message:String(r?.error|| (automatic?'Hubo un error transitorio y el sistema volverá a intentarlo.':'La publicación requiere intervención.')),
+      message:String(r?.error||(automatic?'Hubo un error transitorio y el sistema volverá a intentarlo.':'La publicación requiere intervención.')),
       resolution:automatic?'automatic':'action_required',actionRequired:!automatic
     };
   }
