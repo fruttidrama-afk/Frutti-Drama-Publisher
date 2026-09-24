@@ -102,6 +102,7 @@ has(server,'show_specific_repairs_isolated:true','show-specific repair isolation
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
 const publication=read('publication.js');
+const facebookPublication=read('publication-facebook.js');
 has(publication,'containsSyntheticMedia:true','YouTube synthetic-media disclosure');
 has(publication,'containsSyntheticMedia:true','publication synthetic-media disclosure');
 has(publication,'buildPublicationCopy','publication copy builder');
@@ -118,6 +119,24 @@ has(publication,'APPROVAL_GATE','publication enqueue requires explicit approval'
 has(publication,'purgeRejected','rejected publication artifacts are purged');
 has(publication,'purgePrivateVideosByTitle','operator cleanup can delete legacy private orphan uploads');
 has(publication,'readReviewRange','approved publication may stream from private cloud storage');
+for(const [token,label] of [
+  ["APPROVAL_GATE",'Facebook approval gate'],
+  ["me/video_reels",'Facebook Reels start/finish endpoint'],
+  ["upload_phase:'start'",'Facebook Reels start phase'],
+  ["Authorization:'OAuth '",'Facebook binary upload authorization'],
+  ["video_state:'PUBLISHED'",'Facebook runtime publication state'],
+  ["fields:'status'",'Facebook Reel status reconciliation'],
+  ["FACEBOOK_AUTH_REQUIRED",'Facebook authentication gate'],
+  ["purgeRejected",'Facebook rejection purge']
+]) has(facebookPublication,token,label);
+for(const [token,label] of [
+  ["/integrations/platform",'platform selector'],
+  ["/integrations/facebook",'Facebook setup'],
+  ["/facebook/oauth/callback",'Facebook OAuth callback'],
+  ["pages_show_list,pages_read_engagement,pages_manage_posts",'Facebook Page permissions'],
+  ["FacebookReelsProvider",'Facebook health provider'],
+  ["selectedPublicationProvider",'dynamic publication provider']
+]) has(server,token,label);
 
 const schema=JSON.parse(read('publisher.config.schema.json'));
 must(schema.properties?.schedule?.properties?.generation_strategy?.const==='sequential','Publisher Factory must enforce sequential Flow generation');
