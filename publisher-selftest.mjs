@@ -47,6 +47,8 @@ for(const [token,label] of [
   ["source:'creative-package'",'review metadata preservation'],
   ['let editor=await waitFlowReady(page,30000)','stable Flow composer handoff'],
   ['FLOW_UNUSUAL_ACTIVITY_OVERNIGHT','24h unusual-activity fallback'],
+  ["'flow:noChargeStreak:provider'",'provider-wide unusual-activity streak'],
+  ['Math.max(existingUntil,requestedRetryAt)','monotonic provider cooldown'],
   ['30*60*1000','first unusual-activity delay'],
   ['8*60*60*1000','fifth unusual-activity delay'],
   ['24*60*60*1000','24h unusual-activity fallback']
@@ -98,6 +100,8 @@ has(server,'stable_composer_handoff:true','stable Flow composer health invariant
 has(server,'native_no_charge_retry:false','native no-charge Retry disabled invariant');
 has(server,'immediate_native_retry_disabled:true','immediate native retry safety invariant');
 has(server,'adaptive_no_charge_backoff:true','adaptive no-charge backoff health invariant');
+has(server,'provider_wide_unusual_activity_backoff:true','provider-wide unusual-activity backoff health invariant');
+has(server,'monotonic_provider_cooldown:true','monotonic provider cooldown health invariant');
 has(server,'show_specific_repairs_isolated:true','show-specific repair isolation health invariant');
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
