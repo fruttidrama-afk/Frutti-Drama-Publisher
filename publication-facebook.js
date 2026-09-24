@@ -153,7 +153,7 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     if(item.videoId&&item.resumableSession)return;
     const start=await graph('me/video_reels',{method:'POST',params:{upload_phase:'start'},token:c.page_access_token});
     if(!start.video_id||!start.upload_url)throw new Error('Facebook did not return video_id/upload_url.');
-    item.videoId=String(start.video_id);item.resumableSession=String(start.upload_url);item.remotePrivacyStatus='uploading';hist(item,'publishing','Facebook Reel upload session created.');save(item);
+    item.videoId=String(start.video_id);item.resumableSession=String(start.upload_url);item.remotePrivacyStatus='session-created';hist(item,'publishing','Facebook Reel upload session created and persisted for restart-safe delivery.');save(item);
   }
   async function uploadBinary(item,c){
     if(!item.filePath||!fs.existsSync(item.filePath))throw new Error('Approved Reel file is missing.');
@@ -171,12 +171,20 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
   }
   async function publish(item){
     const c=connection();
-    if(item.videoId){
-      try{const state=await remoteStatus(item);if(state==='published')return}catch(e){if(isAuthError(e))throw e}
+    // Restart-safe phase machine:
+    // session-created -> uploaded -> processing -> published.
+    // Never repeat a completed phase merely because the process restarted.
+    if(item.videoId&&item.remotePrivacyStatus==='processing'){
+      try{await remoteStatus(item)}catch(e){if(isAuthError(e))throw e}
+      return;
     }
     await createOrResume(item,c);
-    await uploadBinary(item,c);
-    await finish(item,c);
+    if(item.remotePrivacyStatus!=='uploaded'&&item.remotePrivacyStatus!=='processing'){
+      await uploadBinary(item,c);
+    }
+    if(item.remotePrivacyStatus==='uploaded'){
+      await finish(item,c);
+    }
     for(let i=0;i<6;i++){
       await sleep(i?2500:900);
       try{const state=await remoteStatus(item);if(state==='published')return}catch(e){if(isAuthError(e))throw e}
