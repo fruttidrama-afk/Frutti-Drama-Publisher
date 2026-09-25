@@ -1,14 +1,19 @@
 {
-  "name":"publisher-runtime",
-  "version":"1.0.0",
-  "private":true,
-  "type":"module",
-  "scripts":{"start":"node --import ./runtime-init.js --import ./free-browser-provider.js --import ./flow-bootstrap.js server.js"},
-  "dependencies":{
-    "@simplewebauthn/server":"14.0.2",
-    "express":"^4.21.2",
-    "googleapis":"^144.0.0",
-    "playwright-core":"1.63.0"
+  "name": "publisher-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --import ./runtime-init.js --import ./free-browser-provider.js --import ./flow-bootstrap.js server.js"
   },
-  "engines":{"node":">=24.14.0 <25"}
+  "dependencies": {
+    "@simplewebauthn/server": "14.0.2",
+    "express": "^4.21.2",
+    "googleapis": "^144.0.0",
+    "playwright-core": "1.63.0",
+    "sharp": "^0.34.3"
+  },
+  "engines": {
+    "node": ">=24.14.0 <25"
+  }
 }
