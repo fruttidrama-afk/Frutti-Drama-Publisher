@@ -40,6 +40,10 @@
     "post_click_asset_identity_verified": true,
     "targeted_recovery_never_submits": true,
     "zero_copy_approval_handoff": true,
-    "same_volume_review_copy_forbidden": true
+    "same_volume_review_copy_forbidden": true,
+    "native_ai_disclosure_required": true,
+    "youtube_contains_synthetic_media_always": true,
+    "facebook_is_ai_generated_always": true,
+    "legacy_ai_disclosure_repair_enabled": true
   }
 }
