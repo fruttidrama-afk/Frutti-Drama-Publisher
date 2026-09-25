@@ -151,7 +151,12 @@
         "model_intent",
         "duration_seconds",
         "aspect_ratio",
-        "output_count"
+        "output_count",
+        "daily_credit_grant",
+        "automatic_batch_credit_gate",
+        "credit_refresh_poll_minutes",
+        "credit_refresh_guard_hours",
+        "credit_refresh_fallback_hours"
       ],
       "properties": {
         "provider": {
@@ -210,6 +215,30 @@
             "null"
           ],
           "minimum": 0
+        },
+        "daily_credit_grant": {
+          "const": 50
+        },
+        "automatic_batch_credit_gate": {
+          "const": "wait-for-daily-flow-refresh"
+        },
+        "credit_refresh_poll_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60,
+          "default": 5
+        },
+        "credit_refresh_guard_hours": {
+          "type": "number",
+          "minimum": 6,
+          "maximum": 28,
+          "default": 20
+        },
+        "credit_refresh_fallback_hours": {
+          "type": "number",
+          "minimum": 21,
+          "maximum": 48,
+          "default": 30
         }
       }
     },
