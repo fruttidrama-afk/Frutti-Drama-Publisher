@@ -181,7 +181,13 @@ function ensureConfirmedGenerationAccounting(db){
         (flow?.validated_ftyp||flow?.content_hash||row.reviewContentHash||row.stockId||row.videoPath||row.remoteUrl)
       );
       if(!AFTER_GENERATE.has(state)&&!retained)continue;
-      const runId=String(lc.generation_id||flow?.generation_id||row.providerRunId||'').trim();
+      let runId=String(lc.generation_id||flow?.generation_id||row.providerRunId||'').trim();
+      // A retained, validated MP4 is itself hard proof that one generation
+      // completed. Legacy/reset recovery can legitimately lose the original
+      // runId while preserving the media + publication stock record. Give that
+      // retained item one deterministic accounting identity instead of letting
+      // the daily counter drop and generating an unwanted fourth video.
+      if(!runId&&retained)runId='retained-'+String(row.id);
       if(!runId||/^manual-flow-golden-run:/.test(runId))continue;
       const existing=db.prepare("SELECT id,credits,status,generationKind FROM factory_generations WHERE itemId=? AND runId=? LIMIT 1").get(row.id,runId);
       const startedAt=String(lc.generation_started_at||flow?.generation_started_at||lc.reconciled_at||row.lastProgressAt||row.updatedAt||now());
