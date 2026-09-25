@@ -113,6 +113,8 @@ CREATE TABLE IF NOT EXISTS factory_items(
  reviewPreviewSize INTEGER,
  reviewArchiveError TEXT,
  reviewFeedback TEXT,
+ reviewInterpretation TEXT,
+ reviewInterpretationAt TEXT,
  retryStrategy TEXT,
  reviewRetryToken TEXT,
  reviewRetrySubmittedToken TEXT,
@@ -178,7 +180,9 @@ CREATE INDEX IF NOT EXISTS publication_status_idx ON publication_items(status,re
 `);
 for(const sql of [
   "ALTER TABLE factory_items ADD COLUMN creativePackageHash TEXT",
-  "ALTER TABLE factory_items ADD COLUMN creativePackageId TEXT"
+  "ALTER TABLE factory_items ADD COLUMN creativePackageId TEXT",
+  "ALTER TABLE factory_items ADD COLUMN reviewInterpretation TEXT",
+  "ALTER TABLE factory_items ADD COLUMN reviewInterpretationAt TEXT"
 ]){try{db.exec(sql)}catch{}}
 const put=(k,v)=>db.prepare("INSERT INTO factory_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k,String(v));
 put('runtime:version','publisher-runtime-v1');
