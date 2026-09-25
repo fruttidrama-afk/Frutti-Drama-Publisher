@@ -296,8 +296,18 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
           await publish(item);
           item.attempts=0;item.retryAt=0;item.error=null;save(item);
         }catch(e){
-          const raw=String(e?.message||e),auth=isAuthError(e),rate=isRateLimit(e);
-          item.attempts=Number(item.attempts||0)+1;item.error=raw;
+          const raw=String(e?.message||e),auth=isAuthError(e),rate=isRateLimit(e),wasPublished=String(item.status||'')==='published'||String(item.remotePrivacyStatus||'')==='public';
+          item.attempts=Number(item.attempts||0)+1;
+          if(wasPublished){
+            // Never downgrade or republish an already-public Reel just because a
+            // post-publication AI-disclosure retrofit is temporarily unavailable.
+            item.error='AI disclosure repair pending: '+raw;
+            item.retryAt=Date.now()+(rate?30*60*1000:Math.min(60*60*1000,60000*Math.pow(2,Math.min(item.attempts,6))));
+            hist(item,'published',item.error);
+            save(item);
+            continue;
+          }
+          item.error=raw;
           if(raw==='FACEBOOK_AUTH_REQUIRED'||auth){item.status='auth_wait';item.retryAt=0}
           else{item.status='error';item.retryAt=Date.now()+(rate?30*60*1000:Math.min(60*60*1000,60000*Math.pow(2,Math.min(item.attempts,6))))}
           hist(item,item.status,raw);save(item);
