@@ -206,10 +206,10 @@ function brandPublic(){
     // broken-image behavior from third-party storage redirects and lets us
     // normalize transparency/padding consistently.
     logo_url:hasLogo?'/brand/logo.png?v=20260925-botanical':null,
-    icon_180_url:isDinnieBrand()?'/dinnie-touch-icon.png?v=20260925-edgefill':'/apple-touch-icon.png?v=20260925-fullbleed',
-    icon_192_url:isDinnieBrand()?'/dinnie-touch-icon.png?v=20260925-edgefill':'/brand/icon-192.png?v=20260925-fullbleed',
-    icon_512_url:isDinnieBrand()?'/dinnie-touch-icon.png?v=20260925-edgefill':'/brand/icon-512.png?v=20260925-fullbleed',
-    maskable_icon_url:isDinnieBrand()?'/dinnie-touch-icon.png?v=20260925-edgefill':'/brand/icon-maskable-512.png?v=20260925-fullbleed',
+    icon_180_url:'/apple-touch-icon.png?v=20260925-finalfill',
+    icon_192_url:'/brand/icon-192.png?v=20260925-finalfill',
+    icon_512_url:'/brand/icon-512.png?v=20260925-finalfill',
+    maskable_icon_url:'/brand/icon-maskable-512.png?v=20260925-finalfill',
     safe_area_ratio:Number(b.safe_area_ratio||.8),
     tagline:b.tagline||CONFIG.identity.description||'',
     theme:{primary:t.primary||'#0d3152',secondary:t.secondary||'#b59a64',accent:t.accent||'#b59a64',background:t.background||'#f7f6f2',surface:t.surface||'#ffffff',text:t.text||'#1d1d1b'}
@@ -283,8 +283,8 @@ async function brandedIconPng(size,{maskable=false}={}){
       pipeline=pipeline.trim({background:{r:0,g:0,b:0,alpha:0},threshold:10});
       logo=await pipeline
         .resize({
-          width:Math.round(s*(maskable?.84:.94)),
-          height:Math.round(s*(maskable?.84:.94)),
+          width:Math.round(s*(maskable?.90:.98)),
+          height:Math.round(s*(maskable?.90:.98)),
           fit:'inside',
           withoutEnlargement:false
         })
@@ -326,10 +326,10 @@ app.get('/favicon.ico',(req,res)=>{
 });
 app.get('/brand/logo.svg',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await normalizedBrandLogoPng())});
 app.get('/brand/logo.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await normalizedBrandLogoPng())});
-app.get('/apple-touch-icon.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(isDinnieBrand()?await dinnieStaticIconPng(180):await brandedIconPng(180))});
-app.get('/brand/icon-192.png',async(req,res)=>{res.set('Cache-Control',isDinnieBrand()?'no-store, max-age=0':'public, max-age=300');res.type('image/png').send(isDinnieBrand()?await dinnieStaticIconPng(192):await brandedIconPng(192))});
-app.get('/brand/icon-512.png',async(req,res)=>{res.set('Cache-Control',isDinnieBrand()?'no-store, max-age=0':'public, max-age=300');res.type('image/png').send(isDinnieBrand()?await dinnieStaticIconPng(512):await brandedIconPng(512))});
-app.get('/brand/icon-maskable-512.png',async(req,res)=>{res.set('Cache-Control',isDinnieBrand()?'no-store, max-age=0':'public, max-age=300');res.type('image/png').send(isDinnieBrand()?await dinnieStaticIconPng(512):await brandedIconPng(512,{maskable:true}))});
+app.get('/apple-touch-icon.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await brandedIconPng(180))});
+app.get('/brand/icon-192.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await brandedIconPng(192))});
+app.get('/brand/icon-512.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await brandedIconPng(512))});
+app.get('/brand/icon-maskable-512.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await brandedIconPng(512,{maskable:true}))});
 app.get('/manifest.webmanifest',(req,res)=>{
   res.set('Cache-Control','no-store, max-age=0');
   const b=brandPublic(),icons=[
