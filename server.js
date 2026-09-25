@@ -828,16 +828,20 @@ function activeDailyTarget(day=publisherDay()){
  const manualTarget=Math.max(0,Number(metaGet('automation:manualDailyTarget:'+day,'0'))||0);
  return Math.max(base,envTarget,manualTarget);
 }
+function publisherDayFromCandidates(...values){
+ for(const value of values){
+   const ms=Date.parse(String(value||''));if(!Number.isFinite(ms))continue;
+   return new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ms));
+ }
+ return'';
+}
 function retainedGeneratedToday(day=publisherDay()){
  let count=0;
  try{
    const rows=db.prepare("SELECT status,flowResult,lastProgressAt,updatedAt,stockId,reviewContentHash FROM factory_items WHERE status IN ('review','queued','historical','published')").all();
    for(const row of rows){
      let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
-     const stamp=String(flow?.generation_started_at||row.lastProgressAt||row.updatedAt||'');
-     const ms=Date.parse(stamp);if(!Number.isFinite(ms))continue;
-     const d=new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ms));
-     if(d===day)count++;
+     if(publisherDayFromCandidates(flow?.generation_started_at,row.lastProgressAt,row.updatedAt)===day)count++;
    }
  }catch{}
  return count;
@@ -848,10 +852,7 @@ function approvedPublicationGeneratedToday(day=publisherDay()){
    const rows=db.prepare("SELECT p.createdAt,p.status,f.flowResult,f.lastProgressAt,f.updatedAt FROM publication_items p JOIN factory_items f ON f.id=p.itemId WHERE p.status NOT IN ('cancelled','deleted')").all();
    for(const row of rows){
      let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
-     const stamp=String(flow?.generation_started_at||row.lastProgressAt||row.updatedAt||row.createdAt||'');
-     const ms=Date.parse(stamp);if(!Number.isFinite(ms))continue;
-     const d=new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ms));
-     if(d===day)count++;
+     if(publisherDayFromCandidates(flow?.generation_started_at,row.lastProgressAt,row.updatedAt,row.createdAt)===day)count++;
    }
  }catch{}
  return count;
@@ -862,10 +863,7 @@ function reviewGeneratedToday(day=publisherDay()){
    const rows=db.prepare("SELECT flowResult,lastProgressAt,updatedAt FROM factory_items WHERE status='review'").all();
    for(const row of rows){
      let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
-     const stamp=String(flow?.generation_started_at||row.lastProgressAt||row.updatedAt||'');
-     const ms=Date.parse(stamp);if(!Number.isFinite(ms))continue;
-     const d=new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ms));
-     if(d===day)count++;
+     if(publisherDayFromCandidates(flow?.generation_started_at,row.lastProgressAt,row.updatedAt)===day)count++;
    }
  }catch{}
  return count;
