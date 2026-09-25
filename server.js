@@ -843,9 +843,23 @@ function retainedGeneratedToday(day=publisherDay()){
  }catch{}
  return count;
 }
+function approvedPublicationGeneratedToday(day=publisherDay()){
+ let count=0;
+ try{
+   const rows=db.prepare("SELECT p.createdAt,p.status,f.flowResult,f.lastProgressAt,f.updatedAt FROM publication_items p JOIN factory_items f ON f.id=p.itemId WHERE p.status NOT IN ('cancelled','deleted')").all();
+   for(const row of rows){
+     let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
+     const stamp=String(flow?.generation_started_at||row.lastProgressAt||row.updatedAt||row.createdAt||'');
+     const ms=Date.parse(stamp);if(!Number.isFinite(ms))continue;
+     const d=new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ms));
+     if(d===day)count++;
+   }
+ }catch{}
+ return count;
+}
 function completedGeneratedToday(day=publisherDay()){
  const ledger=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND credits>0 AND status IN ('review','completed')").get(day)?.n||0);
- return Math.max(ledger,retainedGeneratedToday(day));
+ return Math.max(ledger,retainedGeneratedToday(day),approvedPublicationGeneratedToday(day));
 }
 function health(){
  const counts={};for(const r of db.prepare('SELECT status,COUNT(*) n FROM factory_items GROUP BY status').all())counts[r.status]=Number(r.n);
