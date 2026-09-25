@@ -189,6 +189,12 @@ function isDinnieBrand(){return /dinnie\s*(?:the\s*)?dinosaur|dinnie/i.test(Stri
 function dinnieStaticIconBuffer(){
   try{return Buffer.from(fs.readFileSync(path.join('public','dinnie-touch-icon.b64'),'utf8').trim(),'base64')}catch{return null}
 }
+async function dinnieStaticIconPng(size=180){
+  const buf=dinnieStaticIconBuffer();if(!buf)return null;
+  const s=Math.max(64,Math.min(1024,Number(size)||180));
+  if(s===180)return buf;
+  return sharp(buf).resize(s,s,{fit:'fill'}).png({compressionLevel:9}).toBuffer();
+}
 function brandPublic(){
   const b=CONFIG.branding||{},t=b.theme||{},hasLogo=Boolean(String(b.logo_url||'').trim());
   return{
@@ -320,10 +326,10 @@ app.get('/favicon.ico',(req,res)=>{
 });
 app.get('/brand/logo.svg',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await normalizedBrandLogoPng())});
 app.get('/brand/logo.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await normalizedBrandLogoPng())});
-app.get('/apple-touch-icon.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await brandedIconPng(180))});
-app.get('/brand/icon-192.png',async(req,res)=>{res.set('Cache-Control','public, max-age=300');res.type('image/png').send(await brandedIconPng(192))});
-app.get('/brand/icon-512.png',async(req,res)=>{res.set('Cache-Control','public, max-age=300');res.type('image/png').send(await brandedIconPng(512))});
-app.get('/brand/icon-maskable-512.png',async(req,res)=>{res.set('Cache-Control','public, max-age=300');res.type('image/png').send(await brandedIconPng(512,{maskable:true}))});
+app.get('/apple-touch-icon.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(isDinnieBrand()?await dinnieStaticIconPng(180):await brandedIconPng(180))});
+app.get('/brand/icon-192.png',async(req,res)=>{res.set('Cache-Control',isDinnieBrand()?'no-store, max-age=0':'public, max-age=300');res.type('image/png').send(isDinnieBrand()?await dinnieStaticIconPng(192):await brandedIconPng(192))});
+app.get('/brand/icon-512.png',async(req,res)=>{res.set('Cache-Control',isDinnieBrand()?'no-store, max-age=0':'public, max-age=300');res.type('image/png').send(isDinnieBrand()?await dinnieStaticIconPng(512):await brandedIconPng(512))});
+app.get('/brand/icon-maskable-512.png',async(req,res)=>{res.set('Cache-Control',isDinnieBrand()?'no-store, max-age=0':'public, max-age=300');res.type('image/png').send(isDinnieBrand()?await dinnieStaticIconPng(512):await brandedIconPng(512,{maskable:true}))});
 app.get('/manifest.webmanifest',(req,res)=>{
   res.set('Cache-Control','no-store, max-age=0');
   const b=brandPublic(),icons=[
