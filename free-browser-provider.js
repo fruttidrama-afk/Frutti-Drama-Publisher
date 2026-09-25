@@ -38,19 +38,39 @@ const PROVIDER='FreeBrowserProvider';
 const GEMINI_FEEDBACK_URL='https://gemini.google.com/app';
 async function saveReviewAsset(db,row,localPath,flowResult,stamp=now()){
   // HARD APPROVAL GATE: an unapproved review render must remain only on the
-  // Publisher's private persistent volume. It must never be uploaded to
-  // YouTube, Supabase review storage, or any other remote destination.
+  // Publisher's private persistent volume. It must never be uploaded remotely.
   flowResult.review_storage='local-volume-until-approval';
   const size=fs.statSync(localPath).size;
   const contentHash=createHash('sha256').update(fs.readFileSync(localPath)).digest('hex');
-  const duplicate=db.prepare("SELECT id,episode,status FROM factory_items WHERE id<>? AND reviewContentHash=? LIMIT 1").get(row.id,contentHash);
-  if(duplicate){
+  const assetId=String(flowResult?.flow_asset_id||'').trim();
+  const priorSameHash=String(row?.reviewContentHash||'').trim();
+  if(priorSameHash&&priorSameHash===contentHash){
     try{fs.unlinkSync(localPath)}catch{}
-    throw new Error('FLOW_DUPLICATE_REVIEW_MEDIA: downloaded media is already bound to episode '+duplicate.episode+'; refusing cross-episode reuse.');
+    throw new Error('FLOW_SAME_REVIEW_MEDIA_REUSED: replacement download is byte-identical to the media already shown for this episode.');
+  }
+  const rows=db.prepare("SELECT id,episode,status,reviewContentHash,flowResult FROM factory_items WHERE id<>?").all(row.id);
+  for(const other of rows){
+    let fr={};try{fr=JSON.parse(String(other.flowResult||'{}'))||{}}catch{}
+    const otherHash=String(other.reviewContentHash||fr.content_hash||'').trim();
+    if(otherHash&&otherHash===contentHash){
+      try{fs.unlinkSync(localPath)}catch{}
+      throw new Error('FLOW_DUPLICATE_REVIEW_MEDIA: downloaded media is already bound to episode '+other.episode+'; refusing cross-episode reuse.');
+    }
+  }
+  if(assetId){
+    const priorAsset=db.prepare("SELECT assetId,itemId,episode,contentHash,signature FROM flow_recovered_assets WHERE assetId=? LIMIT 1").get(assetId);
+    if(priorAsset){
+      try{fs.unlinkSync(localPath)}catch{}
+      throw new Error('FLOW_ASSET_ID_ALREADY_RECOVERED: asset '+assetId.slice(0,16)+' was already recovered for episode '+priorAsset.episode+'.');
+    }
   }
   flowResult.content_hash=contentHash;
   db.prepare(`UPDATE factory_items SET status='review',videoPath=?,remoteUrl=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=?,reviewContentHash=?,flowResult=?,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?`)
     .run(localPath,size,contentHash,JSON.stringify(flowResult),stamp,stamp,row.id);
+  if(assetId){
+    db.prepare("INSERT OR REPLACE INTO flow_recovered_assets(assetId,itemId,episode,contentHash,signature,recoveryProof,runId,recoveredAt) VALUES(?,?,?,?,?,?,?,?)")
+      .run(assetId,row.id,Number(row.episode||0),contentHash,String(flowResult?.recovery_signature||flowResult?.matched_label||''),String(flowResult?.recovery_proof||''),String(flowResult?.generation_id||flowResult?.run_id||''),stamp);
+  }
   return null;
 }
 
@@ -497,6 +517,18 @@ function ensureSchema(db) {
     `ALTER TABLE factory_items ADD COLUMN reviewInterpretationAt TEXT`,
     `ALTER TABLE factory_generations ADD COLUMN generationKind TEXT NOT NULL DEFAULT 'automatic'`
   ]) { try { db.exec(sql); } catch {} }
+  try{db.exec(`
+    CREATE TABLE IF NOT EXISTS flow_recovered_assets(
+      assetId TEXT PRIMARY KEY,
+      itemId TEXT NOT NULL,
+      episode INTEGER NOT NULL,
+      contentHash TEXT,
+      signature TEXT,
+      recoveryProof TEXT,
+      runId TEXT,
+      recoveredAt TEXT NOT NULL
+    );
+  `)}catch{}
 }
 function checkpoint(row){
   const prompt=String(row?.prompt||'');if(prompt.length<400)return null;const hash=sha(prompt);if(String(row.promptHash||'')!==hash)return null;if(String(row.promptPayloadHash||hash)!==hash)return null;if(Number(row.promptPayloadLength||Buffer.byteLength(prompt,'utf8'))!==Buffer.byteLength(prompt,'utf8'))return null;
