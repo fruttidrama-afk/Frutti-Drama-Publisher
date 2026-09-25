@@ -1275,8 +1275,11 @@ async function newPermissionMessage(page,before){
       ((await b.getAttribute('aria-label').catch(()=>''))||''),220
     );
     const bn=norm(label);
-    if(!/^(si|sí|yes|generar|generate|confirmar|confirm|continuar|continue|aprobar|approve)(\b|\s|,|\.)/.test(bn)&&
-       !/(si|sí|yes).*(generar|generate)|(generar|generate).*(video|15|puntos|points|creditos|credits)/.test(bn))continue;
+    if(bn.length>180)continue;
+    const actionLike=/^(si|yes|generar|generate|confirmar|confirm|continuar|continue|aprobar|approve)(\b|\s|,|\.)/.test(bn)||
+      /^(si|yes)\s*,?\s*(generar|generate)\b/.test(bn)||
+      /^(generar|generate)\s+video\b/.test(bn);
+    if(!actionLike)continue;
     let context='';
     try{
       context=await b.evaluate(el=>{
@@ -1390,8 +1393,11 @@ async function findGenerationConsentAction(page){
       ((await b.getAttribute('title').catch(()=>''))||''),220
     );
     const n=norm(label);
-    if(!/^(si|sí|yes|generar|generate|confirmar|confirm|continuar|continue|aprobar|approve)(\b|\s|,|\.)/.test(n)&&
-       !/(si|sí|yes).*(generar|generate)|(generar|generate).*(video|15|puntos|points|creditos|credits)/.test(n))continue;
+    if(n.length>180)continue;
+    const actionLike=/^(si|yes|generar|generate|confirmar|confirm|continuar|continue|aprobar|approve)(\b|\s|,|\.)/.test(n)||
+      /^(si|yes)\s*,?\s*(generar|generate)\b/.test(n)||
+      /^(generar|generate)\s+video\b/.test(n);
+    if(!actionLike)continue;
     let context='';
     try{
       context=await b.evaluate(el=>{
@@ -1508,10 +1514,11 @@ function episodeRecoveryTerms(row){
   return [...new Set(words.filter(w=>!stop.has(w)))].slice(0,12);
 }
 
-async function openEpisodeCorrelatedResult(page,row){
+async function openEpisodeCorrelatedResult(page,row,baselineInv=null){
   const terms=episodeRecoveryTerms(row);
   if(!terms.length)return{found:false,signal:'no-specific-recovery-terms',matched:[]};
-  const tiles=page.locator('flow-grid-tile-container');
+  const baselineVideoSigs=new Set((Array.isArray(baselineInv?.ordered_video_signatures)?baselineInv.ordered_video_signatures:[]).map(x=>norm(x)));
+  const tiles=page.locator('flow-grid-tile-container').filter({has:page.locator('flow-video-tile,video')});
   const count=Math.min(await tiles.count().catch(()=>0),120);
   let best=null;
   for(let i=0;i<count;i++){
@@ -1524,6 +1531,7 @@ async function openEpisodeCorrelatedResult(page,row){
     );
     const n=label.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
     const matched=terms.filter(t=>n.includes(t));
+    if(baselineVideoSigs.has(norm(label)))continue;
     if(!best||matched.length>best.matched.length)best={el,label,matched,index:i};
   }
   if(!best||best.matched.length<2)return{found:false,signal:'no-correlated-visible-tile',matched:best?.matched||[],label:best?.label||''};
@@ -1543,79 +1551,110 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
   const baselineInv=lc?.baseline_inventory||null;
   const boundary=Date.parse(String(lc?.submit_boundary_at||''));
   const age=Number.isFinite(boundary)?Date.now()-boundary:0;
-  const currentInv=await captureFlowInventory(page);
+  let currentInv=await captureFlowInventory(page);
   let body=(await getBody(page)).slice(0,14000);
+
   const lateConsent=await findGenerationConsentAction(page).catch(()=>null);
   if(lateConsent){
     await trustedClick(lateConsent.el);
-    publish('LATE_POINT_CONSENT_RECOVERED',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,label:compact(lateConsent.label,160),message:'Delayed Flow Agent generation consent accepted once; prompt was NOT resubmitted.'});
+    publish('LATE_POINT_CONSENT_RECOVERED',{
+      episode:'T'+row.season+'E'+row.episode,job_id:row.id,
+      label:compact(lateConsent.label,160),
+      message:'Delayed Flow generation consent accepted once; generation remains unconfirmed until a fresh video result appears.'
+    });
     await sleep(900);
+    currentInv=await captureFlowInventory(page);
     body=(await getBody(page)).slice(0,14000);
   }
-  const busy=Boolean(lateConsent)||currentInv.busy||/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation|thinking|pensando/i.test(body)||/\bStop\b|\bDetener\b/i.test(body);
-  const baselineUsable=Boolean(baselineInv&&Number(baselineInv.tile_count||0)>0&&Array.isArray(baselineInv.signatures)&&baselineInv.signatures.length>0);
+
+  const visibleBusy=currentInv.busy||/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation/i.test(body)||/\bStop\b|\bDetener\b/i.test(body);
+  const baselineUsable=Boolean(
+    baselineInv&&
+    Number.isFinite(Number(baselineInv.video_tile_count))&&
+    Array.isArray(baselineInv.ordered_video_signatures||baselineInv.video_signatures)
+  );
   const fresh=baselineUsable&&inventoryHasNew(currentInv,baselineInv);
 
-  // A persisted Flow result is stronger evidence than an unusable/virtualized
-  // baseline. Correlate the rendered tile to this episode before keeping the
-  // job indefinitely in SUBMIT_AMBIGUOUS.
-  if(!busy&&age>=20000){
-    const correlated=await openEpisodeCorrelatedResult(page,row).catch(()=>null);
-    if(correlated?.found){
-      const startedAt=String(lc?.generation_started_at||lc?.submit_boundary_at||now());
-      const next=setLifecycle(db,row,'GENERATION_STARTED',{...lc,generation_started_at:startedAt,evidence:'ambiguous-reconciled-by-'+correlated.signal,matched_label:correlated.label,matched_terms:correlated.matched,reconciled_at:now(),automatic_submit_forbidden:true});
-      db.prepare("UPDATE factory_items SET status='generating',error=NULL,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
-      const runId=String(next.generation_id||row.providerRunId||'');
-      if(runId){
-        const exists=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE itemId=? AND runId=?").get(row.id,runId)?.n||0);
-        if(!exists)try{db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)").run(randomUUID(),row.id,artDay(new Date(startedAt)),sha(String(row.promptHash||'')+':'+runId),CREDITS_PER_GENERATION,'running',runId,startedAt,now(),'automatic')}catch{}
-      }
-      publish('AMBIGUOUS_CORRELATED_RENDER',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,label:correlated.label,matched:correlated.matched,signal:correlated.signal});
-      return{mode:'retrieve',lifecycle:next};
-    }
-    publish('AMBIGUOUS_CORRELATION_DIAGNOSTIC',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,terms:episodeRecoveryTerms(row),samples:(currentInv?.ordered_signatures||currentInv?.signatures||[]).slice(0,18),page_body:compact(body,2600)});
-  }
-
-  if(fresh||busy){
-    const startedAt=String(lc?.generation_started_at||now());
-    const next=setLifecycle(db,row,'GENERATION_STARTED',{...lc,generation_started_at:startedAt,evidence:`ambiguous-reconciled:fresh=${fresh};busy=${busy};tiles=${baselineInv?.tile_count||0}->${currentInv.tile_count}`,reconciled_at:now()});
+  if(fresh){
+    const startedAt=String(lc?.generation_started_at||lc?.submit_boundary_at||now());
+    const next=setLifecycle(db,row,'GENERATION_STARTED',{
+      ...lc,generation_started_at:startedAt,
+      evidence:`ambiguous-reconciled-by-fresh-video;videoTiles=${baselineInv?.video_tile_count||0}->${currentInv.video_tile_count||0}`,
+      reconciled_at:now(),automatic_submit_forbidden:true
+    });
     db.prepare("UPDATE factory_items SET status='generating',error=NULL,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
     publish('AMBIGUOUS_RECONCILED_GENERATION',{episode:`T${row.season}E${row.episode}`,job_id:row.id,evidence:next.evidence});
     return{mode:'retrieve',lifecycle:next};
   }
+
+  if(!visibleBusy&&age>=20000){
+    const correlated=await openEpisodeCorrelatedResult(page,row,baselineInv).catch(()=>null);
+    if(correlated?.found){
+      const startedAt=String(lc?.generation_started_at||lc?.submit_boundary_at||now());
+      const next=setLifecycle(db,row,'GENERATION_STARTED',{
+        ...lc,generation_started_at:startedAt,
+        evidence:'ambiguous-reconciled-by-'+correlated.signal,
+        matched_label:correlated.label,matched_terms:correlated.matched,
+        reconciled_at:now(),automatic_submit_forbidden:true
+      });
+      db.prepare("UPDATE factory_items SET status='generating',error=NULL,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
+      publish('AMBIGUOUS_CORRELATED_RENDER',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,label:correlated.label,matched:correlated.matched,signal:correlated.signal});
+      return{mode:'retrieve',lifecycle:next};
+    }
+    publish('AMBIGUOUS_CORRELATION_DIAGNOSTIC',{
+      episode:'T'+row.season+'E'+row.episode,job_id:row.id,
+      terms:episodeRecoveryTerms(row),
+      samples:(currentInv?.ordered_video_signatures||currentInv?.video_signatures||[]).slice(0,18),
+      busy_supporting_only:Boolean(visibleBusy),page_body:compact(body,1800)
+    });
+  }
+
   if(baselineInv&&age>=5*60*1000){
-    const before=Array.isArray(baselineInv.signatures)?baselineInv.signatures:[];
-    const after=Array.isArray(currentInv.signatures)?currentInv.signatures:[];
-    const sameCount=Number(currentInv.tile_count||0)===Number(baselineInv.tile_count||0);
-    const sameSigs=before.length===after.length&&before.every(x=>after.includes(x));
-    if(sameCount&&sameSigs&&!busy){
+    const before=Array.isArray(baselineInv.ordered_video_signatures)?baselineInv.ordered_video_signatures:[];
+    const after=Array.isArray(currentInv.ordered_video_signatures)?currentInv.ordered_video_signatures:[];
+    const sameCount=Number(currentInv.video_tile_count||0)===Number(baselineInv.video_tile_count||0);
+    const counts=x=>{const m=new Map();for(const v of x)m.set(v,(m.get(v)||0)+1);return m};
+    const bm=counts(before),am=counts(after);
+    const sameSigs=bm.size===am.size&&[...bm].every(([k,v])=>am.get(k)===v);
+    if(sameCount&&sameSigs&&!visibleBusy){
       if(reviewerRetryTokenConsumed(row)){
         db.prepare("UPDATE factory_items SET status='manual_hold',providerRunId=NULL,error=?,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(
           'Rehacer enviado pero Flow no confirmó resultado. El token quedó consumido y NO se reenviará automáticamente; se requiere un nuevo Rehacer humano.',
           now(),now(),row.id
         );
         setLifecycle(db,row,'MANUAL_HOLD_SUBMIT_NOT_CONFIRMED',{
-          ...lc,
-          reconciled_at:now(),
-          evidence:`No new Flow result after ${Math.round(age/1000)}s; inventory unchanged at ${currentInv.tile_count} tiles.`,
-          automatic_submit_forbidden:true,
-          reviewer_retry:true,
-          retry_token:String(row.reviewRetryToken||'')
+          ...lc,reconciled_at:now(),
+          evidence:`No new Flow video after ${Math.round(age/1000)}s; video inventory unchanged at ${currentInv.video_tile_count||0} tiles.`,
+          automatic_submit_forbidden:true,reviewer_retry:true,retry_token:String(row.reviewRetryToken||'')
         });
-        publish('REVIEW_RETRY_NOT_CONFIRMED_HOLD',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Reviewer retry token is consumed. Flow showed no result; automatic resubmit is forbidden until a new human Rehacer request.'});
+        publish('REVIEW_RETRY_NOT_CONFIRMED_HOLD',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Reviewer retry token is consumed. Flow showed no new video; automatic resubmit is forbidden until a new human Rehacer request.'});
         return{mode:'wait'};
       }
       const retryAt=Date.now()+60000;
+      db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='No fresh post-baseline Flow video appeared.',updatedAt=? WHERE itemId=? AND status='running'").run(now(),row.id);
       db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run(retryAt,now(),now(),row.id);
-      setLifecycle(db,row,'RECONCILED_NO_GENERATION',{prior_generation_id:String(lc?.generation_id||row.providerRunId||''),submit_boundary_at:String(lc?.submit_boundary_at||''),reconciled_at:now(),evidence:`No new Flow result after ${Math.round(age/1000)}s; inventory unchanged at ${currentInv.tile_count} tiles.`,retry_at:new Date(retryAt).toISOString()});
-      publish('AMBIGUOUS_RECONCILED_NO_GENERATION',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Flow inventory unchanged; automatic episode generation may retry after backoff.'});
+      setLifecycle(db,row,'RECONCILED_NO_GENERATION',{
+        prior_generation_id:String(lc?.generation_id||row.providerRunId||''),
+        submit_boundary_at:String(lc?.submit_boundary_at||''),reconciled_at:now(),
+        evidence:`No fresh post-baseline Flow video after ${Math.round(age/1000)}s; video inventory unchanged.`,
+        retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:false
+      });
+      publish('AMBIGUOUS_RECONCILED_NO_GENERATION',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'No fresh Flow video was retained; episode may retry once after backoff.'});
       return{mode:'wait'};
     }
   }
+
   const retryAt=Date.now()+60000;
-  db.prepare("UPDATE factory_items SET status='generating',error=?,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run('SUBMIT_AMBIGUOUS — reconciliation pending; no automatic resubmit',retryAt,now(),now(),row.id);
-  setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{...lc,last_error:'Reconciliation pending; Generate remains forbidden.',retry_at:new Date(retryAt).toISOString(),last_inventory:currentInv});
-  publish('SUBMIT_AMBIGUOUS',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Read-only Flow reconciliation pending. No Generate will be clicked.'});
+  db.prepare("UPDATE factory_items SET status='generating',error=?,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run(
+    'SUBMIT_AMBIGUOUS — awaiting hard post-baseline video evidence; Generate remains locked.',
+    retryAt,now(),now(),row.id
+  );
+  setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{
+    ...lc,last_error:'Awaiting fresh post-baseline video evidence; Generate remains forbidden.',
+    retry_at:new Date(retryAt).toISOString(),last_inventory:currentInv,
+    busy_supporting_only:Boolean(visibleBusy),automatic_submit_forbidden:true
+  });
+  publish('SUBMIT_AMBIGUOUS',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Read-only Flow reconciliation pending. No Generate will be clicked without a fresh video result.'});
   return{mode:'wait'};
 }
 
