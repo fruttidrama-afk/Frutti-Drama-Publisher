@@ -132,3 +132,4 @@ fix=strict-recovery-and-earth-unique-landscapes-20260925
 fix=closed-earth-title-fallback-20260925
 fix=db-aware-earth-backlog-uniqueness-20260925
 fix=earth-uniqueness-ignore-show-bible-prompt-20260925
+fix=no-youtube-private-stock-cloud-until-release-20260925
