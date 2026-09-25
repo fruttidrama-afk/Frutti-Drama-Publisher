@@ -339,10 +339,10 @@ app.get('/favicon.ico',(req,res)=>{
 });
 app.get('/brand/logo.svg',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await normalizedBrandLogoPng())});
 app.get('/brand/logo.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await normalizedBrandLogoPng())});
-app.get('/apple-touch-icon.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await brandedIconPng(180))});
-app.get('/brand/icon-192.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await brandedIconPng(192))});
-app.get('/brand/icon-512.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await brandedIconPng(512))});
-app.get('/brand/icon-maskable-512.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await brandedIconPng(512,{maskable:true}))});
+app.get('/apple-touch-icon.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(isDinnieBrand()?await dinnieStaticIconPng(180):await brandedIconPng(180))});
+app.get('/brand/icon-192.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(isDinnieBrand()?await dinnieStaticIconPng(192):await brandedIconPng(192))});
+app.get('/brand/icon-512.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(isDinnieBrand()?await dinnieStaticIconPng(512):await brandedIconPng(512))});
+app.get('/brand/icon-maskable-512.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(isDinnieBrand()?await dinnieStaticIconPng(512):await brandedIconPng(512,{maskable:true}))});
 app.get('/manifest.webmanifest',(req,res)=>{
   res.set('Cache-Control','no-store, max-age=0');
   const b=brandPublic(),dinnie=isDinnieBrand();
