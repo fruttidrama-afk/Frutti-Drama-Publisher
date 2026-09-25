@@ -165,6 +165,12 @@ function dailyGenerationCount(db, day=artDay()) {
   // generated today, not only "automatic" generationKind rows.
   return Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND credits>0 AND status IN ('review','completed')").get(day)?.n||0);
 }
+function dayFromCandidates(...values){
+  for(const value of values){
+    const ms=Date.parse(String(value||''));if(Number.isFinite(ms))return artDay(new Date(ms));
+  }
+  return'';
+}
 function retainedDailyCount(db,day=artDay()){
   let count=0;
   try{
@@ -174,9 +180,7 @@ function retainedDailyCount(db,day=artDay()){
       // These lifecycle states are only reachable after a retained video exists.
       // Count the row itself as generation evidence even if a legacy recovery
       // lost auxiliary hash/run-id fields.
-      const started=String(flow?.generation_started_at||row.lastProgressAt||row.updatedAt||'');
-      const ms=Date.parse(started);if(!Number.isFinite(ms))continue;
-      if(artDay(new Date(ms))===day)count++;
+      if(dayFromCandidates(flow?.generation_started_at,row.lastProgressAt,row.updatedAt)===day)count++;
     }
   }catch{}
   return count;
@@ -187,9 +191,7 @@ function approvedPublicationCount(db,day=artDay()){
     const rows=db.prepare("SELECT p.createdAt,p.status,f.flowResult,f.lastProgressAt,f.updatedAt FROM publication_items p JOIN factory_items f ON f.id=p.itemId WHERE p.status NOT IN ('cancelled','deleted')").all();
     for(const row of rows){
       let flow={};try{flow=json(row.flowResult,{})||{}}catch{}
-      const stamp=String(flow?.generation_started_at||row.lastProgressAt||row.updatedAt||row.createdAt||'');
-      const ms=Date.parse(stamp);if(!Number.isFinite(ms))continue;
-      if(artDay(new Date(ms))===day)count++;
+      if(dayFromCandidates(flow?.generation_started_at,row.lastProgressAt,row.updatedAt,row.createdAt)===day)count++;
     }
   }catch{}
   return count;
