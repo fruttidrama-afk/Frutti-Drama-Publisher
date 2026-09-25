@@ -49,6 +49,61 @@ function genericEpisodeText(v){
   const n=normalize(v).toLowerCase();
   return !n || /^(next chapter|new turn|new episode)\b/.test(n) || /continue the configured creative bible/.test(n) || /continue .*canon from the previous accepted beat/.test(n);
 }
+
+function titleCaseWords(v){
+  return normalize(v).toLowerCase().replace(/\b([a-záéíóúñ])/g,m=>m.toUpperCase());
+}
+function dinnieViewerBeats(story=''){
+  const raw=String(story||'').replace(/\r/g,' ').replace(/\s+/g,' ').trim();
+  const parts=raw.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[];
+  const out=[];
+  for(let part of parts){
+    part=normalize(part).replace(/^Beat\s*\d+\s*:\s*/i,'').trim();
+    if(!part)continue;
+    if(/^(?:Begin exactly|Continue directly|Continue from|End with|End while|Exactly one Dinnie|No humans|No other dinosaurs)/i.test(part))continue;
+    if(/\b(?:canonical|continuity|foreground|mid-ground|background|production|prompt|reference sheet|exactly one)\b/i.test(part))continue;
+    part=part
+      .replace(/\bthe same Dinnie\b/gi,'Dinnie')
+      .replace(/\bher canonical warm golden prehistoric home forest\b/gi,'her warm golden prehistoric home forest')
+      .replace(/\bhis canonical warm golden prehistoric home forest\b/gi,'his warm golden prehistoric home forest')
+      .replace(/\s+/g,' ').trim();
+    if(!part)continue;
+    part=part.charAt(0).toUpperCase()+part.slice(1);
+    if(!/[.!?]$/.test(part))part+='.';
+    out.push(part);
+  }
+  return out.slice(0,3);
+}
+function dinnieCopy({hook='',story='',prompt=''}={}){
+  const key=normalize(hook).toUpperCase();
+  const known={
+    'THE TRAIL DISAPPEARS':'The Sugar-Dust Trail Disappears ✨🦕',
+    'DINNIE COMES HOME':'Dinnie Floats Back Home 🦕✨',
+    'THE STAR DOOR OPENS':'The Star Door Opens ⭐🦕',
+    'FIRST STEP INTO STARLIGHT':'Dinnie Steps Into Starlight ⭐🦕',
+    'THE CONSTELLATION BRIDGE':'The Constellation Bridge ✨🦕',
+    'MOON ARCHWAY SECRET':'The Secret Beyond the Moon Archway 🌙🦕',
+    'THE COMET TRAIL':'Dinnie Follows the Comet Trail ☄️🦕',
+    'THE MIRROR POOL':'The Mirror Pool Awakens ✨🦕',
+    'FLOWER CLOUDS AHEAD':'A World of Flower Clouds 🌸🦕',
+    'THE FLOATING GARDEN GATE':'The Floating Garden Gate 🌸✨',
+    'STAIRWAY OF BLOSSOMS':'Dinnie Climbs the Blossom Stairway 🌼🦕',
+    'THE PETAL BELL':'The Magical Petal Bell 🔔🌸',
+    'RIDING THE RAINBOW CURRENT':'Dinnie Rides the Rainbow Current 🌈🦕',
+    'THE GLOWING ACORN':'The Glowing Acorn Secret ✨🌰',
+    'A DOOR BACK HOME':'A Magical Door Back Home 🦕✨'
+  };
+  const title=known[key]||((/DINNIE/i.test(key)?titleCaseWords(key):titleCaseWords(key||'Dinnie’s Next Adventure'))+' ✨🦕');
+  const beats=dinnieViewerBeats(story);
+  let description=beats.join(' ');
+  if(!description){
+    const intent=extractPromptIntent(prompt);
+    description=dinnieViewerBeats(intent).join(' ')||'Dinnie discovers a new magical surprise on her gentle prehistoric adventure.';
+  }
+  description=description.replace(/\s+/g,' ').trim();
+  if(description.length>420)description=description.slice(0,417).replace(/\s+\S*$/,'')+'...';
+  return{title,desc:description};
+}
 function extractPromptIntent(prompt=''){
   const p=String(prompt||'').replace(/\r/g,'').trim();
   if(!p)return'';
@@ -128,14 +183,20 @@ export function buildPublicationCopy({hook,story,prompt='',contextTerms=[],hasht
   const cleanHook=normalize(hook||'NEW EPISODE').toUpperCase();
   const cleanStory=normalize(story);
   const earth=/earth\s*in\s*10/i.test(String(showName||''));
+  const dinnie=/dinnie\s*(?:the\s*)?dinosaur|dinnie/i.test(String(showName||''));
   const configured=listTags(hashtags);
   const earthDefaults=['#EarthIn10','#Nature','#Travel','#Shorts','#ViralShorts'];
-  const allTags=listTags([...(earth?earthDefaults:[]),...configured]);
+  const dinnieDefaults=['#DinnieTheDinosaur','#KidsAnimation','#Reels','#Viral'];
+  const allTags=listTags([...(earth?earthDefaults:[]),...(dinnie?dinnieDefaults:[]),...configured]);
   const discoveryTitleTags=earth?['#Shorts','#ViralShorts']:[];
 
   let title='';
   let descriptionBase='';
-  if(earth){
+  if(dinnie){
+    const copy=dinnieCopy({hook:cleanHook,story:cleanStory,prompt});
+    title=copy.title;
+    descriptionBase=copy.desc;
+  }else if(earth){
     const known=earthKnownCopy({prompt,hook:cleanHook,story:cleanStory,contextTerms});
     if(known){title=known.title;descriptionBase=known.desc}
     else{
@@ -176,7 +237,7 @@ export function buildPublicationCopy({hook,story,prompt='',contextTerms=[],hasht
   title=validateTitleSentence(title,{maxLength:maxTitleLength});
 
   let description=normalize(descriptionBase);
-  if(showName)description+=(description?'\n\n':'')+normalize(showName);
+  if(showName&&!dinnie)description+=(description?'\n\n':'')+normalize(showName);
   if(allTags.length)description+=(description?'\n\n':'')+allTags.join(' ');
   description=description.trim();
   return{title,description,plot:descriptionBase,hashtags:allTags};
