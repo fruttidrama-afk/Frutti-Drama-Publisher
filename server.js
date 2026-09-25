@@ -419,9 +419,10 @@ function setPublicationProvider(type,{postingTime=null}={}){
   if(!['youtube','facebook'].includes(type))throw new Error('Choose YouTube or Facebook.');
   CONFIG.publication=CONFIG.publication||{};
   CONFIG.publication.allowed_providers=['youtube','facebook'];
+  CONFIG.publication.ai_disclosure_required=true;
   CONFIG.publication.selected_provider=type;
   const existing=(CONFIG.publication.providers||[]).find(x=>x.type===type);
-  CONFIG.publication.providers=[existing||defaultProviderConfig(type)];
+  CONFIG.publication.providers=[{...(existing||defaultProviderConfig(type)),contains_synthetic_media:true}];
   CONFIG.schedule=CONFIG.schedule||{};
   if(postingTime){
     const t=String(postingTime).trim();if(!/^\d{2}:\d{2}$/.test(t))throw new Error('Posting time must use HH:MM.');
