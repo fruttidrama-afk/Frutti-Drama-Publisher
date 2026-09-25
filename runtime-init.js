@@ -237,6 +237,8 @@ put('automation:strictSerialGeneration','true');
 put('automation:projectGridRecovery','true');
 put('automation:reviewMetadataRequired','true');
 put('automation:goldenTestRequired','true');
+put('automation:semanticRedoInterpretation','true');
+put('automation:postSubmitTimeoutResubmit','false');
 seedInitial(db);
 ensureBacklog(db);
 db.close();
