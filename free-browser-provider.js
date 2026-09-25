@@ -1425,6 +1425,48 @@ function inventoryHasNew(current,baseline){
   return (Array.isArray(current?.signatures)?current.signatures:[]).some(x=>!before.has(x));
 }
 
+function episodeRecoveryTerms(row){
+  const raw=[
+    String(row?.title||''),
+    String(row?.hook||''),
+    String(row?.story||'').slice(0,500)
+  ].join(' ');
+  const stop=new Set(['dinnie','dinosaur','episode','the','and','with','from','this','that','into','your','show','video','next','chapter','continue','configured','creative','bible','canon','previous','accepted','beat']);
+  const words=raw.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().match(/[a-z0-9]{4,}/g)||[];
+  return [...new Set(words.filter(w=>!stop.has(w)))].slice(0,12);
+}
+
+async function openEpisodeCorrelatedResult(page,row){
+  const terms=episodeRecoveryTerms(row);
+  if(!terms.length)return{found:false,signal:'no-specific-recovery-terms',matched:[]};
+  const tiles=page.locator('flow-grid-tile-container');
+  const count=Math.min(await tiles.count().catch(()=>0),120);
+  let best=null;
+  for(let i=0;i<count;i++){
+    const el=tiles.nth(i);
+    if(!(await el.isVisible().catch(()=>false)))continue;
+    const label=compact(
+      ((await el.getAttribute('aria-label').catch(()=>''))||'')+' '+
+      ((await el.innerText().catch(()=>''))||'')+' '+
+      ((await el.textContent().catch(()=>''))||''),500
+    );
+    const n=label.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+    const matched=terms.filter(t=>n.includes(t));
+    if(!best||matched.length>best.matched.length)best={el,label,matched,index:i};
+  }
+  if(!best||best.matched.length<2)return{found:false,signal:'no-correlated-visible-tile',matched:best?.matched||[],label:best?.label||''};
+  await best.el.scrollIntoViewIfNeeded().catch(()=>{});
+  await best.el.hover().catch(()=>{});
+  const footer=best.el.locator('flow-tile-hover-footer').first();
+  if(await footer.count().catch(()=>0)&&await footer.isVisible().catch(()=>false))await footer.click({force:true,timeout:5000}).catch(()=>{});
+  else await best.el.click({force:true,timeout:5000}).catch(()=>{});
+  await sleep(900);
+  const d=await visibleDownloadButton(page).catch(()=>null);
+  if(d)return{found:true,signal:'correlated-visible-tile-download-ready',matched:best.matched,label:best.label,index:best.index};
+  await page.keyboard.press('Escape').catch(()=>{});
+  return{found:false,signal:'correlated-tile-not-ready',matched:best.matched,label:best.label,index:best.index};
+}
+
 async function reconcileAmbiguousGeneric(page,row,lc,db){
   const baselineInv=lc?.baseline_inventory||null;
   const boundary=Date.parse(String(lc?.submit_boundary_at||''));
