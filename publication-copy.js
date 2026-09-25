@@ -77,23 +77,23 @@ function dinnieViewerBeats(story=''){
 function dinnieCopy({hook='',story='',prompt=''}={}){
   const key=normalize(hook).toUpperCase();
   const known={
-    'THE TRAIL DISAPPEARS':'The Sugar-Dust Trail Disappears ✨🦕',
-    'DINNIE COMES HOME':'Dinnie Floats Back Home 🦕✨',
-    'THE STAR DOOR OPENS':'The Star Door Opens ⭐🦕',
-    'FIRST STEP INTO STARLIGHT':'Dinnie Steps Into Starlight ⭐🦕',
-    'THE CONSTELLATION BRIDGE':'The Constellation Bridge ✨🦕',
-    'MOON ARCHWAY SECRET':'The Secret Beyond the Moon Archway 🌙🦕',
-    'THE COMET TRAIL':'Dinnie Follows the Comet Trail ☄️🦕',
-    'THE MIRROR POOL':'The Mirror Pool Awakens ✨🦕',
-    'FLOWER CLOUDS AHEAD':'A World of Flower Clouds 🌸🦕',
-    'THE FLOATING GARDEN GATE':'The Floating Garden Gate 🌸✨',
-    'STAIRWAY OF BLOSSOMS':'Dinnie Climbs the Blossom Stairway 🌼🦕',
-    'THE PETAL BELL':'The Magical Petal Bell 🔔🌸',
-    'RIDING THE RAINBOW CURRENT':'Dinnie Rides the Rainbow Current 🌈🦕',
-    'THE GLOWING ACORN':'The Glowing Acorn Secret ✨🌰',
-    'A DOOR BACK HOME':'A Magical Door Back Home 🦕✨'
+    'THE TRAIL DISAPPEARS':'The Sugar-Dust Trail Disappears ✨🦕!',
+    'DINNIE COMES HOME':'Dinnie Floats Back Home 🦕✨!',
+    'THE STAR DOOR OPENS':'The Star Door Opens ⭐🦕!',
+    'FIRST STEP INTO STARLIGHT':'Dinnie Steps Into Starlight ⭐🦕!',
+    'THE CONSTELLATION BRIDGE':'The Constellation Bridge ✨🦕!',
+    'MOON ARCHWAY SECRET':'The Secret Beyond the Moon Archway 🌙🦕!',
+    'THE COMET TRAIL':'Dinnie Follows the Comet Trail ☄️🦕!',
+    'THE MIRROR POOL':'The Mirror Pool Awakens ✨🦕!',
+    'FLOWER CLOUDS AHEAD':'A World of Flower Clouds 🌸🦕!',
+    'THE FLOATING GARDEN GATE':'The Floating Garden Gate 🌸✨!',
+    'STAIRWAY OF BLOSSOMS':'Dinnie Climbs the Blossom Stairway 🌼🦕!',
+    'THE PETAL BELL':'The Magical Petal Bell 🔔🌸!',
+    'RIDING THE RAINBOW CURRENT':'Dinnie Rides the Rainbow Current 🌈🦕!',
+    'THE GLOWING ACORN':'The Glowing Acorn Secret ✨🌰!',
+    'A DOOR BACK HOME':'A Magical Door Back Home 🦕✨!'
   };
-  const title=known[key]||((/DINNIE/i.test(key)?titleCaseWords(key):titleCaseWords(key||'Dinnie’s Next Adventure'))+' ✨🦕');
+  const title=known[key]||((/DINNIE/i.test(key)?titleCaseWords(key):titleCaseWords(key||'Dinnie’s Next Adventure'))+' ✨🦕!');
   const beats=dinnieViewerBeats(story);
   let description=beats.join(' ');
   if(!description){
