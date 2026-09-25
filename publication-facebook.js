@@ -147,12 +147,14 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     if(existing)return publicItem(existing);
     const {title,description}=metadata(row,config),scheduledAt=nextSlot(db,config),id=randomUUID();
     if(!row.videoPath||!fs.existsSync(row.videoPath))throw new Error('El MP4 aprobado no está disponible localmente.');
-    const filePath=path.join(dir,id+'.mp4');fs.copyFileSync(row.videoPath,filePath);const fileSize=fs.statSync(filePath).size;
+    // ZERO-COPY APPROVAL HANDOFF: Publication takes ownership of the exact
+    // Review file. Do not duplicate a multi-megabyte video on the same volume.
+    const filePath=String(row.videoPath),fileSize=fs.statSync(filePath).size,sourceMediaTransferred=true;
     const item={id,itemId:row.id,episode:Number(row.episode),title,description,scheduledAt,uploadAt:scheduledAt,status:'queued',filePath,fileSize,videoId:null,resumableSession:null,playlistId:null,attempts:0,retryAt:0,error:null,history:JSON.stringify([{status:'queued',at:now(),message:'Approved for Facebook Reel publication.'}]),createdAt:now(),updatedAt:now(),provider:'facebook',remoteUrl:null,remotePrivacyStatus:null,remotePublishAt:null,remoteStatusCheckedAt:null};
     db.prepare('INSERT INTO publication_items(id,itemId,episode,title,description,scheduledAt,uploadAt,status,filePath,fileSize,videoId,resumableSession,playlistId,attempts,retryAt,error,history,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
       .run(item.id,item.itemId,item.episode,item.title,item.description,item.scheduledAt,item.uploadAt,item.status,item.filePath,item.fileSize,item.videoId,item.resumableSession,item.playlistId,item.attempts,item.retryAt,item.error,item.history,item.createdAt,item.updatedAt);
     db.prepare("UPDATE publication_items SET provider='facebook' WHERE id=?").run(item.id);
-    return publicItem(item);
+    return {...publicItem(item),sourceMediaTransferred};
   }
   async function createOrResume(item,c){
     if(item.videoId&&item.resumableSession)return;
