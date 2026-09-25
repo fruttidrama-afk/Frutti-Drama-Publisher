@@ -305,11 +305,10 @@ function effectiveVideoVisualStyle(){
   return earth+' Additional configured video style: '+configured;
 }
 export function enforceEpisodeIntent(db,row){
-  if(!isEarthIn10())return{row,repaired:false,reason:null};
   let forcedIntents={};
   try{forcedIntents=JSON.parse(String(process.env.PUBLISHER_FORCE_NEW_INTENTS_JSON||'{}'))||{}}catch{}
   const forced=forcedIntents[String(row?.episode||'')]||forcedIntents[Number(row?.episode||0)];
-  if(forced&&String(row?.reviewFeedback||'').trim()){
+  if(forced){
     const hook=String(forced.hook||'').trim(),story=String(forced.story||'').trim();
     if(hook&&story&&(String(row.hook||'')!==hook||String(row.story||'')!==story)){
       db.prepare("UPDATE factory_items SET hook=?,story=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
@@ -322,17 +321,20 @@ export function enforceEpisodeIntent(db,row){
   const staleGenericPrompt=/HOOK:\s*NEXT CHAPTER/i.test(prompt)||/EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(prompt);
   let repaired=false,reason=null;
   if(genericIntent){
-    const idea=earthIn10Idea(Number(row.episode));
-    db.prepare("UPDATE factory_items SET hook=?,story=?,creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
+    const idea=isEarthIn10()?earthIn10Idea(Number(row.episode)):ideaForEpisode(Number(row.episode));
+    if(!idea||isGenericAutonomousIdea(idea.hook,idea.story)){
+      throw new Error('CONTENT_GATE: concrete episode intent required before Flow generation; internal NEXT CHAPTER planner placeholders are forbidden.');
+    }
+    db.prepare("UPDATE factory_items SET hook=?,story=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
       .run(idea.hook,idea.story,new Date().toISOString(),row.id);
-    repaired=true;reason='generic-earth-intent-replaced';
+    repaired=true;reason=isEarthIn10()?'generic-earth-intent-replaced':'generic-configured-intent-replaced';
   }else if(staleGenericPrompt){
-    db.prepare("UPDATE factory_items SET creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
+    db.prepare("UPDATE factory_items SET prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
       .run(new Date().toISOString(),row.id);
-    repaired=true;reason='stale-generic-earth-prompt-cleared';
+    repaired=true;reason='stale-generic-prompt-cleared';
   }
   const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);
-  if(!fresh||isGenericAutonomousIdea(fresh.hook,fresh.story))throw new Error('EARTH_IN_10_CONTENT_GATE: concrete geographic episode intent required before Flow generation');
+  if(!fresh||isGenericAutonomousIdea(fresh.hook,fresh.story))throw new Error('CONTENT_GATE: concrete episode intent required before Flow generation.');
   return{row:fresh,repaired,reason};
 }
 
@@ -356,10 +358,10 @@ export function validateEpisodePrompt(row,prompt){
   if(!p.includes('CREATIVE BIBLE')||!p.includes(bible))throw new Error('PROMPT_QUALITY_GATE: prompt does not contain the active Show Bible.');
   if(!p.includes('HOOK: '+String(row?.hook||'')))throw new Error('PROMPT_QUALITY_GATE: prompt is not bound to the episode hook.');
   if(!p.includes('EPISODE INTENT: '+String(row?.story||'')))throw new Error('PROMPT_QUALITY_GATE: prompt is not bound to the episode story.');
-  if(isEarthIn10()&&(
-    /HOOK:\s*(NEXT CHAPTER|NEW TURN|NEW EPISODE)/i.test(p)||
+  if(
+    /HOOK:\s*NEXT CHAPTER/i.test(p)||
     /EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(p)
-  ))throw new Error('EARTH_IN_10_CONTENT_GATE: generic fallback prompt blocked before Flow.');
+  )throw new Error('CONTENT_GATE: internal planner placeholder blocked before Flow.');
   return true;
 }
 export function materializeCreativePackage(db,row,{force=false}={}){
@@ -375,7 +377,7 @@ export function materializeCreativePackage(db,row,{force=false}={}){
      String(row?.creativePackageHash||'')===existingDigest){
     try{
       validateEpisodePrompt(row,existingPrompt);
-      const provider=(CONFIG.publication?.providers||[]).find(x=>x.type==='youtube')||{};
+      const providers=CONFIG.publication?.providers||[],provider=providers.find(x=>x.type===CONFIG.publication?.selected_provider)||providers[0]||{};
       const expected=buildPublicationCopy({
         hook:row.hook,
         story:row.story,
@@ -398,7 +400,7 @@ export function materializeCreativePackage(db,row,{force=false}={}){
   const visual=resolveVisualCharacters(row);
   const prompt=buildPrompt(db,row,visual);
   validateEpisodePrompt(row,prompt);
-  const provider=(CONFIG.publication?.providers||[]).find(x=>x.type==='youtube')||{};
+  const providers=CONFIG.publication?.providers||[],provider=providers.find(x=>x.type===CONFIG.publication?.selected_provider)||providers[0]||{};
   const copy=buildPublicationCopy({
     hook:row.hook,
     story:row.story,
@@ -455,7 +457,7 @@ export function ensureBacklog(db,minReady=Math.max(9,DAILY_LIMIT*3)){
   }
   const drafts=db.prepare("SELECT * FROM factory_items WHERE status='draft' ORDER BY episode").all();
   for(const row of drafts){
-    const force=isEarthIn10()&&(isGenericAutonomousIdea(row.hook,row.story)||/HOOK:\s*NEXT CHAPTER/i.test(String(row.prompt||'')));
+    const force=isGenericAutonomousIdea(row.hook,row.story)||/HOOK:\s*NEXT CHAPTER/i.test(String(row.prompt||''))||/EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(String(row.prompt||''));
     materializeCreativePackage(db,row,{force});
   }
 }
