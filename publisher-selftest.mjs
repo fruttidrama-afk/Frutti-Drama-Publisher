@@ -120,6 +120,10 @@ has(server,'legacy_streak_resurrection_guard:true','legacy streak resurrection g
 has(server,'strict_post_submit_recovery_match:true','strict post-submit recovery invariant');
 has(server,'catalog_wide_creative_uniqueness:true','catalog-wide creative uniqueness invariant');
 has(server,'no_landscape_repeat_cycle:true','no landscape repeat cycle invariant');
+has(server,'youtube_private_staging_disabled:true','youtube private staging disabled');
+has(server,'cloud_stock_until_release:true','cloud stock until release');
+has(server,'direct_public_upload_at_release:true','direct public upload at release');
+has(server,'zero_youtube_upload_lead:true','zero YouTube upload lead');
 has(server,'show_specific_repairs_isolated:true','show-specific repair isolation health invariant');
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
@@ -164,3 +168,7 @@ console.log(JSON.stringify({
   project_grid_recovery:true,
   review_metadata_required:true
 },null,2));
+
+has(publication,"privacyStatus:'public'",'YouTube uploads direct public at release');
+has(publication,'uploadAt=scheduledAt','YouTube upload time equals release time');
+has(publication,'No-YouTube-stock policy','approved stock is not staged on YouTube');
