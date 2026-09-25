@@ -1,3 +1,12 @@
+## 2026-09-25 — Semantic REDO + post-submit uncertainty lock
+
+- Human `REHACER` feedback is interpreted semantically by AI before any replacement generation is authorized.
+- The interpreter chooses one of three actions: `render_retry`, `prompt_revision`, or `creative_rewrite`.
+- Keyword/regex classification is not authoritative for REDO intent.
+- After `SUBMIT_BOUNDARY_ENTERED`, a timeout or unchanged Flow grid is never proof that no generation occurred.
+- Post-submit uncertainty remains recovery/reconciliation-only with Generate locked; only explicit hard no-charge/no-generation evidence may reopen a submit.
+- Publisher Factory makes both behaviors mandatory for every newly generated Publisher.
+
 # FLOW CHANGELOG
 
 ## FLOW-SOP-v1.0 — 2026-09-21
