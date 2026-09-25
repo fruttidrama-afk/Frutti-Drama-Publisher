@@ -369,7 +369,10 @@ function earthIdeaConflict(db,row,candidate){
   const myHook=earthNorm(candidate.hook),myPlace=earthNorm(candidate.place),myTags=earthVisualTags(mine);
   const rows=db.prepare("SELECT id,episode,status,hook,story,title,description,prompt FROM factory_items WHERE id<>? ORDER BY episode").all(row.id);
   for(const other of rows){
-    const text=[other.hook,other.story,other.title,other.description,other.prompt].filter(Boolean).join(' ');
+    // Compare canonical episode metadata only. The full generation prompt embeds
+    // the entire Show Bible and may mention unrelated example locations, which
+    // must never create false duplicate-landscape matches.
+    const text=[other.hook,other.story,other.title,other.description].filter(Boolean).join(' ');
     if(!text.trim())continue;
     const n=earthNorm(text);
     if(myHook&&n.includes(myHook))return{other,reason:'same-hook'};
@@ -392,7 +395,9 @@ function earthIn10Idea(db,row){
   throw new Error('CONTENT_GATE: EARTH_UNIQUE_IDEA_BANK_EXHAUSTED — refusing to repeat a landscape.');
 }
 function earthCurrentIntentConflict(db,row){
-  const text=[row?.hook,row?.story,row?.title,row?.description,row?.prompt].filter(Boolean).join(' ');
+  // Never feed the full prompt into uniqueness detection: it contains the Show
+  // Bible and therefore historical/example locations that are not this episode.
+  const text=[row?.hook,row?.story,row?.title,row?.description].filter(Boolean).join(' ');
   const known=earthCandidateForText(text);
   if(known)return earthIdeaConflict(db,row,known);
   const candidate={hook:String(row?.hook||''),place:String(row?.hook||''),family:'legacy:'+earthNorm(row?.hook||''),story:String(row?.story||'')};
