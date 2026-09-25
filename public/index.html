@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#071a12">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="manifest" href="/manifest.webmanifest">
-<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-<link rel="icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest?v=20260925-botanical">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=20260925-botanical">
+<link rel="icon" type="image/png" href="/brand/icon-192.png?v=20260925-botanical">
 <title>Publisher Setup</title>
 <style>
 :root{--navy:#0d3152;--gold:#b59a64;--ink:#1d1d1b;--muted:#6e6a63;--ivory:#f7f6f2;--surface:#ffffff;--line:#ded9cf;--green:#68c98c;--greenbg:#173326;--glass:color-mix(in srgb,var(--surface) 78%,transparent)}
@@ -27,7 +27,7 @@ body.design-derived .shell{position:relative;z-index:1}
 button,input,textarea{font:inherit}
 .shell{max-width:1180px;margin:auto;padding:22px}
 .brand{display:flex;align-items:center;gap:14px;margin:8px 0 22px;padding:10px 12px;border-radius:22px;background:color-mix(in srgb,var(--surface) 74%,transparent);border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);width:max-content;max-width:100%}.brand-logo.show{box-shadow:0 10px 28px color-mix(in srgb,var(--navy) 26%,transparent)}
-.brand-mark{width:70px;height:70px;display:grid;place-items:center;border:4px solid var(--gold);position:relative}.brand-mark:before{content:"";position:absolute;inset:9px;background:var(--navy);clip-path:polygon(0 0,67% 10%,100% 0,100% 100%,67% 90%,0 100%)}.brand-logo{width:70px;height:70px;object-fit:cover;border-radius:18px;display:none;background:var(--surface)}.brand-logo.show{display:block}.brand-logo.show+.brand-mark{display:none}
+.brand-mark{width:70px;height:70px;display:grid;place-items:center;border:4px solid var(--gold);position:relative}.brand-mark:before{content:"";position:absolute;inset:9px;background:var(--navy);clip-path:polygon(0 0,67% 10%,100% 0,100% 100%,67% 90%,0 100%)}.brand-logo{width:70px;height:70px;object-fit:contain;border-radius:18px;display:none;background:transparent;padding:2px}.brand-logo.show{display:block}.brand-logo.show+.brand-mark{display:none}
 .brand-copy{min-width:0}.brand-words{font:500 clamp(22px,4vw,31px)/.92 Arial,Helvetica,sans-serif;letter-spacing:.08em;color:var(--ink);white-space:nowrap}.brand-tagline{font-size:10px;letter-spacing:.16em;color:var(--muted);margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:62vw}
 .eyebrow{font-size:11px;letter-spacing:.24em;color:var(--gold);font-weight:800}
 .reference-banner{display:none;position:relative;height:clamp(280px,45vw,520px);margin:0 0 34px;overflow:hidden;border:1px solid color-mix(in srgb,var(--ink) 16%,transparent);background:var(--ivory);border-radius:30px;box-shadow:0 28px 86px color-mix(in srgb,#000 32%,transparent)}.reference-banner.show{display:block}.reference-banner img{width:100%;height:100%;object-fit:cover}.reference-banner.web img{object-position:top center}.reference-banner:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.02) 35%,color-mix(in srgb,var(--ivory) 78%,transparent) 100%)}.hero{max-width:850px;margin-bottom:36px}
@@ -316,7 +316,7 @@ function paintCard(id,stateId,done,yes,no){const c=$(id),s=$(stateId);c.classLis
 function applyBrand(b,show='Publisher'){
   if(!b)return;const t=b.theme||{},root=document.documentElement;
   if(t.primary)root.style.setProperty('--navy',t.primary);if(t.secondary)root.style.setProperty('--secondary',t.secondary);if(t.accent)root.style.setProperty('--gold',t.accent);if(t.background)root.style.setProperty('--ivory',t.background);if(t.surface)root.style.setProperty('--surface',t.surface);if(t.text)root.style.setProperty('--ink',t.text);root.style.setProperty('--muted','color-mix(in srgb,var(--ink) 68%,transparent)');root.style.setProperty('--line','color-mix(in srgb,var(--ink) 16%,transparent)');
-  const logo=$('#brandLogo'),words=$('#brandWords'),tag=$('#brandTagline');words.textContent=show||'Publisher';tag.textContent=b.tagline||'';if(b.logo_url){logo.src=b.logo_url;logo.alt=(show||'Publisher')+' logo';logo.classList.add('show')}else logo.classList.remove('show');
+  const logo=$('#brandLogo'),words=$('#brandWords'),tag=$('#brandTagline');words.textContent=show||'Publisher';tag.textContent=b.tagline||'';if(b.logo_url){logo.src='/brand/logo.png?v=20260925-botanical';logo.alt=(show||'Publisher')+' logo';logo.onerror=()=>{logo.src='/brand/icon-192.png?v=20260925-botanical';logo.onerror=null};logo.classList.add('show')}else logo.classList.remove('show');
   const isDesign=b.reference_mode==='web_design',mayRender=b.render_reference_image!==false&&!isDesign;
   document.body.classList.toggle('design-derived',isDesign);
   document.body.classList.toggle('botanical-theme',/dinnie|dinosaur|forest|jungle|prehistoric/i.test(String(show)+' '+String(b.tagline||'')));
