@@ -60,7 +60,7 @@ function dinnieViewerBeats(story=''){
   for(let part of parts){
     part=normalize(part).replace(/^Beat\s*\d+\s*:\s*/i,'').trim();
     if(!part)continue;
-    if(/^(?:Begin exactly|Continue directly|Continue from|End with|End while|Exactly one Dinnie|No humans|No other dinosaurs)/i.test(part))continue;
+    if(/^(?:Begin exactly|Continue directly|Continue from|End with|End while|Exactly one Dinnie|No humans|No other dinosaurs|Continuation cycle)/i.test(part))continue;
     if(/\b(?:canonical|continuity|foreground|mid-ground|background|production|prompt|reference sheet|exactly one)\b/i.test(part))continue;
     part=part
       .replace(/\bthe same Dinnie\b/gi,'Dinnie')
