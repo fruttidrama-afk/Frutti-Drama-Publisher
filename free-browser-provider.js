@@ -1431,8 +1431,16 @@ async function clickSubmitExactlyOnce(page){
   await trustedClick(send);
   publish('SUBMIT_ARROW_CLICKED',{message:'Flow generation send control clicked exactly once.',control:compact(((await send.getAttribute('aria-label').catch(()=>''))||'')+' '+((await send.innerText().catch(()=>''))||''),140)});
 
-  const deadline=Date.now()+9000;
+  const deadline=Date.now()+12000;
   while(Date.now()<deadline){
+    const always=page.getByText(/^(?:Always approve|Approve always|Aprobar siempre)$/i).last();
+    if(await always.count().catch(()=>0)&&await always.isVisible().catch(()=>false)){
+      await always.scrollIntoViewIfNeeded().catch(()=>{});
+      await trustedClick(always);
+      publish('POINT_CONSENT_CLICKED',{label:'Always approve',message:'Flow consent set to Always approve for autonomous generation.'});
+      await sleep(900);
+      return'approve-always';
+    }
     const action=await findGenerationConsentAction(page);
     if(action){
       await trustedClick(action.el);
