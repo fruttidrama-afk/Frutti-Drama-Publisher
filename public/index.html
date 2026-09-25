@@ -138,6 +138,7 @@ body.completed .shell{padding-top:28px}
       <div class="state" id="flowState">CHECKING…</div>
       <div class="setup-actions">
         <a class="btn primary" href="/flow/bootstrap" id="flowButton">CONNECT GOOGLE FLOW</a>
+        <button class="btn" type="button" id="flowRestartButton">↻ RESTART WEB CONTROLLER</button>
         <a class="setup-link" href="/flow/bootstrap">Abrir controlador web de Google Flow</a>
       </div>
       <div class="outside"><b>No necesitás abrir Flow por tu cuenta.</b> El Publisher te muestra un navegador remoto dentro de la página para iniciar sesión, hacer clic, escribir y elegir el proyecto.</div>
@@ -336,6 +337,7 @@ const installAppButton=$('#installApp');if(installAppButton)installAppButton.sty
 $('#installClose').onclick=()=>{$('#installModal').classList.remove('open');$('#installModal').setAttribute('aria-hidden','true')};
 $('#installModal').onclick=e=>{if(e.target===e.currentTarget)$('#installClose').click()};
 $('#saveBible').onclick=async()=>{const b=$('#bible').value.trim();$('#saveBible').disabled=true;try{await api('/api/show-bible',{method:'POST',body:JSON.stringify({creative_bible:b})});toast('Show Bible saved');await load()}catch(e){toast(e.message)}finally{$('#saveBible').disabled=false}};
+const flowRestartButton=$('#flowRestartButton');if(flowRestartButton)flowRestartButton.onclick=async()=>{const old=flowRestartButton.textContent;flowRestartButton.disabled=true;flowRestartButton.textContent='RESTARTING…';try{await api('/flow/bootstrap/restart',{method:'POST',body:'{}'});toast('Google Flow web controller restarted');setTimeout(()=>location.assign('/flow/bootstrap'),500)}catch(e){toast(e.message);flowRestartButton.disabled=false;flowRestartButton.textContent=old}};
 $('#addPasskey').onclick=async()=>{
   if(!window.PublicKeyCredential||!navigator.credentials){toast('This browser does not support passkeys');return}
   const b=$('#addPasskey');b.disabled=true;
