@@ -122,7 +122,12 @@ export function loadConfig(){
       aspect_ratio:clean(generation.aspect_ratio||'9:16',20),
       output_count:Math.max(1,Math.min(4,Number(generation.output_count||1))),
       credits_per_generation:generation.credits_per_generation==null?null:Number(generation.credits_per_generation),
-      daily_credit_budget:generation.daily_credit_budget==null?null:Number(generation.daily_credit_budget)
+      daily_credit_budget:generation.daily_credit_budget==null?null:Number(generation.daily_credit_budget),
+      daily_credit_grant:Math.max(1,Number(generation.daily_credit_grant||50)),
+      automatic_batch_credit_gate:clean(generation.automatic_batch_credit_gate||'wait-for-daily-flow-refresh',80),
+      credit_refresh_poll_minutes:Math.max(1,Math.min(60,Number(generation.credit_refresh_poll_minutes||5))),
+      credit_refresh_guard_hours:Math.max(6,Math.min(28,Number(generation.credit_refresh_guard_hours||20))),
+      credit_refresh_fallback_hours:Math.max(21,Math.min(48,Number(generation.credit_refresh_fallback_hours||30)))
     },
     automation:{provider:'free-browser-provider',persistent_profile:true,tinyfish_required:false,semantic_field_safety:true,external_reality_reconciliation:true,...(c.automation||{})},
     review:{mode:clean(review.mode||'review',40),archive_provider:'local-only',hot_originals:Number(review.hot_originals??2),archive_below_free_percent:Number(review.archive_below_free_percent??45)},
@@ -170,6 +175,11 @@ export const RESOLUTION_INTENT=CONFIG.generation.resolution_intent;
 export const DAILY_LIMIT=CONFIG.content.videos_per_day;
 export const CREDIT_PER_GENERATION=CONFIG.generation.credits_per_generation==null?15:Number(CONFIG.generation.credits_per_generation);
 export const DAILY_CREDIT_BUDGET=CONFIG.generation.daily_credit_budget==null?DAILY_LIMIT*CREDIT_PER_GENERATION:Number(CONFIG.generation.daily_credit_budget);
+export const DAILY_FLOW_GRANT=Number(CONFIG.generation.daily_credit_grant||50);
+export const AUTOMATIC_BATCH_CREDIT_GATE=String(CONFIG.generation.automatic_batch_credit_gate||'wait-for-daily-flow-refresh');
+export const CREDIT_REFRESH_POLL_MINUTES=Number(CONFIG.generation.credit_refresh_poll_minutes||5);
+export const CREDIT_REFRESH_GUARD_HOURS=Number(CONFIG.generation.credit_refresh_guard_hours||20);
+export const CREDIT_REFRESH_FALLBACK_HOURS=Number(CONFIG.generation.credit_refresh_fallback_hours||30);
 export const TIMEZONE=CONFIG.schedule.timezone;
 
 export function registry(){
