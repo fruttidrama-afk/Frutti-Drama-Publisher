@@ -852,7 +852,8 @@ function approvedPublicationGeneratedToday(day=publisherDay()){
    const rows=db.prepare("SELECT p.createdAt,p.status,f.flowResult,f.lastProgressAt,f.updatedAt FROM publication_items p JOIN factory_items f ON f.id=p.itemId WHERE p.status NOT IN ('cancelled','deleted')").all();
    for(const row of rows){
      let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
-     if(publisherDayFromCandidates(flow?.generation_started_at,row.lastProgressAt,row.updatedAt,row.createdAt)===day)count++;
+     if(publisherDayFromCandidates(row.createdAt)===day){count++;continue}
+     if(publisherDayFromCandidates(flow?.generation_started_at,row.lastProgressAt,row.updatedAt)===day)count++;
    }
  }catch{}
  return count;
