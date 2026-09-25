@@ -123,6 +123,9 @@ has(publication,'APPROVAL_GATE','publication enqueue requires explicit approval'
 has(publication,'purgeRejected','rejected publication artifacts are purged');
 has(publication,'purgePrivateVideosByTitle','operator cleanup can delete legacy private orphan uploads');
 has(publication,'readReviewRange','approved publication may stream from private cloud storage');
+has(publication,'publishAt:item.scheduledAt','YouTube upload must use native scheduled publication');
+has(publication,'publishAt:target','YouTube schedule reconciliation must preserve native publishAt');
+if(publication.includes('publishNowLikeManual'))throw new Error('YouTube direct PRIVATE-to-PUBLIC release path must stay disabled');
 for(const [token,label] of [
   ["APPROVAL_GATE",'Facebook approval gate'],
   ["me/video_reels",'Facebook Reels start/finish endpoint'],
