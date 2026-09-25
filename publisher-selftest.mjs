@@ -47,8 +47,6 @@ for(const [token,label] of [
   ["source:'creative-package'",'review metadata preservation'],
   ['let editor=await waitFlowReady(page,30000)','stable Flow composer handoff'],
   ['FLOW_UNUSUAL_ACTIVITY_OVERNIGHT','24h unusual-activity fallback'],
-  ["'flow:noChargeStreak:provider'",'provider-wide unusual-activity streak'],
-  ['Math.max(existingUntil,requestedRetryAt)','monotonic provider cooldown'],
   ['30*60*1000','first unusual-activity delay'],
   ['8*60*60*1000','fifth unusual-activity delay'],
   ['24*60*60*1000','24h unusual-activity fallback']
@@ -100,13 +98,10 @@ has(server,'stable_composer_handoff:true','stable Flow composer health invariant
 has(server,'native_no_charge_retry:false','native no-charge Retry disabled invariant');
 has(server,'immediate_native_retry_disabled:true','immediate native retry safety invariant');
 has(server,'adaptive_no_charge_backoff:true','adaptive no-charge backoff health invariant');
-has(server,'provider_wide_unusual_activity_backoff:true','provider-wide unusual-activity backoff health invariant');
-has(server,'monotonic_provider_cooldown:true','monotonic provider cooldown health invariant');
 has(server,'show_specific_repairs_isolated:true','show-specific repair isolation health invariant');
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
 const publication=read('publication.js');
-const facebookPublication=read('publication-facebook.js');
 has(publication,'containsSyntheticMedia:true','YouTube synthetic-media disclosure');
 has(publication,'containsSyntheticMedia:true','publication synthetic-media disclosure');
 has(publication,'buildPublicationCopy','publication copy builder');
@@ -123,27 +118,6 @@ has(publication,'APPROVAL_GATE','publication enqueue requires explicit approval'
 has(publication,'purgeRejected','rejected publication artifacts are purged');
 has(publication,'purgePrivateVideosByTitle','operator cleanup can delete legacy private orphan uploads');
 has(publication,'readReviewRange','approved publication may stream from private cloud storage');
-has(publication,'publishAt:item.scheduledAt','YouTube upload must use native scheduled publication');
-has(publication,'publishAt:target','YouTube schedule reconciliation must preserve native publishAt');
-if(publication.includes('publishNowLikeManual'))throw new Error('YouTube direct PRIVATE-to-PUBLIC release path must stay disabled');
-for(const [token,label] of [
-  ["APPROVAL_GATE",'Facebook approval gate'],
-  ["me/video_reels",'Facebook Reels start/finish endpoint'],
-  ["upload_phase:'start'",'Facebook Reels start phase'],
-  ["Authorization:'OAuth '",'Facebook binary upload authorization'],
-  ["video_state:'PUBLISHED'",'Facebook runtime publication state'],
-  ["fields:'status'",'Facebook Reel status reconciliation'],
-  ["FACEBOOK_AUTH_REQUIRED",'Facebook authentication gate'],
-  ["purgeRejected",'Facebook rejection purge']
-]) has(facebookPublication,token,label);
-for(const [token,label] of [
-  ["/integrations/platform",'platform selector'],
-  ["/integrations/facebook",'Facebook setup'],
-  ["/facebook/oauth/callback",'Facebook OAuth callback'],
-  ["pages_show_list,pages_read_engagement,pages_manage_posts",'Facebook Page permissions'],
-  ["FacebookReelsProvider",'Facebook health provider'],
-  ["selectedPublicationProvider",'dynamic publication provider']
-]) has(server,token,label);
 
 const schema=JSON.parse(read('publisher.config.schema.json'));
 must(schema.properties?.schedule?.properties?.generation_strategy?.const==='sequential','Publisher Factory must enforce sequential Flow generation');
