@@ -46,7 +46,7 @@ for(const [token,label] of [
   ['REVIEW_METADATA_READY','review metadata gate'],
   ['EPISODE_INTENT_REPAIRED','Earth episode intent repair gate'],
   ['CREATIVE_PACKAGE_READY','prompt/title/description package checkpoint'],
-  ["status IN ('regen_wait','draft') AND retryStrategy IN ('reuse_prompt','revise_prompt')",'human REDO priority queue'],
+  ["status IN ('regen_wait','draft') AND retryStrategy IN ('reuse_prompt','revise_prompt','new_story')",'human REDO priority queue including semantic creative rewrites'],
   ['creativePackageHash','creative package hash link'],
   ['fresh-video-tile-occurrences','fresh Flow video correlation gate'],
   ['FLOW_DUPLICATE_REVIEW_MEDIA','duplicate review-media rejection'],
