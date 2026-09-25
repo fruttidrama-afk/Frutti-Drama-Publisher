@@ -54,6 +54,7 @@ Publisher Factory does not mark a Railway deployment ready unless `/factory/heal
 - legacy per-episode unusual-activity counters are cleared on recovery and can never re-seed the provider streak after a successful render;
 - Flow recovery accepts only a provably post-submit result: a fresh video src, the single newest tile created in the same submit session, or an episode-correlated non-baseline tile; ambiguous old media is never guessed;
 - Earth in 10 runs a catalog-wide uniqueness gate across draft, Review, stock, queued, uploaded and published episode metadata; the autonomous location bank never cycles back to an already-used landscape and stops rather than repeat;
+- YouTube is publication-only, never stock storage: approved videos stay in private cloud storage and are uploaded directly public only at their configured release time; private YouTube staging and early upload lead are forbidden;
 - show-specific forensic repair code absent from generic Publishers;
 - strict serial gate enabled.
 
