@@ -264,21 +264,42 @@ async function brandedIconPng(size,{maskable=false}={}){
   try{
     const src=await sourceBrandLogo();
     if(src){
-      logo=await sharp(src,{failOn:'none'})
-        .ensureAlpha()
-        .trim({background:{r:0,g:0,b:0,alpha:0},threshold:8})
-        .resize({width:Math.round(s*(maskable?.68:.76)),height:Math.round(s*(maskable?.68:.76)),fit:'inside',withoutEnlargement:false})
+      // The source artwork can contain either transparent padding or a white
+      // matte around the actual Dinnie mark. Remove BOTH before sizing it for
+      // iOS so the artwork is not left floating as a tiny poster in a white
+      // square.
+      let pipeline=sharp(src,{failOn:'none'}).ensureAlpha();
+      pipeline=pipeline.trim({background:{r:255,g:255,b:255,alpha:255},threshold:28});
+      pipeline=pipeline.trim({background:{r:0,g:0,b:0,alpha:0},threshold:10});
+      logo=await pipeline
+        .resize({
+          width:Math.round(s*(maskable?.84:.94)),
+          height:Math.round(s*(maskable?.84:.94)),
+          fit:'inside',
+          withoutEnlargement:false
+        })
         .png()
         .toBuffer();
     }
   }catch(e){console.error('[BRAND ICON SOURCE]',String(e?.message||e))}
   if(!logo){
     logo=await sharp(Buffer.from(fallbackBrandSvg()))
-      .resize({width:Math.round(s*.70),height:Math.round(s*.70),fit:'inside'})
+      .resize({width:Math.round(s*.90),height:Math.round(s*.90),fit:'inside'})
       .png().toBuffer();
   }
-  const bg=await sharp(Buffer.from(botanicalIconBackdrop(s))).png().toBuffer();
-  return sharp(bg).composite([{input:logo,gravity:'center'}]).png({compressionLevel:9}).toBuffer();
+
+  // OPAQUE full-bleed background. iOS must never receive transparency or a
+  // white canvas around the artwork.
+  const bg=await sharp(Buffer.from(botanicalIconBackdrop(s)))
+    .flatten({background:'#123d28'})
+    .png()
+    .toBuffer();
+
+  return sharp(bg)
+    .composite([{input:logo,gravity:'center'}])
+    .flatten({background:'#123d28'})
+    .png({compressionLevel:9})
+    .toBuffer();
 }
 app.get('/brand/logo.svg',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await normalizedBrandLogoPng())});
 app.get('/brand/logo.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await normalizedBrandLogoPng())});
