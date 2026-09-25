@@ -43,6 +43,11 @@ async function saveReviewAsset(db,row,localPath,flowResult,stamp=now()){
   const size=fs.statSync(localPath).size;
   const contentHash=createHash('sha256').update(fs.readFileSync(localPath)).digest('hex');
   const assetId=String(flowResult?.flow_asset_id||'').trim();
+  const globallyRejected=db.prepare("SELECT contentHash,episode,reason FROM flow_rejected_media_hashes WHERE contentHash=? LIMIT 1").get(contentHash);
+  if(globallyRejected){
+    try{fs.unlinkSync(localPath)}catch{}
+    throw new Error('FLOW_REJECTED_MEDIA_REUSED: downloaded media was previously rejected as the wrong recovery for episode '+String(globallyRejected.episode||'?')+'.');
+  }
   const priorSameHash=String(row?.reviewContentHash||'').trim();
   if(priorSameHash&&priorSameHash===contentHash){
     try{fs.unlinkSync(localPath)}catch{}
@@ -527,6 +532,12 @@ function ensureSchema(db) {
       recoveryProof TEXT,
       runId TEXT,
       recoveredAt TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS flow_rejected_media_hashes(
+      contentHash TEXT PRIMARY KEY,
+      episode INTEGER,
+      reason TEXT,
+      rejectedAt TEXT NOT NULL
     );
   `)}catch{}
 }
