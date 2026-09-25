@@ -48,7 +48,7 @@ for(const token of ['EARTH_IN_10_AUTONOMOUS_EPISODES','enforceEpisodeIntent','ef
 for(const token of ['runtime_knowledge','creativePackageHash','creativePackageId','knowledge:flowSopLoaded','automation:exactlyOnceSubmit','automation:strictSerialGeneration']){
   must(init.includes(token),'runtime-init contract missing '+token);
 }
-for(const token of ["app.get('/factory/knowledge'","automation_safety","stable_composer_handoff:true","native_no_charge_retry:false","immediate_native_retry_disabled:true","adaptive_no_charge_backoff:true","unusual_activity_exponential_backoff:true","provider_wide_unusual_activity_backoff:true","monotonic_provider_cooldown:true","successful_render_resets_provider_backoff:true","successful_redos_count_toward_daily_target:true","legacy_streak_resurrection_guard:true","strict_post_submit_recovery_match:true","catalog_wide_creative_uniqueness:true","no_landscape_repeat_cycle:true","youtube_private_staging_disabled:true","cloud_stock_until_release:true","direct_public_upload_at_release:true","zero_youtube_upload_lead:true","show_specific_repairs_isolated:true","replacement creative package required","prompt_integrity","prompt_show_bible_gate:true","atomic_creative_package:true","approval_before_external_storage:true","reject_purges_external_artifacts:true","prompts_rematerialized:true","signedReviewUrl","deleteReviewObject"]){
+for(const token of ["app.get('/factory/knowledge'","automation_safety","stable_composer_handoff:true","native_no_charge_retry:false","immediate_native_retry_disabled:true","adaptive_no_charge_backoff:true","unusual_activity_exponential_backoff:true","provider_wide_unusual_activity_backoff:true","monotonic_provider_cooldown:true","successful_render_resets_provider_backoff:true","successful_redos_count_toward_daily_target:true","legacy_streak_resurrection_guard:true","strict_post_submit_recovery_match:true","catalog_wide_creative_uniqueness:true","no_landscape_repeat_cycle:true","youtube_preapproval_private_staging_disabled:true","cloud_stock_until_upload_window:true","private_upload_at_1230:true","direct_private_to_public_at_1900:true","native_publish_at_disabled:true","youtube_upload_lead_minutes_390:true","show_specific_repairs_isolated:true","replacement creative package required","prompt_integrity","prompt_show_bible_gate:true","atomic_creative_package:true","approval_before_external_storage:true","reject_purges_external_artifacts:true","prompts_rematerialized:true","signedReviewUrl","deleteReviewObject"]){
   must(server.includes(token),'server contract missing '+token);
 }
 for(const token of ['earthPromptIsEpisodeBound','episode-generation-prompt','creativePackageDigest','quota_wait','shiftPendingQueueAfter','stored-package']){
@@ -57,10 +57,11 @@ for(const token of ['earthPromptIsEpisodeBound','episode-generation-prompt','cre
 for(const token of ['saveReviewAsset','local-volume-until-approval','remoteUrl=NULL','reviewVideoId=NULL']){
   must(provider.includes(token),'pre-approval local-only review contract missing '+token);
 }
-must(publication.includes('publishNowLikeManual'),'legacy private-video release path missing');
-must(publication.includes("status:{privacyStatus:'public',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}"),'direct PUBLIC upload-at-release contract missing');
-must(publication.includes('No-YouTube-stock policy'),'approved stock must remain outside YouTube until release');
-must(publication.includes('const uploadAt=scheduledAt'),'uploadAt must equal scheduledAt');
+must(publication.includes('publishNowLikeManual'),'explicit PRIVATE-to-PUBLIC release path missing');
+must(publication.includes("status:{privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}"),'12:30 plain PRIVATE upload contract missing');
+must(publication.includes("new Date(Date.parse(scheduledAt)-390*60000).toISOString()"),'390-minute upload lead contract missing');
+must(publication.includes("zonedLocal(localDay,'19:00',tz)"),'19:00 release-time normalization missing');
+must(publication.includes('Uploaded plain PRIVATE at the configured 12:30 publication-prep time. No publishAt is set.'),'12:30 private upload evidence missing');
 must(!publication.includes("privacyStatus:'private',publishAt:item.scheduledAt"),'native YouTube publishAt scheduling must remain disabled');
 for(const token of ['isReviewStorageUri','readReviewRange','deleteReviewObject','containsSyntheticMedia:true','APPROVAL_GATE','purgeRejected','purgePrivateVideosByTitle']){
   must(publication.includes(token),'publication/approval/rejection contract missing '+token);
