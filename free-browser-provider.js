@@ -1270,7 +1270,7 @@ async function generationTransitionVisible(page,baselineInventory,baselineVideos
   const visibleBusy=await visibleGenerationBusyCount(page);
   const busyIncrease=visibleBusy>Number(baselineBusy||0);
   const controlTransition=(!sendVisible||sendDisabled)&&busyIncrease;
-  return{started:Boolean(freshVideo||busyIncrease),freshVideo,freshInventory,controlTransition,visibleBusy,sendVisible,sendDisabled,inventory:inv,videos:vids};
+  return{started:Boolean(freshVideo||freshInventory),freshVideo,freshInventory,controlTransition,visibleBusy,sendVisible,sendDisabled,inventory:inv,videos:vids};
 }
 
 async function approveFlowPointConsent(page,permission,baselineInventory,baselineVideos,baselineBusy=0){
@@ -1414,19 +1414,29 @@ async function renderAuthGuard(page){
 async function captureFlowInventory(page){
   try{
     return await page.evaluate(()=>{
-      const tiles=[...document.querySelectorAll('flow-grid-tile-container')].filter(el=>{const r=el.getBoundingClientRect();return r.width>20&&r.height>20;});
-      const sigs=tiles.map(el=>String(el.getAttribute('aria-label')||el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,220)).filter(Boolean);
+      const visible=el=>{const r=el.getBoundingClientRect();return r.width>20&&r.height>20;};
+      const signature=el=>String(el.getAttribute('aria-label')||el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,220);
+      const tiles=[...document.querySelectorAll('flow-grid-tile-container')].filter(visible);
+      const videos=tiles.filter(el=>Boolean(el.querySelector('flow-video-tile,video')));
+      const sigs=tiles.map(signature).filter(Boolean),videoSigs=videos.map(signature).filter(Boolean);
       const body=String(document.body?.innerText||'').replace(/\s+/g,' ').trim();
-      return{tile_count:tiles.length,ordered_signatures:sigs.slice(0,120),signatures:[...new Set(sigs)].slice(0,120),busy:/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation|thinking|pensando/i.test(body)||/\bStop\b|\bDetener\b/i.test(body)};
+      return{
+        tile_count:tiles.length,ordered_signatures:sigs.slice(0,120),signatures:[...new Set(sigs)].slice(0,120),
+        video_tile_count:videos.length,ordered_video_signatures:videoSigs.slice(0,120),video_signatures:[...new Set(videoSigs)].slice(0,120),
+        busy:/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation|thinking|pensando/i.test(body)||/\bStop\b|\bDetener\b/i.test(body)
+      };
     });
-  }catch{return{tile_count:0,ordered_signatures:[],signatures:[],busy:false}}
+  }catch{return{tile_count:0,ordered_signatures:[],signatures:[],video_tile_count:0,ordered_video_signatures:[],video_signatures:[],busy:false}}
 }
 
 function inventoryHasNew(current,baseline){
   if(!baseline)return false;
-  if(Number(current?.tile_count||0)>Number(baseline?.tile_count||0))return true;
-  const before=new Set(Array.isArray(baseline?.signatures)?baseline.signatures:[]);
-  return (Array.isArray(current?.signatures)?current.signatures:[]).some(x=>!before.has(x));
+  if(Number(current?.video_tile_count||0)>Number(baseline?.video_tile_count||0))return true;
+  const before=new Map();
+  for(const sig of (Array.isArray(baseline?.ordered_video_signatures)?baseline.ordered_video_signatures:[]))before.set(sig,(before.get(sig)||0)+1);
+  const after=Array.isArray(current?.ordered_video_signatures)?current.ordered_video_signatures:[];
+  for(const sig of after){const n=before.get(sig)||0;if(n>0)before.set(sig,n-1);else return true;}
+  return false;
 }
 
 function episodeRecoveryTerms(row){
@@ -1580,8 +1590,9 @@ async function waitGenerationStarted(page,baseline,baselineInventory,baselineBus
       if(probe?.opened&&!probe?.ready)await page.keyboard.press('Escape').catch(()=>{});
     }
 
-    const started=freshVideo||busyIncrease||downloadableFresh;
-    lastEvidence='freshVideo='+freshVideo+'; busy='+visibleBusy+'; baselineBusy='+baselineBusy+'; busyIncrease='+busyIncrease+'; downloadableFresh='+downloadableFresh+'; downloadSignal='+downloadSignal+'; sendVisible='+sendVisible+'; sendDisabled='+sendDisabled+'; elapsedMs='+elapsed+'; tiles='+Number(beforeInv.tile_count||0)+'->'+Number(inv.tile_count||0);
+    const freshInventory=inventoryHasNew(inv,beforeInv);
+    const started=freshVideo||freshInventory||downloadableFresh;
+    lastEvidence='freshVideo='+freshVideo+'; freshVideoInventory='+freshInventory+'; busy='+visibleBusy+'; baselineBusy='+baselineBusy+'; busyIncreaseSupportingOnly='+busyIncrease+'; downloadableFresh='+downloadableFresh+'; downloadSignal='+downloadSignal+'; sendVisible='+sendVisible+'; sendDisabled='+sendDisabled+'; elapsedMs='+elapsed+'; videoTiles='+Number(beforeInv.video_tile_count||0)+'->'+Number(inv.video_tile_count||0);
     if(started)return{started:true,evidence:lastEvidence,videos:vids,inventory:inv};
     await sleep(1000);
   }
@@ -1645,11 +1656,11 @@ async function openLatestExpectedVideoTile(page,baselineInv){
 }
 
 async function openUniqueFreshInventoryResult(page,baselineInv){
-  const tiles=page.locator('flow-grid-tile-container'),count=Math.min(await tiles.count().catch(()=>0),120),baselineCount=Number(baselineInv?.tile_count||0);
-  // Do not require count-baseline===1 after a reload. Flow can virtualize the grid
-  // so one new tile can replace one old mounted tile and total DOM count stays equal.
-  // Signature multiset correlation is the durable criterion.
-  const baselineList=Array.isArray(baselineInv?.ordered_signatures)&&baselineInv.ordered_signatures.length?baselineInv.ordered_signatures:(Array.isArray(baselineInv?.signatures)?baselineInv.signatures:[]);
+  const tiles=page.locator('flow-grid-tile-container').filter({has:page.locator('flow-video-tile,video')});
+  const count=Math.min(await tiles.count().catch(()=>0),120),baselineCount=Number(baselineInv?.video_tile_count||0);
+  const baselineList=Array.isArray(baselineInv?.ordered_video_signatures)&&baselineInv.ordered_video_signatures.length
+    ? baselineInv.ordered_video_signatures
+    : (Array.isArray(baselineInv?.video_signatures)?baselineInv.video_signatures:[]);
   const remaining=new Map();for(const sig of baselineList)remaining.set(sig,(remaining.get(sig)||0)+1);
   const fresh=[];
   for(let i=0;i<count;i++){
@@ -1657,26 +1668,24 @@ async function openUniqueFreshInventoryResult(page,baselineInv){
     const aria=String(await el.getAttribute('aria-label').catch(()=>'')||'').replace(/\s+/g,' ').trim();
     const inner=String(await el.innerText().catch(()=>'')||'').replace(/\s+/g,' ').trim();
     const content=String(await el.textContent().catch(()=>'')||'').replace(/\s+/g,' ').trim();
-    const sig=compact(aria||inner||content,220);if(!sig)continue;
+    const sig=compact(aria||inner||content,220);
+    if(!sig){if(count>baselineCount)fresh.push({el,sig:'<unsigned-new-video-tile>',i});continue}
     const left=remaining.get(sig)||0;if(left>0){remaining.set(sig,left-1);continue}
     fresh.push({el,sig,i});
   }
-  if(fresh.length!==1)return{ready:false,opened:false,signal:`fresh-tile-occurrences:${fresh.length};dom-delta:${count-baselineCount}`};
+  if(fresh.length!==1)return{ready:false,opened:false,signal:`fresh-video-tile-occurrences:${fresh.length};video-dom-delta:${count-baselineCount}`};
   const target=fresh[0].el;
-  await target.scrollIntoViewIfNeeded().catch(()=>{});
-  await target.hover().catch(()=>{});
+  await target.scrollIntoViewIfNeeded().catch(()=>{});await target.hover().catch(()=>{});
   const footer=target.locator('flow-tile-hover-footer').first();
-  if(await footer.count().catch(()=>0)&&await footer.isVisible().catch(()=>false)){
-    await footer.click({force:true,timeout:5000}).catch(()=>{});
-  }else{
-    await target.click({force:true,timeout:5000}).catch(()=>{});
-  }
+  if(await footer.count().catch(()=>0)&&await footer.isVisible().catch(()=>false))await footer.click({force:true,timeout:5000}).catch(()=>{});
+  else await target.click({force:true,timeout:5000}).catch(()=>{});
   await sleep(1000);
   const d=await visibleDownloadButton(page);
-  if(d)return{ready:true,opened:true,signal:'unique-fresh-inventory-video-tile',signature:fresh[0].sig,index:fresh[0].i};
+  if(d)return{ready:true,opened:true,signal:'unique-fresh-video-inventory-tile',signature:fresh[0].sig,index:fresh[0].i};
   await page.keyboard.press('Escape').catch(()=>{});
-  return{ready:false,opened:false,signal:'unique-fresh-tile-no-download'};
+  return{ready:false,opened:false,signal:'unique-fresh-video-tile-no-download'};
 }
+
 async function openLatestGeneratedResult(page){
   let d=await visibleDownloadButton(page);
   if(d)return{ready:true,opened:false,signal:'download-visible'};
