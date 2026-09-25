@@ -131,3 +131,4 @@ fix=clear-legacy-flow-streaks-after-success-v2
 fix=strict-recovery-and-earth-unique-landscapes-20260925
 fix=closed-earth-title-fallback-20260925
 fix=db-aware-earth-backlog-uniqueness-20260925
+fix=earth-uniqueness-ignore-show-bible-prompt-20260925
