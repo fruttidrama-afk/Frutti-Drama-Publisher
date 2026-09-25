@@ -441,8 +441,9 @@ export function ideaForEpisode(episode){
     // seed #4 when three initial episodes existed), breaking serialized canon.
     const seedIndex=Math.max(0,Number(episode)-CONFIG.content.initial_episodes.length-1);
     const v=seeds[seedIndex%seeds.length],cycle=Math.floor(seedIndex/seeds.length)+1;
-    if(typeof v==='string')return{hook:'NEW TURN',story:v+' Continuation cycle '+cycle+'. Preserve canon and create a new consequence rather than repeating the previous episode.'};
-    return{hook:String(v.hook||'NEW TURN'),story:String(v.story||v.intent||'')+' Continuation cycle '+cycle+'.'};
+    const cycleSuffix=cycle>1?' Continuation cycle '+cycle+'. Preserve canon and create a new consequence rather than repeating the previous episode.':'';
+    if(typeof v==='string')return{hook:'NEW TURN',story:v+cycleSuffix};
+    return{hook:String(v.hook||'NEW TURN'),story:String(v.story||v.intent||'')+cycleSuffix};
   }
   if(isEarthIn10()){
     const v=earthIn10Idea(episode);
@@ -460,7 +461,16 @@ export function ensureBacklog(db,minReady=Math.max(9,DAILY_LIMIT*3)){
       .run(ep,idea.hook,idea.story,'draft',t,t);
   }
   const drafts=db.prepare("SELECT * FROM factory_items WHERE status='draft' ORDER BY episode").all();
-  for(const row of drafts){
+  const dinnieShow=/dinnie\s*(?:the\s*)?dinosaur|dinnie/i.test(String(SHOW||CONFIG.identity?.show_name||''));
+  for(let row of drafts){
+    if(dinnieShow&&Number(row.episode)>CONFIG.content.initial_episodes.length){
+      const expected=ideaForEpisode(Number(row.episode));
+      if(expected&&(String(row.hook||'')!==String(expected.hook||'')||String(row.story||'')!==String(expected.story||''))){
+        db.prepare("UPDATE factory_items SET hook=?,story=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
+          .run(String(expected.hook||''),String(expected.story||''),new Date().toISOString(),row.id);
+        row=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row;
+      }
+    }
     const force=isGenericAutonomousIdea(row.hook,row.story)||/HOOK:\s*NEXT CHAPTER/i.test(String(row.prompt||''))||/EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(String(row.prompt||''));
     materializeCreativePackage(db,row,{force});
   }
