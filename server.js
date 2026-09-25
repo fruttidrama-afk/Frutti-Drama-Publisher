@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
+import sharp from 'sharp';
 import { DatabaseSync } from 'node:sqlite';
 import { google } from 'googleapis';
 import {
@@ -182,15 +183,124 @@ app.get('/auth/sessions',secure,(req,res)=>{const cur=sessionParse(req)?.id,s=au
 app.delete('/auth/sessions/:id',secure,(req,res)=>{const s=authState(),r=s.sessions.find(x=>x.id===req.params.id);if(!r)return res.sendStatus(404);r.revokedAt=now();saveAuth(s);if(sessionParse(req)?.id===r.id)res.clearCookie(SESSION_COOKIE,{path:'/'});res.json({ok:true,current:r.id===sessionParse(req)?.id})});
 app.post('/auth/pin/change',secure,(req,res)=>{const old=String(req.body.currentPin||''),next=String(req.body.newPin||'');if(!pinOk(old))return res.status(401).json({error:'Current PIN is incorrect.'});if(!/^\d{6}$/.test(next))return res.status(400).json({error:'New PIN must contain six digits.'});setPin(next);res.json({ok:true})});
 
-function brandPublic(){const b=CONFIG.branding||{},t=b.theme||{};return{reference_mode:b.reference_mode||null,reference_image_url:b.reference_image_url||null,render_reference_image:b.render_reference_image!==false&&b.reference_mode!=='web_design',reference_usage:b.reference_usage||null,logo_url:b.logo_url||null,icon_180_url:b.icon_180_url||null,icon_192_url:b.icon_192_url||null,icon_512_url:b.icon_512_url||null,maskable_icon_url:b.maskable_icon_url||b.icon_512_url||null,safe_area_ratio:Number(b.safe_area_ratio||.8),tagline:b.tagline||CONFIG.identity.description||'',theme:{primary:t.primary||'#0d3152',secondary:t.secondary||'#b59a64',accent:t.accent||'#b59a64',background:t.background||'#f7f6f2',surface:t.surface||'#ffffff',text:t.text||'#1d1d1b'}}}
-function brandRedirect(res,url,fallback){res.set('Cache-Control','no-store, max-age=0');if(url)return res.redirect(302,url);res.status(200).type('image/svg+xml').send(fallback)}
-function fallbackBrandSvg(){const n=String(CONFIG.identity.show_name||CONFIG.identity.publisher_name||'P').trim().split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase().slice(0,2)||'P',b=brandPublic(),t=b.theme;return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="108" fill="'+t.background+'"/><rect x="82" y="82" width="348" height="348" rx="72" fill="'+t.primary+'"/><text x="256" y="305" text-anchor="middle" font-family="Arial,sans-serif" font-size="165" font-weight="700" fill="'+(String(t.text).toLowerCase()==='#ffffff'?'#ffffff':'#ffffff')+'">'+n.replace(/[&<>]/g,'')+'</text></svg>'}
-app.get('/brand/logo.svg',(req,res)=>brandRedirect(res,brandPublic().logo_url,fallbackBrandSvg()));
-app.get('/apple-touch-icon.png',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');const b=brandPublic(),u=b.icon_180_url||b.icon_512_url;if(u)return res.redirect(302,u);res.type('image/svg+xml').send(fallbackBrandSvg())});
-app.get('/manifest.webmanifest',(req,res)=>{res.set('Cache-Control','no-store, max-age=0');const b=brandPublic(),icons=[];if(b.icon_192_url)icons.push({src:b.icon_192_url,sizes:'192x192',type:'image/png',purpose:'any'});if(b.icon_512_url)icons.push({src:b.icon_512_url,sizes:'512x512',type:'image/png',purpose:'any'});if(b.maskable_icon_url)icons.push({src:b.maskable_icon_url,sizes:'512x512',type:'image/png',purpose:'maskable'});if(!icons.length)icons.push({src:'/brand/logo.svg',sizes:'any',type:'image/svg+xml',purpose:'any'});res.type('application/manifest+json').send(JSON.stringify({name:CONFIG.identity.show_name||CONFIG.identity.publisher_name,short_name:CONFIG.identity.show_name||CONFIG.identity.publisher_name,start_url:'/',scope:'/',display:'standalone',background_color:b.theme.background,theme_color:b.theme.primary,icons}))});
+function brandPublic(){
+  const b=CONFIG.branding||{},t=b.theme||{},hasLogo=Boolean(String(b.logo_url||'').trim());
+  return{
+    reference_mode:b.reference_mode||null,
+    reference_image_url:b.reference_image_url||null,
+    render_reference_image:b.render_reference_image!==false&&b.reference_mode!=='web_design',
+    reference_usage:b.reference_usage||null,
+    // Always expose the brand through same-origin endpoints. This avoids iOS
+    // broken-image behavior from third-party storage redirects and lets us
+    // normalize transparency/padding consistently.
+    logo_url:hasLogo?'/brand/logo.png?v=20260925-botanical':null,
+    icon_180_url:'/apple-touch-icon.png?v=20260925-botanical',
+    icon_192_url:'/brand/icon-192.png?v=20260925-botanical',
+    icon_512_url:'/brand/icon-512.png?v=20260925-botanical',
+    maskable_icon_url:'/brand/icon-maskable-512.png?v=20260925-botanical',
+    safe_area_ratio:Number(b.safe_area_ratio||.8),
+    tagline:b.tagline||CONFIG.identity.description||'',
+    theme:{primary:t.primary||'#0d3152',secondary:t.secondary||'#b59a64',accent:t.accent||'#b59a64',background:t.background||'#f7f6f2',surface:t.surface||'#ffffff',text:t.text||'#1d1d1b'}
+  }
+}
+function fallbackBrandSvg(){
+  const n=String(CONFIG.identity.show_name||CONFIG.identity.publisher_name||'P').trim().split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase().slice(0,2)||'P',b=brandPublic(),t=b.theme;
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="108" fill="'+t.background+'"/><rect x="82" y="82" width="348" height="348" rx="72" fill="'+t.primary+'"/><text x="256" y="305" text-anchor="middle" font-family="Arial,sans-serif" font-size="165" font-weight="700" fill="#ffffff">'+n.replace(/[&<>]/g,'')+'</text></svg>'
+}
+function safeHex(v,fallback){
+  const s=String(v||'').trim();
+  return /^#[0-9a-f]{6}$/i.test(s)?s:fallback;
+}
+async function sourceBrandLogo(){
+  const u=String(CONFIG.branding?.logo_url||'').trim();
+  if(!u)return null;
+  const r=await fetch(u,{headers:{'User-Agent':'PublisherRuntime/1.0','Cache-Control':'no-cache'}});
+  if(!r.ok)throw new Error('Brand logo fetch failed: HTTP '+r.status);
+  return Buffer.from(await r.arrayBuffer());
+}
+async function normalizedBrandLogoPng(){
+  try{
+    const src=await sourceBrandLogo();
+    if(src){
+      return await sharp(src,{failOn:'none'})
+        .ensureAlpha()
+        .trim({background:{r:0,g:0,b:0,alpha:0},threshold:8})
+        .resize({width:1024,height:1024,fit:'inside',withoutEnlargement:true})
+        .png({compressionLevel:9})
+        .toBuffer();
+    }
+  }catch(e){console.error('[BRAND LOGO PROXY]',String(e?.message||e))}
+  return sharp(Buffer.from(fallbackBrandSvg())).png().toBuffer();
+}
+function botanicalIconBackdrop(size){
+  const t=brandPublic().theme,bg=safeHex(t.background,'#071a12'),primary=safeHex(t.primary,'#123d28'),secondary=safeHex(t.secondary,'#5f8c61'),accent=safeHex(t.accent,'#8bbd70');
+  const s=Number(size);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}">
+  <defs>
+    <radialGradient id="g" cx="50%" cy="42%" r="72%">
+      <stop offset="0" stop-color="${primary}"/>
+      <stop offset="1" stop-color="${bg}"/>
+    </radialGradient>
+  </defs>
+  <rect width="${s}" height="${s}" fill="url(#g)"/>
+  <g fill="none" stroke="${secondary}" stroke-width="${Math.max(2,s*.018)}" stroke-linecap="round" opacity=".42">
+    <path d="M${-s*.03} ${s*.74} C ${s*.13} ${s*.58}, ${s*.16} ${s*.33}, ${s*.12} ${s*.06}"/>
+    <path d="M${s*1.03} ${s*.78} C ${s*.86} ${s*.62}, ${s*.84} ${s*.33}, ${s*.90} ${s*.04}"/>
+  </g>
+  <g fill="${secondary}" opacity=".30">
+    <ellipse cx="${s*.075}" cy="${s*.60}" rx="${s*.07}" ry="${s*.17}" transform="rotate(-38 ${s*.075} ${s*.60})"/>
+    <ellipse cx="${s*.15}" cy="${s*.39}" rx="${s*.065}" ry="${s*.15}" transform="rotate(24 ${s*.15} ${s*.39})"/>
+    <ellipse cx="${s*.925}" cy="${s*.63}" rx="${s*.07}" ry="${s*.17}" transform="rotate(38 ${s*.925} ${s*.63})"/>
+    <ellipse cx="${s*.86}" cy="${s*.40}" rx="${s*.065}" ry="${s*.15}" transform="rotate(-24 ${s*.86} ${s*.40})"/>
+  </g>
+  <circle cx="${s*.50}" cy="${s*.49}" r="${s*.36}" fill="${accent}" opacity=".075"/>
+  </svg>`;
+}
+async function brandedIconPng(size,{maskable=false}={}){
+  const s=Math.max(64,Math.min(1024,Number(size)||180));
+  let logo;
+  try{
+    const src=await sourceBrandLogo();
+    if(src){
+      logo=await sharp(src,{failOn:'none'})
+        .ensureAlpha()
+        .trim({background:{r:0,g:0,b:0,alpha:0},threshold:8})
+        .resize({width:Math.round(s*(maskable?.68:.76)),height:Math.round(s*(maskable?.68:.76)),fit:'inside',withoutEnlargement:false})
+        .png()
+        .toBuffer();
+    }
+  }catch(e){console.error('[BRAND ICON SOURCE]',String(e?.message||e))}
+  if(!logo){
+    logo=await sharp(Buffer.from(fallbackBrandSvg()))
+      .resize({width:Math.round(s*.70),height:Math.round(s*.70),fit:'inside'})
+      .png().toBuffer();
+  }
+  const bg=await sharp(Buffer.from(botanicalIconBackdrop(s))).png().toBuffer();
+  return sharp(bg).composite([{input:logo,gravity:'center'}]).png({compressionLevel:9}).toBuffer();
+}
+app.get('/brand/logo.svg',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await normalizedBrandLogoPng())});
+app.get('/brand/logo.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await normalizedBrandLogoPng())});
+app.get('/apple-touch-icon.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await brandedIconPng(180))});
+app.get('/brand/icon-192.png',async(req,res)=>{res.set('Cache-Control','public, max-age=300');res.type('image/png').send(await brandedIconPng(192))});
+app.get('/brand/icon-512.png',async(req,res)=>{res.set('Cache-Control','public, max-age=300');res.type('image/png').send(await brandedIconPng(512))});
+app.get('/brand/icon-maskable-512.png',async(req,res)=>{res.set('Cache-Control','public, max-age=300');res.type('image/png').send(await brandedIconPng(512,{maskable:true}))});
+app.get('/manifest.webmanifest',(req,res)=>{
+  res.set('Cache-Control','no-store, max-age=0');
+  const b=brandPublic(),icons=[
+    {src:b.icon_192_url,sizes:'192x192',type:'image/png',purpose:'any'},
+    {src:b.icon_512_url,sizes:'512x512',type:'image/png',purpose:'any'},
+    {src:b.maskable_icon_url,sizes:'512x512',type:'image/png',purpose:'maskable'}
+  ];
+  res.type('application/manifest+json').send(JSON.stringify({
+    name:CONFIG.identity.show_name||CONFIG.identity.publisher_name,
+    short_name:CONFIG.identity.show_name||CONFIG.identity.publisher_name,
+    start_url:'/',scope:'/',display:'standalone',
+    background_color:b.theme.background,theme_color:b.theme.primary,icons
+  }))
+});
 
 app.use((req,res,next)=>{
- if(['/setup','/setup/activate','/login','/auth/public-info','/auth/pin','/auth/passkeys/options','/auth/passkeys/verify','/oauth2callback','/facebook/oauth/callback','/factory/health','/brand/logo.svg','/apple-touch-icon.png','/manifest.webmanifest'].includes(req.path))return next();
+ if(['/setup','/setup/activate','/login','/auth/public-info','/auth/pin','/auth/passkeys/options','/auth/passkeys/verify','/oauth2callback','/facebook/oauth/callback','/factory/health','/brand/logo.svg','/brand/logo.png','/apple-touch-icon.png','/brand/icon-192.png','/brand/icon-512.png','/brand/icon-maskable-512.png','/manifest.webmanifest'].includes(req.path))return next();
  if(req.path.startsWith('/public/'))return next();
  return secure(req,res,next);
 });
