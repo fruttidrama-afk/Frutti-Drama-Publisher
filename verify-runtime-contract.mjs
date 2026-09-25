@@ -60,6 +60,10 @@ for(const token of ["const salt=parseInt(randomUUID().replace(/-/g,'').slice(0,8
   must(provider.includes(token),'Frutti-compatible browser launch contract missing '+token);
 }
 must(!provider.includes('--disk-cache-dir=/tmp/publisher-chrome-cache'),'canonical browser launch must not add custom disk-cache fingerprint flags');
+must(provider.includes("const submit=await clickSubmitExactlyOnce"),'submit result must be captured as an object');
+must(provider.includes("const submitMode=String(submit?.mode||'start-generation-direct')"),'submit mode must come from submit result object');
+must(provider.includes("pre_consent_fingerprint:String(submit?.pre_consent_fingerprint||'')"),'submit lifecycle must persist consent fingerprint safely');
+must(!provider.includes("const submitMode=await clickSubmitExactlyOnce"),'legacy submit object/string confusion is forbidden');
 for(const token of ['function scheduleNoChargeRetry(db,row,opts={})','flow:transientCooldownUntil',"'flow:noChargeStreak:provider'","if(providerCooldown>Date.now())return null",'FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIRED',"status IN ('review','completed')",'flow:legacyNoChargeStreakMigratedV2','FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIRED_V2','openStrictSinglePostBaselineTile','same-session-identity-verified-post-baseline-asset','FLOW_STRICT_RECOVERY_PROOF_REQUIRED','flow_recovered_assets','flow_rejected_media_hashes','FLOW_ASSET_ID_ALREADY_RECOVERED','FLOW_REJECTED_MEDIA_REUSED','openVerifiedFlowAsset','freshFlowAssetCandidates','TARGETED_RECOVERY_REVIEW_READY','generation_submit_forbidden:true','nextSubmissionBaseline','assetPresentInInventory','download-reopen-asset-id-verified']){
   must(provider.includes(token),'provider no-charge runtime contract missing '+token);
 }
