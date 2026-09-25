@@ -915,6 +915,10 @@ async function clickOptionalSetting(page,re,label){
 async function configureFlow(page){
   await waitFlowReady(page,60000);
   await ensureSettingsOpen(page);
+  const settingsBody=await getBody(page).catch(()=>'');
+  if(/Confirm before generating|Confirmar antes de generar/i.test(settingsBody)){
+    await clickRadio(page,/^(?:Never|Nunca)$/i,'confirm-never');
+  }
   await clickRadio(page,/Video/i,'Video');
   await clickRadio(page,/9\s*:\s*16|9_16|crop_9_16/i,'9:16');
 
@@ -1472,8 +1476,15 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
   const boundary=Date.parse(String(lc?.submit_boundary_at||''));
   const age=Number.isFinite(boundary)?Date.now()-boundary:0;
   const currentInv=await captureFlowInventory(page);
-  const body=(await getBody(page)).slice(0,14000);
-  const busy=currentInv.busy||/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation|thinking|pensando/i.test(body)||/\bStop\b|\bDetener\b/i.test(body);
+  let body=(await getBody(page)).slice(0,14000);
+  const lateConsent=await findGenerationConsentAction(page).catch(()=>null);
+  if(lateConsent){
+    await trustedClick(lateConsent.el);
+    publish('LATE_POINT_CONSENT_RECOVERED',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,label:compact(lateConsent.label,160),message:'Delayed Flow Agent generation consent accepted once; prompt was NOT resubmitted.'});
+    await sleep(900);
+    body=(await getBody(page)).slice(0,14000);
+  }
+  const busy=Boolean(lateConsent)||currentInv.busy||/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation|thinking|pensando/i.test(body)||/\bStop\b|\bDetener\b/i.test(body);
   const baselineUsable=Boolean(baselineInv&&Number(baselineInv.tile_count||0)>0&&Array.isArray(baselineInv.signatures)&&baselineInv.signatures.length>0);
   const fresh=baselineUsable&&inventoryHasNew(currentInv,baselineInv);
 
