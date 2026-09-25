@@ -129,3 +129,4 @@ fix=provider-wide-monotonic-unusual-activity-backoff
 fix=daily-counter-and-success-resets-flow-backoff
 fix=clear-legacy-flow-streaks-after-success-v2
 fix=strict-recovery-and-earth-unique-landscapes-20260925
+fix=closed-earth-title-fallback-20260925
