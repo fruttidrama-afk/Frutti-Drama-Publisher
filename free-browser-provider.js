@@ -2973,159 +2973,100 @@ function validateMp4(localPath){
   return{size:st.size,duration,width,height,codec:String(stream.codec_name||'')};
 }
 
-async function findGoldenRecoveryAsset(page,allowHistory=true){
+async function findGoldenRecoveryAsset(page,allowHistory=true,db=null,row=null){
   if(!GOLDEN_RECOVERY_TERMS.length)throw new Error('GOLDEN_RECOVERY_TERMS_MISSING');
-
-  // Recorder "muestra 2" proves the non-chat recovery path:
-  // project grid -> first/latest visible video tile -> hover footer -> editor.
-  // This one-time Golden Run recovery is safe because the operator confirmed
-  // the Patagonia render is the latest real generation in this project.
-  const videoTiles=page.locator('flow-grid-tile-container').filter({has:page.locator('flow-video-tile')});
-  const visibleVideoTiles=[];
-  for(let i=0;i<Math.min(await videoTiles.count().catch(()=>0),120);i++){
-    const tile=videoTiles.nth(i);
-    if(await tile.isVisible().catch(()=>false))visibleVideoTiles.push(tile);
-  }
-  if(visibleVideoTiles.length){
-    const tile=visibleVideoTiles[0];
-    await tile.scrollIntoViewIfNeeded().catch(()=>{});
-    await tile.hover().catch(()=>{});
-    const footer=tile.locator('flow-tile-hover-footer').first();
-    if(await footer.count().catch(()=>0)&&await footer.isVisible().catch(()=>false)){
-      await footer.click({force:true,timeout:5000}).catch(()=>{});
-    }else{
-      await tile.click({force:true,timeout:5000}).catch(()=>{});
-    }
-    await sleep(1200);
-    const d=await visibleDownloadButton(page);
-    if(d)return{found:true,matched:['recorder-project-grid','latest-video-tile'],label:'first visible project video tile',source:'project-grid-latest-video'};
-    await page.keyboard.press('Escape').catch(()=>{});await sleep(300);
-  }
-
-  // Exact Golden Run recorder path: flow-a2ui-video-option > ... > img with
-  // accessible name equal to the generated prompt. Use Playwright's computed
-  // accessible name rather than brittle Material IDs/XPath.
-  const goldenImgs=page.getByRole('img',{name:/patagonia/i});
-  for(let i=(await goldenImgs.count().catch(()=>0))-1;i>=0;i--){
-    const img=goldenImgs.nth(i);if(!(await img.isVisible().catch(()=>false)))continue;
-    const acc=compact(await img.getAttribute('aria-label').catch(()=>''),1600);
-    const alt=compact(await img.getAttribute('alt').catch(()=>''),1600);
-    const raw=norm((acc||'')+' '+(alt||''));
-    if(!(raw.includes('glacial lake')||raw.includes('sunrise')||raw.includes('turquoise')))continue;
-    await img.scrollIntoViewIfNeeded().catch(()=>{});
-    await img.click({force:true,timeout:5000}).catch(()=>{});
-    await sleep(1200);
-    const d=await visibleDownloadButton(page);
-    if(d)return{found:true,matched:['patagonia','recorder-accessible-name'],label:compact(acc||alt,700),source:'recorder-role-img'};
-    await page.keyboard.press('Escape').catch(()=>{});await sleep(300);
-  }
-  const selectors=['flow-grid-tile-container','img','[role="img"]','[aria-label]','button','[role="button"]'];
+  const inv=await captureFlowInventory(page);
+  const lc=row&&db?lifecycle(db,row)||{}:{};
+  const baseline=lc?.baseline_inventory||null;
+  const usedIds=db?recoveredFlowAssetIds(db):new Set();
+  const usedSigs=db?recoveredFlowSignatures(db):new Set();
+  const diff=baseline?freshFlowAssetCandidates(inv,baseline,db,row):{fresh:inv.ordered_video_assets||[],missing:0,delta:0,method:'no-baseline',rejected:[]};
+  const freshIds=new Set((diff.fresh||[]).map(x=>String(x.asset_id||'')));
   const candidates=[];
-  const seen=new Set();
-  for(const sel of selectors){
-    const loc=page.locator(sel),count=Math.min(await loc.count().catch(()=>0),1200);
-    for(let i=0;i<count;i++){
-      const el=loc.nth(i);
-      if(!(await el.isVisible().catch(()=>false)))continue;
-      const info=await el.evaluate(node=>{
-        const r=node.getBoundingClientRect();
-        const raw=[
-          node.getAttribute?.('aria-label')||'',
-          node.getAttribute?.('alt')||'',
-          node.getAttribute?.('title')||'',
-          node.innerText||'',
-          node.textContent||''
-        ].join(' ').replace(/\s+/g,' ').trim();
-        return{raw:raw.slice(0,5000),area:r.width*r.height,x:r.x,y:r.y,w:r.width,h:r.height,tag:node.tagName};
-      }).catch(()=>null);
-      if(!info||!info.raw||info.area<3000)continue;
-      const n=norm(info.raw);
-      const matched=GOLDEN_RECOVERY_TERMS.filter(t=>n.includes(t));
-      if(matched.length<Math.min(3,GOLDEN_RECOVERY_TERMS.length))continue;
-      const key=info.raw.slice(0,500);
-      if(seen.has(key))continue;seen.add(key);
-      candidates.push({el,matched,score:matched.length*100000+Math.min(info.area,500000),info});
+
+  for(const a of (inv.ordered_video_assets||[])){
+    const id=String(a?.asset_id||''),sig=String(a?.signature||''),n=norm(sig);
+    if(!id||usedIds.has(id))continue;
+    if(String(a?.identity_strength||'')!=='strong'&&sig&&usedSigs.has(n))continue;
+    const matched=GOLDEN_RECOVERY_TERMS.filter(t=>n.includes(t));
+    const isFresh=freshIds.has(id);
+    const score=matched.length*100+(isFresh?25:0)+(String(a?.identity_strength||'')==='strong'?5:0)-Math.min(20,Number(a.dom_index||0));
+    candidates.push({...a,matched,isFresh,score});
+  }
+
+  candidates.sort((a,b)=>b.score-a.score||Number(a.dom_index)-Number(b.dom_index));
+  const required=Math.min(2,GOLDEN_RECOVERY_TERMS.length);
+  const semantic=candidates.filter(x=>x.matched.length>=required);
+  let chosen=null,source='';
+
+  if(semantic.length){
+    const freshSemantic=semantic.filter(x=>x.isFresh);
+    const pool=freshSemantic.length?freshSemantic:semantic;
+    const top=pool[0],runner=pool[1];
+    if(!runner||top.matched.length>runner.matched.length){
+      chosen=top;source=freshSemantic.length?'fresh-semantic-asset':'semantic-asset';
+    }else if(GOLDEN_RECOVERY_ALLOW_NEWEST_UNUSED){
+      // Flow renders newest-first in the visible project grid. We only use
+      // DOM order as a final tie-breaker AFTER semantic match, unused asset ID,
+      // and baseline freshness checks. It is never identity by itself.
+      chosen=[...pool].sort((a,b)=>Number(a.dom_index)-Number(b.dom_index))[0];
+      source=freshSemantic.length?'fresh-semantic-newest-unused-tiebreak':'semantic-newest-unused-tiebreak';
     }
-  }
-  candidates.sort((a,b)=>b.score-a.score);
-  for(const cand of candidates.slice(0,24)){
-    const target=cand.el;
-    const interactive=target.locator('xpath=ancestor-or-self::button | ancestor-or-self::*[@role="button"] | ancestor-or-self::flow-grid-tile-container').last();
-    const clickTarget=await interactive.count().catch(()=>0)?interactive:target;
-    await clickTarget.scrollIntoViewIfNeeded().catch(()=>{});
-    await clickTarget.click({force:true,timeout:5000}).catch(async()=>{await target.click({force:true,timeout:5000}).catch(()=>{})});
-    await sleep(1000);
-    const d=await visibleDownloadButton(page);
-    if(d)return{found:true,matched:cand.matched,label:compact(cand.info.raw,700)};
-    await page.keyboard.press('Escape').catch(()=>{});await sleep(300);
-  }
-  // Golden Run recorder showed the rendered option inside the chat. The visible
-  // bubble may expose the prompt as ordinary text instead of an aria-label, so
-  // correlate the whole bubble and then click its media child.
-  const chatContainers=page.locator('flow-chat-bubble,flow-a2ui-message-renderer,flow-a2ui-video-option,article,section');
-  const chatMatches=[];
-  for(let i=0;i<Math.min(await chatContainers.count().catch(()=>0),320);i++){
-    const el=chatContainers.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
-    const raw=compact(await el.innerText().catch(()=>''),6000);if(!raw)continue;
-    const n=norm(raw),matched=GOLDEN_RECOVERY_TERMS.filter(t=>n.includes(t));
-    if(matched.length<Math.min(3,GOLDEN_RECOVERY_TERMS.length))continue;
-    const media=el.locator('flow-a2ui-video-option,img,video,[role="img"],canvas,button');
-    if(!(await media.count().catch(()=>0)))continue;
-    chatMatches.push({el,media,matched,label:compact(raw,700),score:matched.length});
-  }
-  chatMatches.sort((a,b)=>b.score-a.score);
-  for(const hit of chatMatches.slice(0,12)){
-    let clicked=false;
-    const count=Math.min(await hit.media.count().catch(()=>0),30);
-    for(let j=count-1;j>=0;j--){
-      const m=hit.media.nth(j);if(!(await m.isVisible().catch(()=>false)))continue;
-      const box=await m.boundingBox().catch(()=>null);if(!box||box.width<60||box.height<50)continue;
-      await m.scrollIntoViewIfNeeded().catch(()=>{});
-      await m.click({force:true,timeout:4000}).catch(()=>{});
-      await sleep(900);
-      const d=await visibleDownloadButton(page);
-      if(d)return{found:true,matched:hit.matched,label:hit.label,source:'chat-bubble'};
-      await page.keyboard.press('Escape').catch(()=>{});await sleep(250);
-      clicked=true;
-    }
-    if(!clicked){
-      await hit.el.click({force:true,timeout:4000}).catch(()=>{});await sleep(900);
-      const d=await visibleDownloadButton(page);
-      if(d)return{found:true,matched:hit.matched,label:hit.label,source:'chat-container'};
-      await page.keyboard.press('Escape').catch(()=>{});await sleep(250);
+  }else if(GOLDEN_RECOVERY_ALLOW_NEWEST_UNUSED){
+    const pool=(diff.fresh||[]).filter(a=>a?.asset_id&&!usedIds.has(String(a.asset_id)));
+    if(pool.length){
+      chosen=[...pool].sort((a,b)=>Number(a.dom_index)-Number(b.dom_index))[0];
+      source='fresh-newest-unused-fallback';
     }
   }
 
+  publish('FLOW_RECOVERY_IDENTITY_SCAN',{
+    episode:row?('E'+row.episode):null,
+    baseline_method:diff.method,
+    current_video_tiles:Number(inv.video_tile_count||0),
+    fresh_candidates:(diff.fresh||[]).map(x=>({asset_id:String(x.asset_id||'').slice(0,16),identity_strength:x.identity_strength,signature:compact(x.signature,140),dom_index:x.dom_index})).slice(0,20),
+    rejected:(diff.rejected||[]).map(x=>({asset_id:String(x.asset_id||'').slice(0,16),reason:x.reason,signature:compact(x.signature,120)})).slice(0,20),
+    ranked:candidates.slice(0,12).map(x=>({asset_id:String(x.asset_id||'').slice(0,16),fresh:x.isFresh,matched:x.matched,signature:compact(x.signature,160),dom_index:x.dom_index}))
+  });
+
+  if(chosen){
+    const opened=await openVerifiedFlowAsset(page,chosen,{db,row,signal:'targeted-recovery-identity-verified'});
+    if(opened?.ready){
+      publish('FLOW_RECOVERY_ASSET_SELECTED',{
+        episode:row?('E'+row.episode):null,
+        asset_id:String(chosen.asset_id||'').slice(0,24),
+        viewer_asset_id:String(opened.viewer_asset_id||'').slice(0,24)||null,
+        identity_strength:chosen.identity_strength,
+        signature:compact(chosen.signature,240),
+        matched_terms:chosen.matched,
+        fresh:Boolean(chosen.isFresh),
+        dom_index:chosen.dom_index,
+        source
+      });
+      return{found:true,matched:chosen.matched,label:chosen.signature,signature:chosen.signature,source,index:chosen.dom_index,asset_id:chosen.asset_id,viewer_asset_id:opened.viewer_asset_id||null,identity_strength:chosen.identity_strength,fresh:Boolean(chosen.isFresh)};
+    }
+  }
+
+  // Optional session-history scan is intentionally conservative and remains
+  // within the SAME Flow project. Cross-project searching is disabled by
+  // default because it can recover unrelated media with similar prompt text.
   if(allowHistory){
     const history=page.getByRole('button',{name:/Open session history|Session history|Historial de sesiones/i}).last();
     if(await history.count().catch(()=>0)&&await history.isVisible().catch(()=>false)){
       await history.click().catch(()=>{});await sleep(1000);
-      const retry=await findGoldenRecoveryAsset(page,false);
-      if(retry?.found)return{...retry,source:'session-history/'+String(retry.source||'scan')};
-      const tags=await page.evaluate(()=>[...new Set([...document.querySelectorAll('*')].map(e=>e.tagName.toLowerCase()).filter(x=>/session|history/.test(x)))].slice(0,80)).catch(()=>[]);
-      retry.history_tags=tags;
-      retry.history_body=compact(await getBody(page).catch(()=>''),7000);
-      return retry;
+      const retry=await findGoldenRecoveryAsset(page,false,db,row);
+      if(retry?.found)return{...retry,source:'session-history/'+String(retry.source||'identity-scan')};
     }
   }
 
-  const body=compact(await getBody(page).catch(()=>''),12000);
-  const buttons=[];
-  const btns=page.locator('button,[role="button"],[role="tab"]');
-  for(let i=0;i<Math.min(await btns.count().catch(()=>0),180);i++){
-    const b=btns.nth(i);if(!(await b.isVisible().catch(()=>false)))continue;
-    const label=compact(((await b.innerText().catch(()=>''))||'')+' '+((await b.getAttribute('aria-label').catch(()=>''))||'')+' '+((await b.getAttribute('title').catch(()=>''))||''),180);
-    if(label)buttons.push(label);
-  }
-  const partial=[];
-  const els=page.locator('img,[role="img"],flow-grid-tile-container,[aria-label]');
-  for(let i=0;i<Math.min(await els.count().catch(()=>0),700);i++){
-    const el=els.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
-    const raw=compact(((await el.getAttribute('aria-label').catch(()=>''))||'')+' '+((await el.getAttribute('alt').catch(()=>''))||'')+' '+((await el.getAttribute('title').catch(()=>''))||'')+' '+((await el.innerText().catch(()=>''))||''),500);
-    if(!raw)continue;const n=norm(raw),matched=GOLDEN_RECOVERY_TERMS.filter(t=>n.includes(t));if(matched.length)partial.push({matched,label:raw});
-  }
-  return{found:false,candidates:candidates.slice(0,10).map(x=>({matched:x.matched,label:compact(x.info.raw,240)})),partial:partial.slice(0,30),buttons:[...new Set(buttons)].slice(0,80),body_has_terms:GOLDEN_RECOVERY_TERMS.map(t=>[t,norm(body).includes(t)]),url:page.url()};
+  return{
+    found:false,
+    candidates:candidates.slice(0,12).map(x=>({asset_id:String(x.asset_id||''),matched:x.matched,fresh:x.isFresh,identity_strength:x.identity_strength,label:compact(x.signature,240),dom_index:x.dom_index})),
+    rejected:diff.rejected||[],
+    url:page.url()
+  };
 }
+
 async function recoverGoldenRunIfRequested(db){
   if(!GOLDEN_RECOVERY_TOKEN)return{needed:false,done:false};
   const metaKey='recovery:golden:'+GOLDEN_RECOVERY_TOKEN;
