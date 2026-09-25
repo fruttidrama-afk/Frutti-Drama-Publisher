@@ -821,6 +821,24 @@ function health(){
  const knowledge={flow_sop_version:metaGet('knowledge:flowSopVersion',''),flow_sop_sha256:metaGet('knowledge:flowSopSha256',''),declared_sha256:metaGet('knowledge:flowSopDeclaredSha256',''),loaded:metaGet('knowledge:flowSopLoaded','false')==='true',document_count:Number(metaGet('knowledge:flowSopDocumentCount','0')||0),inherit_to_publisher:metaGet('knowledge:inheritToPublisher','false')==='true'};
  return{ok:true,at:now(),runtime_version:'publisher-runtime-v1',publisher_enabled:metaGet('automation:factoryEnabled','false')==='true',show:CONFIG.identity.show_name,scheduler_alive:true,scheduler:publication.status(),scheduler_no_end_date:true,worker_alive:workerAlive,automation_provider:'FreeBrowserProvider',generation_provider:'GoogleFlowProvider',publication_provider:selectedPublicationProvider()==='facebook'?'FacebookReelsProvider':selectedPublicationProvider()==='youtube'?'YouTubeProvider':'NotSelected',tinyfish_required:false,tinyfish_fallback:false,knowledge,flow:(()=>{const lf=liveFlowConfig();return{configured:Boolean(lf.project_id),authenticated:Boolean(flowAuth()?.ok),project_id:lf.project_id||null,project_name:lf.project_name||null,project_url:lf.project_url||null}})(),current_job:current||null,queue:counts,completed_today:completed,daily_target:dailyTarget,remaining_today:Math.max(0,dailyTarget-completed),daily_override_active:dailyTarget!==DAILY_LIMIT,provider_health:p?.state||null,last_generation:db.prepare("SELECT createdAt FROM factory_generations ORDER BY createdAt DESC LIMIT 1").get()?.createdAt||null,last_review_ready:db.prepare("SELECT updatedAt FROM factory_items WHERE status='review' ORDER BY updatedAt DESC LIMIT 1").get()?.updatedAt||null,last_publication:db.prepare("SELECT updatedAt,status,videoId FROM publication_items ORDER BY updatedAt DESC LIMIT 1").get()||null,serial_gate:{enabled:true,creative_serialized:Boolean(CONFIG.content.serialized),gate:'review_ready',strict:true},automation_safety:{exactly_once_submit:metaGet('automation:exactlyOnceSubmit','false')==='true',strict_serial_generation:metaGet('automation:strictSerialGeneration','false')==='true',project_grid_recovery:metaGet('automation:projectGridRecovery','false')==='true',review_metadata_required:metaGet('automation:reviewMetadataRequired','false')==='true',golden_test_required:metaGet('automation:goldenTestRequired','false')==='true',stable_composer_handoff:true,frutti_browser_launch_parity:true,native_no_charge_retry:false,immediate_native_retry_disabled:true,adaptive_no_charge_backoff:true,unusual_activity_exponential_backoff:true,provider_wide_unusual_activity_backoff:true,monotonic_provider_cooldown:true,show_specific_repairs_isolated:true,prompt_show_bible_gate:true,atomic_creative_package:true,approval_before_external_storage:true,reject_purges_external_artifacts:true},prompt_integrity:promptIntegrity,storage:storage(),security:{configured:configured(),passkeys:authState().passkeys.length,active_sessions:authState().sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).length}};
 }
+function repairObsoleteFlowSettingsErrors(){
+  try{
+    const stamp=now();
+    const out=db.prepare(`UPDATE factory_items
+      SET status=CASE WHEN status='generating' THEN 'draft' ELSE status END,
+          error=NULL,nextTry=0,providerRunId=NULL,transportPreflight=NULL,lastProgressAt=?,updatedAt=?
+      WHERE status IN ('draft','regen_wait','generating')
+        AND (error LIKE '%FLOW_SETTING_NOT_FOUND:720p:%'
+          OR error LIKE '%FLOW_SETTING_NOT_FOUND:10s:%'
+          OR error LIKE '%FLOW_SETTINGS_NOT_CONFIRMED:%')`).run(stamp,stamp);
+    if(Number(out?.changes||0)>0){
+      console.log('[FLOW SETTINGS UI REPAIR]',JSON.stringify({repaired:Number(out.changes)}));
+      setTimeout(()=>{try{globalThis.__publisherRunProvider?.()}catch{}},700).unref?.();
+    }
+  }catch(e){console.error('[FLOW SETTINGS UI REPAIR ERROR]',String(e?.message||e))}
+}
+setTimeout(repairObsoleteFlowSettingsErrors,1800).unref?.();
+
 app.get('/factory/health',(req,res)=>res.json(health()));
 app.get('/factory/knowledge',(req,res)=>{
   const rows=db.prepare('SELECT key,version,sha256,source,updatedAt,length(content) bytes FROM runtime_knowledge ORDER BY key').all();
