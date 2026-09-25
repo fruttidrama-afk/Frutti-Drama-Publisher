@@ -1,8 +1,8 @@
 {
   "knowledge_pack": "GOOGLE_FLOW_AUTOMATION_SOP_KNOWLEDGE_PACK",
   "version": "FLOW-SOP-v1.0",
-  "master_sha256": "9e475a5f610cbbaa2940e1f1353e5316bea8cfd7febf7423b0ece603788c874c",
-  "master_git_blob_sha": "4c42a8f34554d5da3cd268f490f17c9e2aefda7c",
+  "master_sha256": "b857758bc2f46b0759a1327a39a32566e4168b6629dfa0103357ad1ec58ffab1",
+  "master_git_blob_sha": "2d934ead39ec467795117ba1df2fe7250c0867af",
   "canonical_files": [
     "GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md",
     "GOOGLE_FLOW_AUTOMATION_SOP.json",
@@ -32,6 +32,14 @@
     "calendar_midnight_opens_batch": false,
     "daily_flow_credit_grant": 50,
     "paid_monthly_credits_protected_until_daily_refresh": true,
-    "credit_cycle_persistent": true
+    "credit_cycle_persistent": true,
+    "flow_asset_identity_gate": true,
+    "fixed_grid_multiset_recovery": true,
+    "adjacent_submit_temporal_bracket": true,
+    "recovered_asset_reuse_blocked": true,
+    "post_click_asset_identity_verified": true,
+    "targeted_recovery_never_submits": true,
+    "zero_copy_approval_handoff": true,
+    "same_volume_review_copy_forbidden": true
   }
 }
