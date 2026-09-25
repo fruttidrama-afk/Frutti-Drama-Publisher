@@ -941,7 +941,7 @@ app.post('/factory/:id/reject',async(req,res)=>{
  await publication.purgeRejected(r);
  if(isReviewStorageUri(r.remoteUrl)){try{await deleteReviewObject(r.remoteUrl)}catch{}}
  if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{}
- db.prepare("UPDATE factory_items SET status='feedback_wait',revision=?,reviewFeedback=?,retryStrategy='ai_pending',reviewRetryToken=?,reviewRetrySubmittedToken=NULL,reviewInterpretation=NULL,reviewInterpretationAt=NULL,transportPreflight=NULL,providerRunId=NULL,flowResult=NULL,videoPath=NULL,remoteUrl=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewContentHash=NULL,error='Interpreting human REDO feedback semantically before choosing the correction.',nextTry=0,runtimeAttemptCount=0,updatedAt=? WHERE id=?")
+ db.prepare("UPDATE factory_items SET status='feedback_wait',revision=?,reviewFeedback=?,retryStrategy='ai_pending',reviewRetryToken=?,reviewRetrySubmittedToken=NULL,reviewInterpretation=NULL,reviewInterpretationAt=NULL,transportPreflight=NULL,providerRunId=NULL,flowResult=NULL,videoPath=NULL,remoteUrl=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewContentHash=NULL,error='Human REDO requested: replacement creative package required; semantic AI interpretation pending.',nextTry=0,runtimeAttemptCount=0,updatedAt=? WHERE id=?")
    .run(rev,feedback,token,stamp,r.id);
  metaSet('flow:generationLifecycle:'+r.id,JSON.stringify({
    state:'FEEDBACK_AI_PENDING',generation_id:null,generation_started_at:null,submit_boundary_at:null,
