@@ -68,6 +68,9 @@ for(const [token,label] of [
   ['FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIRED','legacy successful-render backoff repair'],
   ['FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIRED_V2','post-success provider streak repair v2'],
   ['flow:legacyNoChargeStreakMigratedV2','legacy streak resurrection guard'],
+  ['openStrictSinglePostBaselineTile','strict single post-baseline tile recovery'],
+  ['same-session-exactly-one-newest-tile','same-session recovery proof'],
+  ['FLOW_STRICT_RECOVERY_PROOF_REQUIRED','strict recovery proof gate'],
   ["status IN ('review','completed')",'successful retained render daily accounting'],
   ["if(providerCooldown>Date.now())return null",'provider cooldown submit gate']
 ]) has(provider,token,label);
@@ -83,6 +86,9 @@ has(runtimeConfig,'materializeCreativePackage','atomic prompt/title/description 
 has(runtimeConfig,'validateEpisodePrompt','Show Bible prompt validator');
 has(runtimeConfig,'SHOW_BIBLE_REQUIRED','Show Bible hard requirement');
 has(runtimeConfig,'PROMPT_QUALITY_GATE','nonempty prompt quality gate');
+has(runtimeConfig,'earthIdeaConflict','Earth catalog-wide uniqueness matcher');
+has(runtimeConfig,'EARTH_UNIQUE_IDEA_BANK_EXHAUSTED','Earth no-repeat exhaustion guard');
+has(runtimeConfig,'EARTH_DUPLICATE_LANDSCAPE_BLOCKED','Earth duplicate landscape hard gate');
 
 const init=read('runtime-init.js');
 has(init,'runtime_knowledge','runtime knowledge table');
@@ -109,6 +115,9 @@ has(server,'monotonic_provider_cooldown:true','monotonic provider cooldown healt
 has(server,'successful_render_resets_provider_backoff:true','successful render resets provider backoff');
 has(server,'successful_redos_count_toward_daily_target:true','successful REDO renders count toward daily target');
 has(server,'legacy_streak_resurrection_guard:true','legacy streak resurrection guard');
+has(server,'strict_post_submit_recovery_match:true','strict post-submit recovery invariant');
+has(server,'catalog_wide_creative_uniqueness:true','catalog-wide creative uniqueness invariant');
+has(server,'no_landscape_repeat_cycle:true','no landscape repeat cycle invariant');
 has(server,'show_specific_repairs_isolated:true','show-specific repair isolation health invariant');
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
