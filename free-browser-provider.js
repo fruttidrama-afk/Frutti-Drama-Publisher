@@ -213,9 +213,22 @@ function pendingReviewCount(db,day=artDay()){
   }catch{}
   return count;
 }
+function immutableAutomaticStarts(db,day=artDay()){
+  return Math.max(0,Number(meta(db,'automation:confirmedAutomaticStarts:'+day,'0'))||0);
+}
+function recordAutomaticStart(db,runId,startedAt){
+  const day=artDay(new Date(startedAt)),key='automation:confirmedAutomaticRun:'+String(runId);
+  if(meta(db,key,'')==='1')return;
+  setMeta(db,key,'1');
+  setMeta(db,'automation:confirmedAutomaticStarts:'+day,String(immutableAutomaticStarts(db,day)+1));
+}
 function effectiveDailyCount(db,day=artDay()){
   const approvedPlusReview=approvedPublicationCount(db,day)+pendingReviewCount(db,day);
-  return Math.max(dailyGenerationCount(db,day),retainedDailyCount(db,day),approvedPlusReview);
+  // Hard credit-safety floor: once an automatic Flow render is confirmed
+  // started, that slot is spent for the day and can never be reopened by a
+  // reset/recovery/delete. Only an explicit REDO or Generate Extra may exceed
+  // the autonomous target.
+  return Math.max(dailyGenerationCount(db,day),retainedDailyCount(db,day),approvedPlusReview,immutableAutomaticStarts(db,day));
 }
 function ensureConfirmedGenerationAccounting(db){
   try{
@@ -2633,6 +2646,7 @@ async function processRow(db,row){
     }
     resetNoChargeBackoff(db,row);
     const startedAt=now();lc=setLifecycle(db,row,'GENERATION_STARTED',{generation_id:genId,generation_started_at:startedAt,generation_session_instance:INSTANCE_ID,submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,automatic_submit_forbidden:true});
+    if(!reviewerRetry)recordAutomaticStart(db,genId,startedAt);
     try{db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)").run(randomUUID(),row.id,artDay(new Date(startedAt)),sha(cp.hash+':'+genId),CREDITS_PER_GENERATION,'running',genId,startedAt,startedAt,reviewerRetry?'review_retry':'automatic')}catch{}
     setMeta(db,'flow:lastSuccessfulGenerationAt',startedAt);publish('FLOW_RENDER_CONFIRMED',{episode:'E'+row.episode,job_id:row.id,generation_id:genId,evidence:started.evidence});return await retrieveExisting(page,row,cp,lc,db);
   }finally{await session.close().catch(()=>{})}
