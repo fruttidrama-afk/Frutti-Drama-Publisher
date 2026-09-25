@@ -23,3 +23,13 @@ See the canonical master SOP, sections 5 and 30–31. Core catalog:
 - FLOW-ERR-018 NO_CHARGE_RETRY_STORM — repeated automatic submissions continue after Google Flow explicitly reports unusual activity and confirms no charge, risking provider throttling and permanently blocking the serial head-of-line. Recovery: preserve the same episode, do not click Flow's failed-tile Retry inside the same attempt, record a per-episode no-charge streak, and enforce the global provider-wide sequence 30m → 1h → 2h → 4h → 8h. Because the next doubling would exceed the 10-hour ceiling, every further consecutive unusual-activity rejection waits 24h before retrying. A confirmed retained render resets the provider streak and releases stale cooldown rows. Successful REDO renders count toward the same daily generation total. The streak is provider/account-wide rather than per episode. No other draft/REDO may bypass the cooldown, and stale rows may never shorten an active cooldown; reset the provider streak only after hard generation-start evidence.
 
 Canonical recovery rule: UNCERTAINTY → RECONCILE; NEVER BLINDLY RESUBMIT.
+
+## WRONG_FLOW_ASSET_RECOVERY_IDENTITY
+
+**Symptom:** Flow generated the intended episode, but Review displayed an older video from the same project under the new episode metadata.
+
+**Root cause:** DOM position and grid-count deltas are not media identity. Flow can reorder and virtualize a fixed-size grid, so selecting the first visible tile (or trusting a visible Download button) can open a stale asset.
+
+**Permanent rule:** recovery is identity-first. Capture stable tile/media identifiers before selection, diff the post-submit grid against the baseline as a multiset, reject any `assetId` already present in `flow_recovered_assets`, re-read the same tile identity immediately before click, and persist the selected `flow_asset_id` with the Review item. After download, reject any SHA-256 already bound to another episode or listed in `flow_rejected_media_hashes`. A targeted recovery token is retrieval-only and must never fall through to Generate.
+
+**Recovery of an already-generated correct render:** keep generation locked; select the unique unused Flow asset that matches the episode terms and the submit baseline, download that existing asset, validate it, and replace the wrong Review media. Never regenerate merely because recovery was wrong.
