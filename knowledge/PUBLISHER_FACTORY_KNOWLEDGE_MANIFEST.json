@@ -1,8 +1,8 @@
 {
   "package": "PUBLISHER_FACTORY_FLOW_KNOWLEDGE_PACK",
   "version": "FLOW-SOP-v1.0",
-  "master_sha256": "8172f4b415e516fb1ec211a338ef7872740d7931adfbc5ab31572344a5bc9162",
-  "master_git_blob_sha": "80bcfb73460d736b6f2accdf653cbe1f4f43690f",
+  "master_sha256": "9e475a5f610cbbaa2940e1f1353e5316bea8cfd7febf7423b0ece603788c874c",
+  "master_git_blob_sha": "4c42a8f34554d5da3cd268f490f17c9e2aefda7c",
   "mandatory_for_every_generated_publisher": true,
   "files": [
     "knowledge/GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md",
@@ -23,6 +23,11 @@
     "final_metadata_before_review": true,
     "synthetic_media_disclosure": true,
     "semantic_redo_interpretation": true,
-    "post_submit_timeout_resubmit": false
+    "post_submit_timeout_resubmit": false,
+    "daily_flow_credit_refresh_gate": true,
+    "calendar_midnight_opens_batch": false,
+    "daily_flow_credit_grant": 50,
+    "paid_monthly_credits_protected_until_daily_refresh": true,
+    "credit_cycle_persistent": true
   }
 }
