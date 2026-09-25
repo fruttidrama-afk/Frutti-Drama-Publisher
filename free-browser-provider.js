@@ -844,6 +844,13 @@ async function clickRadio(page,re,label){
   }
   throw new Error('FLOW_SETTING_NOT_FOUND:'+label+':'+compact(await getBody(page),900));
 }
+async function clickOptionalSetting(page,re,label){
+  try{await clickRadio(page,re,label);return true}
+  catch(e){
+    if(String(e?.message||e).startsWith('FLOW_SETTING_NOT_FOUND:'+label+':'))return false;
+    throw e;
+  }
+}
 async function configureFlow(page){
   await waitFlowReady(page,60000);
   await ensureSettingsOpen(page);
@@ -891,8 +898,10 @@ async function configureFlow(page){
     currentModel='Omni 1.1 Flash';
   }
 
-  await clickRadio(page,/720p/i,'720p');
-  await clickRadio(page,/^10\s*s$/i,'10s');
+  // Current Flow/Omni UI may not expose resolution or duration controls.
+  // Treat those as model defaults when absent; ratio/model/output-count remain hard gates.
+  const resolutionApplied=await clickOptionalSetting(page,/720p/i,'720p');
+  const durationApplied=await clickOptionalSetting(page,/^10\s*s$/i,'10s');
   await clickRadio(page,/^x?\s*1$/i,'x1');
 
   let label='';
@@ -908,10 +917,10 @@ async function configureFlow(page){
   try{summary=compact(await(await settingsButton(page)).innerText(),340)||summary}catch{}
   const body=compact(await getBody(page),5000);
   const combined=summary+' '+body;
-  if(!/video/i.test(combined)||!/720p/i.test(combined)||!/(?:10\s*s|10s)/i.test(combined)||!/(?:9\s*:\s*16|9_16|crop_9_16)/i.test(combined)||!(/\bx1\b/i.test(combined)||/\bx\s*1\b/i.test(combined))){
+  if(!/video/i.test(combined)||!/(?:9\s*:\s*16|9_16|crop_9_16)/i.test(combined)||!(/\bx1\b/i.test(combined)||/\bx\s*1\b/i.test(combined))){
     throw new Error('FLOW_SETTINGS_NOT_CONFIRMED:'+compact(summary||body,700));
   }
-  const applied={label:summary||'settings-applied',mode:'Video',ratio:'9:16',model:'Omni 1.1 Flash',resolution:'720p',duration:'10s',count:'x1',ingredients:false};
+  const applied={label:summary||'settings-applied',mode:'Video',ratio:'9:16',model:'Omni 1.1 Flash',resolution:resolutionApplied?'720p':'model-default',duration:durationApplied?'10s':'prompt/model-default',count:'x1',ingredients:false};
   publish('FLOW_SETTINGS_APPLIED',{message:JSON.stringify(applied)});
   return applied;
 }
