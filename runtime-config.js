@@ -266,19 +266,56 @@ export function buildPrompt(db,row,visual=[]){
   return out.trim();
 }
 const EARTH_IN_10_AUTONOMOUS_EPISODES=[
-  {hook:'ICELAND BLACK SAND',story:'A cinematic sunrise on Iceland’s black volcanic coast. Cold Atlantic waves roll across glossy black sand beneath towering basalt sea stacks while pale golden light breaks through low clouds and sea mist.'},
-  {hook:'ZHANGJIAJIE MIST',story:'A cinematic flight-like push through China’s Zhangjiajie sandstone pillars at dawn. Layers of tall quartz-sandstone towers emerge from drifting white mist while soft morning light creates immense atmospheric depth.'},
-  {hook:'UYUNI MIRROR',story:'A cinematic sunrise over Bolivia’s Salar de Uyuni after rain. A perfectly thin sheet of water turns the salt flat into an endless mirror, reflecting pastel clouds and distant mountains with a seamless horizon.'},
-  {hook:'FAROE CLIFFS',story:'A dramatic cinematic view of the Faroe Islands. Deep green sea cliffs fall into the North Atlantic as a narrow waterfall blows sideways in ocean wind beneath moving storm-light and mist.'},
-  {hook:'DOLOMITES DAWN',story:'A cinematic dawn in the Italian Dolomites. Jagged pale-rock peaks catch warm alpenglow above a quiet alpine valley while thin clouds slide naturally across the mountain faces.'},
-  {hook:'LENÇÓIS LAGOONS',story:'A cinematic aerial-style push across Brazil’s Lençóis Maranhenses. Brilliant blue seasonal lagoons sit between sweeping white dunes under clean tropical light, with wind tracing subtle patterns across the sand.'},
-  {hook:'MILFORD SOUND',story:'A cinematic rainy morning in New Zealand’s Milford Sound. Sheer dark cliffs rise from calm water while dozens of temporary waterfalls stream through low clouds and drifting mist.'},
-  {hook:'ATACAMA STARS',story:'A cinematic blue-hour transition in Chile’s Atacama Desert. Rust-colored mountains and salt flats sit beneath an exceptionally clear deepening sky as the first bright stars become visible above the silent landscape.'},
-  {hook:'PLITVICE WATER',story:'A cinematic glide through Croatia’s Plitvice Lakes. Crystal turquoise water spills over moss-covered limestone terraces into layered pools surrounded by dense green forest and soft natural haze.'},
-  {hook:'LOFOTEN LIGHT',story:'A cinematic Arctic sunrise in Norway’s Lofoten Islands. Sharp snow-covered peaks rise directly from calm blue water while warm low-angle light reaches a tiny curve of untouched shoreline.'},
-  {hook:'SOCOTRA DRAGONS',story:'A cinematic golden-hour landscape on Socotra Island, Yemen. Strange dragon’s-blood trees stand across a rocky plateau above a distant turquoise sea, rendered with documentary-level realism.'},
-  {hook:'TORRES DEL PAINE',story:'A cinematic dawn in Torres del Paine, Chile. Granite towers rise beyond a windswept turquoise lake while fast Patagonian clouds reveal brief shafts of warm sunrise light.'}
+  {hook:'ICELAND BLACK SAND',place:'Reynisfjara Iceland',family:'black-volcanic-beach-seastacks',story:'A cinematic sunrise on Iceland’s black volcanic coast. Cold Atlantic waves roll across glossy black sand beneath towering basalt sea stacks while pale golden light breaks through low clouds and sea mist.'},
+  {hook:'ZHANGJIAJIE MIST',place:'Zhangjiajie China',family:'sandstone-pillars-mist',story:'A cinematic flight-like push through China’s Zhangjiajie sandstone pillars at dawn. Layers of tall quartz-sandstone towers emerge from drifting white mist while soft morning light creates immense atmospheric depth.'},
+  {hook:'UYUNI MIRROR',place:'Salar de Uyuni Bolivia',family:'mirror-salt-flat',story:'A cinematic sunrise over Bolivia’s Salar de Uyuni after rain. A perfectly thin sheet of water turns the salt flat into an endless mirror, reflecting pastel clouds and distant mountains with a seamless horizon.'},
+  {hook:'FAROE CLIFFS',place:'Faroe Islands',family:'green-sea-cliff-waterfall',story:'A dramatic cinematic view of the Faroe Islands. Deep green sea cliffs fall into the North Atlantic as a narrow waterfall blows sideways in ocean wind beneath moving storm-light and mist.'},
+  {hook:'DOLOMITES DAWN',place:'Dolomites Italy',family:'pale-alpine-spires',story:'A cinematic dawn in the Italian Dolomites. Jagged pale-rock peaks catch warm alpenglow above a quiet alpine valley while thin clouds slide naturally across the mountain faces.'},
+  {hook:'LENÇÓIS LAGOONS',place:'Lencois Maranhenses Brazil',family:'white-dunes-blue-lagoons',story:'A cinematic aerial-style push across Brazil’s Lençóis Maranhenses. Brilliant blue seasonal lagoons sit between sweeping white dunes under clean tropical light, with wind tracing subtle patterns across the sand.'},
+  {hook:'MILFORD SOUND',place:'Milford Sound New Zealand',family:'fjord-cliffs-many-waterfalls',story:'A cinematic rainy morning in New Zealand’s Milford Sound. Sheer dark cliffs rise from calm water while dozens of temporary waterfalls stream through low clouds and drifting mist.'},
+  {hook:'ATACAMA STARS',place:'Atacama Desert Chile',family:'high-desert-starry-blue-hour',story:'A cinematic blue-hour transition in Chile’s Atacama Desert. Rust-colored mountains and salt flats sit beneath an exceptionally clear deepening sky as the first bright stars become visible above the silent landscape.'},
+  {hook:'PLITVICE WATER',place:'Plitvice Lakes Croatia',family:'forest-limestone-cascade-pools',story:'A cinematic glide through Croatia’s Plitvice Lakes. Crystal turquoise water spills over moss-covered limestone terraces into layered pools surrounded by dense green forest and soft natural haze.'},
+  {hook:'LOFOTEN LIGHT',place:'Lofoten Islands Norway',family:'arctic-peaks-calm-sea',story:'A cinematic Arctic sunrise in Norway’s Lofoten Islands. Sharp snow-covered peaks rise directly from calm blue water while warm low-angle light reaches a tiny curve of untouched shoreline.'},
+  {hook:'SOCOTRA DRAGONS',place:'Socotra Yemen',family:'dragon-blood-tree-plateau',story:'A cinematic golden-hour landscape on Socotra Island, Yemen. Strange dragon’s-blood trees stand across a rocky plateau above a distant turquoise sea, rendered with documentary-level realism.'},
+  {hook:'TORRES DEL PAINE',place:'Torres del Paine Chile',family:'granite-towers-turquoise-lake',story:'A cinematic dawn in Torres del Paine, Chile. Granite towers rise beyond a windswept turquoise lake while fast Patagonian clouds reveal brief shafts of warm sunrise light.'},
+  {hook:'NAICA CRYSTALS',place:'Naica Crystal Cave Mexico',family:'giant-crystal-cave',story:'A cinematic glide through Mexico’s Naica Crystal Cave. Colossal translucent selenite crystals cross the cavern like frozen beams while warm mineral light reveals immense scale and crystalline depth.'},
+  {hook:'BAIKAL BLUE ICE',place:'Lake Baikal Russia',family:'clear-blue-lake-ice-cracks',story:'A cinematic winter crossing of Lake Baikal. Transparent blue ice stretches to the horizon with deep white fracture lines beneath the surface and low amber sunlight skimming across the frozen lake.'},
+  {hook:'RAJA AMPAT KARSTS',place:'Raja Ampat Indonesia',family:'tropical-karst-islets',story:'A cinematic aerial glide above Raja Ampat. Hundreds of steep jungle-covered limestone islets rise from luminous turquoise water with coral shallows visible beneath a humid tropical sky.'},
+  {hook:'RORAIMA CLOUDS',place:'Mount Roraima Venezuela',family:'tabletop-mountain-cloudfalls',story:'A cinematic reveal of Mount Roraima. The enormous flat-topped tepui rises above a sea of clouds while thin waterfalls spill from its vertical walls into mist far below.'},
+  {hook:'REDWOOD FOG',place:'Redwood National Park California',family:'giant-redwood-fog-forest',story:'A slow cinematic push through a coastal redwood forest in California. Monumental trunks disappear into cool fog while soft shafts of morning light reach a fern-covered forest floor.'},
+  {hook:'KAWAH IJEN BLUE FIRE',place:'Kawah Ijen Indonesia',family:'volcano-blue-fire-night',story:'A cinematic night view inside Indonesia’s Kawah Ijen crater. Electric-blue sulfur flames flicker along dark volcanic rock while pale acidic crater water glows faintly beneath drifting vapor.'},
+  {hook:'GREAT BLUE HOLE',place:'Great Blue Hole Belize',family:'circular-ocean-sinkhole-aerial',story:'A perfectly vertical cinematic aerial over Belize’s Great Blue Hole. A vast dark cobalt circle drops through bright turquoise reef water, revealing its geometric scale against the Caribbean sea.'},
+  {hook:'PAMUKKALE WHITE',place:'Pamukkale Turkey',family:'white-travertine-terraces',story:'A cinematic side glide across Pamukkale’s white travertine terraces in Turkey. Shallow mineral pools step down brilliant chalk-white formations under clean late-afternoon light.'},
+  {hook:'ANTelope CANYON LIGHT',place:'Antelope Canyon Arizona',family:'slot-canyon-light-beams',story:'A cinematic passage through Antelope Canyon. Smooth red-orange sandstone walls twist around a narrow slot while a single shaft of sunlight cuts through suspended dust from far above.'},
+  {hook:'SVALBARD ICE WALL',place:'Svalbard Norway',family:'glacier-ice-wall-arctic-sea',story:'A cinematic Arctic approach to a Svalbard glacier front. A towering blue-white ice wall meets dark polar water as small fragments calve naturally beneath a cold overcast sky.'},
+  {hook:'BANaUE TERRACES',place:'Banaue Philippines',family:'green-rice-terraces-mountains',story:'A cinematic morning sweep across the Banaue rice terraces. Layered emerald fields contour steep mountainsides while thin fog lifts from the valley and water glints along the terrace edges.'},
+  {hook:'DANXIA RAINBOW',place:'Zhangye Danxia China',family:'rainbow-banded-mountains',story:'A cinematic sunrise over Zhangye Danxia. Vast mountains display natural bands of red, gold, orange and gray rock as low-angle light reveals folded geological layers across the landscape.'},
+  {hook:'IGUAZU THUNDER',place:'Iguazu Falls Argentina Brazil',family:'mega-waterfall-rainforest',story:'A cinematic wide reveal of Iguazú Falls. Hundreds of powerful cascades break through dense subtropical forest while rising mist catches sunlight above the immense river gorge.'},
+  {hook:'MARBLE CAVES',place:'Marble Caves Chile',family:'blue-marble-water-cavern',story:'A cinematic boat-level glide inside Chile’s Marble Caves. Swirling blue-and-white stone arches reflect in intensely turquoise water while soft daylight enters through openings in the rock.'},
+  {hook:'CHOCOLATE HILLS',place:'Chocolate Hills Bohol Philippines',family:'rounded-green-karst-hills',story:'A cinematic aerial drift above Bohol’s Chocolate Hills during the green season. Hundreds of nearly symmetrical rounded hills repeat across the horizon beneath soft tropical cloud shadows.'},
+  {hook:'Dallol COLORS',place:'Dallol Ethiopia',family:'neon-geothermal-mineral-field',story:'A cinematic ground-level reveal of Dallol in Ethiopia. Neon yellow, green and orange mineral terraces surround steaming acidic pools in an otherworldly but geologically realistic geothermal field.'},
+  {hook:'CAPPADOCIA DAWN',place:'Cappadocia Turkey',family:'fairy-chimneys-balloons',story:'A cinematic dawn over Cappadocia. Sculpted fairy-chimney rock formations fill a broad valley while a few distant hot-air balloons rise slowly through warm morning haze.'},
+  {hook:'PERITO MORENO',place:'Perito Moreno Glacier Argentina',family:'glacier-face-turquoise-lake',story:'A cinematic lateral view of Perito Moreno Glacier in Patagonia. A massive fractured blue ice face rises above milky turquoise water while distant mountains remain sharply visible in cold clear air.'},
+  {hook:'TSINGY LIMESTONE',place:'Tsingy de Bemaraha Madagascar',family:'razor-limestone-forest',story:'A cinematic aerial push over Madagascar’s Tsingy de Bemaraha. Endless razor-sharp gray limestone pinnacles form a stone forest cut by narrow green fissures and isolated vegetation.'},
+  {hook:'WAITOMO GLOW',place:'Waitomo Glowworm Caves New Zealand',family:'glowworm-cave-river',story:'A cinematic glide through Waitomo’s underground river. Thousands of blue-green glowworms illuminate the cave ceiling like a living night sky above black water and sculpted limestone.'},
+  {hook:'KELIMUTU CRATERS',place:'Kelimutu Indonesia',family:'multi-color-crater-lakes',story:'A cinematic sunrise over Mount Kelimutu. Three volcanic crater lakes with naturally different colors sit inside dark ridges as mountain mist withdraws from the rims.'},
+  {hook:'CAÑO CRISTALES',place:'Cano Cristales Colombia',family:'multicolor-river-plants',story:'A cinematic low flight along Colombia’s Caño Cristales. Clear water moves over red, yellow and green aquatic plants between smooth rock shelves, creating a naturally multicolored river.'},
+  {hook:'SALTO ANGEL',place:'Angel Falls Venezuela',family:'single-tall-waterfall-tepui',story:'A cinematic telephoto reveal of Angel Falls. A single impossibly tall ribbon of water drops from a sheer tepui into tropical cloud and spray before reaching the forest far below.'},
+  {hook:'NAMAKWA BLOOM',place:'Namaqualand South Africa',family:'desert-wildflower-carpet',story:'A cinematic spring landscape in Namaqualand. Vast dry plains are suddenly carpeted in dense orange, yellow and purple wildflowers beneath a huge clean South African sky.'},
+  {hook:'OKAVANGO CHANNELS',place:'Okavango Delta Botswana',family:'wetland-channels-aerial',story:'A cinematic aerial over the Okavango Delta. Bright green wetlands are divided by winding blue channels and small palm islands, forming an intricate natural pattern across the floodplain.'},
+  {hook:'BROMO SEA OF CLOUDS',place:'Mount Bromo Indonesia',family:'volcanic-caldera-cloud-sea',story:'A cinematic dawn above Mount Bromo. A smoking volcanic cone rises from a vast caldera filled with low cloud while sharper peaks catch warm sunrise light in the distance.'},
+  {hook:'LAKE NATRON RED',place:'Lake Natron Tanzania',family:'red-alkaline-lake-patterns',story:'A cinematic aerial over Tanzania’s Lake Natron. Crimson and coral mineral patterns spread across shallow alkaline water, divided by pale salt lines and dark volcanic shoreline.'},
+  {hook:'MOUNT COOK GLACIAL',place:'Aoraki Mount Cook New Zealand',family:'glacial-valley-braided-river',story:'A cinematic valley push toward Aoraki Mount Cook. A pale braided glacial river winds across a broad gravel valley beneath snow-covered peaks and crisp alpine cloud.'},
+  {hook:'HUANGSHAN PINES',place:'Huangshan China',family:'granite-peaks-pine-cloudsea',story:'A cinematic sunrise in Huangshan. Sculpted granite peaks and wind-shaped pine trees rise above a glowing sea of clouds while distant ridges fade into atmospheric layers.'},
+  {hook:'JÖKULSÁRLÓN ICE',place:'Jokulsarlon Iceland',family:'iceberg-lagoon-black-shore',story:'A cinematic blue-hour view of Jökulsárlón. Sculpted icebergs drift through a dark glacial lagoon toward a black shoreline, glowing blue against subdued Arctic light.'},
+  {hook:'GIANTS CAUSEWAY',place:'Giants Causeway Northern Ireland',family:'hexagonal-basalt-coast',story:'A cinematic low glide across Giant’s Causeway. Thousands of wet hexagonal basalt columns step toward a rough gray Atlantic beneath dramatic moving cloud.'},
+  {hook:'MEKONG WATERFALL',place:'Khone Phapheng Laos',family:'wide-river-rapids-islands',story:'A cinematic aerial reveal of Khone Phapheng on the Mekong. Powerful braided rapids split around dark rock islands and green vegetation across an exceptionally wide river corridor.'},
+  {hook:'DEADVLEI SKELETONS',place:'Deadvlei Namibia',family:'white-clay-black-trees-red-dunes',story:'A cinematic midday composition at Deadvlei. Black skeletal camel-thorn trees stand on a white clay pan beneath immense red dunes and a hard cobalt sky with stark natural contrast.'},
+  {hook:'MENDENHALL ICE CAVE',place:'Mendenhall Glacier Alaska',family:'blue-ice-cave-river',story:'A cinematic passage beneath Alaska’s Mendenhall Glacier. Translucent blue ice arches over a shallow meltwater stream while trapped bubbles and layered ice textures glow from within.'},
+  {hook:'WULINGYUAN BRIDGE',place:'Tianzi Mountain China',family:'stone-bridge-cloud-valley',story:'A cinematic reveal of a natural stone bridge high above a cloud-filled valley near Tianzi Mountain, with steep forested rock walls disappearing into white mist.'},
+  {hook:'SAKURA FUJI',place:'Mount Fuji Japan',family:'volcano-cherry-blossom-lake',story:'A cinematic spring dawn facing Mount Fuji. Snow-capped volcanic symmetry rises beyond a calm lake while foreground cherry blossoms move gently in cool morning air.'}
 ];
+
 function earthConfiguredSpecificInitialCount(){
   return (CONFIG.content.initial_episodes||[]).filter(v=>{
     const hook=Array.isArray(v)?String(v[0]||''):String(v?.hook||v?.title||'');
@@ -286,10 +323,82 @@ function earthConfiguredSpecificInitialCount(){
     return !(/^NEXT CHAPTER$/i.test(hook.trim())||/Continue the configured Creative Bible and canon from the previous accepted beat/i.test(story));
   }).length;
 }
-function earthIn10Idea(episode){
-  const i=Math.max(0,Number(episode)-earthConfiguredSpecificInitialCount()-1);
-  return EARTH_IN_10_AUTONOMOUS_EPISODES[i%EARTH_IN_10_AUTONOMOUS_EPISODES.length];
+function earthNorm(v){
+  return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 }
+function earthWords(v){
+  const stop=new Set(['cinematic','cinema','video','episode','earth','show','bible','generate','exactly','seconds','second','with','from','into','while','under','above','below','across','through','their','this','that','realistic','hyperrealistic','natural','light','view','glide','reveal','morning','sunrise','dawn','late','early']);
+  return new Set((earthNorm(v).match(/[a-z0-9]{4,}/g)||[]).filter(x=>!stop.has(x)));
+}
+function earthJaccard(a,b){
+  const A=earthWords(a),B=earthWords(b);if(!A.size||!B.size)return 0;
+  let hit=0;for(const x of A)if(B.has(x))hit++;
+  return hit/(A.size+B.size-hit);
+}
+const EARTH_VISUAL_TAGS=[
+  ['desert',/desert|dune|sand|arid|deadvlei|atacama|namib/i],
+  ['saltflat',/salt flat|salt pan|salar|uyuni|alkaline/i],
+  ['coast',/coast|shore|beach|atlantic|sea stack|ocean/i],
+  ['cliff',/cliff|sheer wall|vertical wall|sea cliff/i],
+  ['waterfall',/waterfall|falls|cascade|cascades/i],
+  ['forest',/forest|redwood|jungle|rainforest|trees|pine/i],
+  ['lake',/lake|lagoon|pool|water/i],
+  ['mountain',/mountain|peak|peaks|alpine|granite tower|tepui/i],
+  ['karst',/karst|limestone|pillar|pinnacle|fairy chimney/i],
+  ['cave',/cave|cavern|underground|slot canyon/i],
+  ['ice',/ice|glacier|frozen|iceberg|snow/i],
+  ['volcano',/volcan|crater|caldera|sulfur/i],
+  ['wetland',/wetland|delta|floodplain|channels/i],
+  ['terrace',/terrace|terraces|rice fields/i],
+  ['river',/river|rapids|braided/i],
+  ['geothermal',/geothermal|acidic pools|mineral field|hot spring/i]
+];
+function earthVisualTags(v){const s=String(v||'');return new Set(EARTH_VISUAL_TAGS.filter(([,re])=>re.test(s)).map(([k])=>k))}
+function earthCandidateForText(v){
+  const n=earthNorm(v);
+  let best=null,bestScore=0;
+  for(const x of EARTH_IN_10_AUTONOMOUS_EPISODES){
+    const h=earthNorm(x.hook),p=earthNorm(x.place);
+    const score=(h&&n.includes(h)?4:0)+(p&&n.includes(p)?5:0)+earthJaccard(v,x.story)*3;
+    if(score>bestScore){best=x;bestScore=score}
+  }
+  return bestScore>=2?best:null;
+}
+function earthIdeaConflict(db,row,candidate){
+  const mine=[candidate.hook,candidate.place,candidate.story].join(' ');
+  const myHook=earthNorm(candidate.hook),myPlace=earthNorm(candidate.place),myTags=earthVisualTags(mine);
+  const rows=db.prepare("SELECT id,episode,status,hook,story,title,description,prompt FROM factory_items WHERE id<>? ORDER BY episode").all(row.id);
+  for(const other of rows){
+    const text=[other.hook,other.story,other.title,other.description,other.prompt].filter(Boolean).join(' ');
+    if(!text.trim())continue;
+    const n=earthNorm(text);
+    if(myHook&&n.includes(myHook))return{other,reason:'same-hook'};
+    if(myPlace&&n.includes(myPlace))return{other,reason:'same-place'};
+    const known=earthCandidateForText(text);
+    if(known&&known.family===candidate.family)return{other,reason:'same-visual-family'};
+    const jac=earthJaccard(mine,text);
+    if(jac>=0.36)return{other,reason:'semantic-overlap:'+jac.toFixed(2)};
+    const tags=earthVisualTags(text);let overlap=0;for(const t of myTags)if(tags.has(t))overlap++;
+    if(overlap>=2&&jac>=0.16)return{other,reason:'visual-overlap:'+overlap+':'+jac.toFixed(2)};
+  }
+  return null;
+}
+function earthIn10Idea(db,row){
+  const base=Math.max(0,Number(row?.episode||0)-earthConfiguredSpecificInitialCount()-1);
+  for(let step=0;step<EARTH_IN_10_AUTONOMOUS_EPISODES.length;step++){
+    const x=EARTH_IN_10_AUTONOMOUS_EPISODES[(base+step)%EARTH_IN_10_AUTONOMOUS_EPISODES.length];
+    if(!earthIdeaConflict(db,row,x))return x;
+  }
+  throw new Error('CONTENT_GATE: EARTH_UNIQUE_IDEA_BANK_EXHAUSTED — refusing to repeat a landscape.');
+}
+function earthCurrentIntentConflict(db,row){
+  const text=[row?.hook,row?.story,row?.title,row?.description,row?.prompt].filter(Boolean).join(' ');
+  const known=earthCandidateForText(text);
+  if(known)return earthIdeaConflict(db,row,known);
+  const candidate={hook:String(row?.hook||''),place:String(row?.hook||''),family:'legacy:'+earthNorm(row?.hook||''),story:String(row?.story||'')};
+  return earthIdeaConflict(db,row,candidate);
+}
+
 function isEarthIn10(){return /earth\s*in\s*10/i.test(String(SHOW||CONFIG.identity?.show_name||''));}
 function isGenericAutonomousIdea(hook,story){
   return /^NEXT CHAPTER$/i.test(String(hook||'').trim())||/Continue the configured Creative Bible and canon from the previous accepted beat/i.test(String(story||''));
@@ -321,13 +430,21 @@ export function enforceEpisodeIntent(db,row){
   const staleGenericPrompt=/HOOK:\s*NEXT CHAPTER/i.test(prompt)||/EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(prompt);
   let repaired=false,reason=null;
   if(genericIntent){
-    const idea=isEarthIn10()?earthIn10Idea(Number(row.episode)):ideaForEpisode(Number(row.episode));
+    const idea=isEarthIn10()?earthIn10Idea(db,row):ideaForEpisode(Number(row.episode));
     if(!idea||isGenericAutonomousIdea(idea.hook,idea.story)){
       throw new Error('CONTENT_GATE: concrete episode intent required before Flow generation; internal NEXT CHAPTER planner placeholders are forbidden.');
     }
     db.prepare("UPDATE factory_items SET hook=?,story=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
       .run(idea.hook,idea.story,new Date().toISOString(),row.id);
     repaired=true;reason=isEarthIn10()?'generic-earth-intent-replaced':'generic-configured-intent-replaced';
+  }else if(isEarthIn10()&&!forced){
+    const conflict=earthCurrentIntentConflict(db,row);
+    if(conflict){
+      const idea=earthIn10Idea(db,row);
+      db.prepare("UPDATE factory_items SET hook=?,story=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
+        .run(idea.hook,idea.story,new Date().toISOString(),row.id);
+      repaired=true;reason='earth-duplicate-intent-replaced:'+conflict.reason;
+    }
   }else if(staleGenericPrompt){
     db.prepare("UPDATE factory_items SET prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
       .run(new Date().toISOString(),row.id);
@@ -335,6 +452,10 @@ export function enforceEpisodeIntent(db,row){
   }
   const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);
   if(!fresh||isGenericAutonomousIdea(fresh.hook,fresh.story))throw new Error('CONTENT_GATE: concrete episode intent required before Flow generation.');
+  if(isEarthIn10()){
+    const conflict=earthCurrentIntentConflict(db,fresh);
+    if(conflict)throw new Error('CONTENT_GATE: EARTH_DUPLICATE_LANDSCAPE_BLOCKED:'+conflict.reason+':other_episode='+conflict.other.episode);
+  }
   return{row:fresh,repaired,reason};
 }
 
