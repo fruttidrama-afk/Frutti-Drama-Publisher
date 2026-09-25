@@ -1774,7 +1774,7 @@ async function openLatestExpectedVideoTile(page,baselineInv){
   return{ready:false,opened:false,signal:`latest-video-tile-no-download:${visible.length};expected:${expected}`};
 }
 
-async function openUniqueFreshInventoryResult(page,baselineInv){
+async function openUniqueFreshInventoryResult(page,baselineInv,{allowMultiple=false}={}){
   const tiles=page.locator('flow-grid-tile-container').filter({has:page.locator('flow-video-tile,video')});
   const count=Math.min(await tiles.count().catch(()=>0),120),baselineCount=Number(baselineInv?.video_tile_count||0);
   const baselineList=Array.isArray(baselineInv?.ordered_video_signatures)&&baselineInv.ordered_video_signatures.length
@@ -1792,7 +1792,10 @@ async function openUniqueFreshInventoryResult(page,baselineInv){
     const left=remaining.get(sig)||0;if(left>0){remaining.set(sig,left-1);continue}
     fresh.push({el,sig,i});
   }
-  if(fresh.length!==1)return{ready:false,opened:false,signal:`fresh-video-tile-occurrences:${fresh.length};video-dom-delta:${count-baselineCount}`};
+  if(fresh.length!==1){
+    const purePostBaselineBurst=allowMultiple&&fresh.length>1&&(count-baselineCount)===fresh.length;
+    if(!purePostBaselineBurst)return{ready:false,opened:false,signal:`fresh-video-tile-occurrences:${fresh.length};video-dom-delta:${count-baselineCount}`};
+  }
   const target=fresh[0].el;
   await target.scrollIntoViewIfNeeded().catch(()=>{});await target.hover().catch(()=>{});
   const footer=target.locator('flow-tile-hover-footer').first();
@@ -1800,7 +1803,7 @@ async function openUniqueFreshInventoryResult(page,baselineInv){
   else await target.click({force:true,timeout:5000}).catch(()=>{});
   await sleep(1000);
   const d=await visibleDownloadButton(page);
-  if(d)return{ready:true,opened:true,signal:'unique-fresh-video-inventory-tile',signature:fresh[0].sig,index:fresh[0].i};
+  if(d)return{ready:true,opened:true,signal:fresh.length===1?'unique-fresh-video-inventory-tile':('multi-fresh-post-baseline-recovery:'+fresh.length),signature:fresh[0].sig,index:fresh[0].i};
   await page.keyboard.press('Escape').catch(()=>{});
   return{ready:false,opened:false,signal:'unique-fresh-video-tile-no-download'};
 }
@@ -2341,7 +2344,7 @@ async function retrieveExisting(page,row,cp,lc,db){setLifecycle(db,row,'RETRIEVI
   const alreadyOpenDownload=await visibleDownloadButton(page).catch(()=>null);
   if(alreadyOpenDownload){await page.keyboard.press('Escape').catch(()=>{});await sleep(350);}
   lastVideos=await currentVideos(page);rendered=firstFreshRendered(lastVideos,baseline);if(rendered)break;const text=await getBody(page);if(flowCreditFailure(text))throw new Error('FLOW_INSUFFICIENT_CREDITS');if(/failed to generate|generation failed|couldn't generate|no se pudo generar/i.test(text))throw new Error('FLOW_GENERATION_FAILED');const stillBusy=/generating|processing|rendering|creating video|generando|procesando|upscaling/i.test(text);if(baselineInventory){
-  uiSignal=await openUniqueFreshInventoryResult(page,baselineInventory);
+  uiSignal=await openUniqueFreshInventoryResult(page,baselineInventory,{allowMultiple:true});
   if(Date.now()-lastHeartbeat<2500||!uiSignal?.ready)publish('RETRIEVAL_PROGRESS',{episode:'E'+row.episode,job_id:row.id,signal:uiSignal?.signal||'none',stillBusy,videos:lastVideos.length});
   if(uiSignal?.ready){rendered={uiReady:true,signal:uiSignal.signal,baselineInventory};break;}
   const noFresh=/fresh-video-tile-occurrences:0/.test(String(uiSignal?.signal||''));
