@@ -73,7 +73,12 @@ function fbError(json,status){
   err.code=Number(e.code||status||0);err.subcode=Number(e.error_subcode||0);err.fb=e;
   return err;
 }
-function isAuthError(e){return Number(e?.code)===190||/oauth|access token|session.*invalid/i.test(String(e?.message||''))}
+function isAuthError(e){
+  const code=Number(e?.code||0),msg=String(e?.message||'');
+  return code===190
+    ||(code===200&&/cannot call api for app .* on behalf of user/i.test(msg))
+    ||/oauth|access token|session.*invalid|permissions? error|reconnect facebook/i.test(msg);
+}
 function isRateLimit(e){return [4,17,32,613].includes(Number(e?.code))||/rate limit|too many/i.test(String(e?.message||''))}
 function canonical(row){
   const s=String(row.status||'').toLowerCase();
@@ -91,7 +96,7 @@ function publicItem(row){
 function safeAction(row){return String(row.status||'')==='auth_wait'}
 function hist(row,status,message=''){const h=JSON.parse(row.history||'[]');h.push({status,at:now(),message});row.history=JSON.stringify(h.slice(-120));row.status=status;row.updatedAt=now()}
 
-export function installFacebookPublication({db,config,dataDir,loadFacebookConnection,isEnabled=()=>true}){
+export function installFacebookPublication({db,config,dataDir,loadFacebookConnection,refreshFacebookConnection=null,isEnabled=()=>true}){
   const dir=path.join(dataDir,'facebook-publication');fs.mkdirSync(dir,{recursive:true,mode:0o700});
   for(const sql of [
     "ALTER TABLE publication_items ADD COLUMN provider TEXT",
@@ -170,24 +175,42 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     item.remotePrivacyStatus='processing';item.remotePublishAt=now();hist(item,'processing','Facebook accepted the Reel for publishing.');save(item);
   }
   async function publish(item){
-    const c=connection();
-    // Restart-safe phase machine:
-    // session-created -> uploaded -> processing -> published.
-    // Never repeat a completed phase merely because the process restarted.
-    if(item.videoId&&item.remotePrivacyStatus==='processing'){
-      try{await remoteStatus(item)}catch(e){if(isAuthError(e))throw e}
-      return;
-    }
-    await createOrResume(item,c);
-    if(item.remotePrivacyStatus!=='uploaded'&&item.remotePrivacyStatus!=='processing'){
-      await uploadBinary(item,c);
-    }
-    if(item.remotePrivacyStatus==='uploaded'){
-      await finish(item,c);
-    }
-    for(let i=0;i<6;i++){
-      await sleep(i?2500:900);
-      try{const state=await remoteStatus(item);if(state==='published')return}catch(e){if(isAuthError(e))throw e}
+    let c=connection();
+    const run=async()=>{
+      // Restart-safe phase machine:
+      // session-created -> uploaded -> processing -> published.
+      // Never repeat a completed phase merely because the process restarted.
+      if(item.videoId&&item.remotePrivacyStatus==='processing'){
+        try{await remoteStatus(item)}catch(e){if(isAuthError(e))throw e}
+        return;
+      }
+      await createOrResume(item,c);
+      if(item.remotePrivacyStatus!=='uploaded'&&item.remotePrivacyStatus!=='processing'){
+        await uploadBinary(item,c);
+      }
+      if(item.remotePrivacyStatus==='uploaded'){
+        await finish(item,c);
+      }
+      for(let i=0;i<6;i++){
+        await sleep(i?2500:900);
+        try{const state=await remoteStatus(item);if(state==='published')return}catch(e){if(isAuthError(e))throw e}
+      }
+    };
+    try{
+      await run();
+    }catch(e){
+      if(!isAuthError(e)||typeof refreshFacebookConnection!=='function')throw e;
+      // Meta occasionally invalidates a Page token while the long-lived user
+      // token remains usable. Repair only the credential for the exact configured
+      // Page, persist it, then resume the same phase machine. Completed phases are
+      // durable, so this retry cannot duplicate a Reel.
+      const repaired=await refreshFacebookConnection();
+      if(!repaired?.page_id||!repaired?.page_access_token)throw e;
+      c=repaired;
+      item.error=null;item.retryAt=0;
+      hist(item,'publishing','Facebook Page Access Token refreshed automatically; resuming the same Reel delivery.');
+      save(item);
+      await run();
     }
   }
   async function purgeRejected(row){
