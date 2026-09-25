@@ -1,8 +1,8 @@
 {
   "sop_id": "FLOW-SOP-v1.0",
-  "sha256": "9e475a5f610cbbaa2940e1f1353e5316bea8cfd7febf7423b0ece603788c874c",
+  "sha256": "b857758bc2f46b0759a1327a39a32566e4168b6629dfa0103357ad1ec58ffab1",
   "source_of_truth": "GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md",
-  "source_git_blob_sha": "4c42a8f34554d5da3cd268f490f17c9e2aefda7c",
+  "source_git_blob_sha": "2d934ead39ec467795117ba1df2fe7250c0867af",
   "mandatory_inheritance": true,
   "verified_on": "EARTH IN 10",
   "verified_project_id": "800af820-b951-4035-ab20-f64df8883fb0",
@@ -44,7 +44,14 @@
     "credit_refresh_fallback_hours": 30,
     "paid_monthly_credits_protected": true,
     "credit_refresh_detection": "live-flow-balance-delta-with-non-rollover-aware-net-refill",
-    "credit_refresh_expected_net_delta_after_3x15": "approximately 45 to 50 credits"
+    "credit_refresh_expected_net_delta_after_3x15": "approximately 45 to 50 credits",
+    "recovery_identity": "stable_flow_asset_id",
+    "fixed_grid_recovery": "multiset_asset_diff",
+    "adjacent_submit_temporal_bracket": true,
+    "recovered_asset_reuse_blocked": true,
+    "post_click_asset_identity_verified": true,
+    "targeted_recovery_never_submits": true,
+    "wrong_recovery_never_regenerates": true
   },
   "review": {
     "playable_validated_video_required": true,
@@ -59,7 +66,10 @@
   },
   "publication": {
     "preserve_review_metadata_to_youtube": true,
-    "contains_synthetic_media": true
+    "contains_synthetic_media": true,
+    "zero_copy_local_approval_handoff": true,
+    "same_volume_review_copy_forbidden": true,
+    "enospc_approval_action": "preserve_review_media_and_retry_zero_copy_handoff"
   },
   "resilience": {
     "persistent_profile": true,
@@ -70,7 +80,10 @@
     "insufficient_credit_backoff": true,
     "post_submit_timeout_resubmit": false,
     "credit_cycle_persistent": true,
-    "midnight_rollover_generation": false
+    "midnight_rollover_generation": false,
+    "wrong_asset_hash_quarantine": true,
+    "recovered_asset_registry": true,
+    "zero_copy_approval_handoff": true
   },
   "acceptance_gate": "Golden Test must reach REVIEW_READY before automation is marked healthy."
 }
