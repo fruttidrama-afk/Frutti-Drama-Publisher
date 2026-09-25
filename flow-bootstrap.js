@@ -65,6 +65,13 @@ async function stop(){
  try{chrome?.kill('SIGTERM')}catch{};try{xvfb?.kill('SIGTERM')}catch{};chrome=null;xvfb=null;clear();
  for(const n of ['SingletonLock','SingletonSocket','SingletonCookie'])try{fs.rmSync(path.join(PROFILE_DIR,n),{force:true})}catch{}
 }
+async function restartController(){
+ if(providerBusy())throw new Error('El generador está usando el navegador ahora mismo. Esperá a que termine esa generación y volvé a reiniciar el controlador.');
+ await stop();
+ await sleep(350);
+ await start();
+ return{running:Boolean(pids().length&&windowId()),title:windowTitle()};
+}
 async function start(){
  for(let i=0;i<24&&providerBusy();i++)await sleep(250);
  if(providerBusy())throw new Error('El worker está terminando una tarea. Esperá unos segundos y tocá ABRIR GOOGLE otra vez.');
@@ -162,9 +169,10 @@ ${verified?'<div class="success"><b>✓ Google Flow ya fue verificado.</b><br>Pr
 <form method="post" action="/flow/bootstrap/supabase-passkeys-page"><button class="primary" type="submit">ABRIR SUPABASE PASSKEYS</button></form>
 <form method="post" action="/flow/bootstrap/supabase-passkeys-done"><button type="submit">YA INICIÉ SESIÓN EN SUPABASE</button></form>
 <form method="get" action="/flow/bootstrap"><button type="submit">ACTUALIZAR NAVEGADOR</button></form>
+<form method="post" action="/flow/bootstrap/restart-page"><button type="submit">↻ REINICIAR CONTROLADOR WEB</button></form>
 <form method="post" action="/flow/bootstrap/finish-page"><button class="primary" type="submit">5 · VERIFICAR CONEXIÓN</button></form>
 </div>
-<div class="tip"><b>Cómo usarlo:</b> si el navegador está abierto, aparece abajo. La imagen se muestra a tamaño real dentro de un área desplazable. Deslizá horizontalmente si hace falta y tocá exactamente donde querés hacer clic.</div>
+<div class="tip"><b>Cómo usarlo:</b> si el navegador está abierto, aparece abajo. La imagen se muestra a tamaño real dentro de un área desplazable. Deslizá horizontalmente si hace falta y tocá exactamente donde querés hacer clic.<br><br><b>Si algo falla o el navegador queda trabado:</b> tocá <b>↻ REINICIAR CONTROLADOR WEB</b>. Reinicia Chrome y la pantalla remota sin borrar tu perfil persistente de Google ni la configuración del Publisher.</div>
 ${running?`<div class="status"><b>Navegador activo.</b> ${h(title||'Google')}</div>
 <div class="live-note"><b>Modo CAPTCHA seguro:</b> los clics dentro del controlador de abajo ya no recargan esta página. El CAPTCHA permanece abierto en el mismo Chrome remoto mientras lo resolvés.</div>
 <iframe class="remote-frame" name="flowController" id="flowController" src="/flow/bootstrap/view" title="Controlador remoto de Google Flow"></iframe>
@@ -190,6 +198,8 @@ if(!globalThis.__publisherFlowBootstrapInstalled){
   app.post('/flow/bootstrap/demo-start',async(_req,res)=>{demoActive=true;demoStartedAt=new Date().toISOString();demoStep=0;console.log('[FLOW SOP DEMO] '+JSON.stringify({step:0,at:demoStartedAt,action:'DEMO_START'}));await demoState('INITIAL_STATE');go(res,'Grabación SOP iniciada. Hacé una generación manual completa; voy a registrar cada clic y cambio de estado.')});
   app.post('/flow/bootstrap/demo-stop',async(_req,res)=>{await demoState('FINAL_STATE');console.log('[FLOW SOP DEMO] '+JSON.stringify({step:demoStep+1,at:new Date().toISOString(),action:'DEMO_STOP',started_at:demoStartedAt}));demoActive=false;go(res,'Grabación SOP detenida. Ya quedaron registrados los pasos de la demostración.')});
   app.post('/flow/bootstrap/start-page',async(_req,res)=>{try{await start();go(res,'Google está abierto. Usá la pantalla remota de abajo para iniciar sesión.')}catch(e){go(res,'',e?.message||e)}});
+  app.post('/flow/bootstrap/restart-page',async(_req,res)=>{try{await restartController();go(res,'Controlador web reiniciado. Google volvió a abrirse en una sesión limpia del controlador.')}catch(e){go(res,'',e?.message||e)}});
+  app.post('/flow/bootstrap/restart',async(_req,res)=>{try{res.json({ok:true,...await restartController()})}catch(e){safe(res,e,409)}});
   app.post('/flow/bootstrap/project-page',async(_req,res)=>{try{await navigate(PROJECT_ID?PROJECT_URL:'https://flow.google.com/');go(res,'Google Flow está abierto. Elegí o creá un proyecto en la pantalla remota.')}catch(e){go(res,'',e?.message||e)}});
   app.post('/flow/bootstrap/supabase-passkeys-page',async(_req,res)=>{try{await navigate(SUPABASE_PASSKEY_URL);go(res,'Supabase está abierto en el navegador remoto. Iniciá sesión con tu cuenta habitual y dejá abierta la página de Passkeys.')}catch(e){go(res,'',e?.message||e)}});
    app.post('/flow/bootstrap/supabase-passkeys-done',async(_req,res)=>{try{try{fs.rmSync(SUPABASE_PASSKEY_STATE,{force:true})}catch{}await stop();go(res,'Sesión de Supabase guardada. FreeBrowserProvider va a reintentar la configuración de passkeys automáticamente.')}catch(e){go(res,'',e?.message||e)}});
