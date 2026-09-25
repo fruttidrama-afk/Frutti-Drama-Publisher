@@ -335,3 +335,37 @@ This log is an operational memory. It exists so the same failure is not debugged
 - generation remained `GENERATION_PAUSED` with 0 remaining today during branding work.
 
 **Inheritance:** all future publishers must use the full-bleed icon SOP and one-source icon convergence instead of independent favicon/touch/manifest pipelines.
+
+---
+
+# 15. Mandatory native AI disclosure SOP
+
+**Global invariant:** every AI-generated video published by any Publisher must use the destination platform's native AI/synthetic-media disclosure whenever that platform exposes one. This is mandatory for every show, every video, every existing Publisher and every Publisher created later by Publisher Factory.
+
+Required behavior:
+- `publication.ai_disclosure_required` is always `true`;
+- every configured publication provider must declare `contains_synthetic_media:true`;
+- YouTube uploads/updates must set `status.containsSyntheticMedia=true`;
+- Facebook Reel finalization must set `is_ai_generated=true`;
+- a provider integration is not production-complete until the runtime can prove the native disclosure was requested and, where the provider exposes readable state, verify it remotely;
+- disclosure is not a user-facing optional toggle and must not depend on title, caption, niche, realism, or creative style;
+- adding “AI” text to a caption is not a substitute for the platform-native disclosure;
+- a future platform without an implemented native disclosure mapping must fail the publication contract rather than silently publish unlabeled AI media.
+
+Legacy repair:
+- existing YouTube videos with known video IDs are audited and updated in place with `containsSyntheticMedia=true`;
+- existing Facebook Reels with known video IDs are audited for `is_ai_generated`; when Meta allows the field to be updated after publication, update the same Reel in place and verify it without re-uploading;
+- if a platform does not permit a post-publication disclosure retrofit, preserve the already-public item and surface a specific operator action; never create a duplicate merely to repair the label unless the operator explicitly authorizes replacement.
+
+Observability:
+- publication rows persist `aiDisclosureSyncedAt`;
+- health/publication diagnostics expose whether disclosure has been synchronized;
+- runtime safety exposes `native_ai_disclosure_required=true`, `youtube_contains_synthetic_media_always=true`, `facebook_is_ai_generated_always=true`, and `legacy_ai_disclosure_repair_enabled=true`.
+
+Publisher Factory inheritance:
+- schema requires the invariant;
+- Factory creation defaults enable it;
+- deployment normalization re-enables it even for older configs;
+- contract/self-tests fail if either YouTube or Facebook native disclosure support disappears.
+
+**Invariant:** PUBLICATION SUCCESS IS NOT COMPLETE WITHOUT THE PLATFORM-NATIVE AI DISCLOSURE.
