@@ -605,21 +605,24 @@ function creativePackageDigest(row,title=row?.title,description=row?.description
  return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
 function ensureCopy(row){
- const provider=(CONFIG.publication.providers||[]).find(x=>x.type==='youtube')||{};
+ const providers=CONFIG.publication?.providers||[];
+ const provider=providers.find(x=>x.type===CONFIG.publication?.selected_provider)||providers[0]||{};
  let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
  const override=flow?.publication_override;
- const earth=/earth\s*in\s*10/i.test(String(CONFIG.identity?.show_name||''));
+ const showName=String(CONFIG.identity?.show_name||'');
+ const earth=/earth\s*in\s*10/i.test(showName);
+ const dinnie=/dinnie\s*(?:the\s*)?dinosaur|dinnie/i.test(showName);
  let expected=null;
  if(override?.title&&override?.description){
    expected={title:String(override.title),description:String(override.description)};
- }else if(earth){
+ }else if(earth||dinnie){
    expected=buildPublicationCopy({
      hook:row.hook,
      story:row.story,
      prompt:row.prompt,
      contextTerms:[],
      hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
-     showName:CONFIG.identity.show_name,
+     showName,
      maxTitleLength:100
    });
  }
