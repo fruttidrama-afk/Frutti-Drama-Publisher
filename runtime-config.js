@@ -51,6 +51,9 @@ export function loadConfig(){
     security:{...(persisted.security||{}),...(env.security||{})}
   };
   const identity=c.identity||{},content=c.content||{},review=c.review||{},schedule=c.schedule||{};
+  const publicationConfig=c.publication||{};
+  const youtubePublicationConfigured=String(publicationConfig.selected_provider||'').toLowerCase()==='youtube'
+    ||(Array.isArray(publicationConfig.providers)&&publicationConfig.providers.some(x=>String(x?.type||'').toLowerCase()==='youtube'));
   const out={
     runtime_version:'publisher-runtime-v1',
     identity:{
@@ -128,20 +131,21 @@ export function loadConfig(){
       indefinite:true,
       generation_strategy:'sequential',
       posting_times:(()=>{
+        if(youtubePublicationConfigured)return['19:00'];
         const override=String(process.env.PUBLISHER_POSTING_TIMES_OVERRIDE||'').split(',').map(v=>clean(v,5)).filter(v=>/^\d{2}:\d{2}$/.test(v));
         if(override.length)return[...new Set(override)].slice(0,20);
         return Array.isArray(schedule.posting_times)&&schedule.posting_times.length
           ?[...new Set(schedule.posting_times.map(v=>clean(v,5)).filter(v=>/^\d{2}:\d{2}$/.test(v)))].slice(0,20)
           :['19:00'];
       })(),
-      upload_lead_minutes:390
+      upload_lead_minutes:youtubePublicationConfigured?390:Math.max(0,Math.min(1440,Number(schedule.upload_lead_minutes??0)))
     },
     publication:(()=>{
       const p=c.publication||{allowed_providers:['youtube','facebook'],selected_provider:null,providers:[]};
       return{
         ...p,
         providers:(Array.isArray(p.providers)?p.providers:[]).map(x=>String(x?.type||'').toLowerCase()==='youtube'
-          ?{...x,privacy_before_publish:'private',upload_policy:'private-at-12:30-public-at-19:00',stock_storage:'private-cloud-storage',upload_lead_minutes:390,native_publish_at:false}
+          ?{...x,privacy_before_publish:'private',upload_policy:'private-at-12:30-public-at-19:00',stock_storage:'private-cloud-storage',upload_lead_minutes:390,native_publish_at:false,release_mode:'private_then_public_at_posting_time',use_publish_at:false,metadata_final_before_upload:true,preserve_private_lead_window:true}
           :x)
       };
     })(),
