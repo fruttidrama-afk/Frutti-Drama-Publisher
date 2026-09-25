@@ -33,6 +33,7 @@ const GOLDEN_RECOVERY_TERMS=String(process.env.PUBLISHER_RECOVERY_PROMPT_TERMS||
 const BOOTSTRAP_LOCK=path.join(FACTORY_DIR,'flow-auth-bootstrap.active.json');
 const STATUS_FILE=path.resolve(process.cwd(),'public','free-browser-status.json');
 const PROVIDER='FreeBrowserProvider';
+const GEMINI_FEEDBACK_URL='https://gemini.google.com/app';
 async function saveReviewAsset(db,row,localPath,flowResult,stamp=now()){
   // HARD APPROVAL GATE: an unapproved review render must remain only on the
   // Publisher's private persistent volume. It must never be uploaded to
@@ -470,6 +471,8 @@ function ensureSchema(db) {
     `ALTER TABLE factory_items ADD COLUMN reviewRetryToken TEXT`,
     `ALTER TABLE factory_items ADD COLUMN reviewRetrySubmittedToken TEXT`,
     `ALTER TABLE factory_items ADD COLUMN reviewContentHash TEXT`,
+    `ALTER TABLE factory_items ADD COLUMN reviewInterpretation TEXT`,
+    `ALTER TABLE factory_items ADD COLUMN reviewInterpretationAt TEXT`,
     `ALTER TABLE factory_generations ADD COLUMN generationKind TEXT NOT NULL DEFAULT 'automatic'`
   ]) { try { db.exec(sql); } catch {} }
 }
@@ -940,6 +943,160 @@ async function launchLocal() {
   }catch(err){
     await cleanup();
     throw err;
+  }
+}
+
+function feedbackContext(db,row){
+  const prior=db.prepare("SELECT episode,hook,story,status FROM factory_items WHERE season=? AND episode<? ORDER BY episode DESC LIMIT 12").all(Number(row.season),Number(row.episode)).reverse();
+  const future=db.prepare("SELECT episode,hook,story,status FROM factory_items WHERE season=? AND episode>? ORDER BY episode LIMIT 8").all(Number(row.season),Number(row.episode));
+  return{
+    show_name:String(CONFIG.identity?.show_name||SHOW||'Publisher'),
+    serialized:Boolean(CONFIG.content?.serialized),
+    creative_bible:compact(CONFIG.content?.creative_bible||'',12000),
+    season:Number(row.season),episode:Number(row.episode),
+    current:{hook:String(row.hook||''),story:String(row.story||''),prompt:compact(row.prompt||'',5000)},
+    feedback:String(row.reviewFeedback||'').trim(),
+    prior:prior.map(x=>({episode:Number(x.episode),hook:String(x.hook||''),story:String(x.story||''),status:String(x.status||'')})),
+    future:future.map(x=>({episode:Number(x.episode),hook:String(x.hook||''),story:String(x.story||''),status:String(x.status||'')}))
+  };
+}
+function validateAiFeedbackResult(raw,row){
+  if(!raw||typeof raw!=='object')throw new Error('FEEDBACK_AI_INVALID_OBJECT');
+  const decision=String(raw.decision||'').trim();
+  if(!['render_retry','prompt_revision','creative_rewrite'].includes(decision))throw new Error('FEEDBACK_AI_INVALID_DECISION:'+decision);
+  const reason=compact(raw.reason||'',1400);
+  if(!reason)throw new Error('FEEDBACK_AI_REASON_MISSING');
+  const out={
+    decision,reason,
+    prompt_changes:compact(raw.prompt_changes||'',1600),
+    new_hook:compact(raw.new_hook||'',100).toUpperCase(),
+    new_story:compact(raw.new_story||'',1200),
+    new_information:compact(raw.new_information||'',600)
+  };
+  if(decision==='prompt_revision'&&!out.prompt_changes)throw new Error('FEEDBACK_AI_PROMPT_CHANGES_MISSING');
+  if(decision==='creative_rewrite'){
+    if(!out.new_hook||!out.new_story||!out.new_information)throw new Error('FEEDBACK_AI_CREATIVE_PACKAGE_INCOMPLETE');
+    if(norm(out.new_hook+' '+out.new_story)===norm(String(row.hook||'')+' '+String(row.story||'')))throw new Error('FEEDBACK_AI_REPEATED_SAME_STORY');
+  }
+  return out;
+}
+async function geminiFeedbackInterpretation(db,row){
+  publish('FEEDBACK_AI_STAGE',{episode:'T'+row.season+'E'+row.episode,stage:'launch-browser'});
+  const session=await launchLocal();
+  const marker='PUBLISHER_AI_'+randomUUID().replace(/-/g,'').slice(0,16).toUpperCase();
+  const start=marker+'_START',end=marker+'_END';
+  try{
+    const page=session.page;
+    await page.goto(GEMINI_FEEDBACK_URL,{waitUntil:'domcontentloaded',timeout:45000});
+    await sleep(1800);
+    for(const re of [/I agree|Acepto/i,/Get started|Empezar/i,/Continue|Continuar/i]){
+      const btn=page.getByRole('button',{name:re}).last();
+      if(await btn.count().catch(()=>0)&&await btn.isVisible().catch(()=>false)){await btn.click({timeout:3000}).catch(()=>{});await sleep(700)}
+    }
+    const body0=compact(await page.locator('body').innerText().catch(()=>''),5000);
+    let input=null;
+    for(const candidate of [
+      page.locator('rich-textarea div[contenteditable="true"]').last(),
+      page.locator('div[contenteditable="true"][role="textbox"]').last(),
+      page.locator('div[contenteditable="true"]').last(),
+      page.locator('textarea').last()
+    ]){
+      if(await candidate.count().catch(()=>0)&&await candidate.isVisible().catch(()=>false)){input=candidate;break}
+    }
+    if(!input)throw new Error('FEEDBACK_AI_GEMINI_INPUT_NOT_FOUND:'+body0.slice(0,500));
+    const ctx=feedbackContext(db,row);
+    const instruction=[
+      'You are the semantic review interpreter for an autonomous short-form video Publisher.',
+      'Understand the HUMAN feedback by meaning, not by keywords or spelling.',
+      'The Show Bible is authoritative. Never invent a change that contradicts it.',
+      'Choose exactly one action:',
+      'render_retry = story, prompt and metadata are correct; only the stochastic render/glitch failed.',
+      'prompt_revision = the SAME episode idea is correct but execution instructions must change.',
+      'creative_rewrite = the reviewer rejects the premise, continuity, repeated information, narrative event, chosen place/topic, or what the audience is learning; create a materially different episode idea that still obeys the Show Bible.',
+      '',
+      'For serialized shows, preserve accepted continuity and do not re-reveal information the audience already knows.',
+      'For non-serialized shows, still avoid repeating the rejected concept and produce a genuinely distinct replacement.',
+      'Human feedback is authoritative even when dictated, misspelled, informal or incomplete.',
+      '',
+      'Return exactly ONE JSON object between the markers, with no prose outside them.',
+      start,
+      '{"decision":"render_retry|prompt_revision|creative_rewrite","reason":"semantic explanation","prompt_changes":"required only for prompt_revision","new_hook":"short hook required only for creative_rewrite","new_story":"replacement episode intent required only for creative_rewrite","new_information":"what is genuinely different/new required only for creative_rewrite"}',
+      end,
+      '',
+      'PUBLISHER CONTEXT JSON:',
+      JSON.stringify(ctx)
+    ].join('\n');
+    await input.click({timeout:5000});
+    await input.fill(instruction).catch(async()=>{await page.keyboard.press('Control+A').catch(()=>{});await page.keyboard.insertText(instruction)});
+    let sent=false;
+    for(const re of [/Send message|Enviar mensaje|Send|Enviar/i]){
+      const b=page.getByRole('button',{name:re}).last();
+      if(await b.count().catch(()=>0)&&await b.isVisible().catch(()=>false)&&await b.isEnabled().catch(()=>false)){await b.click({timeout:4000}).catch(()=>{});sent=true;break}
+    }
+    if(!sent)await page.keyboard.press('Enter');
+    const deadline=Date.now()+60000;
+    let parsed=null,lastBody='';
+    while(Date.now()<deadline){
+      await sleep(1000);
+      lastBody=await page.locator('body').innerText().catch(()=>lastBody);
+      const pos=lastBody.lastIndexOf(start);
+      if(pos>=0){
+        const e=lastBody.indexOf(end,pos+start.length);
+        if(e>pos){
+          const raw=lastBody.slice(pos+start.length,e).trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'');
+          try{parsed=JSON.parse(raw)}catch{}
+          if(parsed)break;
+        }
+      }
+    }
+    if(!parsed)throw new Error('FEEDBACK_AI_GEMINI_RESPONSE_NOT_PARSED:'+compact(lastBody.slice(-1800),1800));
+    return validateAiFeedbackResult(parsed,row);
+  }finally{await session.close().catch(()=>{})}
+}
+function applyAiFeedbackDecision(db,row,ai){
+  const stamp=now();
+  const interpretation=JSON.stringify({...ai,interpreted_at:stamp,engine:'gemini-web-semantic'});
+  if(ai.decision==='render_retry'){
+    db.prepare("UPDATE factory_items SET status='regen_wait',retryStrategy='reuse_prompt',reviewInterpretation=?,reviewInterpretationAt=?,providerRunId=NULL,flowResult=NULL,error='AI: creative package is correct; repeat render only.',nextTry=0,runtimeAttemptCount=0,updatedAt=? WHERE id=?")
+      .run(interpretation,stamp,stamp,row.id);
+  }else if(ai.decision==='prompt_revision'){
+    db.prepare("UPDATE factory_items SET status='regen_wait',retryStrategy='revise_prompt',reviewInterpretation=?,reviewInterpretationAt=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,flowResult=NULL,error='AI: keep episode intent and rebuild prompt from human feedback.',nextTry=0,runtimeAttemptCount=0,updatedAt=? WHERE id=?")
+      .run(interpretation,stamp,stamp,row.id);
+  }else{
+    db.prepare("UPDATE factory_items SET hook=?,story=?,status='regen_wait',retryStrategy='new_story',reviewInterpretation=?,reviewInterpretationAt=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,flowResult=NULL,error='AI: narrative feedback requires a new creative package.',nextTry=0,runtimeAttemptCount=0,updatedAt=? WHERE id=?")
+      .run(ai.new_hook,ai.new_story,interpretation,stamp,stamp,row.id);
+    const freshForPackage=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);
+    materializeCreativePackage(db,freshForPackage,{force:true});
+  }
+  const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row;
+  setLifecycle(db,fresh,'RETRY_REQUESTED',{
+    generation_id:null,generation_started_at:null,submit_boundary_at:null,
+    baseline:[],baseline_inventory:null,last_error:null,retry_at:null,
+    reviewer_retry:true,retry_token:String(fresh.reviewRetryToken||''),
+    review_feedback:String(fresh.reviewFeedback||'').slice(0,1200),
+    retry_strategy:String(fresh.retryStrategy||''),
+    ai_interpretation:interpretation,retry_requested_at:stamp,
+    automatic_submit_forbidden:false
+  });
+  return fresh;
+}
+async function interpretPendingReviewFeedback(db){
+  const row=db.prepare("SELECT * FROM factory_items WHERE status='feedback_wait' AND retryStrategy='ai_pending' AND reviewFeedback IS NOT NULL AND nextTry<=? ORDER BY updatedAt,episode LIMIT 1").get(Date.now());
+  if(!row)return'none';
+  publish('FEEDBACK_AI_INTERPRET_START',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,message:'Semantic AI is interpreting the complete human feedback before deciding render retry, prompt revision, or creative rewrite.'});
+  try{
+    const ai=await geminiFeedbackInterpretation(db,row);
+    publish('FEEDBACK_AI_RESULT',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,decision:ai.decision,reason:ai.reason,new_hook:ai.new_hook||null,new_information:ai.new_information||null});
+    const fresh=applyAiFeedbackDecision(db,row,ai);
+    publish('FEEDBACK_AI_INTERPRET_DONE',{episode:'T'+fresh.season+'E'+fresh.episode,job_id:fresh.id,decision:ai.decision,reason:ai.reason});
+    return'ready';
+  }catch(err){
+    const attempts=Number(row.runtimeAttemptCount||0)+1;
+    const retryAt=Date.now()+Math.min(15*60*1000,60000*Math.max(1,attempts));
+    db.prepare("UPDATE factory_items SET runtimeAttemptCount=?,error=?,nextTry=?,updatedAt=? WHERE id=?")
+      .run(attempts,'AI feedback interpretation pending: '+compact(err?.message||err,500),retryAt,now(),row.id);
+    publish('FEEDBACK_AI_INTERPRET_RETRY',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,retry_at:new Date(retryAt).toISOString(),message:compact(err?.message||err,500)});
+    return'retry';
   }
 }
 
@@ -1753,16 +1910,22 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
         publish('REVIEW_RETRY_NOT_CONFIRMED_HOLD',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Reviewer retry token is consumed. Flow showed no new video; automatic resubmit is forbidden until a new human Rehacer request.'});
         return{mode:'wait'};
       }
+      // POST_SUBMIT_TIMEOUT_RECONCILIATION_ONLY:
+      // Crossing the submit boundary is irreversible from the runtime's point of
+      // view. An unchanged grid after a timeout is NOT proof that Flow did not
+      // accept the submit, so automatic resubmission remains forbidden.
       const retryAt=Date.now()+60000;
-      db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='No fresh post-baseline Flow video appeared.',updatedAt=? WHERE itemId=? AND status='running'").run(now(),row.id);
-      db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run(retryAt,now(),now(),row.id);
-      setLifecycle(db,row,'RECONCILED_NO_GENERATION',{
-        prior_generation_id:String(lc?.generation_id||row.providerRunId||''),
-        submit_boundary_at:String(lc?.submit_boundary_at||''),reconciled_at:now(),
-        evidence:`No fresh post-baseline Flow video after ${Math.round(age/1000)}s; video inventory unchanged.`,
-        retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:false
+      db.prepare("UPDATE factory_items SET status='generating',error=?,nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?").run(
+        'SUBMIT_AMBIGUOUS — timeout is not no-generation proof; recovery only, Generate remains locked.',
+        retryAt,now(),now(),row.id
+      );
+      setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{
+        ...lc,reconciled_at:now(),
+        evidence:`No fresh post-baseline Flow video after ${Math.round(age/1000)}s; video inventory unchanged. Timeout alone is not proof of no generation.`,
+        retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:true,
+        recovery_mode:'read-only-until-hard-evidence'
       });
-      publish('AMBIGUOUS_RECONCILED_NO_GENERATION',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'No fresh Flow video was retained; episode may retry once after backoff.'});
+      publish('POST_SUBMIT_TIMEOUT_RECONCILIATION_ONLY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,message:'Timeout observed after submit boundary. Generate remains locked; only read-only recovery/reconciliation may continue.'});
       return{mode:'wait'};
     }
   }
@@ -2672,14 +2835,14 @@ function retryTokenOpen(row){
 }
 function reviewerRetryTokenConsumed(row){
   const token=String(row?.reviewRetryToken||'').trim(),submitted=String(row?.reviewRetrySubmittedToken||'').trim();
-  return Boolean(token&&token===submitted&&['reuse_prompt','revise_prompt'].includes(String(row?.retryStrategy||''))&&String(row?.reviewFeedback||'').trim().length>=3);
+  return Boolean(token&&token===submitted&&['reuse_prompt','revise_prompt','new_story'].includes(String(row?.retryStrategy||''))&&String(row?.reviewFeedback||'').trim().length>=3);
 }
 function isReviewerRetry(row){
-  return !!row&&['reuse_prompt','revise_prompt'].includes(String(row.retryStrategy||''))&&String(row.reviewFeedback||'').trim().length>=3&&['regen_wait','draft'].includes(String(row.status||''))&&retryTokenOpen(row);
+  return !!row&&['reuse_prompt','revise_prompt','new_story'].includes(String(row.retryStrategy||''))&&String(row.reviewFeedback||'').trim().length>=3&&['regen_wait','draft'].includes(String(row.status||''))&&retryTokenOpen(row);
 }
 function normalizeReauthorizedReviewerRetries(db){
   try{
-    const rows=db.prepare("SELECT * FROM factory_items WHERE status='generating' AND retryStrategy IN ('reuse_prompt','revise_prompt') AND reviewFeedback IS NOT NULL AND reviewRetryToken IS NOT NULL AND (reviewRetrySubmittedToken IS NULL OR reviewRetrySubmittedToken<>reviewRetryToken)").all();
+    const rows=db.prepare("SELECT * FROM factory_items WHERE status='generating' AND retryStrategy IN ('reuse_prompt','revise_prompt','new_story') AND reviewFeedback IS NOT NULL AND reviewRetryToken IS NOT NULL AND (reviewRetrySubmittedToken IS NULL OR reviewRetrySubmittedToken<>reviewRetryToken)").all();
     for(const row of rows){
       const lc=lifecycle(db,row)||{};
       if(Number(lc.retry_reauthorization_count||0)<1&&!lc.prior_submit_unretained)continue;
@@ -2690,7 +2853,7 @@ function normalizeReauthorizedReviewerRetries(db){
   }catch(e){publish('REVIEW_RETRY_REAUTH_REPAIR_WARNING',{message:compact(e?.message||e,400)})}
 }
 function normalizeConsumedReviewerRetries(db){
-  const rows=db.prepare("SELECT * FROM factory_items WHERE retryStrategy IN ('reuse_prompt','revise_prompt') AND reviewFeedback IS NOT NULL AND reviewRetryToken IS NOT NULL AND reviewRetrySubmittedToken=reviewRetryToken AND status NOT IN ('review','queued','historical','published')").all();
+  const rows=db.prepare("SELECT * FROM factory_items WHERE retryStrategy IN ('reuse_prompt','revise_prompt','new_story') AND reviewFeedback IS NOT NULL AND reviewRetryToken IS NOT NULL AND reviewRetrySubmittedToken=reviewRetryToken AND status NOT IN ('review','queued','historical','published')").all();
   for(const row of rows){
     const lc=lifecycle(db,row)||{},state=String(lc.state||'').toUpperCase();
     if(AFTER_GENERATE.has(state)||AMBIGUOUS.has(state)){
@@ -2737,7 +2900,7 @@ function quarantinePriorDayAmbiguous(db){
 }
 
 function quarantineStaleReviewerRetryAmbiguous(db){
-  const rows=db.prepare("SELECT * FROM factory_items WHERE status='generating' AND retryStrategy IN ('reuse_prompt','revise_prompt') AND reviewRetryToken IS NOT NULL AND reviewRetrySubmittedToken=reviewRetryToken ORDER BY episode").all();
+  const rows=db.prepare("SELECT * FROM factory_items WHERE status='generating' AND retryStrategy IN ('reuse_prompt','revise_prompt','new_story') AND reviewRetryToken IS NOT NULL AND reviewRetrySubmittedToken=reviewRetryToken ORDER BY episode").all();
   let held=0;
   for(const row of rows){
     const lc=lifecycle(db,row)||{};
@@ -3140,7 +3303,7 @@ function productionCandidate(db){
   if(providerCooldown>Date.now())return null;
 
   // Human REDO remains immediate once its continuity predecessor is recovered.
-  const retries=db.prepare("SELECT * FROM factory_items WHERE status IN ('regen_wait','draft') AND retryStrategy IN ('reuse_prompt','revise_prompt') AND reviewFeedback IS NOT NULL AND TRIM(reviewFeedback)<>'' ORDER BY updatedAt,episode").all();
+  const retries=db.prepare("SELECT * FROM factory_items WHERE status IN ('regen_wait','draft') AND retryStrategy IN ('reuse_prompt','revise_prompt','new_story') AND reviewFeedback IS NOT NULL AND TRIM(reviewFeedback)<>'' ORDER BY updatedAt,episode").all();
   for(const retry of retries){
     if(Number(retry.nextTry||0)<=Date.now()&&isReviewerRetry(retry)&&serialReady(db,retry))return retry;
   }
@@ -3295,6 +3458,7 @@ async function runProvider(){
     const migrated=await migrateProfileOnce(db);if(!migrated)return;
     const goldenRecovery=await recoverGoldenRunIfRequested(db);
     if(goldenRecovery.needed&&!goldenRecovery.done)return;
+    const feedbackState=await interpretPendingReviewFeedback(db);if(feedbackState==='retry')return;
     const used=effectiveDailyCount(db);row=productionCandidate(db);
     if(row&&String(row.status)==='generating'){publish('RECOVERY_PICKED',{episode:'E'+row.episode,job_id:row.id,state:String(lifecycle(db,row)?.state||''),used_today:used});await processRow(db,row);return}
     const priorityRetry=isReviewerRetry(row);
