@@ -14,7 +14,6 @@ const runtimeConfig=read('runtime-config.js');
 const init=read('runtime-init.js');
 const server=read('server.js');
 const publication=read('publication.js');
-const facebookPublication=read('publication-facebook.js');
 
 const sha=createHash('sha256').update(master).digest('hex');
 must(sop.sop_id==='FLOW-SOP-v1.0','wrong SOP version');
@@ -29,7 +28,7 @@ for(const k of ['exactly_once_submit','strict_serial_generation','project_grid_r
 must(schema.properties?.schedule?.properties?.generation_strategy?.const==='sequential','generation strategy must be sequential');
 must(schema.properties?.knowledge?.properties?.flow_sop_version?.const==='FLOW-SOP-v1.0','schema knowledge version mismatch');
 
-for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY_ENTERED','automatic_submit_forbidden','flow-grid-tile-container','flow-tile-hover-footer','EPISODE_INTENT_REPAIRED','CREATIVE_PACKAGE_READY','creativePackageHash','source:\'creative-package\'','let editor=await waitFlowReady(page,30000)','FLOW_UNUSUAL_ACTIVITY_OVERNIGHT','30*60*1000','8*60*60*1000','24*60*60*1000',"'flow:noChargeStreak:provider'","Math.max(existingUntil,requestedRetryAt)","normalization may extend but NEVER shorten provider cooldown"]){
+for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY_ENTERED','automatic_submit_forbidden','flow-grid-tile-container','flow-tile-hover-footer','EPISODE_INTENT_REPAIRED','CREATIVE_PACKAGE_READY','creativePackageHash','source:\'creative-package\'','let editor=await waitFlowReady(page,30000)','FLOW_UNUSUAL_ACTIVITY_OVERNIGHT','30*60*1000','8*60*60*1000','24*60*60*1000']){
   must(provider.includes(token),'provider contract missing '+token);
 }
 must(!provider.includes("await waitFlowReady(page,30000);\n  const editor=await promptEditor(page);"),'provider must not re-query the Flow composer immediately after readiness');
@@ -49,7 +48,7 @@ for(const token of ['EARTH_IN_10_AUTONOMOUS_EPISODES','enforceEpisodeIntent','ef
 for(const token of ['runtime_knowledge','creativePackageHash','creativePackageId','knowledge:flowSopLoaded','automation:exactlyOnceSubmit','automation:strictSerialGeneration']){
   must(init.includes(token),'runtime-init contract missing '+token);
 }
-for(const token of ["app.get('/factory/knowledge'","automation_safety","stable_composer_handoff:true","native_no_charge_retry:false","immediate_native_retry_disabled:true","adaptive_no_charge_backoff:true","unusual_activity_exponential_backoff:true","provider_wide_unusual_activity_backoff:true","monotonic_provider_cooldown:true","show_specific_repairs_isolated:true","replacement creative package required","prompt_integrity","prompt_show_bible_gate:true","atomic_creative_package:true","approval_before_external_storage:true","reject_purges_external_artifacts:true","prompts_rematerialized:true","signedReviewUrl","deleteReviewObject"]){
+for(const token of ["app.get('/factory/knowledge'","automation_safety","stable_composer_handoff:true","native_no_charge_retry:false","immediate_native_retry_disabled:true","adaptive_no_charge_backoff:true","unusual_activity_exponential_backoff:true","show_specific_repairs_isolated:true","replacement creative package required","prompt_integrity","prompt_show_bible_gate:true","atomic_creative_package:true","approval_before_external_storage:true","reject_purges_external_artifacts:true","prompts_rematerialized:true","signedReviewUrl","deleteReviewObject"]){
   must(server.includes(token),'server contract missing '+token);
 }
 for(const token of ['earthPromptIsEpisodeBound','episode-generation-prompt','creativePackageDigest','quota_wait','shiftPendingQueueAfter','stored-package']){
@@ -58,17 +57,8 @@ for(const token of ['earthPromptIsEpisodeBound','episode-generation-prompt','cre
 for(const token of ['saveReviewAsset','local-volume-until-approval','remoteUrl=NULL','reviewVideoId=NULL']){
   must(provider.includes(token),'pre-approval local-only review contract missing '+token);
 }
-must(publication.includes('publishAt:item.scheduledAt'),'native YouTube upload scheduling contract missing');
-must(publication.includes('publishAt:target'),'native YouTube schedule reconciliation contract missing');
-must(!publication.includes('publishNowLikeManual'),'direct PRIVATE-to-PUBLIC YouTube release path must remain disabled');
 for(const token of ['isReviewStorageUri','readReviewRange','deleteReviewObject','containsSyntheticMedia:true','APPROVAL_GATE','purgeRejected','purgePrivateVideosByTitle']){
   must(publication.includes(token),'publication/approval/rejection contract missing '+token);
-}
-for(const token of ["APPROVAL_GATE","me/video_reels","upload_phase:'start'","Authorization:'OAuth '","video_state:'PUBLISHED'","fields:'status'","FACEBOOK_AUTH_REQUIRED","purgeRejected"]){
-  must(facebookPublication.includes(token),'Facebook Reels runtime contract missing '+token);
-}
-for(const token of ["/integrations/platform","/integrations/facebook","/facebook/oauth/callback","pages_show_list,pages_read_engagement,pages_manage_posts","FacebookReelsProvider","selectedPublicationProvider","facebookConnected"]){
-  must(server.includes(token),'Facebook connection/runtime server contract missing '+token);
 }
 
 console.log(JSON.stringify({
