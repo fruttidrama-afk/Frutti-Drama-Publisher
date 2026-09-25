@@ -2189,6 +2189,45 @@ If Flow explicitly shows insufficient points/credits:
 2. Preserve approved metadata.
 3. Do not send episode back to Flow.
 
+## 33.18 Wrong Flow asset recovered for an already-generated episode
+
+This is a **recovery/correlation failure**, not a generation failure. If the intended render already exists in Flow, **do not regenerate it**.
+
+Canonical recovery procedure:
+
+1. Enter a dedicated recovery-only worker mode. While a recovery token is active, `Generate` is forbidden and the worker must return after recovery whether recovery succeeds or remains pending.
+2. Verify the exact Flow project by project UUID and visible project identity before inspecting media.
+3. Load the episode's durable submit lifecycle and its pre-submit project-grid baseline.
+4. Capture every visible video tile as an asset descriptor. Derive a stable `flow_asset_id` from durable DOM/media identifiers when available; do not use DOM position as identity.
+5. Diff current video assets against the pre-submit baseline as a **multiset**, because Flow can keep a fixed-size/virtualized grid and replace/reorder tiles without increasing the count.
+6. If a later episode has already crossed a submit boundary, use that later episode's pre-submit baseline as a temporal upper bound: the target episode's asset must have appeared after its own baseline and must already exist by the next submit baseline. This brackets the asset to the correct generation interval.
+7. Exclude every asset ID already present in `flow_recovered_assets`. For weak legacy identities, also exclude signatures already bound to prior recovered media.
+8. Prefer a uniquely episode-correlated candidate. A newest-unused fallback may be used only **after** baseline, temporal-bracket, unused-ID, exact-project and safety filters have passed. Never choose tile #0 merely because it is first/newest.
+9. Immediately before clicking the candidate, re-read the tile descriptor and verify that its `flow_asset_id` is still the same. If the identity changed because Flow reflowed/virtualized the grid, abort selection.
+10. Open that exact asset and download the existing render. If the editor closes/remounts, reopen by `flow_asset_id`, never by stale tile index.
+11. Validate MP4 container, video stream, duration, dimensions and orientation.
+12. Compute SHA-256. Reject the download if the content hash is already bound to another episode or appears in `flow_rejected_media_hashes`.
+13. Persist `flow_asset_id`, recovery signature/proof, content hash and download metadata with the Review item.
+14. Replace only the wrong recovered Review media. Preserve the original generation accounting; this recovery creates **no new generation and consumes no new generation credit**.
+
+Verified Earth E6 recovery on 2026-09-25 followed this path. The existing Zhangjiajie render was recovered without a new submit; the accepted Flow asset identity began `e2b74ace05aa269e…`, the recovered MP4 SHA-256 began `dbed2aa81ccf0fc6…`, duration was 10.006 s at 720×1280, and the runtime emitted `TARGETED_RECOVERY_REVIEW_READY` with `no_new_generation=true`.
+
+## 33.19 Approval fails with ENOSPC / no space left
+
+Approval must not duplicate a local Review MP4 on the same persistent volume.
+
+Canonical approval handoff:
+
+1. The validated Review MP4 is already the durable source of truth on `/data`.
+2. On APPROVE, Publication takes ownership of that exact existing file path (`zero-copy handoff`); do not `copyfile` it into another directory on the same volume.
+3. Insert the publication row using the same file path and verified file size.
+4. Only after the publication row is durable, clear `factory_items.videoPath` and move the factory item to `queued`.
+5. Publication keeps the sole logical ownership of the file and deletes it only after the remote platform has durably accepted/published it or when the publication is explicitly purged.
+6. If approval reports `ENOSPC`, do **not** regenerate or redownload the video. Keep the Review item intact, reclaim only recreatable browser/cache data if necessary, and retry the zero-copy handoff.
+7. Log storage before/after approval and whether the handoff was zero-copy.
+
+This rule prevents a 5–10 MB Review video from temporarily requiring another 5–10 MB of free persistent storage merely to move from Review to Stock/Publishing.
+
 ---
 
 # 34. Observability requirements
