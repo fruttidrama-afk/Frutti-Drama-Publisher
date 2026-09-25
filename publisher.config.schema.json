@@ -405,6 +405,7 @@
                   "use_publish_at",
                   "metadata_final_before_upload",
                   "preserve_private_lead_window",
+                  "upload_lead_minutes",
                   "contains_synthetic_media"
                 ],
                 "properties": {
@@ -443,6 +444,9 @@
                   },
                   "preserve_private_lead_window": {
                     "const": true
+                  },
+                  "upload_lead_minutes": {
+                    "const": 390
                   }
                 }
               },
