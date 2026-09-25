@@ -783,7 +783,7 @@ app.post('/factory/generate-extra',(req,res)=>{
   metaSet('flow:currentStep','manual-extra-requested');
   metaSet('flow:message','Operator requested '+count+' extra video(s) today. Daily target is now '+target+'.');
   ensureBacklog(db);
-  const completed=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND credits>0 AND status IN ('review','completed')").get(day)?.n||0);
+  const completed=completedGeneratedToday(day);
   setTimeout(()=>{try{globalThis.__publisherRunProvider?.()}catch{}},50).unref?.();
   res.status(202).json({ok:true,day,added:count,daily_target:target,completed_today:completed,remaining_today:Math.max(0,target-completed)});
  }catch(e){res.status(400).json({error:e.message})}
@@ -828,9 +828,28 @@ function activeDailyTarget(day=publisherDay()){
  const manualTarget=Math.max(0,Number(metaGet('automation:manualDailyTarget:'+day,'0'))||0);
  return Math.max(base,envTarget,manualTarget);
 }
+function retainedGeneratedToday(day=publisherDay()){
+ let count=0;
+ try{
+   const rows=db.prepare("SELECT status,flowResult,lastProgressAt,updatedAt,stockId,reviewContentHash FROM factory_items WHERE status IN ('review','queued','historical','published')").all();
+   for(const row of rows){
+     let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
+     if(!(flow?.validated_ftyp||flow?.content_hash||row.reviewContentHash||row.stockId))continue;
+     const stamp=String(flow?.generation_started_at||row.lastProgressAt||row.updatedAt||'');
+     const ms=Date.parse(stamp);if(!Number.isFinite(ms))continue;
+     const d=new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ms));
+     if(d===day)count++;
+   }
+ }catch{}
+ return count;
+}
+function completedGeneratedToday(day=publisherDay()){
+ const ledger=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND credits>0 AND status IN ('review','completed')").get(day)?.n||0);
+ return Math.max(ledger,retainedGeneratedToday(day));
+}
 function health(){
  const counts={};for(const r of db.prepare('SELECT status,COUNT(*) n FROM factory_items GROUP BY status').all())counts[r.status]=Number(r.n);
- const p=providerStatus(),beat=p?.at?Date.parse(p.at):0,workerAlive=Boolean(beat&&Date.now()-beat<180000),today=new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),completed=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND credits>0 AND status IN ('review','completed')").get(today)?.n||0),current=db.prepare("SELECT episode,status,error,lastProgressAt FROM factory_items WHERE status IN ('generating','draft','regen_wait') ORDER BY CASE status WHEN 'generating' THEN 0 ELSE 1 END,episode LIMIT 1").get();
+ const p=providerStatus(),beat=p?.at?Date.parse(p.at):0,workerAlive=Boolean(beat&&Date.now()-beat<180000),today=new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()),completed=completedGeneratedToday(today),current=db.prepare("SELECT episode,status,error,lastProgressAt FROM factory_items WHERE status IN ('generating','draft','regen_wait') ORDER BY CASE status WHEN 'generating' THEN 0 ELSE 1 END,episode LIMIT 1").get();
  const dailyTarget=activeDailyTarget();
  const activePromptRows=db.prepare("SELECT episode,prompt FROM factory_items WHERE status IN ('draft','regen_wait') ORDER BY episode").all();
  const activeBible=String(CONFIG.content.creative_bible||'').trim();
