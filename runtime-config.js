@@ -122,7 +122,7 @@ export function loadConfig(){
       daily_credit_budget:generation.daily_credit_budget==null?null:Number(generation.daily_credit_budget)
     },
     automation:{provider:'free-browser-provider',persistent_profile:true,tinyfish_required:false,semantic_field_safety:true,external_reality_reconciliation:true,...(c.automation||{})},
-    review:{mode:clean(review.mode||'review',40),archive_provider:'private-cloud-storage',hot_originals:Number(review.hot_originals??2),archive_below_free_percent:Number(review.archive_below_free_percent??45)},
+    review:{mode:clean(review.mode||'review',40),archive_provider:'local-only',hot_originals:Number(review.hot_originals??2),archive_below_free_percent:Number(review.archive_below_free_percent??45)},
     schedule:{
       timezone:clean(schedule.timezone||identity.timezone||'UTC',100),
       indefinite:true,
