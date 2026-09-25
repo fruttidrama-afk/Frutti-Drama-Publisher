@@ -93,11 +93,20 @@ For every review item:
 - Ambiguity = stop/reconcile, not guess.
 - A stale manual result must never be silently imported as a fresh autonomous episode.
 
-## Daily credit invariants
-- Normal autonomous target is the publisher's configured daily target (Dinnie: 3/day).
-- A confirmed automatic generation start permanently consumes a daily slot, even if the item is later reset, deleted, rejected, or needs recovery.
-- REDO and Generate Extra are the only intentional paths that may exceed the autonomous target, and require explicit operator action.
-- Emergency pause must block Flow submission while allowing non-generation maintenance and publishing work.
+## Daily Flow credit-cycle invariants
+- Normal autonomous target is the publisher's configured batch target (current standard: 3 videos).
+- **The automatic batch does not reset at local midnight.** Calendar date is not the authority for Flow production.
+- Every account receives a 50-credit daily Flow allocation; paid plans can also expose a separate monthly/subscription balance.
+- The Publisher must observe the live Flow credit balance and wait for evidence that the daily allocation renewed before opening the next ordinary automatic batch.
+- A large paid/monthly balance by itself is never renewal evidence and must not be consumed simply because the calendar changed.
+- Canonical batch economics are 3 × 15 = 45 credits. Since unused daily credits do not roll over, a completed normal batch can make the next 50-credit refresh appear as a net balance increase of roughly 45, not necessarily exactly 50.
+- After the ordinary batch completes, capture and persist the post-batch Flow balance. Preserve this baseline and credit-cycle ID across process/browser/Railway restarts and across midnight.
+- Default renewal watcher: 5-minute polling once the cycle is at least 20 hours old. A conservative 30-hour fallback may open a cycle only if Flow visibly has enough credits for the full batch and the non-rollover model may have masked the net refill.
+- A confirmed automatic generation start consumes a slot in the current Flow credit cycle even if the item is later reset, deleted, rejected, or needs recovery.
+- Recovery/reconciliation of an already-submitted generation is never blocked by the credit-cycle gate.
+- REDO and Generate Extra remain explicit operator-authorized paths that may exceed the ordinary automatic batch; exactly-once and provider cooldown rules still apply.
+- Emergency pause and Unusual Activity cooldown override a detected refill and block new Flow submission while allowing non-generation maintenance and publishing work.
+- Required health invariants: daily_flow_credit_refresh_gate=true, calendar_midnight_does_not_open_batch=true, paid_monthly_credits_protected_until_daily_refresh=true.
 
 ## Recovery
 If a generation exists in Flow but local retrieval failed:
