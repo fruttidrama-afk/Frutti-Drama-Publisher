@@ -1871,7 +1871,15 @@ async function clickAndCaptureDownload(page,option,localPath,timeout=60000){
 async function openDownloadMenu(page){
   const trigger=await visibleDownloadButton(page);
   if(!trigger)return null;
-  await trigger.click({force:true,timeout:5000});
+  let opened=false;
+  try{
+    await clickInteractive(trigger);
+    opened=true;
+  }catch{}
+  if(!opened){
+    try{await trustedClick(trigger);opened=true}catch{}
+  }
+  if(!opened)throw new Error('FLOW_DOWNLOAD_MENU_CLICK_FAILED');
   await sleep(500);
   return trigger;
 }
@@ -2380,6 +2388,23 @@ function quarantineStaleReviewerRetryAmbiguous(db){
 }
 
 
+function normalizeRecoverableBrowserRetrievalCrash(db){
+  try{
+    const rows=db.prepare("SELECT * FROM factory_items WHERE status='generating' AND (error LIKE '%Target crashed%' OR error LIKE '%Target closed%' OR error LIKE '%Browser closed%') ORDER BY episode").all();
+    let repaired=0;
+    for(const row of rows){
+      const lc=lifecycle(db,row)||{},state=String(lc.state||'').toUpperCase();
+      if(!AFTER_GENERATE.has(state)&&!AMBIGUOUS.has(state))continue;
+      db.prepare("UPDATE factory_items SET nextTry=0,error='Browser renderer crashed during retrieval; retrying existing Flow result only. Generate remains locked.',lastProgressAt=?,updatedAt=? WHERE id=?")
+        .run(now(),now(),row.id);
+      setLifecycle(db,row,'RETRIEVAL_PENDING',{...lc,recovery_reason:'browser-renderer-crash',automatic_submit_forbidden:true,retry_at:new Date().toISOString()});
+      publish('BROWSER_RETRIEVAL_CRASH_RECOVERED',{episode:'E'+row.episode,job_id:row.id,message:'Browser crash after generation was converted to immediate retrieval-only recovery. No duplicate Generate will be sent.'});
+      repaired++;
+    }
+    return repaired;
+  }catch(e){publish('BROWSER_RETRIEVAL_CRASH_REPAIR_WARNING',{message:compact(e?.message||e,400)});return 0}
+}
+
 function normalizeOutOfOrderAmbiguous(db){
   // Any ambiguous submit for episode N that was created before N-1 reached
   // Review is a legacy sequencing violation. Preserve the submit evidence and
@@ -2726,7 +2751,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);normalizeLiveNoChargeCooldown(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);normalizeLiveNoChargeCooldown(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
@@ -2752,7 +2777,7 @@ async function runProvider(){
     publish(priorityRetry?'REVIEW_RETRY_PICKED':'PRODUCTION_PICKED',{episode:'E'+row.episode,job_id:row.id,used_today:used,remaining_today:Math.max(0,dailyProductionLimit(db)-used),daily_limit_bypassed:priorityRetry});await processRow(db,row);
   }catch(err){
     const message=compact(err?.stack||err?.message||err,900);
-    try{if(db&&row){const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row,lc=lifecycle(db,fresh)||{},state=String(lc.state||'').toUpperCase(),attempts=Number(fresh.runtimeAttemptCount||0)+1,beforeGenerate=!AFTER_GENERATE.has(state)&&!AMBIGUOUS.has(state),baseBackoff=beforeGenerate?10000:60000,capBackoff=beforeGenerate?5*60*1000:60*60*1000,backoff=Math.min(capBackoff,baseBackoff*Math.pow(2,Math.min(attempts-1,6))),nextTry=Date.now()+backoff;if(/FLOW_TRANSIENT_NO_CHARGE/.test(message)){
+    try{if(db&&row){const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row,lc=lifecycle(db,fresh)||{},state=String(lc.state||'').toUpperCase(),attempts=Number(fresh.runtimeAttemptCount||0)+1,beforeGenerate=!AFTER_GENERATE.has(state)&&!AMBIGUOUS.has(state),browserRetrievalCrash=/Target crashed|Target closed|Browser closed/i.test(message)&&(AFTER_GENERATE.has(state)||AMBIGUOUS.has(state)),baseBackoff=browserRetrievalCrash?5000:(beforeGenerate?10000:60000),capBackoff=browserRetrievalCrash?15000:(beforeGenerate?5*60*1000:60*60*1000),backoff=Math.min(capBackoff,baseBackoff*Math.pow(2,Math.min(attempts-1,6))),nextTry=Date.now()+backoff;if(/FLOW_TRANSIENT_NO_CHARGE/.test(message)){
   const run=String(lc?.generation_id||fresh.providerRunId||'');
   scheduleNoChargeRetry(db,fresh,{run,evidence:message,reason:'exception-no-charge'});
 }else if(/FLOW_INSUFFICIENT_CREDITS/.test(message)){
