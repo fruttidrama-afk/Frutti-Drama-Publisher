@@ -39,8 +39,15 @@ async function saveReviewAsset(db,row,localPath,flowResult,stamp=now()){
   // YouTube, Supabase review storage, or any other remote destination.
   flowResult.review_storage='local-volume-until-approval';
   const size=fs.statSync(localPath).size;
-  db.prepare(`UPDATE factory_items SET status='review',videoPath=?,remoteUrl=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=?,flowResult=?,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?`)
-    .run(localPath,size,JSON.stringify(flowResult),stamp,stamp,row.id);
+  const contentHash=createHash('sha256').update(fs.readFileSync(localPath)).digest('hex');
+  const duplicate=db.prepare("SELECT id,episode,status FROM factory_items WHERE id<>? AND reviewContentHash=? LIMIT 1").get(row.id,contentHash);
+  if(duplicate){
+    try{fs.unlinkSync(localPath)}catch{}
+    throw new Error('FLOW_DUPLICATE_REVIEW_MEDIA: downloaded media is already bound to episode '+duplicate.episode+'; refusing cross-episode reuse.');
+  }
+  flowResult.content_hash=contentHash;
+  db.prepare(`UPDATE factory_items SET status='review',videoPath=?,remoteUrl=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=?,reviewContentHash=?,flowResult=?,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?`)
+    .run(localPath,size,contentHash,JSON.stringify(flowResult),stamp,stamp,row.id);
   return null;
 }
 
@@ -228,6 +235,27 @@ function normalizeUnconfirmedPreGenerationRows(db){
         setMeta(db,resetKey,'done');
       }
     }
+    const forcedReviewEpisodes=String(process.env.PUBLISHER_FORCE_RESET_REVIEW_EPISODES||'').split(',').map(x=>Number(x.trim())).filter(x=>Number.isInteger(x)&&x>0);
+    const forcedReviewToken=String(process.env.PUBLISHER_FORCE_RESET_REVIEW_TOKEN||'').trim();
+    if(forcedReviewEpisodes.length&&forcedReviewToken){
+      for(const episode of [...new Set(forcedReviewEpisodes)]){
+        const resetKey='operator:force-reset-invalid-review:'+episode+':'+forcedReviewToken;
+        if(meta(db,resetKey,'')==='done')continue;
+        const bad=db.prepare("SELECT * FROM factory_items WHERE episode=? LIMIT 1").get(episode);
+        if(bad&&String(bad.status||'')==='review'){
+          try{if(bad.videoPath&&fs.existsSync(bad.videoPath))fs.unlinkSync(bad.videoPath)}catch{}
+          db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Invalid review reset: no episode-specific Flow generation was proven.',updatedAt=? WHERE itemId=?").run(now(),bad.id);
+          db.prepare(`UPDATE factory_items SET status='draft',videoPath=NULL,remoteUrl=NULL,stockId=NULL,providerRunId=NULL,flowResult=NULL,
+            prompt='',promptHash=NULL,promptGenerationId=NULL,characterHandles=NULL,characterRoles=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,
+            creativePackageHash=NULL,creativePackageId=NULL,transportPreflight=NULL,runtimeAttemptCount=0,lastProgressAt=?,reviewVideoId=NULL,
+            reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewArchiveError=NULL,reviewContentHash=NULL,
+            title='',description='',error=NULL,nextTry=0,updatedAt=? WHERE id=?`).run(now(),now(),bad.id);
+          setLifecycle(db,bad,'FORCED_INVALID_REVIEW_RESET',{episode,reconciled_at:now(),evidence:'Operator verified this review card reused pre-existing/manual Flow media and no new episode render existed.',automatic_submit_forbidden:false});
+          publish('INVALID_REVIEW_RESET',{episode:'E'+episode,job_id:bad.id,message:'Invalid reused review media removed; episode returned to draft for one clean generation.'});
+        }
+        setMeta(db,resetKey,'done');
+      }
+    }
     const rows=db.prepare("SELECT * FROM factory_items WHERE videoPath IS NULL AND status NOT IN ('review','queued','historical','published') AND (reviewFeedback IS NULL OR TRIM(reviewFeedback)='') ORDER BY episode").all();
     let repaired=0;
     for(const row of rows){
@@ -362,7 +390,7 @@ function creativePackageHash(row,prompt,title,description){
   }));
 }
 function buildCreativePackage(row,prompt){
-  const provider=(CONFIG.publication?.providers||[]).find(x=>x.type==='youtube')||{};
+  const providers=CONFIG.publication?.providers||[],provider=providers.find(x=>x.type===CONFIG.publication?.selected_provider)||providers[0]||{};
   const copy=buildPublicationCopy({
     hook:row.hook,
     story:row.story,
