@@ -172,10 +172,13 @@ has(server,'post_click_asset_identity_verified:true','post-click asset identity 
 has(server,'recovery_token_never_submits:true','targeted recovery token can never submit');
 has(server,'adjacent_submit_temporal_bracket:true','adjacent-submit temporal recovery bracket');
 has(server,'download_reopen_by_asset_identity:true','download reopen by Flow asset identity');
+has(server,'zero_copy_approval_handoff:true','zero-copy approval handoff');
+has(server,'approval_enospc_copy_eliminated:true','approval ENOSPC duplicate-copy elimination');
 has(server,'show_specific_repairs_isolated:true','show-specific repair isolation health invariant');
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
 const publication=read('publication.js');
+const facebookPublication=read('publication-facebook.js');
 has(publication,'containsSyntheticMedia:true','YouTube synthetic-media disclosure');
 has(publication,'containsSyntheticMedia:true','publication synthetic-media disclosure');
 has(publication,'buildPublicationCopy','publication copy builder');
@@ -196,6 +199,11 @@ has(server,'credit_cycle:creditCycleHealth','credit-cycle health observability')
 has(server,"retryStrategy='ai_pending'",'REDO enters semantic AI pending state');
 has(server,'purgeRejected','reject endpoint purges any accidental publication artifacts');
 has(publication,'APPROVAL_GATE','publication enqueue requires explicit approval');
+has(publication,'sourceMediaTransferred=true','YouTube Review file ownership transfer');
+has(facebookPublication,'sourceMediaTransferred=true','Facebook Review file ownership transfer');
+must(!publication.includes('fs.copyFileSync(row.videoPath,filePath)'),'same-volume YouTube approval copy must stay eliminated');
+must(!facebookPublication.includes('fs.copyFileSync(row.videoPath,filePath)'),'same-volume Facebook approval copy must stay eliminated');
+has(server,'[APPROVAL MEDIA HANDOFF]','approval handoff observability');
 has(publication,'purgeRejected','rejected publication artifacts are purged');
 has(publication,'purgePrivateVideosByTitle','operator cleanup can delete legacy private orphan uploads');
 has(publication,'readReviewRange','approved publication may stream from private cloud storage');
