@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#071a12">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="manifest" href="/manifest.webmanifest?v=20260925-fullbleed">
-<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=20260925-fullbleed">
-<link rel="apple-touch-icon-precomposed" sizes="180x180" href="/apple-touch-icon.png?v=20260925-fullbleed">
-<link rel="icon" type="image/png" href="/brand/icon-192.png?v=20260925-fullbleed">
+<link rel="manifest" href="/manifest.webmanifest?v=20260925-finalfill">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=20260925-finalfill">
+<link rel="apple-touch-icon-precomposed" sizes="180x180" href="/apple-touch-icon.png?v=20260925-finalfill">
+<link rel="icon" type="image/png" href="/brand/icon-192.png?v=20260925-finalfill">
 <title>Publisher Setup</title>
 <style>
 :root{--navy:#0d3152;--gold:#b59a64;--ink:#1d1d1b;--muted:#6e6a63;--ivory:#f7f6f2;--surface:#ffffff;--line:#ded9cf;--green:#68c98c;--greenbg:#173326;--glass:color-mix(in srgb,var(--surface) 78%,transparent)}
@@ -317,7 +317,7 @@ function paintCard(id,stateId,done,yes,no){const c=$(id),s=$(stateId);c.classLis
 function applyBrand(b,show='Publisher'){
   if(!b)return;const t=b.theme||{},root=document.documentElement;
   if(t.primary)root.style.setProperty('--navy',t.primary);if(t.secondary)root.style.setProperty('--secondary',t.secondary);if(t.accent)root.style.setProperty('--gold',t.accent);if(t.background)root.style.setProperty('--ivory',t.background);if(t.surface)root.style.setProperty('--surface',t.surface);if(t.text)root.style.setProperty('--ink',t.text);root.style.setProperty('--muted','color-mix(in srgb,var(--ink) 68%,transparent)');root.style.setProperty('--line','color-mix(in srgb,var(--ink) 16%,transparent)');
-  const logo=$('#brandLogo'),words=$('#brandWords'),tag=$('#brandTagline');words.textContent=show||'Publisher';tag.textContent=b.tagline||'';if(b.logo_url){logo.src='/brand/logo.png?v=20260925-fullbleed';logo.alt=(show||'Publisher')+' logo';logo.onerror=()=>{logo.src='/brand/icon-192.png?v=20260925-fullbleed';logo.onerror=null};logo.classList.add('show')}else logo.classList.remove('show');
+  const logo=$('#brandLogo'),words=$('#brandWords'),tag=$('#brandTagline');words.textContent=show||'Publisher';tag.textContent=b.tagline||'';if(b.logo_url){logo.src='/brand/logo.png?v=20260925-finalfill';logo.alt=(show||'Publisher')+' logo';logo.onerror=()=>{logo.src='/brand/icon-192.png?v=20260925-finalfill';logo.onerror=null};logo.classList.add('show')}else logo.classList.remove('show');
   const isDesign=b.reference_mode==='web_design',mayRender=b.render_reference_image!==false&&!isDesign;
   document.body.classList.toggle('design-derived',isDesign);
   document.body.classList.toggle('botanical-theme',/dinnie|dinosaur|forest|jungle|prehistoric/i.test(String(show)+' '+String(b.tagline||'')));
