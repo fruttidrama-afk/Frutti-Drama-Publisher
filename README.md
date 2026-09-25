@@ -52,6 +52,8 @@ Publisher Factory does not mark a Railway deployment ready unless `/factory/heal
 - unusual-activity streak and cooldown are provider/account-wide, not per episode; older rows may extend but can never shorten an active cooldown;
 - every confirmed retained render resets the provider unusual-activity streak; successful REDO renders count toward the same visible 3/day generation target;
 - legacy per-episode unusual-activity counters are cleared on recovery and can never re-seed the provider streak after a successful render;
+- Flow recovery accepts only a provably post-submit result: a fresh video src, the single newest tile created in the same submit session, or an episode-correlated non-baseline tile; ambiguous old media is never guessed;
+- Earth in 10 runs a catalog-wide uniqueness gate across draft, Review, stock, queued, uploaded and published episode metadata; the autonomous location bank never cycles back to an already-used landscape and stops rather than repeat;
 - show-specific forensic repair code absent from generic Publishers;
 - strict serial gate enabled.
 
