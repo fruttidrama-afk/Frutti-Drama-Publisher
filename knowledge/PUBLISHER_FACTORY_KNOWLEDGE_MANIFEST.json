@@ -28,6 +28,10 @@
     "calendar_midnight_opens_batch": false,
     "daily_flow_credit_grant": 50,
     "paid_monthly_credits_protected_until_daily_refresh": true,
-    "credit_cycle_persistent": true
+    "credit_cycle_persistent": true,
+    "native_ai_disclosure_required": true,
+    "youtube_contains_synthetic_media_always": true,
+    "facebook_is_ai_generated_always": true,
+    "legacy_ai_disclosure_repair_enabled": true
   }
 }
