@@ -59,6 +59,7 @@ body.completed .shell{padding-top:28px}
 .status{background:color-mix(in srgb,var(--surface) 82%,transparent);border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);padding:18px;border-radius:20px;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}.label{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:var(--gold);font-weight:800}.value{font-size:24px;font-weight:800;color:var(--ink);margin:10px 0 3px}
 .extra-generate{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;margin:0 0 18px;padding:18px 20px;border-radius:20px;border:1px solid color-mix(in srgb,var(--gold) 35%,transparent);background:color-mix(in srgb,var(--surface) 86%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}.extra-generate h3{margin:3px 0 5px;font-size:19px;color:var(--ink)}.extra-generate p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.extra-controls{display:flex;gap:8px;align-items:center}.extra-controls input{width:76px;min-height:42px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);padding:0 10px;font:inherit;font-weight:800;text-align:center}@media(max-width:620px){.extra-generate{grid-template-columns:1fr}.extra-controls{width:100%}.extra-controls .btn{flex:1}}
 .publication-schedule{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;margin:0 0 14px;padding:18px 20px;border-radius:20px;border:1px solid color-mix(in srgb,var(--gold) 28%,transparent);background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}.publication-schedule h3{margin:3px 0 5px;font-size:19px;color:var(--ink)}.publication-schedule p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.schedule-controls{display:flex;gap:8px;align-items:center}.schedule-controls input[type="time"]{min-height:42px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);padding:0 12px;font:inherit;font-weight:800}.schedule-tz{font-size:11px;color:var(--muted);margin-top:6px;text-align:right}@media(max-width:620px){.publication-schedule{grid-template-columns:1fr}.schedule-controls{width:100%}.schedule-controls .btn{flex:1}.schedule-tz{text-align:left}}
+.manual-import{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;margin:0 0 14px;padding:18px 20px;border-radius:20px;border:1px solid color-mix(in srgb,var(--gold) 22%,transparent);background:color-mix(in srgb,var(--surface) 88%,transparent)}.manual-import h3{margin:3px 0 5px;font-size:19px;color:var(--ink)}.manual-import p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.import-controls{display:grid;grid-template-columns:88px minmax(190px,1fr) auto;gap:8px;align-items:center}.import-controls input{min-height:42px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);padding:0 10px;font:inherit}.import-controls input[type="number"]{font-weight:800;text-align:center}.import-controls input[type="file"]{padding:8px;max-width:300px}@media(max-width:720px){.manual-import{grid-template-columns:1fr}.import-controls{grid-template-columns:82px 1fr}.import-controls .btn{grid-column:1/-1}}
 .tabs{display:flex;gap:8px;margin:18px 0}.tab.active{background:var(--navy);color:#fff;border-color:var(--navy)}
 .panel{display:none}.panel.active{display:block}
 .review-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.review{background:color-mix(in srgb,var(--surface) 86%,transparent);border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);overflow:hidden;border-radius:20px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}.video{background:#151515;aspect-ratio:9/16;max-height:560px;width:100%;object-fit:contain}.review-body{padding:16px}.review h3{font:600 24px Arial,Helvetica,sans-serif;color:var(--ink);margin:5px 0}.story{font-size:14px;color:var(--muted);line-height:1.5;margin:9px 0 15px}.review-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -181,6 +182,14 @@ body.completed .shell{padding-top:28px}
     <div>
       <div class="schedule-controls"><input id="postingTime" type="time" step="60" aria-label="Hora de publicación"><button class="btn primary" id="savePostingTime" type="button">GUARDAR HORA</button></div>
       <div class="schedule-tz" id="postingTimezone">—</div>
+    </div>
+  </div>
+  <div class="manual-import">
+    <div><div class="eyebrow">RECUPERAR VIDEO EXISTENTE</div><h3>Subir un MP4 directamente a Stock</h3><p>Si descargás de Google Flow el render correcto, podés asignarlo al episodio y guardarlo en Stock sin generar nada nuevo. Se conservan el título, la descripción y el horario del Publisher.</p></div>
+    <div class="import-controls">
+      <input id="importEpisode" type="number" min="1" step="1" value="4" aria-label="Episodio">
+      <input id="importVideo" type="file" accept="video/mp4,.mp4" aria-label="MP4 a recuperar">
+      <button class="btn primary" id="importStockBtn" type="button">SUBIR A STOCK</button>
     </div>
   </div>
   <div id="queueBox" class="video-state-list"></div>
@@ -360,6 +369,22 @@ if(savePostingTime)savePostingTime.onclick=async()=>{
     await load();
   }catch(e){toast(e.message)}
   finally{savePostingTime.disabled=false}
+};
+const importStockBtn=$('#importStockBtn');
+if(importStockBtn)importStockBtn.onclick=async()=>{
+  const episode=Math.trunc(Number($('#importEpisode')?.value)||0),file=$('#importVideo')?.files?.[0];
+  if(episode<1){toast('Elegí un episodio válido');return}
+  if(!file){toast('Elegí el MP4 correcto de Google Flow');return}
+  importStockBtn.disabled=true;importStockBtn.textContent='SUBIENDO…';
+  try{
+    const r=await fetch('/factory/import-stock/'+episode,{method:'POST',headers:{'Content-Type':'video/mp4'},body:file});
+    const out=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(out.error||('HTTP '+r.status));
+    toast('Episodio '+episode+' recuperado y guardado en Stock');
+    $('#importVideo').value='';
+    await load();
+  }catch(e){toast(e.message)}
+  finally{importStockBtn.disabled=false;importStockBtn.textContent='SUBIR A STOCK'}
 };
 const installAppButton=$('#installApp');if(installAppButton)installAppButton.style.display='none';
 $('#installClose').onclick=()=>{$('#installModal').classList.remove('open');$('#installModal').setAttribute('aria-hidden','true')};
