@@ -64,7 +64,9 @@ must(!provider.includes('--disk-cache-dir=/tmp/publisher-chrome-cache'),'custom 
 for(const [token,label] of [
   ['function scheduleNoChargeRetry(db,row,opts={})','adaptive no-charge scheduler'],
   ['flow:transientCooldownUntil','provider-wide no-charge cooldown'],
-  ['no_charge_streak:streak','no-charge streak persistence'],
+  ["'flow:noChargeStreak:provider'",'provider-wide no-charge streak persistence'],
+  ['FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIRED','legacy successful-render backoff repair'],
+  ["status IN ('review','completed')",'successful retained render daily accounting'],
   ["if(providerCooldown>Date.now())return null",'provider cooldown submit gate']
 ]) has(provider,token,label);
 for(const forbidden of ['FLOW_FAILED_TILE_RETRY_CLICKED','clickNativeRetry','repairEarthE10NoGeneration','repairEarthE11KnownNoCharge','repairEarthTodayAfterOperatorConfirmedOnlyFirstRender','realignEarthE11ToFruttiProtocol','rearmEarthE11AfterFullFruttiPort','rearmEarthE11AfterStableComposerFix']){
@@ -100,6 +102,10 @@ has(server,'stable_composer_handoff:true','stable Flow composer health invariant
 has(server,'native_no_charge_retry:false','native no-charge Retry disabled invariant');
 has(server,'immediate_native_retry_disabled:true','immediate native retry safety invariant');
 has(server,'adaptive_no_charge_backoff:true','adaptive no-charge backoff health invariant');
+has(server,'provider_wide_unusual_activity_backoff:true','provider-wide unusual-activity health invariant');
+has(server,'monotonic_provider_cooldown:true','monotonic provider cooldown health invariant');
+has(server,'successful_render_resets_provider_backoff:true','successful render resets provider backoff');
+has(server,'successful_redos_count_toward_daily_target:true','successful REDO renders count toward daily target');
 has(server,'show_specific_repairs_isolated:true','show-specific repair isolation health invariant');
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
