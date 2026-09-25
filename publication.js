@@ -112,6 +112,11 @@ function canonicalPublicationState(r){
     message:'Todavía no se pudo enviar a '+platform+'. Se reintentará automáticamente.',
     resolution:'automatic',actionRequired:false
   };
+  if(s==='backup_hold')return{
+    key:'pending',label:'RESCATE REQUERIDO',
+    message:String(r?.error||'No existe una copia segura fuera de la plataforma. El video queda bloqueado hasta recuperar un respaldo cloud.'),
+    resolution:'action_required',actionRequired:true
+  };
   if(['uploading','publishing','processing'].includes(s))return{
     key:'pending',label:'PENDIENTE',
     message:platform+' está procesando este video. No requiere intervención.',
@@ -587,10 +592,15 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
               const state=await readRemoteStatus(item);
               remotePollNext.set(item.id,t+(state==='published'?24*60*60*1000:state==='scheduled'?10*60*1000:3*60*1000));
             }catch(e){
-              const quota=isQuotaExceeded(e);
+              const quota=isQuotaExceeded(e),msg=String(e?.message||e);
               remotePollNext.set(item.id,quota?nextYoutubeQuotaRetry():t+5*60*1000);
               if(quota)await publicPageFallback(item);
-              else console.log('[PUBLICATION REMOTE STATUS WARNING]',JSON.stringify({episode:item.episode,error:String(e?.message||e).slice(0,500)}));
+              else if(/YouTube video not found/i.test(msg)&&item.videoId&&!item.filePath){
+                item.status='backup_hold';item.remotePrivacyStatus=null;item.remotePublishAt=null;
+                item.error='YouTube no confirma este video y no existe respaldo cloud/local. Rescate requerido antes de cualquier publicación.';
+                hist(item,'backup_hold',item.error);save(db,item);
+                console.log('[PUBLICATION BACKUP HOLD]',JSON.stringify({episode:item.episode,videoId:item.videoId,message:item.error}));
+              }else console.log('[PUBLICATION REMOTE STATUS WARNING]',JSON.stringify({episode:item.episode,error:msg.slice(0,500)}));
             }
           }
           if(item.videoId&&!item.aiDisclosureSyncedAt&&loadToken()&&Date.now()>=Number(aiDisclosureNext.get(item.id)||0)){
@@ -602,6 +612,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
             }
           }
           if(item.status==='published')continue;
+          if(item.status==='backup_hold')continue;
           if(item.retryAt>Date.now())continue;
           const releaseAt=Date.parse(item.scheduledAt),uploadAt=Date.parse(item.uploadAt),clock=Date.now();
           // uploadAt only gates videos that have not been uploaded yet.
