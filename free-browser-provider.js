@@ -2722,11 +2722,13 @@ function scheduleNoChargeRetry(db,row,opts={}){
 }
 function resetNoChargeBackoff(db,row){
   // A confirmed retained render is definitive evidence that the Flow account
-  // recovered. Reset provider-wide unusual-activity state and release stale
-  // cooldowns from older episodes so serial production can continue.
+  // recovered. Reset *every* legacy per-item streak as well as the provider
+  // streak; otherwise normalizeLiveNoChargeCooldown could resurrect an old
+  // pre-success streak and incorrectly jump straight back to a 24h cooldown.
   const stamp=now();
+  try{db.prepare("UPDATE factory_meta SET value='0' WHERE key LIKE 'flow:noChargeStreak:%'").run()}catch{}
   setMeta(db,'flow:noChargeStreak:provider','0');
-  if(row)setMeta(db,'flow:noChargeStreak:'+row.id,'0');
+  setMeta(db,'flow:legacyNoChargeStreakMigratedV2','done');
   setMeta(db,'flow:transientCooldownUntil','0');
   setMeta(db,'flow:lastProviderRecoveryAt',stamp);
   try{
@@ -2734,7 +2736,7 @@ function resetNoChargeBackoff(db,row){
   }catch{}
   publish('FLOW_PROVIDER_BACKOFF_RESET',{
     episode:row?('E'+row.episode):null,
-    message:'Confirmed retained render reset the provider-wide unusual-activity streak and released stale cooldown rows.'
+    message:'Confirmed retained render reset provider-wide and all legacy per-item unusual-activity streaks; stale cooldown rows were released.'
   });
 }
 function repairLegacyBackoffAfterConfirmedSuccess(db){
@@ -2797,18 +2799,96 @@ function repairLegacyBackoffAfterConfirmedSuccess(db){
   setMeta(db,key,'done');
 }
 
+function repairProviderBackoffAfterConfirmedSuccessV2(db){
+  const key='repair:provider-backoff-after-confirmed-success-v2';
+  if(meta(db,key,'')==='done')return;
+  try{
+    const success=db.prepare("SELECT itemId,updatedAt,createdAt FROM factory_generations WHERE credits>0 AND status IN ('review','completed') ORDER BY updatedAt DESC LIMIT 1").get();
+    const successAt=Date.parse(String(success?.updatedAt||success?.createdAt||''))||0;
+    if(!successAt){setMeta(db,key,'done');return}
+
+    const lifecycleRows=db.prepare("SELECT key,value FROM factory_meta WHERE key LIKE 'flow:generationLifecycle:%'").all();
+    const after=[];
+    const before=[];
+    for(const x of lifecycleRows){
+      const lc=json(x.value,null);if(!lc)continue;
+      const st=String(lc.state||'').toUpperCase();
+      if(!['TRANSIENT_NO_CHARGE_RETRY','UNUSUAL_ACTIVITY_OVERNIGHT'].includes(st))continue;
+      const at=Date.parse(String(lc.updated_at||lc.retry_at||''))||0;
+      const itemId=String(x.key||'').split(':').pop();
+      if(at>successAt)after.push({itemId,at,lc});else if(at>0)before.push({itemId,at,lc});
+    }
+
+    // Clear all legacy counters first so a later normalization cannot restore a
+    // pre-success streak. Current streak is ONLY alerts after latest success.
+    try{db.prepare("UPDATE factory_meta SET value='0' WHERE key LIKE 'flow:noChargeStreak:%'").run()}catch{}
+    setMeta(db,'flow:legacyNoChargeStreakMigratedV2','done');
+    setMeta(db,'flow:lastProviderRecoveryAt',new Date(successAt).toISOString());
+
+    if(!after.length){
+      setMeta(db,'flow:noChargeStreak:provider','0');
+      setMeta(db,'flow:transientCooldownUntil','0');
+      for(const x of before){
+        try{db.prepare("UPDATE factory_items SET nextTry=0,error=NULL,updatedAt=? WHERE id=? AND status='draft' AND providerRunId IS NULL").run(now(),x.itemId)}catch{}
+      }
+      publish('FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIRED_V2',{
+        current_provider_streak:0,
+        latest_confirmed_success:new Date(successAt).toISOString(),
+        retry_at:null,
+        message:'No unusual-activity alert exists after the latest successful render; stale provider cooldown fully cleared.'
+      });
+      setMeta(db,key,'done');return;
+    }
+
+    // Strict serial mode means each post-success alert is one real provider
+    // rejection. Count only those alerts, never historical per-item counters.
+    after.sort((a,b)=>a.at-b.at);
+    const currentStreak=Math.max(1,after.length);
+    const latestAlert=after[after.length-1].at;
+    const retryAt=latestAlert+noChargeDelayMs(currentStreak);
+    const due=retryAt<=Date.now();
+    setMeta(db,'flow:noChargeStreak:provider',String(currentStreak));
+    setMeta(db,'flow:transientCooldownUntil',String(due?0:retryAt));
+
+    for(const x of before){
+      try{db.prepare("UPDATE factory_items SET nextTry=0,error=NULL,updatedAt=? WHERE id=? AND status='draft' AND providerRunId IS NULL").run(now(),x.itemId)}catch{}
+    }
+    for(const x of after){
+      try{
+        db.prepare("UPDATE factory_items SET nextTry=?,error=?,updatedAt=? WHERE id=? AND status='draft' AND providerRunId IS NULL").run(
+          due?0:retryAt,
+          due?null:'FLOW_NO_CHARGE — provider-wide exponential backoff active.',
+          now(),x.itemId
+        );
+      }catch{}
+    }
+    publish('FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIRED_V2',{
+      current_provider_streak:currentStreak,
+      latest_confirmed_success:new Date(successAt).toISOString(),
+      latest_alert:new Date(latestAlert).toISOString(),
+      retry_at:due?null:new Date(retryAt).toISOString(),
+      retry_due_now:due,
+      message:'Provider streak rebuilt only from alerts after latest retained render; historical streaks cannot be resurrected.'
+    });
+  }catch(e){publish('FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIR_V2_WARNING',{message:compact(e?.message||e,500)})}
+  setMeta(db,key,'done');
+}
+
 function normalizeLiveNoChargeCooldown(db){
   try{
     const rows=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND (error LIKE 'FLOW%NO_CHARGE%' OR error LIKE 'FLOW_UNUSUAL_ACTIVITY_%') ORDER BY episode").all();
 
-    // One-time migration from the old per-episode streak model. Use the largest
-    // existing streak as a conservative floor; never sum historical rows.
+    // One-time migration from the old per-episode streak model. Never resurrect
+    // legacy item streaks after a confirmed provider recovery.
     let providerStreak=Math.max(0,Number(meta(db,'flow:noChargeStreak:provider','0'))||0);
-    if(providerStreak<1){
+    const legacyMigrated=meta(db,'flow:legacyNoChargeStreakMigratedV2','')==='done';
+    const recoveredAt=String(meta(db,'flow:lastProviderRecoveryAt','')).trim();
+    if(providerStreak<1&&!legacyMigrated&&!recoveredAt){
       try{
         const legacy=db.prepare("SELECT key,value FROM factory_meta WHERE key LIKE 'flow:noChargeStreak:%' AND key<>'flow:noChargeStreak:provider'").all();
         providerStreak=Math.max(0,...legacy.map(x=>Number(x.value)||0));
         if(providerStreak>0)setMeta(db,'flow:noChargeStreak:provider',String(providerStreak));
+        setMeta(db,'flow:legacyNoChargeStreakMigratedV2','done');
       }catch{}
     }
     if(providerStreak<1||!rows.length)return;
@@ -3016,7 +3096,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);normalizeLiveNoChargeCooldown(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);repairProviderBackoffAfterConfirmedSuccessV2(db);normalizeLiveNoChargeCooldown(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
