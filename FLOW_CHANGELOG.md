@@ -47,3 +47,12 @@
 - Removed immediate native failed-tile Retry from the reusable Flow submit path and restored the exact FruttiDrama single-submit boundary: one Send, observe, then back off on explicit no-charge.
 - Removed all one-off Earth E10/E11 forensic repair functions from the canonical Publisher Factory runtime after their persistent-state repairs were completed.
 - Aligned the canonical browser launch cadence with the proven FruttiDrama runtime: fresh X display/CDP port per session, 3-second Chrome settle before CDP attach, and no custom cache fingerprint flags.
+
+## 2026-09-25 — identity-safe E6 recovery + zero-copy approval
+
+- Confirmed a wrong-recovery failure can occur even after the correct Flow render exists: DOM position and grid-count delta were insufficient identifiers.
+- Recovered Earth E6 from the existing Flow render without another generation by using stable Flow asset identity, baseline multiset diffing, adjacent-submit temporal bracketing, unused-asset rejection, post-click identity revalidation, MP4 validation and content-hash quarantine.
+- Added durable `flow_recovered_assets` and `flow_rejected_media_hashes` guards.
+- Targeted recovery is now generation-read-only: a recovery token can never fall through to Generate.
+- Fixed APPROVE `ENOSPC`: local Review media is transferred to Publication by path ownership rather than copied on the same persistent volume.
+- Publisher Factory must require these recovery and approval-storage invariants for future publishers.
