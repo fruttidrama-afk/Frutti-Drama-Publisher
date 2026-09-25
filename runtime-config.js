@@ -122,17 +122,29 @@ export function loadConfig(){
       daily_credit_budget:generation.daily_credit_budget==null?null:Number(generation.daily_credit_budget)
     },
     automation:{provider:'free-browser-provider',persistent_profile:true,tinyfish_required:false,semantic_field_safety:true,external_reality_reconciliation:true,...(c.automation||{})},
-    review:{mode:clean(review.mode||'review',40),archive_provider:clean(review.archive_provider||'private-cloud-storage',80),hot_originals:Number(review.hot_originals??2),archive_below_free_percent:Number(review.archive_below_free_percent??45)},
+    review:{mode:clean(review.mode||'review',40),archive_provider:'private-cloud-storage',hot_originals:Number(review.hot_originals??2),archive_below_free_percent:Number(review.archive_below_free_percent??45)},
     schedule:{
       timezone:clean(schedule.timezone||identity.timezone||'UTC',100),
       indefinite:true,
       generation_strategy:'sequential',
-      posting_times:Array.isArray(schedule.posting_times)&&schedule.posting_times.length
-        ?[...new Set(schedule.posting_times.map(v=>clean(v,5)).filter(v=>/^\d{2}:\d{2}$/.test(v)))].slice(0,20)
-        :['19:00'],
-      upload_lead_minutes:Math.max(0,Math.min(1440,Number(schedule.upload_lead_minutes??390)))
+      posting_times:(()=>{
+        const override=String(process.env.PUBLISHER_POSTING_TIMES_OVERRIDE||'').split(',').map(v=>clean(v,5)).filter(v=>/^\d{2}:\d{2}$/.test(v));
+        if(override.length)return[...new Set(override)].slice(0,20);
+        return Array.isArray(schedule.posting_times)&&schedule.posting_times.length
+          ?[...new Set(schedule.posting_times.map(v=>clean(v,5)).filter(v=>/^\d{2}:\d{2}$/.test(v)))].slice(0,20)
+          :['19:00'];
+      })(),
+      upload_lead_minutes:0
     },
-    publication:c.publication||{allowed_providers:['youtube','facebook'],selected_provider:null,providers:[]},
+    publication:(()=>{
+      const p=c.publication||{allowed_providers:['youtube','facebook'],selected_provider:null,providers:[]};
+      return{
+        ...p,
+        providers:(Array.isArray(p.providers)?p.providers:[]).map(x=>String(x?.type||'').toLowerCase()==='youtube'
+          ?{...x,privacy_before_publish:'none',upload_policy:'direct-public-at-release',stock_storage:'private-cloud-storage'}
+          :x)
+      };
+    })(),
     security:c.security||{passkeys:true,recovery_pin:true,session_management:true}
   };
   fs.mkdirSync(DATA_DIR,{recursive:true,mode:0o700});
