@@ -50,6 +50,7 @@ Publisher Factory does not mark a Railway deployment ready unless `/factory/heal
 - adaptive provider-wide no-charge backoff enabled;
 - unusual-activity exponential backoff enabled: 30m → 1h → 2h → 4h → 8h, then 24h when the next doubling would exceed 10h;
 - unusual-activity streak and cooldown are provider/account-wide, not per episode; older rows may extend but can never shorten an active cooldown;
+- every confirmed retained render resets the provider unusual-activity streak; successful REDO renders count toward the same visible 3/day generation target;
 - show-specific forensic repair code absent from generic Publishers;
 - strict serial gate enabled.
 
