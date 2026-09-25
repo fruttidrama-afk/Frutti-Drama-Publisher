@@ -77,7 +77,7 @@ function isAuthError(e){
   const code=Number(e?.code||0),msg=String(e?.message||'');
   return code===190
     ||(code===200&&/cannot call api for app .* on behalf of user/i.test(msg))
-    ||/oauth|access token|session.*invalid|permissions? error|reconnect facebook/i.test(msg);
+    ||/oauth|access token|session.*invalid|permissions? error|reconnect facebook|FACEBOOK_RECONNECT_REQUIRED/i.test(msg);
 }
 function isRateLimit(e){return [4,17,32,613].includes(Number(e?.code))||/rate limit|too many/i.test(String(e?.message||''))}
 function canonical(row){
@@ -252,10 +252,23 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     }catch(e){lastError=String(e?.message||e)}
     finally{lastHeartbeat=now();running=false}
   }
+  function resumeAuthWait(){
+    const stamp=now();
+    const rows=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'')='facebook' AND status IN ('auth_wait','error') AND status NOT IN ('published','cancelled','deleted') ORDER BY scheduledAt").all();
+    for(const item of rows){
+      item.status='queued';item.error=null;item.retryAt=0;
+      if(Date.parse(String(item.scheduledAt||''))<=Date.now())item.scheduledAt=stamp;
+      item.uploadAt=item.scheduledAt;
+      hist(item,'queued','Facebook authorization refreshed; publication retry armed immediately.');
+      save(item);
+    }
+    if(rows.length)setTimeout(()=>void tick(),250).unref?.();
+    return rows.length;
+  }
   const timer=setInterval(()=>void tick(),30000);timer.unref?.();
   setTimeout(()=>void tick(),1200).unref?.();
   return{
-    enqueue,purgeRejected,tick,
+    enqueue,purgeRejected,tick,resumeAuthWait,
     items:()=>db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'')='facebook' ORDER BY scheduledAt").all().map(publicItem),
     status:()=>({alive:true,running,lastHeartbeat,lastError,indefinite:true,provider:'facebook',graphVersion:GRAPH_VERSION}),
     close:()=>clearInterval(timer)
