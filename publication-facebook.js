@@ -129,8 +129,13 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
   async function remoteStatus(item){
     const c=connection();
     if(!item.videoId)return null;
-    const j=await graph(item.videoId,{params:{fields:'status'},token:c.page_access_token});
+    const j=await graph(item.videoId,{params:{fields:'status,is_ai_generated'},token:c.page_access_token});
     item.remoteStatusCheckedAt=now();
+    if(j?.is_ai_generated===true&&!item.aiDisclosureSyncedAt){
+      item.aiDisclosureSyncedAt=now();
+      hist(item,item.status||'processing','Facebook confirms native AI-generated disclosure is enabled.');
+      save(item);
+    }
     const st=j?.status||{},publishing=String(st?.publishing_phase?.status||'').toLowerCase(),video=String(st?.video_status||'').toLowerCase();
     if(publishing==='complete'||video==='ready'){
       item.remotePrivacyStatus='public';item.remotePublishAt=item.remotePublishAt||now();item.error=null;item.retryAt=0;
@@ -174,6 +179,27 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     const j=await r.json().catch(()=>({}));
     if(!r.ok||j?.error)throw fbError(j,r.status);
     item.fileSize=data.length;item.remotePrivacyStatus='uploaded';hist(item,'publishing','Facebook received the Reel binary.');save(item);
+  }
+  async function ensureAiDisclosure(item){
+    if(!item?.videoId||item.aiDisclosureSyncedAt)return true;
+    const c=connection();
+    const current=await graph(item.videoId,{params:{fields:'id,is_ai_generated'},token:c.page_access_token});
+    if(current?.is_ai_generated===true){
+      item.aiDisclosureSyncedAt=now();
+      hist(item,item.status||'published','Facebook AI-generated disclosure verified on the existing Reel.');
+      save(item);
+      return true;
+    }
+    // Meta exposes is_ai_generated on the Video object. Retrofit the existing
+    // asset in place; never re-upload and never create a duplicate Reel.
+    const updated=await graph(item.videoId,{method:'POST',params:{is_ai_generated:true},token:c.page_access_token});
+    if(updated?.success===false)throw new Error('FACEBOOK_AI_DISCLOSURE_RETROFIT_NOT_CONFIRMED');
+    const verify=await graph(item.videoId,{params:{fields:'id,is_ai_generated'},token:c.page_access_token});
+    if(verify?.is_ai_generated!==true)throw new Error('FACEBOOK_AI_DISCLOSURE_RETROFIT_UNVERIFIED');
+    item.aiDisclosureSyncedAt=now();
+    hist(item,item.status||'published','Facebook native AI-generated disclosure retrofitted and verified on the existing Reel without re-upload.');
+    save(item);
+    return true;
   }
   async function finish(item,c){
     const provider=providerConfig(config);
@@ -258,11 +284,15 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     if(!isEnabled()||running)return;
     running=true;lastHeartbeat=now();lastError=null;
     try{
-      const items=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'')='facebook' AND status NOT IN ('published','cancelled','deleted') ORDER BY scheduledAt").all();
+      const items=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'')='facebook' AND status NOT IN ('cancelled','deleted') AND (status<>'published' OR aiDisclosureSyncedAt IS NULL) ORDER BY scheduledAt").all();
       for(const item of items){
         if(Number(item.retryAt||0)>Date.now())continue;
-        if(Date.now()<Date.parse(item.scheduledAt))continue;
         try{
+          if(item.videoId&&!item.aiDisclosureSyncedAt){
+            await ensureAiDisclosure(item);
+          }
+          if(String(item.status||'')==='published')continue;
+          if(Date.now()<Date.parse(item.scheduledAt))continue;
           await publish(item);
           item.attempts=0;item.retryAt=0;item.error=null;save(item);
         }catch(e){
@@ -292,7 +322,7 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
   const timer=setInterval(()=>void tick(),30000);timer.unref?.();
   setTimeout(()=>void tick(),1200).unref?.();
   return{
-    enqueue,purgeRejected,tick,resumeAuthWait,
+    enqueue,purgeRejected,tick,resumeAuthWait,ensureAiDisclosure,
     items:()=>db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'')='facebook' ORDER BY scheduledAt").all().map(publicItem),
     status:()=>({alive:true,running,lastHeartbeat,lastError,indefinite:true,provider:'facebook',graphVersion:GRAPH_VERSION}),
     close:()=>clearInterval(timer)
