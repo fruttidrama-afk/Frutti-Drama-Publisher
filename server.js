@@ -196,16 +196,9 @@ async function dinnieStaticIconPng(size=180){
   return sharp(buf).resize(s,s,{fit:'fill'}).png({compressionLevel:9}).toBuffer();
 }
 async function dinnieIosV2Png(){
-  const buf=dinnieStaticIconBuffer();if(!buf)return null;
-  // Mirror the proven historical full-bleed workflow: one concrete 180x180
-  // asset, green to every edge, no nested white canvas, with the existing
-  // Dinnie artwork zoomed slightly so it fills the icon without clipping.
-  return sharp(buf)
-    .extract({left:8,top:12,width:164,height:164})
-    .resize(180,180,{fit:'fill'})
-    .flatten({background:'#123d28'})
-    .png({compressionLevel:9})
-    .toBuffer();
+  // Exact prebuilt 180x180 PNG. No runtime resizing, no redirect, no white or
+  // transparent outer canvas. This mirrors the previously proven iOS path.
+  return dinnieStaticIconBuffer();
 }
 function brandPublic(){
   const b=CONFIG.branding||{},t=b.theme||{},hasLogo=Boolean(String(b.logo_url||'').trim());
