@@ -162,6 +162,11 @@ must(schema.properties?.review?.properties?.archive_provider?.const==='local-onl
 must(schema.properties?.review?.properties?.external_storage_before_approval?.const===false,'external review storage before approval must be forbidden');
 must(schema.properties?.review?.properties?.approval_required_before_publication?.const===true,'publication must require explicit approval');
 must(schema.properties?.review?.properties?.reject_purges_external_artifacts?.const===true,'rejection must purge external artifacts');
+const ytSchema=(schema.properties?.publication?.properties?.providers?.items?.oneOf||[]).find(x=>x?.properties?.type?.const==='youtube');
+must(ytSchema?.properties?.privacy_before_publish?.const==='private','YouTube schema private-first policy');
+must(ytSchema?.properties?.release_mode?.const==='private_then_public_at_posting_time','YouTube schema explicit private-to-public release');
+must(ytSchema?.properties?.use_publish_at?.const===false,'YouTube schema forbids publishAt');
+must(ytSchema?.properties?.upload_lead_minutes?.const===390,'YouTube schema 390-minute lead');
 
 console.log(JSON.stringify({
   ok:true,
