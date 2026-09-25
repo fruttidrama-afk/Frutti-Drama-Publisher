@@ -2343,37 +2343,36 @@ function episodeRecoveryTerms(row){
   return [...new Set(words.filter(w=>!stop.has(w)))].slice(0,12);
 }
 
-async function openEpisodeCorrelatedResult(page,row,baselineInv=null){
+async function openEpisodeCorrelatedResult(page,row,baselineInv=null,db=null){
   const terms=episodeRecoveryTerms(row);
   if(!terms.length)return{found:false,signal:'no-specific-recovery-terms',matched:[]};
-  const baselineVideoSigs=new Set((Array.isArray(baselineInv?.ordered_video_signatures)?baselineInv.ordered_video_signatures:[]).map(x=>norm(x)));
-  const tiles=page.locator('flow-grid-tile-container').filter({has:page.locator('flow-video-tile,video')});
-  const count=Math.min(await tiles.count().catch(()=>0),120);
-  let best=null;
-  for(let i=0;i<count;i++){
-    const el=tiles.nth(i);
-    if(!(await el.isVisible().catch(()=>false)))continue;
-    const label=compact(
-      ((await el.getAttribute('aria-label').catch(()=>''))||'')+' '+
-      ((await el.innerText().catch(()=>''))||'')+' '+
-      ((await el.textContent().catch(()=>''))||''),500
-    );
-    const n=label.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const inv=await captureFlowInventory(page);
+  const baselineIds=new Set((baselineInv?.ordered_video_assets||[]).map(x=>String(x?.asset_id||'')).filter(Boolean));
+  const baselineSigs=new Map();
+  for(const sig of (Array.isArray(baselineInv?.ordered_video_signatures)?baselineInv.ordered_video_signatures:[]))baselineSigs.set(norm(sig),(baselineSigs.get(norm(sig))||0)+1);
+  const usedIds=db?recoveredFlowAssetIds(db):new Set();
+  const usedSigs=db?recoveredFlowSignatures(db):new Set();
+  const candidates=[];
+  for(const a of (inv.ordered_video_assets||[])){
+    const id=String(a?.asset_id||''),sig=String(a?.signature||''),n=norm(sig);
+    if(id&&baselineIds.has(id))continue;
+    if(!baselineIds.size){
+      const left=baselineSigs.get(n)||0;
+      if(left>0){baselineSigs.set(n,left-1);continue}
+    }
+    if(id&&usedIds.has(id))continue;
+    if(String(a?.identity_strength||'')!=='strong'&&usedSigs.has(n))continue;
     const matched=terms.filter(t=>n.includes(t));
-    if(baselineVideoSigs.has(norm(label)))continue;
-    if(!best||matched.length>best.matched.length)best={el,label,matched,index:i};
+    candidates.push({...a,matched,score:matched.length});
   }
-  if(!best||best.matched.length<2)return{found:false,signal:'no-correlated-visible-tile',matched:best?.matched||[],label:best?.label||''};
-  await best.el.scrollIntoViewIfNeeded().catch(()=>{});
-  await best.el.hover().catch(()=>{});
-  const footer=best.el.locator('flow-tile-hover-footer').first();
-  if(await footer.count().catch(()=>0)&&await footer.isVisible().catch(()=>false))await footer.click({force:true,timeout:5000}).catch(()=>{});
-  else await best.el.click({force:true,timeout:5000}).catch(()=>{});
-  await sleep(900);
-  const d=await visibleDownloadButton(page).catch(()=>null);
-  if(d)return{found:true,signal:'correlated-visible-tile-download-ready',matched:best.matched,label:best.label,index:best.index};
-  await page.keyboard.press('Escape').catch(()=>{});
-  return{found:false,signal:'correlated-tile-not-ready',matched:best.matched,label:best.label,index:best.index};
+  candidates.sort((a,b)=>b.score-a.score||Number(a.dom_index)-Number(b.dom_index));
+  const best=candidates[0];
+  if(!best||best.score<2||best.score===Number(candidates[1]?.score||-1)){
+    return{found:false,signal:'no-unique-correlated-visible-asset',matched:best?.matched||[],label:best?.signature||'',asset_id:best?.asset_id||null,candidates:candidates.slice(0,8)};
+  }
+  const opened=await openVerifiedFlowAsset(page,best,{db,row,signal:'correlated-visible-asset-download-ready'});
+  if(opened?.ready)return{found:true,signal:opened.signal,matched:best.matched,label:best.signature,index:best.dom_index,asset_id:best.asset_id,viewer_asset_id:opened.viewer_asset_id||null,identity_strength:best.identity_strength};
+  return{found:false,signal:opened?.signal||'correlated-asset-not-ready',matched:best.matched,label:best.signature,index:best.dom_index,asset_id:best.asset_id};
 }
 
 async function reconcileAmbiguousGeneric(page,row,lc,db){
@@ -2426,7 +2425,7 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
   }
 
   if(!visibleBusy&&age>=20000){
-    const correlated=await openEpisodeCorrelatedResult(page,row,baselineInv).catch(()=>null);
+    const correlated=await openEpisodeCorrelatedResult(page,row,baselineInv,db).catch(()=>null);
     if(correlated?.found){
       const startedAt=String(lc?.generation_started_at||lc?.submit_boundary_at||now());
       const next=setLifecycle(db,row,'GENERATION_STARTED',{
@@ -3254,7 +3253,7 @@ async function retrieveExisting(page,row,cp,lc,db){
       // Strongest normal path: same browser session + exactly one new video tile.
       // Flow keeps newest media at the front of the grid, so choose ONLY that tile.
       if(sameSubmitSession&&delta===1){
-        uiSignal=await openStrictSinglePostBaselineTile(page,baselineInventory);
+        uiSignal=await openStrictSinglePostBaselineTile(page,baselineInventory,db,row);
         if(uiSignal?.ready){
           rendered={uiReady:true,signal:uiSignal.signal,baselineInventory,index:uiSignal.index,signature:uiSignal.signature,recoveryProof:'same-session-exactly-one-newest-tile'};
           break;
