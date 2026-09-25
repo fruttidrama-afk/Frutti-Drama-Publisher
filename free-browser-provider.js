@@ -165,30 +165,43 @@ function dailyGenerationCount(db, day=artDay()) {
 function effectiveDailyCount(db,day=artDay()){return dailyGenerationCount(db,day)}
 function ensureConfirmedGenerationAccounting(db){
   try{
-    const rows=db.prepare("SELECT * FROM factory_items WHERE status IN ('generating','review') ORDER BY episode").all();
+    // Retained media remains a confirmed generation even after the operator
+    // approves it and the factory row moves from review -> queued/published.
+    // Reconcile all retained states so a fast approval can never make the
+    // daily generation counter lose an episode.
+    const rows=db.prepare("SELECT * FROM factory_items WHERE status IN ('generating','review','queued','historical','published') ORDER BY episode").all();
     for(const row of rows){
       const lc=lifecycle(db,row)||{},state=String(lc.state||'').toUpperCase();
-      if(!AFTER_GENERATE.has(state))continue;
-      const runId=String(lc.generation_id||row.providerRunId||'').trim();
+      let flow={};try{flow=json(row.flowResult,{})||{}}catch{}
+      const retained=Boolean(
+        ['review','queued','historical','published'].includes(String(row.status||'')) &&
+        (flow?.validated_ftyp||flow?.content_hash||row.reviewContentHash||row.stockId||row.videoPath||row.remoteUrl)
+      );
+      if(!AFTER_GENERATE.has(state)&&!retained)continue;
+      const runId=String(lc.generation_id||flow?.generation_id||row.providerRunId||'').trim();
       if(!runId||/^manual-flow-golden-run:/.test(runId))continue;
       const existing=db.prepare("SELECT id,credits,status,generationKind FROM factory_generations WHERE itemId=? AND runId=? LIMIT 1").get(row.id,runId);
-      const startedAt=String(lc.generation_started_at||lc.reconciled_at||row.lastProgressAt||now());
+      const startedAt=String(lc.generation_started_at||flow?.generation_started_at||lc.reconciled_at||row.lastProgressAt||row.updatedAt||now());
       const day=artDay(new Date(startedAt));
-      const status=String(row.status)==='review'?'review':'running';
+      const generationStatus=retained?'review':'running';
       if(existing){
-        if(Number(existing.credits||0)<=0 || ['no_generation','infra_rejected'].includes(String(existing.status||''))){
+        const needsRepair=
+          Number(existing.credits||0)<=0 ||
+          ['no_generation','infra_rejected'].includes(String(existing.status||'')) ||
+          (retained&&String(existing.status||'')!=='review');
+        if(needsRepair){
           try{
-            db.prepare("UPDATE factory_generations SET day=?,credits=?,status=?,error=NULL,generationKind='automatic',updatedAt=? WHERE id=?")
-              .run(day,CREDITS_PER_GENERATION,status,now(),existing.id);
-            publish('GENERATION_ACCOUNTING_REPAIRED',{episode:'E'+row.episode,job_id:row.id,run_id:runId,status,mode:'reactivated-existing'});
+            db.prepare("UPDATE factory_generations SET day=?,credits=?,status=?,error=NULL,generationKind=COALESCE(NULLIF(generationKind,''),'automatic'),updatedAt=? WHERE id=?")
+              .run(day,CREDITS_PER_GENERATION,generationStatus,now(),existing.id);
+            publish('GENERATION_ACCOUNTING_REPAIRED',{episode:'E'+row.episode,job_id:row.id,run_id:runId,status:generationStatus,mode:'normalized-existing'});
           }catch(e){publish('GENERATION_ACCOUNTING_REPAIR_WARNING',{episode:'E'+row.episode,message:compact(e?.message||e,300)})}
         }
         continue;
       }
       try{
         db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)")
-          .run(randomUUID(),row.id,day,sha(String(row.promptHash||'')+':'+runId),CREDITS_PER_GENERATION,status,runId,startedAt,now(),'automatic');
-        publish('GENERATION_ACCOUNTING_REPAIRED',{episode:'E'+row.episode,job_id:row.id,run_id:runId,status,mode:'inserted'});
+          .run(randomUUID(),row.id,day,sha(String(row.promptHash||'')+':'+runId),CREDITS_PER_GENERATION,generationStatus,runId,startedAt,now(),'automatic');
+        publish('GENERATION_ACCOUNTING_REPAIRED',{episode:'E'+row.episode,job_id:row.id,run_id:runId,status:generationStatus,mode:'inserted-retained'});
       }catch(e){publish('GENERATION_ACCOUNTING_REPAIR_WARNING',{episode:'E'+row.episode,message:compact(e?.message||e,300)})}
     }
   }catch(e){publish('GENERATION_ACCOUNTING_REPAIR_WARNING',{message:compact(e?.message||e,300)})}
