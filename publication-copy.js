@@ -58,72 +58,91 @@ function sharedWordRun(a,b,minWords=6){
   const B=normalize(b).toLowerCase().split(/\s+/).filter(Boolean);
   const hay=' '+B.join(' ')+' ';
   for(let n=Math.min(14,A.length);n>=minWords;n--){
-    for(let i=0;i+n<=A.length;i++){
-      if(hay.includes(' '+A.slice(i,i+n).join(' ')+' '))return A.slice(i,i+n).join(' ');
-    }
+    for(let i=0;i+n<=A.length;i++)if(hay.includes(' '+A.slice(i,i+n).join(' ')+' '))return A.slice(i,i+n).join(' ');
   }
   return'';
 }
-function dinnieNarrativeCaption(key,story=''){
-  const known={
-    'THE TRAIL DISAPPEARS':"Dinnie’s sparkling path suddenly fades away, turning the trip home into a soft magical descent through the clouds. ✨🦕 A familiar golden forest is waiting below…",
-    'DINNIE COMES HOME':"Dinnie is finally back in her warm prehistoric forest—but a tiny glowing star-seed has another adventure in mind. ⭐🦕 Its light leads her straight to a mysterious ancient door.",
-    'THE STAR DOOR OPENS':"A tiny star unlocks the stone door, and Dinnie gets her first glimpse of a dazzling world beyond the forest. ⭐✨ Floating lights, a glowing path and a moon-shaped arch are calling her forward.",
-    'FIRST STEP INTO STARLIGHT':"Dinnie crosses the threshold into the starlight world, where every step seems to wake the sky around her. ⭐🦕 Then a bridge made of constellations begins forming ahead.",
-    'THE CONSTELLATION BRIDGE':"The stars build Dinnie a bridge one glowing step at a time. ✨🦕 At the other side, a moon-shaped arch suddenly comes to life.",
-    'MOON ARCHWAY SECRET':"Dinnie slips through the glowing moon arch and discovers that everything feels lighter on the other side. 🌙✨ A tiny comet appears—and it wants her to follow.",
-    'THE COMET TRAIL':"A playful little comet guides Dinnie up a silver hill toward something hidden at the top. ☄️🦕 What she finds there looks like a pool… but reflects a completely different sky.",
-    'THE MIRROR POOL':"Dinnie touches the mysterious mirror pool and rings of light race across its surface. ✨🦕 In seconds, the water reveals a portal to a brand-new magical world.",
-    'FLOWER CLOUDS AHEAD':"Dinnie steps into a dreamy world of flower clouds, drifting petals and glowing pollen-light. 🌸🦕 A floating garden gate waits at the end of the path.",
-    'THE FLOATING GARDEN GATE':"The floating garden gate opens for Dinnie—and thousands of tiny blossoms rise into the air. 🌸✨ Together they create a staircase leading higher into the clouds.",
-    'STAIRWAY OF BLOSSOMS':"Dinnie climbs a staircase made of glowing flowers, lighting each step as she goes. 🌼🦕 At the very top, a delicate petal bell is waiting.",
-    'THE PETAL BELL':"One gentle tap on the petal bell sends a magical chime across the entire flower-cloud world. 🔔🌸 Then a rainbow current appears in the sky.",
-    'RIDING THE RAINBOW CURRENT':"Dinnie hops onto a soft ribbon of rainbow light and glides across the sky. 🌈🦕 Her destination? A strange little island shaped like a glowing acorn.",
-    'THE GLOWING ACORN':"A giant glowing acorn hides a wonderful surprise for Dinnie. 🌰✨ One touch makes a tiny tree spring to life—and a warm doorway opens inside its trunk.",
-    'A DOOR BACK HOME':"Dinnie peers through the little tree-door and sees her golden prehistoric forest again. 🦕✨ She makes it home… just as a new sparkle appears high above the trees."
+function dinnieFacts(story='',hook=''){
+  const s=(normalize(story)+' '+normalize(hook)).toLowerCase();
+  return{
+    trail:/trail|path|road|stepping stone/.test(s),
+    vanish:/vanish|disappear|dissolv|fade|break apart/.test(s),
+    home:/home|forest|prehistoric/.test(s),
+    land:/land|descend|float down|return/.test(s),
+    seed:/seed/.test(s),
+    door:/door|gate|arch|threshold/.test(s),
+    open:/open|unlock|reveal/.test(s),
+    star:/star|starlight|constellation/.test(s),
+    bridge:/bridge/.test(s),
+    comet:/comet/.test(s),
+    pool:/pool|mirror/.test(s),
+    portal:/portal|another world|new world/.test(s),
+    flower:/flower|petal|blossom/.test(s),
+    cloud:/cloud/.test(s),
+    stair:/stair|staircase/.test(s),
+    bell:/bell|chime/.test(s),
+    rainbow:/rainbow/.test(s),
+    acorn:/acorn/.test(s),
+    tree:/tree|trunk/.test(s),
+    island:/island/.test(s),
+    moon:/moon/.test(s),
+    light:/glow|light|luminous|spark/.test(s)
   };
-  if(known[key])return known[key];
+}
+function dinnieDynamicTitle(story='',hook=''){
+  const f=dinnieFacts(story,hook);
+  if(f.trail&&f.vanish)return"Dinnie’s Glowing Path Vanishes ✨🦕!";
+  if(f.home&&f.seed)return"A Tiny Star-Seed Finds Dinnie ⭐🦕!";
+  if(f.door&&f.open&&f.star)return"Dinnie Opens a Door to Starlight ⭐✨!";
+  if(f.bridge&&f.star)return"A Bridge of Stars Appears for Dinnie ✨🦕!";
+  if(f.comet)return"A Tiny Comet Leads Dinnie ☄️🦕!";
+  if(f.pool&&f.portal)return"The Mirror Pool Hides Another World ✨🦕!";
+  if(f.flower&&f.cloud)return"Dinnie Finds a World of Flower Clouds 🌸🦕!";
+  if(f.stair&&f.flower)return"A Stairway of Blossoms Appears 🌼🦕!";
+  if(f.bell)return"Dinnie Rings a Magical Petal Bell 🔔🌸!";
+  if(f.rainbow)return"Dinnie Rides a Rainbow Through the Sky 🌈🦕!";
+  if(f.acorn&&f.tree)return"A Glowing Acorn Opens a Secret 🌰✨!";
+  if(f.door&&f.home)return"Dinnie Finds a Door Back Home 🦕✨!";
+  if(f.moon&&f.door)return"What’s Beyond the Moon Archway? 🌙🦕";
+  const h=titleCaseWords(normalize(hook).replace(/^THE\s+/i,'').replace(/^DINNIE\s+/i,'').replace(/\bNEXT CHAPTER\b/ig,'').trim());
+  return h?(`Dinnie’s ${h} ✨🦕!`):"Dinnie Discovers Something Magical ✨🦕!";
+}
+function dinnieDynamicCaption(story='',hook=''){
+  const f=dinnieFacts(story,hook);
+  let first='Dinnie follows a gentle magical surprise into the next part of her adventure.';
+  if(f.trail&&f.vanish)first='Dinnie’s glowing route suddenly disappears, turning the journey into a soft, dreamy surprise.';
+  else if(f.home&&f.seed)first='Back in her warm prehistoric forest, Dinnie notices a tiny star-like seed glowing nearby.';
+  else if(f.door&&f.open&&f.star)first='A mysterious doorway comes alive for Dinnie and reveals a dazzling starlit world on the other side.';
+  else if(f.bridge&&f.star)first='The night sky seems to build Dinnie a sparkling bridge, one bright point at a time.';
+  else if(f.comet)first='A playful little comet becomes Dinnie’s guide and leads her toward a new mystery.';
+  else if(f.pool&&f.portal)first='A shimmering pool changes before Dinnie’s eyes and begins to look like a doorway to somewhere impossible.';
+  else if(f.flower&&f.cloud)first='Dinnie wanders into a dreamy sky filled with soft flowers, drifting petals and glowing magic.';
+  else if(f.stair&&f.flower)first='A cloud of blossoms rises around Dinnie and turns itself into a staircase toward something new.';
+  else if(f.bell)first='One tiny touch from Dinnie sends a magical chime across the whole world around her.';
+  else if(f.rainbow)first='Dinnie catches a glowing rainbow current and glides through the sky toward her next surprise.';
+  else if(f.acorn&&f.tree)first='A glowing acorn reacts to Dinnie and reveals a secret that was hidden in plain sight.';
+  else if(f.door&&f.home)first='A warm little doorway gives Dinnie a glimpse of home again—but the adventure is not quite finished.';
 
-  const s=normalize(story).toLowerCase();
-  const motifs=[];
-  if(/door|gate|arch/.test(s))motifs.push('a mysterious glowing doorway');
-  if(/bridge|path|trail/.test(s))motifs.push('a magical path');
-  if(/star|constellation|starlight/.test(s))motifs.push('a sky full of living starlight');
-  if(/cloud|flower|petal|blossom/.test(s))motifs.push('a dreamy world in the clouds');
-  if(/comet/.test(s))motifs.push('a tiny comet guide');
-  if(/pool|mirror/.test(s))motifs.push('a shimmering portal');
-  if(/rainbow/.test(s))motifs.push('a ribbon of rainbow light');
-  if(/home|forest/.test(s))motifs.push('her warm prehistoric home');
-  const first=motifs[0]||'a brand-new magical surprise';
-  const second=motifs[1]||'a clue to where the adventure goes next';
-  return `Dinnie discovers ${first}, and one tiny moment changes the whole adventure. ✨🦕 Before she can settle in, ${second} appears.`;
+  let second='The final seconds reveal a fresh clue that keeps the story moving forward.';
+  if(f.seed&&f.door)second='Its light points toward an ancient doorway that looks ready to wake up.';
+  else if(f.door&&f.star)second='Beyond it, floating lights and a distant shape invite her to keep exploring.';
+  else if(f.bridge&&f.moon)second='At the far end, a moon-shaped arch begins to glow as if it has been waiting for her.';
+  else if(f.comet&&f.pool)second='At the top of the trail, a strange reflective pool hints at an entirely different place.';
+  else if(f.pool&&f.portal)second='A new world appears inside the reflection, leaving Dinnie right at the edge of the next chapter.';
+  else if(f.flower&&f.door)second='A floating garden entrance waits ahead, promising another gentle surprise.';
+  else if(f.stair&&f.bell)second='At the top, a delicate little bell is waiting for Dinnie to discover it.';
+  else if(f.bell&&f.rainbow)second='The chime answers by painting a glowing rainbow route across the sky.';
+  else if(f.rainbow&&f.island)second='A strange little island appears in the distance, giving Dinnie a brand-new destination.';
+  else if(f.acorn&&f.tree)second='A tiny tree springs to life and opens a warm light-filled doorway in its trunk.';
+  else if(f.home&&f.light)second='Just when everything feels familiar again, a new sparkle hints that another adventure is beginning.';
+  return first+' ✨🦕 '+second;
 }
 function dinnieCopy({hook='',story='',prompt=''}={}){
-  const key=normalize(hook).toUpperCase();
-  const knownTitles={
-    'THE TRAIL DISAPPEARS':'The Sugar-Dust Trail Disappears ✨🦕!',
-    'DINNIE COMES HOME':'Dinnie Floats Back Home 🦕✨!',
-    'THE STAR DOOR OPENS':'The Star Door Opens ⭐🦕!',
-    'FIRST STEP INTO STARLIGHT':'Dinnie Steps Into Starlight ⭐🦕!',
-    'THE CONSTELLATION BRIDGE':'The Constellation Bridge ✨🦕!',
-    'MOON ARCHWAY SECRET':'The Secret Beyond the Moon Archway 🌙🦕!',
-    'THE COMET TRAIL':'Dinnie Follows the Comet Trail ☄️🦕!',
-    'THE MIRROR POOL':'The Mirror Pool Awakens ✨🦕!',
-    'FLOWER CLOUDS AHEAD':'A World of Flower Clouds 🌸🦕!',
-    'THE FLOATING GARDEN GATE':'The Floating Garden Gate 🌸✨!',
-    'STAIRWAY OF BLOSSOMS':'Dinnie Climbs the Blossom Stairway 🌼🦕!',
-    'THE PETAL BELL':'The Magical Petal Bell 🔔🌸!',
-    'RIDING THE RAINBOW CURRENT':'Dinnie Rides the Rainbow Current 🌈🦕!',
-    'THE GLOWING ACORN':'The Glowing Acorn Secret ✨🌰!',
-    'A DOOR BACK HOME':'A Magical Door Back Home 🦕✨!'
-  };
-  const title=knownTitles[key]||((titleCaseWords(key||'Dinnie’s Next Adventure'))+' ✨🦕!');
-  let description=dinnieNarrativeCaption(key,story||extractPromptIntent(prompt));
-  // Publication copy may be inspired by narrative facts, but it must never be a
-  // pasted slice of the production prompt/story. Fail closed to a semantic,
-  // hook-led caption if a long verbatim run survives.
-  if(sharedWordRun(description,story,6)||sharedWordRun(description,extractPromptIntent(prompt),6)){
-    description=`A new surprise changes Dinnie’s adventure in “${title.replace(/[!✨🦕⭐🌙☄️🌸🌼🔔🌈🌰]+/g,'').trim()}”. ✨🦕 Watch closely—the final moment reveals where her journey is headed next.`;
+  const narrative=normalize(story)||extractPromptIntent(prompt);
+  const title=dinnieDynamicTitle(narrative,hook);
+  let description=dinnieDynamicCaption(narrative,hook);
+  if(sharedWordRun(description,narrative,6)||sharedWordRun(description,extractPromptIntent(prompt),6)){
+    description='Dinnie follows a magical clue into a brand-new surprise. ✨🦕 The last moment reveals just enough to make the next adventure impossible to ignore.';
   }
   return{title,desc:description.replace(/\s+/g,' ').trim()};
 }
