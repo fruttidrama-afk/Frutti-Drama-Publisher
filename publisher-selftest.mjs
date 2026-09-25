@@ -126,6 +126,8 @@ has(server,'private_upload_at_1230:true','private upload at 12:30');
 has(server,'direct_private_to_public_at_1900:true','direct private-to-public edit at 19:00');
 has(server,'native_publish_at_disabled:true','native publishAt disabled');
 has(server,'youtube_upload_lead_minutes_390:true','390-minute YouTube upload lead');
+has(server,'manual_stock_recovery_upload:true','manual Stock recovery upload invariant');
+has(server,'recovery_upload_cloud_required:true','recovery upload must persist to cloud');
 has(server,'show_specific_repairs_isolated:true','show-specific repair isolation health invariant');
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
@@ -146,6 +148,9 @@ has(publication,'APPROVAL_GATE','publication enqueue requires explicit approval'
 has(publication,'purgeRejected','rejected publication artifacts are purged');
 has(publication,'purgePrivateVideosByTitle','operator cleanup can delete legacy private orphan uploads');
 has(publication,'readReviewRange','approved publication may stream from private cloud storage');
+has(server,"/publication/:id/recover-video",'per-video recovery endpoint');
+has(server,"uploadReviewFile(tmp,{itemId:'stock-recovery-'",'manual recovery saves to private cloud');
+has(server,"String(item.status||'')!=='backup_hold'",'manual recovery only for rescue-required videos');
 has(publication,'publishNowLikeManual','explicit PRIVATE to PUBLIC release path');
 has(publication,"status:{privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}",'YouTube upload is plain PRIVATE');
 has(publication,"new Date(Date.parse(scheduledAt)-390*60000).toISOString()",'YouTube upload occurs 390 minutes before release');
