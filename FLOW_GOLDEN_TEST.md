@@ -24,3 +24,19 @@ Pass only if all succeed:
 19. serial gate released.
 
 Only then set FLOW_AUTOMATION_HEALTHY=true.
+
+## Daily credit-cycle gate checks
+
+Before declaring the autonomous daily scheduler healthy, also verify:
+
+20. local midnight alone does not open a new ordinary generation batch;
+21. an unchanged large paid/monthly balance does not open the batch;
+22. a trustworthy live Flow balance is persisted as credit-cycle evidence;
+23. after a completed 3-video batch, the post-batch Flow balance is captured;
+24. a refill consistent with the 50-credit daily allocation (including a net ~45 increase after 3×15 spend) opens exactly one new credit cycle;
+25. exactly three ordinary generations close the default cycle;
+26. restart preserves the same cycle ID/opened_at/baseline;
+27. Unusual Activity cooldown overrides a detected refill;
+28. /factory/health exposes daily_flow_credit_refresh_gate=true, calendar_midnight_does_not_open_batch=true, and paid_monthly_credits_protected_until_daily_refresh=true.
+
+A Publisher fails the Golden Test if calendar rollover alone can authorize an ordinary automatic Flow submit.
