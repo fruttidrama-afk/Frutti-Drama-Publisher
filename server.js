@@ -195,6 +195,18 @@ async function dinnieStaticIconPng(size=180){
   if(s===180)return buf;
   return sharp(buf).resize(s,s,{fit:'fill'}).png({compressionLevel:9}).toBuffer();
 }
+async function dinnieIosV2Png(){
+  const buf=dinnieStaticIconBuffer();if(!buf)return null;
+  // Mirror the proven historical full-bleed workflow: one concrete 180x180
+  // asset, green to every edge, no nested white canvas, with the existing
+  // Dinnie artwork zoomed slightly so it fills the icon without clipping.
+  return sharp(buf)
+    .extract({left:8,top:12,width:164,height:164})
+    .resize(180,180,{fit:'fill'})
+    .flatten({background:'#123d28'})
+    .png({compressionLevel:9})
+    .toBuffer();
+}
 function brandPublic(){
   const b=CONFIG.branding||{},t=b.theme||{},hasLogo=Boolean(String(b.logo_url||'').trim());
   return{
@@ -206,10 +218,10 @@ function brandPublic(){
     // broken-image behavior from third-party storage redirects and lets us
     // normalize transparency/padding consistently.
     logo_url:hasLogo?'/brand/logo.png?v=20260925-botanical':null,
-    icon_180_url:'/apple-touch-icon.png?v=20260925-finalfill',
-    icon_192_url:'/brand/icon-192.png?v=20260925-finalfill',
-    icon_512_url:'/brand/icon-512.png?v=20260925-finalfill',
-    maskable_icon_url:'/brand/icon-maskable-512.png?v=20260925-finalfill',
+    icon_180_url:isDinnieBrand()?'/apple-touch-icon-dinnie-v2.png':'/apple-touch-icon.png?v=20260925-finalfill',
+    icon_192_url:isDinnieBrand()?'/apple-touch-icon-dinnie-v2.png':'/brand/icon-192.png?v=20260925-finalfill',
+    icon_512_url:isDinnieBrand()?'/apple-touch-icon-dinnie-v2.png':'/brand/icon-512.png?v=20260925-finalfill',
+    maskable_icon_url:isDinnieBrand()?'/apple-touch-icon-dinnie-v2.png':'/brand/icon-maskable-512.png?v=20260925-finalfill',
     safe_area_ratio:Number(b.safe_area_ratio||.8),
     tagline:b.tagline||CONFIG.identity.description||'',
     theme:{primary:t.primary||'#0d3152',secondary:t.secondary||'#b59a64',accent:t.accent||'#b59a64',background:t.background||'#f7f6f2',surface:t.surface||'#ffffff',text:t.text||'#1d1d1b'}
@@ -319,6 +331,14 @@ app.get('/dinnie-touch-icon.png',(req,res)=>{
   res.set('Content-Length',String(buf.length));
   res.send(buf);
 });
+app.get('/apple-touch-icon-dinnie-v2.png',async(req,res)=>{
+  const buf=await dinnieIosV2Png();
+  if(!buf)return res.sendStatus(404);
+  res.set('Cache-Control','no-store, max-age=0');
+  res.set('Content-Type','image/png');
+  res.set('Content-Length',String(buf.length));
+  res.send(buf);
+});
 app.get('/favicon.ico',(req,res)=>{
   if(!isDinnieBrand())return res.redirect(302,'/brand/icon-192.png');
   const buf=dinnieStaticIconBuffer();if(!buf)return res.sendStatus(404);
@@ -332,7 +352,11 @@ app.get('/brand/icon-512.png',async(req,res)=>{res.set('Cache-Control','no-store
 app.get('/brand/icon-maskable-512.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await brandedIconPng(512,{maskable:true}))});
 app.get('/manifest.webmanifest',(req,res)=>{
   res.set('Cache-Control','no-store, max-age=0');
-  const b=brandPublic(),icons=[
+  const b=brandPublic(),dinnie=isDinnieBrand();
+  const icons=dinnie?[
+    {src:'/apple-touch-icon-dinnie-v2.png',sizes:'180x180',type:'image/png',purpose:'any'},
+    {src:'/apple-touch-icon-dinnie-v2.png',sizes:'180x180',type:'image/png',purpose:'maskable'}
+  ]:[
     {src:b.icon_192_url,sizes:'192x192',type:'image/png',purpose:'any'},
     {src:b.icon_512_url,sizes:'512x512',type:'image/png',purpose:'any'},
     {src:b.maskable_icon_url,sizes:'512x512',type:'image/png',purpose:'maskable'}
@@ -340,13 +364,14 @@ app.get('/manifest.webmanifest',(req,res)=>{
   res.type('application/manifest+json').send(JSON.stringify({
     name:CONFIG.identity.show_name||CONFIG.identity.publisher_name,
     short_name:CONFIG.identity.show_name||CONFIG.identity.publisher_name,
-    start_url:'/',scope:'/',display:'standalone',
-    background_color:b.theme.background,theme_color:b.theme.primary,icons
+    start_url:dinnie?'/?pwa=dinnie-v2':'/',scope:'/',display:'standalone',
+    background_color:dinnie?'#123d28':b.theme.background,
+    theme_color:dinnie?'#123d28':b.theme.primary,icons
   }))
 });
 
 app.use((req,res,next)=>{
- if(['/setup','/setup/activate','/login','/auth/public-info','/auth/pin','/auth/passkeys/options','/auth/passkeys/verify','/oauth2callback','/facebook/oauth/callback','/factory/health','/brand/logo.svg','/brand/logo.png','/apple-touch-icon.png','/dinnie-touch-icon.png','/favicon.ico','/brand/icon-192.png','/brand/icon-512.png','/brand/icon-maskable-512.png','/manifest.webmanifest'].includes(req.path))return next();
+ if(['/setup','/setup/activate','/login','/auth/public-info','/auth/pin','/auth/passkeys/options','/auth/passkeys/verify','/oauth2callback','/facebook/oauth/callback','/factory/health','/brand/logo.svg','/brand/logo.png','/apple-touch-icon.png','/dinnie-touch-icon.png','/apple-touch-icon-dinnie-v2.png','/favicon.ico','/brand/icon-192.png','/brand/icon-512.png','/brand/icon-maskable-512.png','/manifest.webmanifest'].includes(req.path))return next();
  if(req.path.startsWith('/public/'))return next();
  return secure(req,res,next);
 });
