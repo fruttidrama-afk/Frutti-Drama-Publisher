@@ -389,6 +389,16 @@ function facebookConnection(){
   return{page_id:f.page_id||null,page_name:f.page_name||null,page_access_token:f.page_access_token||null,user_token:f.user_token||null,token_expires_at:f.token_expires_at||null};
 }
 function facebookConnected(){const f=facebookConnection();return Boolean(f.page_id&&f.page_access_token)}
+async function validateFacebookConnection(){
+  const f=facebookConnection();
+  if(!f.page_id||!f.page_access_token)return{ok:false,reason:'missing'};
+  try{
+    const j=await metaGraph(String(f.page_id),{params:{fields:'id,name'},token:String(f.page_access_token)});
+    return{ok:true,page_id:String(j.id||f.page_id),page_name:String(j.name||f.page_name||'')};
+  }catch(e){
+    return{ok:false,reason:String(e?.message||e)};
+  }
+}
 function publicationConnected(){
   const p=selectedPublicationProvider();
   if(p==='facebook')return facebookConnected();
@@ -459,9 +469,29 @@ async function discoverFacebookPages(userToken){
   }
   return [...byId.values()].filter(p=>p.access_token);
 }
+async function refreshFacebookPageConnection(){
+  const f=fbSecrets();
+  const userToken=String(f.user_token||'').trim();
+  const pageId=String(f.page_id||'').trim();
+  const pageName=String(f.page_name||'').trim();
+  if(!userToken||!pageId)throw new Error('FACEBOOK_AUTH_REQUIRED');
+  const pages=await discoverFacebookPages(userToken);
+  const same=pages.find(p=>String(p.id)===pageId)
+    ||pages.find(p=>pageName&&String(p.name||'').trim().toLowerCase()===pageName.toLowerCase());
+  if(!same?.access_token)throw new Error('FACEBOOK_RECONNECT_REQUIRED: the configured Page is no longer available to the saved Facebook user token.');
+  const verified=await metaGraph(String(same.id),{params:{fields:'id,name'},token:String(same.access_token)});
+  saveFbSecrets({
+    page_options:pages,
+    page_id:String(verified.id||same.id),
+    page_name:String(verified.name||same.name||same.id),
+    page_access_token:String(same.access_token)
+  });
+  console.log('[FACEBOOK AUTH REPAIR]',JSON.stringify({page_id:String(verified.id||same.id),page_name:String(verified.name||same.name||same.id)}));
+  return facebookConnection();
+}
 
 const youtubePublication=installPublication({app,db,config:CONFIG,youtubeApi,authedClient,loadToken,dataDir:DIR,isEnabled:()=>selectedPublicationProvider()==='youtube'});
-const facebookPublication=installFacebookPublication({db,config:CONFIG,dataDir:DIR,loadFacebookConnection:facebookConnection,isEnabled:()=>selectedPublicationProvider()==='facebook'});
+const facebookPublication=installFacebookPublication({db,config:CONFIG,dataDir:DIR,loadFacebookConnection:facebookConnection,refreshFacebookConnection:refreshFacebookPageConnection,isEnabled:()=>selectedPublicationProvider()==='facebook'});
 const publication={
   enqueue(row){
     const p=selectedPublicationProvider();
