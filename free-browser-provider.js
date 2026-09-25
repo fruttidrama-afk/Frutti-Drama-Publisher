@@ -2332,6 +2332,26 @@ function recoveredFlowSignatures(db){
   }catch{}
   return sigs;
 }
+function nextSubmissionBaseline(db,row){
+  try{
+    const later=db.prepare("SELECT id,episode FROM factory_items WHERE episode>? ORDER BY episode").all(Number(row?.episode||0));
+    const currentBoundary=Date.parse(String(lifecycle(db,row)?.submit_boundary_at||''))||0;
+    let best=null,bestAt=Infinity;
+    for(const x of later){
+      const lc=lifecycle(db,x)||{},at=Date.parse(String(lc.submit_boundary_at||''))||0;
+      if(!at||at<=currentBoundary||at>=bestAt||!lc.baseline_inventory)continue;
+      best={episode:Number(x.episode),submit_boundary_at:lc.submit_boundary_at,baseline_inventory:lc.baseline_inventory};bestAt=at;
+    }
+    return best;
+  }catch{return null}
+}
+function assetPresentInInventory(asset,inv){
+  if(!asset||!inv)return false;
+  const id=String(asset.asset_id||'');
+  if(id&&(inv.ordered_video_assets||[]).some(x=>String(x?.asset_id||'')===id))return true;
+  const target=norm(asset.signature||'');if(!target)return false;
+  return (inv.ordered_video_signatures||inv.video_signatures||[]).some(x=>norm(x)===target);
+}
 
 function inventoryHasNew(current,baseline){
   if(!baseline)return false;
@@ -2992,6 +3012,7 @@ async function findGoldenRecoveryAsset(page,allowHistory=true,db=null,row=null){
   const usedIds=db?recoveredFlowAssetIds(db):new Set();
   const usedSigs=db?recoveredFlowSignatures(db):new Set();
   const diff=baseline?freshFlowAssetCandidates(inv,baseline,db,row):{fresh:inv.ordered_video_assets||[],missing:0,delta:0,method:'no-baseline',rejected:[]};
+  const upper=nextSubmissionBaseline(db,row);
   const freshIds=new Set((diff.fresh||[]).map(x=>String(x.asset_id||'')));
   const candidates=[];
 
@@ -3001,8 +3022,13 @@ async function findGoldenRecoveryAsset(page,allowHistory=true,db=null,row=null){
     if(String(a?.identity_strength||'')!=='strong'&&sig&&usedSigs.has(n))continue;
     const matched=GOLDEN_RECOVERY_TERMS.filter(t=>n.includes(t));
     const isFresh=freshIds.has(id);
-    const score=matched.length*100+(isFresh?25:0)+(String(a?.identity_strength||'')==='strong'?5:0)-Math.min(20,Number(a.dom_index||0));
-    candidates.push({...a,matched,isFresh,score});
+    const insideTemporalBracket=upper?assetPresentInInventory(a,upper.baseline_inventory):null;
+    // If a later episode has already submitted, its pre-submit baseline is an
+    // upper time bound: the recovered asset for this episode must already be
+    // present there. This prevents stealing a later episode's render.
+    if(upper&&!insideTemporalBracket)continue;
+    const score=matched.length*100+(isFresh?25:0)+(insideTemporalBracket===true?40:0)+(String(a?.identity_strength||'')==='strong'?5:0)-Math.min(20,Number(a.dom_index||0));
+    candidates.push({...a,matched,isFresh,insideTemporalBracket,score});
   }
 
   candidates.sort((a,b)=>b.score-a.score||Number(a.dom_index)-Number(b.dom_index));
@@ -3034,10 +3060,11 @@ async function findGoldenRecoveryAsset(page,allowHistory=true,db=null,row=null){
   publish('FLOW_RECOVERY_IDENTITY_SCAN',{
     episode:row?('E'+row.episode):null,
     baseline_method:diff.method,
+    temporal_upper_bound:upper?{episode:'E'+upper.episode,submit_boundary_at:upper.submit_boundary_at}:null,
     current_video_tiles:Number(inv.video_tile_count||0),
     fresh_candidates:(diff.fresh||[]).map(x=>({asset_id:String(x.asset_id||'').slice(0,16),identity_strength:x.identity_strength,signature:compact(x.signature,140),dom_index:x.dom_index})).slice(0,20),
     rejected:(diff.rejected||[]).map(x=>({asset_id:String(x.asset_id||'').slice(0,16),reason:x.reason,signature:compact(x.signature,120)})).slice(0,20),
-    ranked:candidates.slice(0,12).map(x=>({asset_id:String(x.asset_id||'').slice(0,16),fresh:x.isFresh,matched:x.matched,signature:compact(x.signature,160),dom_index:x.dom_index}))
+    ranked:candidates.slice(0,12).map(x=>({asset_id:String(x.asset_id||'').slice(0,16),fresh:x.isFresh,inside_temporal_bracket:x.insideTemporalBracket,matched:x.matched,signature:compact(x.signature,160),dom_index:x.dom_index}))
   });
 
   if(chosen){
