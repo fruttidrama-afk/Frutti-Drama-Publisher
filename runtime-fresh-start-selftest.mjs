@@ -15,7 +15,7 @@ process.env.PUBLISHER_RESET_ON_INSTANCE_CHANGE='true';
 process.env.PUBLISHER_CONFIG_JSON=JSON.stringify({
   runtime_version:'publisher-runtime-v1',
   identity:{publisher_name:'Factory Selftest',show_name:'Factory Selftest',language:'en-US',timezone:'UTC'},
-  content:{serialized:false,videos_per_day:3,creative_bible:'Selftest Creative Bible',initial_episodes:[]},
+  content:{serialized:false,videos_per_day:3,creative_bible:'Selftest Creative Bible',initial_episodes:[{hook:'SELFTEST START',story:'A concrete first selftest episode intent with one clear visual action and payoff.'}],autonomous_seed_ideas:[{hook:'SELFTEST CONTINUATION',story:'A concrete continuation intent that changes one visual event without using an internal planner placeholder.'}]},
   generation:{provider:'google-flow',model_intent:'Omni 1.1 Flash',resolution_intent:'720p',download_quality:'1080p Upscaled',duration_seconds:10,aspect_ratio:'9:16',output_count:1},
   automation:{provider:'free-browser-provider',persistent_profile:true,tinyfish_required:false,flow_sop_version:'FLOW-SOP-v1.0',flow_sop_sha256:'8172f4b415e516fb1ec211a338ef7872740d7931adfbc5ab31572344a5bc9162',inherit_flow_sop:true,exactly_once_submit:true,strict_serial_generation:true,project_grid_recovery:true,current_consent_only:true,review_metadata_required:true,golden_test_required:true},
   knowledge:{flow_sop_version:'FLOW-SOP-v1.0',flow_sop_sha256:'8172f4b415e516fb1ec211a338ef7872740d7931adfbc5ab31572344a5bc9162',inherit:true},
