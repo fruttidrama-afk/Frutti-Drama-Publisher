@@ -349,6 +349,20 @@ function normalizeUnconfirmedPreGenerationRows(db){
 function ensureProductionPlan(db){
   seedInitial(db);ensureBacklog(db);setMeta(db,'automation:productionPlanVersion','publisher-runtime-v1');if(!meta(db,'automation:factoryEnabled',''))setMeta(db,'automation:factoryEnabled',String(process.env.PUBLISHER_ENABLED||'false').toLowerCase()==='true'?'true':'false');setMeta(db,'automation:freeFactoryEnabled','1');if(!meta(db,'flow:state',''))setMeta(db,'flow:state','CONECTADO');setMeta(db,'flow:message','Publisher Runtime v1 active; daily target '+dailyProductionLimit(db)+'.');
 }
+function generationPauseUntilMs(){
+  const raw=String(process.env.PUBLISHER_GENERATION_PAUSED_UNTIL||'').trim();
+  if(!raw)return 0;
+  const ms=Date.parse(raw);
+  return Number.isFinite(ms)?ms:0;
+}
+function generationPauseActive(){
+  const until=generationPauseUntilMs();
+  return Boolean(until&&Date.now()<until);
+}
+function generationPauseIso(){
+  const until=generationPauseUntilMs();
+  return until?new Date(until).toISOString():'';
+}
 function dbOpen() { return new DatabaseSync(DB_PATH, { timeout:5000 }); }
 function meta(db, key, fallback='') { return db.prepare('SELECT value FROM factory_meta WHERE key=?').get(key)?.value ?? fallback; }
 function setMeta(db, key, value) { db.prepare("INSERT INTO factory_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, String(value)); }
@@ -2580,7 +2594,8 @@ async function processRow(db,row){
       return false;
     }
     const envEnabled=String(process.env.PUBLISHER_ENABLED||'true').toLowerCase()!=='false';
-    const manualSubmit=envEnabled&&meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',autoSubmit=envEnabled&&runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||effectiveDailyCount(db)<dailyProductionLimit(db)),submitAuthorized=manualSubmit||autoSubmit;
+    const pauseAllowsSubmit=!generationPauseActive();
+    const manualSubmit=envEnabled&&pauseAllowsSubmit&&meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',autoSubmit=envEnabled&&pauseAllowsSubmit&&runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||effectiveDailyCount(db)<dailyProductionLimit(db)),submitAuthorized=manualSubmit||autoSubmit;
     publish('PREFLIGHT',{episode:'E'+row.episode,job_id:row.id});
     const pf=await preflight(page,row,cp);
     db.prepare('UPDATE factory_items SET transportPreflight=?,error=NULL,updatedAt=? WHERE id=?').run(JSON.stringify(pf).slice(0,20000),now(),row.id);
@@ -3250,6 +3265,14 @@ async function runProvider(){
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
     db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);repairProviderBackoffAfterConfirmedSuccessV2(db);normalizeLiveNoChargeCooldown(db);
+    if(generationPauseActive()){
+      const until=generationPauseIso();
+      setMeta(db,'flow:state','PAUSADO');
+      setMeta(db,'flow:currentStep','generation-paused-until');
+      setMeta(db,'flow:message','Generation paused by operator until '+until+'. Publication remains active.');
+      publish('GENERATION_PAUSED',{until,message:'No Google Flow generation may be submitted before the configured pause expires.'});
+      return;
+    }
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
