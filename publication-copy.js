@@ -195,6 +195,15 @@ function shortenComplete(s,max){
   }
   return out.replace(/[,:;\-]+$/,'').trim();
 }
+function shortenClosed(s,max){
+  let out=shortenComplete(s,max);
+  while(out&&!hasClosedEnding(out+'.')){
+    const next=out.replace(/\s+\S+$/,'').replace(/[,:;\-]+$/,'').trim();
+    if(!next||next===out)break;
+    out=next;
+  }
+  return out||'A cinematic Earth landscape';
+}
 function earthFallbackTitle({hook,story,prompt,maxTitleLength}){
   const intent=extractPromptIntent(prompt);
   const source=(!genericEpisodeText(story)?normalize(story):'')||intent;
@@ -202,11 +211,11 @@ function earthFallbackTitle({hook,story,prompt,maxTitleLength}){
   let core='';
   if(source){
     const first=completeSentenceCandidates(source)[0]||source;
-    core=shortenComplete(first,58);
+    core=shortenClosed(first,58);
   }
   if(!core)core='A cinematic journey through our planet';
   let t=cleanHook+': '+core.replace(/[.!?]+$/,'')+'.';
-  if(t.length>maxTitleLength)t='EARTH IN 10: '+shortenComplete(core,Math.max(20,maxTitleLength-15))+'.';
+  if(t.length>maxTitleLength)t='EARTH IN 10: '+shortenClosed(core,Math.max(20,maxTitleLength-15))+'.';
   return t;
 }
 
@@ -272,7 +281,7 @@ export function buildPublicationCopy({hook,story,prompt='',contextTerms=[],hasht
     title=title.replace(/\s+#[A-Za-z0-9_]+/g,'').trim();
     if(title.length>room){
       const noPunct=title.replace(/[.!?]+$/,'');
-      title=shortenComplete(noPunct,Math.max(24,room-1))+'.';
+      title=shortenClosed(noPunct,Math.max(24,room-1))+'.';
     }
     title=(title+suffix).trim();
   }
