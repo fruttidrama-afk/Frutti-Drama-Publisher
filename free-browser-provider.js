@@ -578,6 +578,59 @@ async function verifyProjectIdentity(page,payload=''){
   return{project:projectName(),project_id:liveProject().id,title_verified:true,source:'exact-project-url-title-control-hidden',document_title_observed:compact(await page.title().catch(()=>''),300)};
 }
 
+async function flowSettingsPanelOpen(page){
+  const body=compact(await getBody(page).catch(()=>''),5000);
+  return /Agent settings|Confirm before generating|Video generation default|Image generation default|Generation settings/i.test(body);
+}
+async function closeFlowSettings(page,{timeout=9000}={}){
+  const deadline=Date.now()+timeout;
+  while(Date.now()<deadline){
+    try{
+      const editor=await promptEditor(page);
+      const send=await generationSendButton(page,editor);
+      if(await editor.isVisible().catch(()=>false)&&await send.isVisible().catch(()=>false))return true;
+    }catch{}
+    if(!(await flowSettingsPanelOpen(page)))return true;
+
+    const selectors=[
+      'button[aria-label*="close" i]',
+      '[role="button"][aria-label*="close" i]',
+      'button[title*="close" i]',
+      '[role="button"][title*="close" i]'
+    ];
+    let clicked=false;
+    for(const sel of selectors){
+      const loc=page.locator(sel);
+      for(let i=(await loc.count().catch(()=>0))-1;i>=0;i--){
+        const b=loc.nth(i);
+        if(!(await b.isVisible().catch(()=>false)))continue;
+        await trustedClick(b).catch(()=>{});
+        clicked=true;await sleep(350);break;
+      }
+      if(clicked)break;
+    }
+    if(!clicked){
+      const named=page.getByRole('button',{name:/^(Close|Cerrar)$|close settings|cerrar configuraci[oó]n/i});
+      for(let i=(await named.count().catch(()=>0))-1;i>=0;i--){
+        const b=named.nth(i);
+        if(!(await b.isVisible().catch(()=>false)))continue;
+        await trustedClick(b).catch(()=>{});clicked=true;await sleep(350);break;
+      }
+    }
+    await page.keyboard.press('Escape').catch(()=>{});
+    await sleep(300);
+    if(await flowSettingsPanelOpen(page)){
+      try{
+        const toggle=await settingsButton(page);
+        if(await toggle.isVisible().catch(()=>false)){await trustedClick(toggle).catch(()=>{});await sleep(450)}
+      }catch{}
+    }
+    await sleep(250);
+  }
+  const body=compact(await getBody(page).catch(()=>''),1200);
+  throw new Error('FLOW_SETTINGS_PANEL_STUCK_OPEN:'+body);
+}
+
 async function waitFlowReady(page,timeout=60000){
   if(!liveProject().id)throw new Error('FLOW_PROJECT_NOT_CONFIGURED');
   const deadline=Date.now()+timeout;
@@ -591,6 +644,14 @@ async function waitFlowReady(page,timeout=60000){
         const editor=await promptEditor(page);
         const send=await generationSendButton(page,editor);
         if(await editor.isVisible().catch(()=>false)&&await send.isVisible().catch(()=>false))return editor;
+      }catch{}
+      try{
+        if(await flowSettingsPanelOpen(page)){
+          await closeFlowSettings(page,{timeout:3500});
+          const editor=await promptEditor(page);
+          const send=await generationSendButton(page,editor);
+          if(await editor.isVisible().catch(()=>false)&&await send.isVisible().catch(()=>false))return editor;
+        }
       }catch{}
     }
     await sleep(500);
@@ -908,10 +969,8 @@ async function configureFlow(page){
   try{label=compact(await(await settingsButton(page)).innerText(),300)}catch{}
   const save=page.getByRole('button',{name:/^(Save|Guardar)$/i}).last();
   if(await save.count().catch(()=>0)&&await save.isVisible().catch(()=>false)){await trustedClick(save);await sleep(450)}
-  const close=page.getByRole('button',{name:/^close$|close settings|cerrar/i}).last();
-  if(await close.count().catch(()=>0)&&await close.isVisible().catch(()=>false)){await trustedClick(close);await sleep(300)}
-  await page.keyboard.press('Escape').catch(()=>{});
-  await sleep(350);
+  await closeFlowSettings(page,{timeout:9000});
+  await sleep(250);
 
   let summary=label;
   try{summary=compact(await(await settingsButton(page)).innerText(),340)||summary}catch{}
