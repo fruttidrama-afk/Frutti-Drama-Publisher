@@ -179,7 +179,11 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
 
   function enqueue(row){
     if(String(row?.status||'')!=='review')throw new Error('APPROVAL_GATE: only an explicit human-approved review item may enter publication.');
-    const existing=db.prepare('SELECT * FROM publication_items WHERE itemId=?').get(row.id);if(existing)return publicItem(existing);
+    const existing=db.prepare('SELECT * FROM publication_items WHERE itemId=?').get(row.id);
+    if(existing){
+      const sourceMediaTransferred=Boolean(row.videoPath&&existing.filePath&&!isReviewStorageUri(existing.filePath)&&path.resolve(String(row.videoPath))===path.resolve(String(existing.filePath)));
+      return {...publicItem(existing),sourceMediaTransferred};
+    }
     const {title,description}=metadata(row,config),scheduledAt=nextSlot(db,config),uploadAt=new Date(Date.parse(scheduledAt)-390*60000).toISOString(),id=randomUUID();
     let filePath=null,fileSize=0,videoId=row.reviewVideoId||null;
     let sourceMediaTransferred=false;
