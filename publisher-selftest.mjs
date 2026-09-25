@@ -27,6 +27,10 @@ must(machine.sop_id==='FLOW-SOP-v1.0','SOP version');
 must(machine.sha256===hash,'machine SOP hash mismatch');
 must(manifest.master_sha256===hash,'manifest SOP hash mismatch');
 must(manifest.inheritance_required===true,'inheritance must be required');
+must(manifest.runtime_contract?.semantic_redo_interpretation===true,'semantic REDO interpretation must be inherited');
+must(manifest.runtime_contract?.post_submit_timeout_resubmit===false,'post-submit timeout resubmission must be forbidden');
+must(machine.generation?.post_submit_timeout_action==='reconcile_only_no_resubmit','machine SOP timeout action');
+must(machine.review?.feedback_interpreter==='semantic-ai','machine SOP semantic feedback interpreter');
 must(Array.isArray(manifest.canonical_files)&&manifest.canonical_files.length>=7,'knowledge pack incomplete');
 
 const provider=read('free-browser-provider.js');
@@ -51,7 +55,11 @@ for(const [token,label] of [
   ['FLOW_UNUSUAL_ACTIVITY_OVERNIGHT','24h unusual-activity fallback'],
   ['30*60*1000','first unusual-activity delay'],
   ['8*60*60*1000','fifth unusual-activity delay'],
-  ['24*60*60*1000','24h unusual-activity fallback']
+  ['24*60*60*1000','24h unusual-activity fallback'],
+  ['GEMINI_FEEDBACK_URL','semantic AI feedback surface'],
+  ['FEEDBACK_AI_INTERPRET_START','semantic REDO interpreter'],
+  ['creative_rewrite','semantic creative replacement decision'],
+  ['POST_SUBMIT_TIMEOUT_RECONCILIATION_ONLY','post-submit timeout reconciliation-only marker']
 ]) has(provider,token,label);
 must(!provider.includes("await waitFlowReady(page,30000);\n  const editor=await promptEditor(page);"),'Flow composer must not be re-queried immediately after readiness');
 for(const [token,label] of [
@@ -143,6 +151,9 @@ has(publication,'shiftPendingQueueAfter','quota recovery preserves publication o
 has(publication,'stored-package','legacy/non-Earth package copy fallback');
 has(server,'approval_before_external_storage:true','pre-approval external storage is forbidden');
 has(server,'reject_purges_external_artifacts:true','rejection purge safety flag');
+has(server,'semantic_ai_redo_interpretation:true','semantic AI REDO health invariant');
+has(server,'post_submit_timeout_never_resubmits:true','post-submit timeout no-resubmit health invariant');
+has(server,"retryStrategy='ai_pending'",'REDO enters semantic AI pending state');
 has(server,'purgeRejected','reject endpoint purges any accidental publication artifacts');
 has(publication,'APPROVAL_GATE','publication enqueue requires explicit approval');
 has(publication,'purgeRejected','rejected publication artifacts are purged');
