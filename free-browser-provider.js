@@ -4045,6 +4045,20 @@ async function runProvider(){
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
     db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);repairProviderBackoffAfterConfirmedSuccessV2(db);normalizeLiveNoChargeCooldown(db);
+    setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
+    setMeta(db,'automation:serialFlowMode','true');
+    setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
+    setMeta(db,'automation:serialHandoffMode','recover-to-review-no-approval-gate');
+    setMeta(db,'maintenance:supabasePasskeysLastOutcome','deferred_while_content_worker_active');
+
+    // Recovery token is a dedicated READ-ONLY Flow operation. It runs before
+    // the generation-pause gate because the pause blocks submits, not retrieval.
+    // If a token is present, this worker tick ALWAYS returns after recovery:
+    // successful or pending. It can never fall through to Generate.
+    const migrated=await migrateProfileOnce(db);if(!migrated)return;
+    const goldenRecovery=await recoverGoldenRunIfRequested(db);
+    if(goldenRecovery.needed)return;
+
     if(generationPauseActive()){
       const until=generationPauseIso();
       setMeta(db,'flow:state','PAUSADO');
@@ -4053,14 +4067,6 @@ async function runProvider(){
       publish('GENERATION_PAUSED',{until,message:'No Google Flow generation may be submitted before the configured pause expires.'});
       return;
     }
-    setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
-    setMeta(db,'automation:serialFlowMode','true');
-    setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
-    setMeta(db,'automation:serialHandoffMode','recover-to-review-no-approval-gate');
-    setMeta(db,'maintenance:supabasePasskeysLastOutcome','deferred_while_content_worker_active');
-    const migrated=await migrateProfileOnce(db);if(!migrated)return;
-    const goldenRecovery=await recoverGoldenRunIfRequested(db);
-    if(goldenRecovery.needed&&!goldenRecovery.done)return;
     const feedbackState=await interpretPendingReviewFeedback(db);if(feedbackState==='retry')return;
     row=productionCandidate(db);
     const legacyUsed=effectiveDailyCount(db);
