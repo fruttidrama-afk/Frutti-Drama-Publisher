@@ -3258,7 +3258,8 @@ async function retrieveExisting(page,row,cp,lc,db){
     lastVideos=await currentVideos(page);
     rendered=firstFreshRendered(lastVideos,baseline);
     if(rendered){
-      rendered={...rendered,recoveryProof:'fresh-video-src-post-baseline'};
+      const srcIdentity=String(rendered.src||'').replace(/[?#].*$/,'');
+      rendered={...rendered,recoveryProof:'fresh-video-src-post-baseline',assetId:srcIdentity?sha('fresh-video-src:'+srcIdentity):null,identityStrength:'weak'};
       break;
     }
 
@@ -3278,24 +3279,24 @@ async function retrieveExisting(page,row,cp,lc,db){
       if(sameSubmitSession&&delta===1){
         uiSignal=await openStrictSinglePostBaselineTile(page,baselineInventory,db,row);
         if(uiSignal?.ready){
-          rendered={uiReady:true,signal:uiSignal.signal,baselineInventory,index:uiSignal.index,signature:uiSignal.signature,recoveryProof:'same-session-exactly-one-newest-tile'};
+          rendered={uiReady:true,signal:uiSignal.signal,baselineInventory,index:uiSignal.index,signature:uiSignal.signature,assetId:uiSignal.asset_id||null,viewerAssetId:uiSignal.viewer_asset_id||null,identityStrength:uiSignal.identity_strength||null,recoveryProof:'same-session-identity-verified-post-baseline-asset'};
           break;
         }
       }else if(delta>0){
         // Multiple post-baseline tiles or a restarted browser are ambiguous.
         // Never guess the first "fresh-looking" tile: require episode correlation.
-        const correlated=await openEpisodeCorrelatedResult(page,row,baselineInventory).catch(()=>null);
+        const correlated=await openEpisodeCorrelatedResult(page,row,baselineInventory,db).catch(()=>null);
         if(correlated?.found){
-          rendered={uiReady:true,signal:correlated.signal,baselineInventory,index:correlated.index,signature:correlated.label,recoveryProof:'episode-correlated-post-baseline-tile',matchedTerms:correlated.matched};
+          rendered={uiReady:true,signal:correlated.signal,baselineInventory,index:correlated.index,signature:correlated.label,assetId:correlated.asset_id||null,viewerAssetId:correlated.viewer_asset_id||null,identityStrength:correlated.identity_strength||null,recoveryProof:'episode-correlated-post-baseline-asset',matchedTerms:correlated.matched};
           break;
         }
         uiSignal={ready:false,signal:`strict-ambiguous-post-baseline-delta:${delta};correlation:${correlated?.signal||'none'}`};
       }else if(!stillBusy&&Date.now()-generationStartedMs>15000){
         // Virtualized grids can keep total count unchanged after a restart. In
         // that case only a prompt/episode-correlated non-baseline tile is valid.
-        const correlated=await openEpisodeCorrelatedResult(page,row,baselineInventory).catch(()=>null);
+        const correlated=await openEpisodeCorrelatedResult(page,row,baselineInventory,db).catch(()=>null);
         if(correlated?.found){
-          rendered={uiReady:true,signal:correlated.signal,baselineInventory,index:correlated.index,signature:correlated.label,recoveryProof:'episode-correlated-virtualized-grid',matchedTerms:correlated.matched};
+          rendered={uiReady:true,signal:correlated.signal,baselineInventory,index:correlated.index,signature:correlated.label,assetId:correlated.asset_id||null,viewerAssetId:correlated.viewer_asset_id||null,identityStrength:correlated.identity_strength||null,recoveryProof:'episode-correlated-virtualized-grid-asset',matchedTerms:correlated.matched};
           break;
         }
         uiSignal={ready:false,signal:'strict-no-correlated-post-baseline-result'};
@@ -3328,10 +3329,13 @@ async function retrieveExisting(page,row,cp,lc,db){
     recovery_proof:rendered.recoveryProof||rendered.signal||'fresh-video-src-post-baseline',
     recovery_signature:rendered.signature||null,
     recovery_matched_terms:rendered.matchedTerms||[],
+    flow_asset_id:rendered.assetId||rendered.asset_id||null,
+    viewer_asset_id:rendered.viewerAssetId||rendered.viewer_asset_id||null,
+    asset_identity_strength:rendered.identityStrength||rendered.identity_strength||null,
     duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,
     validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:now()
   };
-  if(!/^fresh-video-src-post-baseline|same-session-exactly-one-newest-tile|episode-correlated-/.test(String(flowResult.recovery_proof||''))){
+  if(!/^fresh-video-src-post-baseline|same-session-identity-verified-post-baseline-asset|episode-correlated-/.test(String(flowResult.recovery_proof||''))){
     try{fs.unlinkSync(localPath)}catch{}
     throw new Error('FLOW_STRICT_RECOVERY_PROOF_REQUIRED');
   }
@@ -3340,14 +3344,14 @@ async function retrieveExisting(page,row,cp,lc,db){
   await saveReviewAsset(db,row,localPath,flowResult);
   try{db.prepare(`UPDATE factory_generations SET status='review',updatedAt=?,error=NULL WHERE itemId=? AND runId=?`).run(now(),row.id,String(lc?.generation_id||row.providerRunId||''))}catch{}
   resetNoChargeBackoff(db,row);
-  setLifecycle(db,row,'REVIEW_READY',{...lc,generation_id:lc?.generation_id||row.providerRunId||'',recovery_proof:flowResult.recovery_proof,size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,download_quality:flowResult.download_quality,retrieved_at:now()});
+  setLifecycle(db,row,'REVIEW_READY',{...lc,generation_id:lc?.generation_id||row.providerRunId||'',recovery_proof:flowResult.recovery_proof,flow_asset_id:flowResult.flow_asset_id||null,viewer_asset_id:flowResult.viewer_asset_id||null,recovery_signature:flowResult.recovery_signature||null,size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,download_quality:flowResult.download_quality,retrieved_at:now()});
   setMeta(db,'flow:lastSuccessfulGenerationAt',lc?.generation_started_at||now());
   setMeta(db,'flow:lastSuccessfulMp4At',now());
   setMeta(db,'automation:provider',PROVIDER);
   setMeta(db,'automation:paidDependencyDetected','false');
   setMeta(db,'automation:tinyfishRequired','false');
   try{fs.writeFileSync(path.join(FACTORY_DIR,'flow-browser-self-test.json'),JSON.stringify({at:now(),ok:true,stage:'real-production-review-ready',provider:PROVIDER,episode:`T${row.season}E${row.episode}`,mp4_valid:true,recovery_proof:flowResult.recovery_proof,duration:valid.duration,width:valid.width,height:valid.height,codec:valid.codec},null,2),{mode:0o600})}catch{}
-  publish('REVIEW_READY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,generation_id:lc?.generation_id||row.providerRunId||'',recovery_proof:flowResult.recovery_proof,size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`,factory_url:`/factory/video/${row.id}`});
+  publish('REVIEW_READY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,generation_id:lc?.generation_id||row.providerRunId||'',recovery_proof:flowResult.recovery_proof,flow_asset_id:String(flowResult.flow_asset_id||'').slice(0,24)||null,viewer_asset_id:String(flowResult.viewer_asset_id||'').slice(0,24)||null,size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`,factory_url:`/factory/video/${row.id}`});
   return true;
 }
 
