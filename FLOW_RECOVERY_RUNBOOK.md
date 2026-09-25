@@ -11,3 +11,8 @@
 - DOWNLOAD_FAILED → retry same asset only.
 - VIDEO_INVALID → redownload same asset; no regeneration.
 - YOUTUBE_AUTH/UPLOAD_FAILURE → publication-specific retry; never return to Flow generation.
+
+- WRONG_RECOVERED_ASSET → recovery-only mode; NEVER regenerate if the correct render already exists. Verify exact project; load target submit baseline; capture stable Flow asset IDs; diff grid as a multiset; use the next later submit baseline as the temporal upper bound; reject asset IDs already recovered; re-verify the same asset ID immediately before click; download that exact existing asset; validate MP4; reject reused/quarantined SHA-256; persist flow_asset_id + recovery proof + content hash; replace only the Review media; preserve original generation accounting.
+- FIXED_SIZE_FLOW_GRID → tile count is not identity. A new render may replace/reorder a tile while video_tile_count stays constant. Never use "first tile" or DOM index alone.
+- TARGETED_RECOVERY → a recovery token is read-only with respect to generation. It may inspect/open/download existing Flow media but must return before any Generate path, whether recovery succeeds or remains pending.
+- APPROVAL_ENOSPC → do not copy the Review MP4 to another directory on the same /data volume. Transfer ownership of the exact existing local path to the publication row, then clear factory_items.videoPath only after the publication row is durable. Never regenerate/redownload because approval ran out of disk space.
