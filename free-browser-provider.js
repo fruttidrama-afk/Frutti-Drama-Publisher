@@ -288,21 +288,34 @@ function reconcileGenerationCreditAccounting(db){
     db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Superseded run produced no retained media; released from daily accounting.',updatedAt=? WHERE status='running' AND credits>0 AND runId LIKE 'free-%' AND EXISTS (SELECT 1 FROM factory_items i WHERE i.id=factory_generations.itemId AND i.videoPath IS NULL AND (i.providerRunId IS NULL OR i.providerRunId<>factory_generations.runId))").run(now());
   }catch{}
   try{
-    const stale=db.prepare("SELECT id,providerRunId,reviewRetryToken,reviewRetrySubmittedToken FROM factory_items WHERE status='generating' AND videoPath IS NULL AND error LIKE '%RENDER_TIMEOUT%'").all();
+    const stale=db.prepare("SELECT * FROM factory_items WHERE status='generating' AND videoPath IS NULL AND error LIKE '%RENDER_TIMEOUT%'").all();
     for(const row of stale){
       const lc=lifecycle(db,row)||{},state=String(lc.state||'').toUpperCase();
       if(AFTER_GENERATE.has(state)||AMBIGUOUS.has(state))continue;
-      const reviewerConsumed=String(row.reviewRetryToken||'')&&String(row.reviewRetryToken||'')===String(row.reviewRetrySubmittedToken||'');
-      if(reviewerConsumed)continue;
-      const run=String(row.providerRunId||'');
-      if(run)db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='No Flow render was produced; released from daily accounting.',updatedAt=? WHERE itemId=? AND runId=? AND status='running'").run(now(),row.id,run);
-      db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE id=?").run(now(),now(),row.id);
-      setLifecycle(db,row,'RECONCILED_NO_GENERATION',{prior_generation_id:run,reconciled_at:now(),evidence:'Runtime render timeout with zero playable videos and zero fresh Flow tiles; released for a clean submit retry.'});
-      publish('STALE_FALSE_START_RELEASED',{job_id:row.id,message:'False generation start removed from daily accounting; job returned to draft.'});
+      const run=String(row.providerRunId||lc.generation_id||'');
+      const retryAt=Date.now()+60000;
+      db.prepare("UPDATE factory_items SET status='generating',error='SUBMIT_AMBIGUOUS — render timeout is recovery-only; Generate remains locked.',nextTry=?,lastProgressAt=?,updatedAt=? WHERE id=?")
+        .run(retryAt,now(),now(),row.id);
+      setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{
+        ...lc,generation_id:run||String(lc.generation_id||''),reconciled_at:now(),
+        last_error:'RENDER_TIMEOUT without explicit provider rejection; timeout cannot authorize another submit.',
+        retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:true
+      });
+      publish('STALE_RENDER_TIMEOUT_LOCKED',{episode:'E'+row.episode,job_id:row.id,message:'Historical render timeout converted to recovery-only ambiguity; no automatic resubmit is permitted.'});
     }
   }catch{}
   try{
-    db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=NULL,nextTry=0,runtimeAttemptCount=0,lastProgressAt=?,updatedAt=? WHERE videoPath IS NULL AND error LIKE '%WRONG_FLOW_MODE_TEXT_RESPONSE_AFTER_SEND%'").run(now(),now());
+    const wrong=db.prepare("SELECT * FROM factory_items WHERE videoPath IS NULL AND error LIKE '%WRONG_FLOW_MODE_TEXT_RESPONSE_AFTER_SEND%'").all();
+    for(const row of wrong){
+      const lc=lifecycle(db,row)||{};
+      db.prepare("UPDATE factory_items SET status='manual_hold',nextTry=0,error='Wrong Flow mode response occurred after submit; a new human intent is required before retry.',lastProgressAt=?,updatedAt=? WHERE id=?")
+        .run(now(),now(),row.id);
+      setLifecycle(db,row,'MANUAL_HOLD_POST_SUBMIT_MODE_MISMATCH',{
+        ...lc,held_at:now(),automatic_submit_forbidden:true,
+        evidence:'A post-submit non-video response was observed. The prior intent will not be automatically resubmitted.'
+      });
+      publish('POST_SUBMIT_MODE_MISMATCH_HELD',{episode:'E'+row.episode,job_id:row.id,message:'Post-submit mode mismatch moved to manual hold; Generate remains locked.'});
+    }
   }catch{}
 }
 function normalizeUnconfirmedPreGenerationRows(db){
