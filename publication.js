@@ -175,7 +175,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   function enqueue(row){
     if(String(row?.status||'')!=='review')throw new Error('APPROVAL_GATE: only an explicit human-approved review item may enter publication.');
     const existing=db.prepare('SELECT * FROM publication_items WHERE itemId=?').get(row.id);if(existing)return publicItem(existing);
-    const {title,description}=metadata(row,config),scheduledAt=nextSlot(db,config),uploadAt=new Date(new Date(scheduledAt).getTime()-Number(config.schedule.upload_lead_minutes||0)*60000).toISOString(),id=randomUUID();
+    const {title,description}=metadata(row,config),scheduledAt=nextSlot(db,config),uploadAt=scheduledAt,id=randomUUID();
     let filePath=null,fileSize=0,videoId=row.reviewVideoId||null;
     if(!videoId){
       if(isReviewStorageUri(row.remoteUrl)){
@@ -413,7 +413,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     const cloudSource=isReviewStorageUri(item.filePath);
     if(!cloudSource&&!fs.existsSync(item.filePath))throw new Error('Archivo de publicación ausente.');
     if(!item.resumableSession){
-      const r=await request('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Content-Length':String(item.fileSize),'X-Upload-Content-Type':'video/mp4'},body:JSON.stringify({snippet:{title:item.title,description:item.description,categoryId:'24',tags:['publisher-runtime-'+item.id]},status:{privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}})});
+      const r=await request('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Content-Length':String(item.fileSize),'X-Upload-Content-Type':'video/mp4'},body:JSON.stringify({snippet:{title:item.title,description:item.description,categoryId:'24',tags:['publisher-runtime-'+item.id]},status:{privacyStatus:'public',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}})});
       if(!r.ok)throw new Error('YouTube resumable init failed ('+r.status+').');
       const session=r.headers.get('location');if(!session||new URL(session).hostname!=='www.googleapis.com')throw new Error('YouTube returned an invalid resumable session.');
       item.resumableSession=session;hist(item,'uploading','Resumable session persisted before bytes.');save(db,item);
@@ -508,7 +508,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     for(const item of pending){
       const scheduledAt=nextFreeSlotAfter(cursor,used);
       used.add(scheduledAt);cursor=Date.parse(scheduledAt);
-      const uploadAt=new Date(Date.parse(scheduledAt)-Number(config.schedule.upload_lead_minutes||0)*60000).toISOString();
+      const uploadAt=scheduledAt;
       if(item.scheduledAt!==scheduledAt||item.uploadAt!==uploadAt){
         item.scheduledAt=scheduledAt;item.uploadAt=uploadAt;
         hist(item,item.status,'Publication slot moved forward automatically because YouTube API quota resets after the previous slot.');
@@ -550,6 +550,30 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       .map(x=>({episode:x.episode,title:String(x.title||'').slice(0,80),status:x.status,videoId:Boolean(x.videoId),cloud:isReviewStorageUri(x.filePath),local:Boolean(x.filePath&&!isReviewStorageUri(x.filePath)&&fs.existsSync(x.filePath)),hasPath:Boolean(x.filePath),session:Boolean(x.resumableSession),scheduledAt:x.scheduledAt,uploadAt:x.uploadAt}));
     console.log('[PUBLICATION STORAGE AUDIT]',JSON.stringify(auditRows));
   }catch{}
+  function normalizeNoYoutubeStockPolicy(){
+    try{
+      const tz=config.schedule.timezone,times=postingTimes(config),preferred=times[0]||'19:00';
+      const rows=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'youtube')='youtube' AND status NOT IN ('published','cancelled','deleted') ORDER BY scheduledAt").all();
+      const changed=[];
+      for(const item of rows){
+        const base=Date.parse(String(item.scheduledAt||''));
+        if(!Number.isFinite(base))continue;
+        const day=dayKey(new Date(base),tz);
+        const target=zonedLocal(day,preferred,tz);
+        // Do not move an already-due item backwards into the past.
+        const scheduledAt=target.getTime()>Date.now()?target.toISOString():String(item.scheduledAt);
+        const uploadAt=scheduledAt;
+        if(String(item.scheduledAt)!==scheduledAt||String(item.uploadAt)!==uploadAt){
+          item.scheduledAt=scheduledAt;item.uploadAt=uploadAt;
+          hist(item,item.status,'No-YouTube-stock policy: media remains in private cloud until the exact release time; uploadAt now equals scheduledAt.');
+          save(db,item);changed.push({episode:item.episode,scheduledAt,videoId:Boolean(item.videoId)});
+        }
+      }
+      if(changed.length)console.log('[PUBLICATION NO-YOUTUBE-STOCK NORMALIZED]',JSON.stringify({preferred,changed}));
+    }catch(e){console.log('[PUBLICATION NO-YOUTUBE-STOCK NORMALIZE WARNING]',String(e?.message||e).slice(0,500))}
+  }
+  normalizeNoYoutubeStockPolicy();
+
   async function tick(){
     if(!isEnabled()||running)return;running=true;lastHeartbeat=now();lastError=null;
     await migratePendingPublicationMedia();
@@ -587,34 +611,27 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
           if(!loadToken())throw new Error('YOUTUBE_AUTH_REQUIRED');
           if(item.resumableSession&&!item.videoId){const resolved=await reconcileAmbiguous(item);if(resolved&&item.status==='attention')continue}
 
-          // Migrate any future video left in YouTube's old scheduled state:
-          // remove publishAt once, keep it PRIVATE, then leave it untouched.
-          const localStatus=String(item.status||'');
-          const needsPrivatePreparation=item.videoId&&(
-            ['scheduled','queued','quota_wait','error','auth_wait'].includes(localStatus)||
-            (localStatus==='uploaded'&&Boolean(item.remotePublishAt))
-          );
-          if(needsPrivatePreparation){
-            const state=await stageMetadata(item);
-            item.error=null;item.retryAt=0;save(db,item);
-            if(String(state||item.status)==='published')continue;
-          }
-
-          if(!item.videoId){
-            await upload(item);
-            await stageMetadata(item);
-            item.privateReadyAt=now();
-            hist(item,'uploaded','Uploaded PRIVATE with final metadata. It will remain untouched until the configured release time.');
-            save(db,item);
-          }
-
+          // HARD POLICY: YouTube is a publication destination, never stock storage.
+          // Before release time, approved media stays only in private cloud storage.
           if(clock<releaseAt){
-            // Deliberately do not mutate title, description, privacy, or publishAt
-            // during the private lead window.
             item.attempts=0;item.retryAt=0;item.error=null;save(db,item);
             continue;
           }
 
+          if(!item.videoId){
+            // Upload directly PUBLIC at the configured release time. There is no
+            // private staging phase and therefore no private YouTube inventory.
+            await upload(item);
+            if(String(item.status||'')==='published')continue;
+            await verify(item);
+            item.attempts=0;item.retryAt=0;item.error=null;save(db,item);
+            continue;
+          }
+
+          // Legacy private videos that predate this policy are handled only at
+          // their release time. No new private video is ever created here.
+          const state=await stageMetadata(item);
+          if(String(state||item.status)==='published')continue;
           await publishNowLikeManual(item);
           await verify(item);
           item.attempts=0;item.retryAt=0;item.error=null;save(db,item);
