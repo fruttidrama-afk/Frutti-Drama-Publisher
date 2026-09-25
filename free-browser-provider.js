@@ -160,7 +160,10 @@ function dailyProductionLimit(db,day=artDay()){
   return Math.max(base,envTarget,manualTarget);
 }
 function dailyGenerationCount(db, day=artDay()) {
-  return Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND credits>0 AND COALESCE(generationKind,'automatic')<>'review_retry'").get(day)?.n||0);
+  // Count successful retained videos, including human-requested REDO renders.
+  // The UI counter and the autonomous 3/day target must describe actual videos
+  // generated today, not only "automatic" generationKind rows.
+  return Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND credits>0 AND status IN ('review','completed')").get(day)?.n||0);
 }
 function effectiveDailyCount(db,day=artDay()){return dailyGenerationCount(db,day)}
 function ensureConfirmedGenerationAccounting(db){
@@ -2382,7 +2385,7 @@ async function retrieveExisting(page,row,cp,lc,db){setLifecycle(db,row,'RETRIEVI
   if(uiSignal?.ready){rendered={uiReady:true,signal:uiSignal.signal,baselineInventory,index:uiSignal.index,signature:uiSignal.signature};break;}
   const noFresh=/fresh-video-tile-occurrences:0/.test(String(uiSignal?.signal||''));
   if(!stillBusy&&lastVideos.length===0&&noFresh&&Date.now()-generationStartedMs>20*60*1000){if(!emptyEvidenceSince)emptyEvidenceSince=Date.now();if(Date.now()-emptyEvidenceSince>20000)throw new Error('FLOW_NO_RETAINED_RENDER_AFTER_20M');}else emptyEvidenceSince=0;
-}await sleep(2500);}if(!rendered)throw new Error(`RENDER_TIMEOUT:videos=${lastVideos.length}:ui=${uiSignal?.signal||'none'}`);const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);try{fs.unlinkSync(localPath);}catch{}const dl=await downloadResult(page,rendered,localPath),valid=validateMp4(localPath),flowResult={provider:PROVIDER,generation_id:lc?.generation_id||row.providerRunId||'',generation_started_at:lc?.generation_started_at||'',duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:now()};persistReviewMetadata(db,row,flowResult);await saveReviewAsset(db,row,localPath,flowResult);try{db.prepare(`UPDATE factory_generations SET status='review',updatedAt=?,error=NULL WHERE itemId=? AND runId=?`).run(now(),row.id,String(lc?.generation_id||row.providerRunId||''));}catch{}setLifecycle(db,row,'REVIEW_READY',{...lc,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,download_quality:flowResult.download_quality,retrieved_at:now()});setMeta(db,'flow:lastSuccessfulGenerationAt',lc?.generation_started_at||now());setMeta(db,'flow:lastSuccessfulMp4At',now());setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');try{fs.writeFileSync(path.join(FACTORY_DIR,'flow-browser-self-test.json'),JSON.stringify({at:now(),ok:true,stage:'real-production-review-ready',provider:PROVIDER,episode:`T${row.season}E${row.episode}`,mp4_valid:true,duration:valid.duration,width:valid.width,height:valid.height,codec:valid.codec},null,2),{mode:0o600});}catch{}publish('REVIEW_READY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`,factory_url:`/factory/video/${row.id}`});return true;}
+}await sleep(2500);}if(!rendered)throw new Error(`RENDER_TIMEOUT:videos=${lastVideos.length}:ui=${uiSignal?.signal||'none'}`);const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);try{fs.unlinkSync(localPath);}catch{}const dl=await downloadResult(page,rendered,localPath),valid=validateMp4(localPath),flowResult={provider:PROVIDER,generation_id:lc?.generation_id||row.providerRunId||'',generation_started_at:lc?.generation_started_at||'',duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:now()};persistReviewMetadata(db,row,flowResult);await saveReviewAsset(db,row,localPath,flowResult);try{db.prepare(`UPDATE factory_generations SET status='review',updatedAt=?,error=NULL WHERE itemId=? AND runId=?`).run(now(),row.id,String(lc?.generation_id||row.providerRunId||''));}catch{}resetNoChargeBackoff(db,row);setLifecycle(db,row,'REVIEW_READY',{...lc,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,download_quality:flowResult.download_quality,retrieved_at:now()});setMeta(db,'flow:lastSuccessfulGenerationAt',lc?.generation_started_at||now());setMeta(db,'flow:lastSuccessfulMp4At',now());setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');try{fs.writeFileSync(path.join(FACTORY_DIR,'flow-browser-self-test.json'),JSON.stringify({at:now(),ok:true,stage:'real-production-review-ready',provider:PROVIDER,episode:`T${row.season}E${row.episode}`,mp4_valid:true,duration:valid.duration,width:valid.width,height:valid.height,codec:valid.codec},null,2),{mode:0o600});}catch{}publish('REVIEW_READY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`,factory_url:`/factory/video/${row.id}`});return true;}
 async function processRow(db,row){
   const cp=preparePromptIfNeeded(db,row);row=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);let lc=lifecycle(db,row);const state=String(lc?.state||'').toUpperCase(),session=await launchLocal(),context=session.context;
   try{
@@ -2695,11 +2698,82 @@ function scheduleNoChargeRetry(db,row,opts={}){
   return retryAt;
 }
 function resetNoChargeBackoff(db,row){
-  // Reset only after hard generation-start evidence.
+  // A confirmed retained render is definitive evidence that the Flow account
+  // recovered. Reset provider-wide unusual-activity state and release stale
+  // cooldowns from older episodes so serial production can continue.
+  const stamp=now();
   setMeta(db,'flow:noChargeStreak:provider','0');
   if(row)setMeta(db,'flow:noChargeStreak:'+row.id,'0');
   setMeta(db,'flow:transientCooldownUntil','0');
+  setMeta(db,'flow:lastProviderRecoveryAt',stamp);
+  try{
+    db.prepare("UPDATE factory_items SET nextTry=0,error=NULL,updatedAt=? WHERE status='draft' AND providerRunId IS NULL AND (error LIKE 'FLOW%NO_CHARGE%' OR error LIKE 'FLOW_UNUSUAL_ACTIVITY_%')").run(stamp);
+  }catch{}
+  publish('FLOW_PROVIDER_BACKOFF_RESET',{
+    episode:row?('E'+row.episode):null,
+    message:'Confirmed retained render reset the provider-wide unusual-activity streak and released stale cooldown rows.'
+  });
 }
+function repairLegacyBackoffAfterConfirmedSuccess(db){
+  const key='repair:provider-backoff-after-confirmed-success-v1';
+  if(meta(db,key,'')==='done')return;
+  try{
+    const globalStreak=Math.max(0,Number(meta(db,'flow:noChargeStreak:provider','0'))||0);
+    if(globalStreak<2){setMeta(db,key,'done');return}
+
+    const success=db.prepare("SELECT itemId,updatedAt,createdAt FROM factory_generations WHERE credits>0 AND status IN ('review','completed') ORDER BY updatedAt DESC LIMIT 1").get();
+    const successAt=Date.parse(String(success?.updatedAt||success?.createdAt||''))||0;
+    if(!successAt){setMeta(db,key,'done');return}
+
+    const lifecycleRows=db.prepare("SELECT key,value FROM factory_meta WHERE key LIKE 'flow:generationLifecycle:%'").all();
+    const after=[];
+    const before=[];
+    for(const x of lifecycleRows){
+      const lc=json(x.value,null);if(!lc)continue;
+      const st=String(lc.state||'').toUpperCase();
+      if(!['TRANSIENT_NO_CHARGE_RETRY','UNUSUAL_ACTIVITY_OVERNIGHT'].includes(st))continue;
+      const at=Date.parse(String(lc.updated_at||lc.retry_at||''))||0;
+      const itemId=String(x.key||'').split(':').pop();
+      if(at>successAt)after.push({itemId,at,lc});else if(at>0)before.push({itemId,at,lc});
+    }
+    if(!after.length){resetNoChargeBackoff(db,null);setMeta(db,key,'done');return}
+
+    // This migration repairs the legacy bug where a successful render did not
+    // reset the provider streak. Only alerts AFTER the latest confirmed render
+    // belong to the current streak. Under the fixed serial provider there can
+    // be only one such current alert during this migration.
+    const currentStreak=Math.max(1,after.length);
+    const latestAlert=Math.max(...after.map(x=>x.at));
+    const retryAt=latestAlert+noChargeDelayMs(currentStreak);
+    const due=retryAt<=Date.now();
+    setMeta(db,'flow:noChargeStreak:provider',String(currentStreak));
+    setMeta(db,'flow:transientCooldownUntil',String(due?0:retryAt));
+
+    for(const x of before){
+      try{db.prepare("UPDATE factory_items SET nextTry=0,error=NULL,updatedAt=? WHERE id=? AND status='draft' AND providerRunId IS NULL").run(now(),x.itemId)}catch{}
+    }
+    for(const x of after){
+      try{
+        db.prepare("UPDATE factory_items SET nextTry=?,error=?,updatedAt=? WHERE id=? AND status='draft' AND providerRunId IS NULL").run(
+          due?0:retryAt,
+          due?null:'FLOW_NO_CHARGE — provider-wide exponential backoff active.',
+          now(),x.itemId
+        );
+      }catch{}
+    }
+    publish('FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIRED',{
+      prior_provider_streak:globalStreak,
+      current_provider_streak:currentStreak,
+      latest_confirmed_success:new Date(successAt).toISOString(),
+      latest_alert:new Date(latestAlert).toISOString(),
+      retry_at:due?null:new Date(retryAt).toISOString(),
+      retry_due_now:due,
+      message:'Legacy provider streak was recalculated from alerts after the latest confirmed retained render.'
+    });
+  }catch(e){publish('FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIR_WARNING',{message:compact(e?.message||e,500)})}
+  setMeta(db,key,'done');
+}
+
 function normalizeLiveNoChargeCooldown(db){
   try{
     const rows=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND (error LIKE 'FLOW%NO_CHARGE%' OR error LIKE 'FLOW_UNUSUAL_ACTIVITY_%') ORDER BY episode").all();
@@ -2919,7 +2993,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);normalizeLiveNoChargeCooldown(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);normalizeLiveNoChargeCooldown(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
