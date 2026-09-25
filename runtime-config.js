@@ -567,8 +567,11 @@ export function ideaForEpisode(episode){
     return{hook:String(v.hook||'NEW TURN'),story:String(v.story||v.intent||'')+cycleSuffix};
   }
   if(isEarthIn10()){
-    const v=earthIn10Idea(episode);
-    return{hook:v.hook,story:v.story};
+    // New Earth backlog rows start as planner placeholders. The DB-aware
+    // enforceEpisodeIntent() step assigns the first catalog-unique landscape,
+    // so idea selection can compare against stock/Review/queued/published rows
+    // before any creative package is materialized.
+    return{hook:'NEXT CHAPTER',story:'Continue the configured Creative Bible and canon from the previous accepted beat. Create one completely new real-world landscape that does not repeat any existing Earth in 10 episode.'};
   }
   return{hook:'NEXT CHAPTER',story:'Continue the configured Creative Bible and canon from the previous accepted beat. Introduce one new consequential development, resolve one immediate tension, and end with a fresh hook. Do not repeat the previous episode.'};
 }
