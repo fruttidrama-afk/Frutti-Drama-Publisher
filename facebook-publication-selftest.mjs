@@ -18,7 +18,7 @@ const src=path.join(root,'approved.mp4');fs.writeFileSync(src,Buffer.alloc(2048,
 const config={
  identity:{show_name:'Dinnie The Dinosaur',timezone:'America/Argentina/Buenos_Aires'},
  schedule:{timezone:'America/Argentina/Buenos_Aires',posting_times:['23:59'],upload_lead_minutes:0},
- publication:{selected_provider:'facebook',providers:[{type:'facebook',hashtags:['#DinnieTheDinosaur','#KidsAnimation','#Reels','#Viral']}]}
+ publication:{selected_provider:'facebook',ai_disclosure_required:true,providers:[{type:'facebook',contains_synthetic_media:true,hashtags:['#DinnieTheDinosaur','#KidsAnimation','#Reels','#Viral']}]}
 };
 const calls=[];
 const realFetch=globalThis.fetch;
