@@ -194,8 +194,21 @@ function approvedPublicationCount(db,day=artDay()){
   }catch{}
   return count;
 }
+function pendingReviewCount(db,day=artDay()){
+  let count=0;
+  try{
+    const rows=db.prepare("SELECT flowResult,lastProgressAt,updatedAt FROM factory_items WHERE status='review'").all();
+    for(const row of rows){
+      const flow=json(row.flowResult,{})||{};
+      const stamp=String(flow?.generation_started_at||row.lastProgressAt||row.updatedAt||'');
+      const ms=Date.parse(stamp);if(Number.isFinite(ms)&&artDay(new Date(ms))===day)count++;
+    }
+  }catch{}
+  return count;
+}
 function effectiveDailyCount(db,day=artDay()){
-  return Math.max(dailyGenerationCount(db,day),retainedDailyCount(db,day),approvedPublicationCount(db,day));
+  const approvedPlusReview=approvedPublicationCount(db,day)+pendingReviewCount(db,day);
+  return Math.max(dailyGenerationCount(db,day),retainedDailyCount(db,day),approvedPlusReview);
 }
 function ensureConfirmedGenerationAccounting(db){
   try{
