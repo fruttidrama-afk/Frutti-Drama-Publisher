@@ -35,6 +35,8 @@ for(const sql of [
   "ALTER TABLE factory_items ADD COLUMN reviewRetryToken TEXT",
   "ALTER TABLE factory_items ADD COLUMN reviewRetrySubmittedToken TEXT",
   "ALTER TABLE factory_items ADD COLUMN reviewContentHash TEXT",
+  "ALTER TABLE factory_items ADD COLUMN reviewInterpretation TEXT",
+  "ALTER TABLE factory_items ADD COLUMN reviewInterpretationAt TEXT",
   "ALTER TABLE factory_items ADD COLUMN creativePackageHash TEXT",
   "ALTER TABLE factory_items ADD COLUMN creativePackageId TEXT",
   "ALTER TABLE factory_generations ADD COLUMN generationKind TEXT NOT NULL DEFAULT 'automatic'"
@@ -773,22 +775,9 @@ function ensureCopy(row){
  return{...row,title,description,creativePackageHash:packageHash,creativePackageId:packageId};
 }
 
-function classifyReviewFeedback(value){
- const t=String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
- const promptSignals=[
-   /dialog|speaker|habla|dice|voice|voz|linea|frase|texto/,
-   /historia|story|accion|orden|beat|escena|falt|deberia|no hizo|no mostro|no dijo/,
-   /personaje equivocado|wrong character|falta personaje|extra character|continuidad|canon|ubicacion|apariencia|reference/,
-   /camara|duracion|tono|luz|lighting/
- ];
- if(promptSignals.some(x=>x.test(t)))return'revise_prompt';
- const stochastic=[
-   /glitch|artifact|artefact|render|deform|flicker|blur|borros|pixel|frame|freeze|congel/,
-   /lip sync|desincron|audio corrido|audio desfas|mano rara|brazo raro|pierna rara|extra limb|cara rara|duplicado|clon/
- ];
- if(stochastic.some(x=>x.test(t)))return'reuse_prompt';
- return'revise_prompt';
-}
+// REDO feedback is intentionally NOT classified here with keywords/regex.
+ // The FreeBrowserProvider interprets the complete human message semantically
+ // against the Show Bible and episode context before authorizing one retry.
 function card(row){row=ensureCopy(row);const hasReviewMedia=row.status==='review'&&((row.videoPath&&fs.existsSync(row.videoPath))||isReviewStorageUri(row.remoteUrl));return{id:row.id,episode:row.episode,hook:row.hook,story:row.story,title:row.title,description:row.description,status:row.status,videoUrl:hasReviewMedia?'/factory/video/'+encodeURIComponent(row.id):null,archivedOriginal:isReviewStorageUri(row.remoteUrl),updatedAt:row.updatedAt,error:row.error}}
 function repairLegacyEarthReviewMetadata(){
  if(!/earth\s*in\s*10/i.test(String(CONFIG.identity?.show_name||'')))return;
@@ -945,25 +934,21 @@ app.post('/factory/:id/reject',async(req,res)=>{
  if(r.status!=='review')return res.status(409).json({error:'Already processed.'});
  const feedback=String(req.body?.feedback||'').replace(/[\u0000-\u001f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,1200);
  if(feedback.length<3)return res.status(400).json({error:'Explain briefly what went wrong before REDO.'});
- const strategy=classifyReviewFeedback(feedback),token=randomBytes(24).toString('hex'),rev=Number(r.revision||0)+1,stamp=now();
+ const token=randomBytes(24).toString('hex'),rev=Number(r.revision||0)+1,stamp=now();
  // Rejection is destructive for the rejected media: remove any accidental
- // publication record / private remote upload before regenerating.
+ // publication record / private remote upload before the semantic AI decides
+ // whether this is a render retry, prompt revision, or creative rewrite.
  await publication.purgeRejected(r);
  if(isReviewStorageUri(r.remoteUrl)){try{await deleteReviewObject(r.remoteUrl)}catch{}}
  if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{}
- if(strategy==='revise_prompt'){
-   db.prepare("UPDATE factory_items SET status='regen_wait',revision=?,reviewFeedback=?,retryStrategy=?,reviewRetryToken=?,reviewRetrySubmittedToken=NULL,transportPreflight=NULL,providerRunId=NULL,flowResult=NULL,videoPath=NULL,remoteUrl=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewContentHash=NULL,error='Human REDO requested: replacement creative package required.',nextTry=0,updatedAt=? WHERE id=?")
-     .run(rev,feedback,strategy,token,stamp,r.id);
- }else{
-   db.prepare("UPDATE factory_items SET status='regen_wait',revision=?,reviewFeedback=?,retryStrategy=?,reviewRetryToken=?,reviewRetrySubmittedToken=NULL,transportPreflight=NULL,providerRunId=NULL,flowResult=NULL,videoPath=NULL,remoteUrl=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewContentHash=NULL,error='Human REDO requested: reuse the same prompt for one new render.',nextTry=0,updatedAt=? WHERE id=?")
-     .run(rev,feedback,strategy,token,stamp,r.id);
- }
+ db.prepare("UPDATE factory_items SET status='feedback_wait',revision=?,reviewFeedback=?,retryStrategy='ai_pending',reviewRetryToken=?,reviewRetrySubmittedToken=NULL,reviewInterpretation=NULL,reviewInterpretationAt=NULL,transportPreflight=NULL,providerRunId=NULL,flowResult=NULL,videoPath=NULL,remoteUrl=NULL,reviewVideoId=NULL,reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewContentHash=NULL,error='Interpreting human REDO feedback semantically before choosing the correction.',nextTry=0,runtimeAttemptCount=0,updatedAt=? WHERE id=?")
+   .run(rev,feedback,token,stamp,r.id);
  metaSet('flow:generationLifecycle:'+r.id,JSON.stringify({
-   state:'RETRY_REQUESTED',generation_id:null,generation_started_at:null,submit_boundary_at:null,
-   baseline:[],baseline_inventory:null,reviewer_retry:true,retry_token:token,retry_strategy:strategy,
-   review_feedback:feedback,retry_requested_at:stamp,exactly_one_submit:true
+   state:'FEEDBACK_AI_PENDING',generation_id:null,generation_started_at:null,submit_boundary_at:null,
+   baseline:[],baseline_inventory:null,reviewer_retry:true,retry_token:token,retry_strategy:'ai_pending',
+   review_feedback:feedback,retry_requested_at:stamp,exactly_one_submit:true,automatic_submit_forbidden:true
  }));
- res.json({ok:true,regenerating:true,retryStrategy:strategy,retryToken:token});
+ res.json({ok:true,regenerating:true,aiPending:true,retryStrategy:'ai_pending',retryToken:token});
  setTimeout(()=>{try{globalThis.__publisherRunProvider?.()}catch{}},50).unref?.();
 });
 app.post('/factory/enable',(req,res)=>{metaSet('automation:factoryEnabled','true');res.json({ok:true,enabled:true})});
@@ -1084,7 +1069,7 @@ function health(){
  const knowledge={flow_sop_version:metaGet('knowledge:flowSopVersion',''),flow_sop_sha256:metaGet('knowledge:flowSopSha256',''),declared_sha256:metaGet('knowledge:flowSopDeclaredSha256',''),loaded:metaGet('knowledge:flowSopLoaded','false')==='true',document_count:Number(metaGet('knowledge:flowSopDocumentCount','0')||0),inherit_to_publisher:metaGet('knowledge:inheritToPublisher','false')==='true'};
  const reviewCopy=db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode LIMIT 10").all().map(r=>{const x=ensureCopy(r);return{episode:Number(x.episode),title:String(x.title||''),description:String(x.description||''),creative_package_id:String(x.creativePackageId||'')}});
  const publicationCopy=db.prepare("SELECT episode,title,description,status FROM publication_items WHERE status NOT IN ('cancelled','deleted') ORDER BY episode LIMIT 20").all().map(x=>({episode:Number(x.episode),title:String(x.title||''),description:String(x.description||''),status:String(x.status||'')}));
- return{ok:true,at:now(),runtime_version:'publisher-runtime-v1',publisher_enabled:metaGet('automation:factoryEnabled','false')==='true',show:CONFIG.identity.show_name,scheduler_alive:true,scheduler:publication.status(),scheduler_no_end_date:true,worker_alive:workerAlive,automation_provider:'FreeBrowserProvider',generation_provider:'GoogleFlowProvider',publication_provider:selectedPublicationProvider()==='facebook'?'FacebookReelsProvider':selectedPublicationProvider()==='youtube'?'YouTubeProvider':'NotSelected',tinyfish_required:false,tinyfish_fallback:false,knowledge,flow:(()=>{const lf=liveFlowConfig();return{configured:Boolean(lf.project_id),authenticated:Boolean(flowAuth()?.ok),project_id:lf.project_id||null,project_name:lf.project_name||null,project_url:lf.project_url||null}})(),current_job:current||null,queue:counts,completed_today:completed,daily_target:dailyTarget,remaining_today:Math.max(0,dailyTarget-completed),daily_override_active:dailyTarget!==DAILY_LIMIT,provider_health:p?.state||null,last_generation:db.prepare("SELECT createdAt FROM factory_generations ORDER BY createdAt DESC LIMIT 1").get()?.createdAt||null,last_review_ready:db.prepare("SELECT updatedAt FROM factory_items WHERE status='review' ORDER BY updatedAt DESC LIMIT 1").get()?.updatedAt||null,last_publication:db.prepare("SELECT updatedAt,status,videoId FROM publication_items ORDER BY updatedAt DESC LIMIT 1").get()||null,serial_gate:{enabled:true,creative_serialized:Boolean(CONFIG.content.serialized),gate:'review_ready',strict:true},automation_safety:{exactly_once_submit:metaGet('automation:exactlyOnceSubmit','false')==='true',strict_serial_generation:metaGet('automation:strictSerialGeneration','false')==='true',project_grid_recovery:metaGet('automation:projectGridRecovery','false')==='true',review_metadata_required:metaGet('automation:reviewMetadataRequired','false')==='true',golden_test_required:metaGet('automation:goldenTestRequired','false')==='true',stable_composer_handoff:true,frutti_browser_launch_parity:true,native_no_charge_retry:false,immediate_native_retry_disabled:true,adaptive_no_charge_backoff:true,unusual_activity_exponential_backoff:true,provider_wide_unusual_activity_backoff:true,monotonic_provider_cooldown:true,successful_render_resets_provider_backoff:true,successful_redos_count_toward_daily_target:true,legacy_streak_resurrection_guard:true,strict_post_submit_recovery_match:true,catalog_wide_creative_uniqueness:true,no_landscape_repeat_cycle:true,youtube_preapproval_private_staging_disabled:true,cloud_stock_until_upload_window:true,private_upload_at_1230:true,direct_private_to_public_at_1900:true,native_publish_at_disabled:true,youtube_upload_lead_minutes_390:true,manual_stock_recovery_upload:true,recovery_upload_cloud_required:true,show_specific_repairs_isolated:true,prompt_show_bible_gate:true,atomic_creative_package:true,approval_before_external_storage:true,reject_purges_external_artifacts:true},prompt_integrity:promptIntegrity,review_copy:reviewCopy,publication_copy:publicationCopy,storage:storage(),security:{configured:configured(),passkeys:authState().passkeys.length,active_sessions:authState().sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).length}};
+ return{ok:true,at:now(),runtime_version:'publisher-runtime-v1',publisher_enabled:metaGet('automation:factoryEnabled','false')==='true',show:CONFIG.identity.show_name,scheduler_alive:true,scheduler:publication.status(),scheduler_no_end_date:true,worker_alive:workerAlive,automation_provider:'FreeBrowserProvider',generation_provider:'GoogleFlowProvider',publication_provider:selectedPublicationProvider()==='facebook'?'FacebookReelsProvider':selectedPublicationProvider()==='youtube'?'YouTubeProvider':'NotSelected',tinyfish_required:false,tinyfish_fallback:false,knowledge,flow:(()=>{const lf=liveFlowConfig();return{configured:Boolean(lf.project_id),authenticated:Boolean(flowAuth()?.ok),project_id:lf.project_id||null,project_name:lf.project_name||null,project_url:lf.project_url||null}})(),current_job:current||null,queue:counts,completed_today:completed,daily_target:dailyTarget,remaining_today:Math.max(0,dailyTarget-completed),daily_override_active:dailyTarget!==DAILY_LIMIT,provider_health:p?.state||null,last_generation:db.prepare("SELECT createdAt FROM factory_generations ORDER BY createdAt DESC LIMIT 1").get()?.createdAt||null,last_review_ready:db.prepare("SELECT updatedAt FROM factory_items WHERE status='review' ORDER BY updatedAt DESC LIMIT 1").get()?.updatedAt||null,last_publication:db.prepare("SELECT updatedAt,status,videoId FROM publication_items ORDER BY updatedAt DESC LIMIT 1").get()||null,serial_gate:{enabled:true,creative_serialized:Boolean(CONFIG.content.serialized),gate:'review_ready',strict:true},automation_safety:{exactly_once_submit:metaGet('automation:exactlyOnceSubmit','false')==='true',strict_serial_generation:metaGet('automation:strictSerialGeneration','false')==='true',project_grid_recovery:metaGet('automation:projectGridRecovery','false')==='true',review_metadata_required:metaGet('automation:reviewMetadataRequired','false')==='true',golden_test_required:metaGet('automation:goldenTestRequired','false')==='true',stable_composer_handoff:true,frutti_browser_launch_parity:true,native_no_charge_retry:false,immediate_native_retry_disabled:true,adaptive_no_charge_backoff:true,unusual_activity_exponential_backoff:true,provider_wide_unusual_activity_backoff:true,monotonic_provider_cooldown:true,successful_render_resets_provider_backoff:true,successful_redos_count_toward_daily_target:true,legacy_streak_resurrection_guard:true,strict_post_submit_recovery_match:true,catalog_wide_creative_uniqueness:true,no_landscape_repeat_cycle:true,youtube_preapproval_private_staging_disabled:true,cloud_stock_until_upload_window:true,private_upload_at_1230:true,direct_private_to_public_at_1900:true,native_publish_at_disabled:true,youtube_upload_lead_minutes_390:true,manual_stock_recovery_upload:true,recovery_upload_cloud_required:true,show_specific_repairs_isolated:true,prompt_show_bible_gate:true,atomic_creative_package:true,approval_before_external_storage:true,reject_purges_external_artifacts:true,semantic_ai_redo_interpretation:true,post_submit_timeout_never_resubmits:true},prompt_integrity:promptIntegrity,review_copy:reviewCopy,publication_copy:publicationCopy,storage:storage(),security:{configured:configured(),passkeys:authState().passkeys.length,active_sessions:authState().sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).length}};
 }
 function repairObsoleteFlowSettingsErrors(){
   try{
