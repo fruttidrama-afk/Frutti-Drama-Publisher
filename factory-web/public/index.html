@@ -347,7 +347,9 @@ function assertPublisherRuntimeContract(config){
      !Array.isArray(config?.publication?.providers)||!Array.isArray(config?.publication?.allowed_providers)||
      !config.publication.allowed_providers.includes("youtube")||!config.publication.allowed_providers.includes("facebook")||
      (config.publication.selected_provider!==null&&!["youtube","facebook"].includes(config.publication.selected_provider))||
-     config.publication.providers.some(p=>p.type==="youtube"&&(p.privacy_before_publish!=="private"||p.release_mode!=="private_then_public_at_posting_time"||p.use_publish_at!==false||p.metadata_final_before_upload!==true||p.preserve_private_lead_window!==true||p.contains_synthetic_media!==true))){
+     config.publication.ai_disclosure_required!==true||
+     config.publication.providers.some(p=>p.contains_synthetic_media!==true)||
+     config.publication.providers.some(p=>p.type==="youtube"&&(p.privacy_before_publish!=="private"||p.release_mode!=="private_then_public_at_posting_time"||p.use_publish_at!==false||p.metadata_final_before_upload!==true||p.preserve_private_lead_window!==true))){
     throw Error("Publisher runtime contract failed: canonical Flow SOP / strict serial safety is incomplete.");
   }
   return true;
