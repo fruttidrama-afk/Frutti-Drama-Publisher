@@ -31,12 +31,19 @@
     "recovery_surface": "project-grid",
     "mp4_validation_required": true,
     "review_ready_before_next_submit": true,
-    "uncertainty_rule": "RECONCILE_NEVER_BLINDLY_RESUBMIT"
+    "uncertainty_rule": "RECONCILE_NEVER_BLINDLY_RESUBMIT",
+    "post_submit_timeout_action": "reconcile_only_no_resubmit"
   },
   "review": {
     "playable_validated_video_required": true,
     "final_public_metadata_required": true,
-    "internal_planner_placeholders_forbidden": true
+    "internal_planner_placeholders_forbidden": true,
+    "feedback_interpreter": "semantic-ai",
+    "feedback_decisions": [
+      "render_retry",
+      "prompt_revision",
+      "creative_rewrite"
+    ]
   },
   "publication": {
     "preserve_review_metadata_to_youtube": true,
@@ -48,7 +55,8 @@
     "restart_reconciliation": true,
     "same_asset_download_retry": true,
     "vanished_render_reconciliation": true,
-    "insufficient_credit_backoff": true
+    "insufficient_credit_backoff": true,
+    "post_submit_timeout_resubmit": false
   },
   "acceptance_gate": "Golden Test must reach REVIEW_READY before automation is marked healthy."
 }
