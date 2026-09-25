@@ -620,6 +620,36 @@ async function closeFlowSettings(page,{timeout=9000}={}){
     }catch{}
     if(!(await flowSettingsPanelOpen(page)))return true;
 
+    // Current Flow renders Agent settings as a collapsible left panel. Its
+    // reliable close control exposes either the accessible name "Collapse" or
+    // the Material icon text "left_panel_close". Prefer that exact control
+    // before generic Close/Escape fallbacks.
+    let collapsed=false;
+    const collapseNamed=page.getByRole('button',{name:/^(?:Collapse|Contraer|Ocultar panel|Collapse panel)$/i}).last();
+    if(await collapseNamed.count().catch(()=>0)&&await collapseNamed.isVisible().catch(()=>false)){
+      await trustedClick(collapseNamed).catch(()=>{});collapsed=true;await sleep(450);
+    }
+    if(!collapsed){
+      const icons=page.locator('mat-icon');
+      for(let i=(await icons.count().catch(()=>0))-1;i>=0;i--){
+        const icon=icons.nth(i);
+        if(!(await icon.isVisible().catch(()=>false)))continue;
+        const txt=compact((await icon.innerText().catch(()=>''))+' '+(await icon.textContent().catch(()=>'')),80);
+        if(!/left_panel_close|close/i.test(txt))continue;
+        const button=icon.locator('xpath=ancestor::button[1]').first();
+        if(await button.count().catch(()=>0)&&await button.isVisible().catch(()=>false)){
+          await trustedClick(button).catch(()=>{});collapsed=true;await sleep(450);break;
+        }
+      }
+    }
+    if(collapsed){
+      try{
+        const editor=await promptEditor(page);
+        const send=await generationSendButton(page,editor);
+        if(await editor.isVisible().catch(()=>false)&&await send.isVisible().catch(()=>false))return true;
+      }catch{}
+    }
+
     const selectors=[
       'button[aria-label*="close" i]',
       '[role="button"][aria-label*="close" i]',
