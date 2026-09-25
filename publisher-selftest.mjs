@@ -120,10 +120,12 @@ has(server,'legacy_streak_resurrection_guard:true','legacy streak resurrection g
 has(server,'strict_post_submit_recovery_match:true','strict post-submit recovery invariant');
 has(server,'catalog_wide_creative_uniqueness:true','catalog-wide creative uniqueness invariant');
 has(server,'no_landscape_repeat_cycle:true','no landscape repeat cycle invariant');
-has(server,'youtube_private_staging_disabled:true','youtube private staging disabled');
-has(server,'cloud_stock_until_release:true','cloud stock until release');
-has(server,'direct_public_upload_at_release:true','direct public upload at release');
-has(server,'zero_youtube_upload_lead:true','zero YouTube upload lead');
+has(server,'youtube_preapproval_private_staging_disabled:true','no YouTube staging immediately after approval');
+has(server,'cloud_stock_until_upload_window:true','cloud stock until upload window');
+has(server,'private_upload_at_1230:true','private upload at 12:30');
+has(server,'direct_private_to_public_at_1900:true','direct private-to-public edit at 19:00');
+has(server,'native_publish_at_disabled:true','native publishAt disabled');
+has(server,'youtube_upload_lead_minutes_390:true','390-minute YouTube upload lead');
 has(server,'show_specific_repairs_isolated:true','show-specific repair isolation health invariant');
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
@@ -144,10 +146,11 @@ has(publication,'APPROVAL_GATE','publication enqueue requires explicit approval'
 has(publication,'purgeRejected','rejected publication artifacts are purged');
 has(publication,'purgePrivateVideosByTitle','operator cleanup can delete legacy private orphan uploads');
 has(publication,'readReviewRange','approved publication may stream from private cloud storage');
-has(publication,'publishNowLikeManual','legacy private-video direct release path');
-has(publication,"status:{privacyStatus:'public',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}",'new YouTube uploads are direct PUBLIC at release time');
-has(publication,'No-YouTube-stock policy','approved stock remains outside YouTube until release');
-has(publication,'const uploadAt=scheduledAt','upload time equals release time');
+has(publication,'publishNowLikeManual','explicit PRIVATE to PUBLIC release path');
+has(publication,"status:{privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}",'YouTube upload is plain PRIVATE');
+has(publication,"new Date(Date.parse(scheduledAt)-390*60000).toISOString()",'YouTube upload occurs 390 minutes before release');
+has(publication,"zonedLocal(localDay,'19:00',tz)",'YouTube release is normalized to 19:00');
+has(publication,'Uploaded plain PRIVATE at the configured 12:30 publication-prep time. No publishAt is set.','12:30 private upload audit message');
 if(publication.includes("privacyStatus:'private',publishAt:item.scheduledAt"))throw new Error('Native YouTube publishAt scheduling must stay disabled');
 
 const schema=JSON.parse(read('publisher.config.schema.json'));
@@ -171,6 +174,3 @@ console.log(JSON.stringify({
   review_metadata_required:true
 },null,2));
 
-has(publication,"privacyStatus:'public'",'YouTube uploads direct public at release');
-has(publication,'uploadAt=scheduledAt','YouTube upload time equals release time');
-has(publication,'No-YouTube-stock policy','approved stock is not staged on YouTube');
