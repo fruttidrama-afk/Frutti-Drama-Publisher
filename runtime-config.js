@@ -436,7 +436,11 @@ export function ideaForEpisode(episode){
   }
   const seeds=CONFIG.content.autonomous_seed_ideas;
   if(seeds.length){
-    const v=seeds[i%seeds.length],cycle=Math.floor(i/seeds.length)+1;
+    // Autonomous seeds begin AFTER all explicitly configured initial episodes.
+    // Using the absolute episode index skipped the first seeds (E4 started at
+    // seed #4 when three initial episodes existed), breaking serialized canon.
+    const seedIndex=Math.max(0,Number(episode)-CONFIG.content.initial_episodes.length-1);
+    const v=seeds[seedIndex%seeds.length],cycle=Math.floor(seedIndex/seeds.length)+1;
     if(typeof v==='string')return{hook:'NEW TURN',story:v+' Continuation cycle '+cycle+'. Preserve canon and create a new consequence rather than repeating the previous episode.'};
     return{hook:String(v.hook||'NEW TURN'),story:String(v.story||v.intent||'')+' Continuation cycle '+cycle+'.'};
   }
