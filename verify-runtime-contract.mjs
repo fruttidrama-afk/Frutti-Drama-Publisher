@@ -57,8 +57,10 @@ for(const token of ['earthPromptIsEpisodeBound','episode-generation-prompt','cre
 for(const token of ['saveReviewAsset','local-volume-until-approval','remoteUrl=NULL','reviewVideoId=NULL']){
   must(provider.includes(token),'pre-approval local-only review contract missing '+token);
 }
-must(publication.includes('publishNowLikeManual'),'direct PRIVATE-to-PUBLIC YouTube release contract missing');
-must(publication.includes("status:{privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}"),'plain PRIVATE YouTube staging contract missing');
+must(publication.includes('publishNowLikeManual'),'legacy private-video release path missing');
+must(publication.includes("status:{privacyStatus:'public',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}"),'direct PUBLIC upload-at-release contract missing');
+must(publication.includes('No-YouTube-stock policy'),'approved stock must remain outside YouTube until release');
+must(publication.includes('const uploadAt=scheduledAt'),'uploadAt must equal scheduledAt');
 must(!publication.includes("privacyStatus:'private',publishAt:item.scheduledAt"),'native YouTube publishAt scheduling must remain disabled');
 for(const token of ['isReviewStorageUri','readReviewRange','deleteReviewObject','containsSyntheticMedia:true','APPROVAL_GATE','purgeRejected','purgePrivateVideosByTitle']){
   must(publication.includes(token),'publication/approval/rejection contract missing '+token);
