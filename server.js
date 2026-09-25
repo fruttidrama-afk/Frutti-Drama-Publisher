@@ -693,8 +693,20 @@ app.get('/facebook/oauth/callback',async(req,res)=>{
     }catch{}
     const pages=await discoverFacebookPages(userToken);
     if(!pages.length)throw new Error('No managed Facebook Pages were returned. Make sure pages_show_list and business_management were granted, then reconnect Facebook.');
-    saveFbSecrets({user_token:userToken,token_expires_at:expires?Date.now()+expires*1000:null,page_options:pages,oauth_state:null,oauth_state_exp:0});
+    const oldPageId=String(f.page_id||''),oldPageName=String(f.page_name||'');
+    const same=pages.find(p=>oldPageId&&String(p.id)===oldPageId)
+      ||pages.find(p=>oldPageName&&String(p.name||'').trim().toLowerCase()===oldPageName.trim().toLowerCase());
+    saveFbSecrets({
+      user_token:userToken,token_expires_at:expires?Date.now()+expires*1000:null,
+      page_options:pages,oauth_state:null,oauth_state_exp:0,
+      ...(same?.access_token?{page_id:String(same.id),page_name:String(same.name||same.id),page_access_token:String(same.access_token)}:{})
+    });
     setPublicationProvider('facebook');
+    if(same?.access_token){
+      facebookPublication.resumeAuthWait?.();
+      void facebookPublication.tick().catch(()=>{});
+      return res.redirect('/?facebook=reconnected');
+    }
     res.redirect('/integrations/facebook');
   }catch(e){res.status(400).send('Facebook OAuth failed: '+String(e?.message||e))}
 });
@@ -705,7 +717,9 @@ app.post('/integrations/facebook/page',secure,async(req,res)=>{
     const verified=await metaGraph(page.id,{params:{fields:'id,name'},token:page.access_token});
     saveFbSecrets({page_id:String(verified.id||page.id),page_name:String(verified.name||page.name||page.id),page_access_token:String(page.access_token)});
     setPublicationProvider('facebook');
-    res.redirect('/integrations/facebook');
+    facebookPublication.resumeAuthWait?.();
+    void facebookPublication.tick().catch(()=>{});
+    res.redirect('/?facebook=reconnected');
   }catch(e){res.status(400).send('Facebook Page connection failed: '+String(e?.message||e))}
 });
 app.post('/integrations/facebook/disconnect',secure,(req,res)=>{
