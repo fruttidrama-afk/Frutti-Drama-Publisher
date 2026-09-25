@@ -82,6 +82,10 @@ for(const [token,label] of [
   ["connectOverCDP('http://127.0.0.1:'+port,{timeout:15000})",'Frutti-compatible CDP attach']
 ]) has(provider,token,label);
 must(!provider.includes('--disk-cache-dir=/tmp/publisher-chrome-cache'),'custom browser cache flags must stay disabled');
+has(provider,"const submit=await clickSubmitExactlyOnce",'submit action object capture');
+has(provider,"const submitMode=String(submit?.mode||'start-generation-direct')",'submit mode extraction');
+has(provider,"pre_consent_fingerprint:String(submit?.pre_consent_fingerprint||'')",'safe consent fingerprint lifecycle handoff');
+must(!provider.includes("const submitMode=await clickSubmitExactlyOnce"),'submit result must never be treated as a string');
 for(const [token,label] of [
   ['function scheduleNoChargeRetry(db,row,opts={})','adaptive no-charge scheduler'],
   ['flow:transientCooldownUntil','provider-wide no-charge cooldown'],
