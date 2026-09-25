@@ -3132,7 +3132,7 @@ async function processRow(db,row){
     }
     const envEnabled=String(process.env.PUBLISHER_ENABLED||'true').toLowerCase()!=='false';
     const pauseAllowsSubmit=!generationPauseActive();
-    const manualSubmit=envEnabled&&pauseAllowsSubmit&&meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',creditCycleOpen=meta(db,'flow:dailyCreditBatchOpen','false')==='true',cycleUsed=creditCycleUsage(db),autoSubmit=envEnabled&&pauseAllowsSubmit&&runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||(creditCycleOpen&&cycleUsed<dailyProductionLimit(db))),submitAuthorized=manualSubmit||autoSubmit;
+    const manualSubmit=envEnabled&&pauseAllowsSubmit&&meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',creditCycleOpen=meta(db,'flow:dailyCreditBatchOpen','false')==='true',cycleUsed=creditCycleUsage(db),extraAuthorized=dailyProductionLimit(db)>Number(BASE_DAILY_PRODUCTION_LIMIT||1)&&effectiveDailyCount(db)<dailyProductionLimit(db),autoSubmit=envEnabled&&pauseAllowsSubmit&&runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||extraAuthorized||(creditCycleOpen&&cycleUsed<Number(BASE_DAILY_PRODUCTION_LIMIT||1))),submitAuthorized=manualSubmit||autoSubmit;
     publish('PREFLIGHT',{episode:'E'+row.episode,job_id:row.id});
     const pf=await preflight(page,row,cp);
     db.prepare('UPDATE factory_items SET transportPreflight=?,error=NULL,updatedAt=? WHERE id=?').run(JSON.stringify(pf).slice(0,20000),now(),row.id);
@@ -3824,8 +3824,9 @@ async function runProvider(){
     const legacyUsed=effectiveDailyCount(db);
     if(row&&String(row.status)==='generating'){publish('RECOVERY_PICKED',{episode:'E'+row.episode,job_id:row.id,state:String(lifecycle(db,row)?.state||''),used_today:legacyUsed});await processRow(db,row);return}
     const priorityRetry=isReviewerRetry(row);
-    let creditGate={open:true,used:creditCycleUsage(db),target:dailyProductionLimit(db),reason:priorityRetry?'reviewer-retry-bypass':'unknown'};
-    if(!priorityRetry){
+    const manualExtraAuthorized=dailyProductionLimit(db)>Number(BASE_DAILY_PRODUCTION_LIMIT||1)&&effectiveDailyCount(db)<dailyProductionLimit(db);
+    let creditGate={open:true,used:manualExtraAuthorized?effectiveDailyCount(db):creditCycleUsage(db),target:manualExtraAuthorized?dailyProductionLimit(db):Number(BASE_DAILY_PRODUCTION_LIMIT||1),reason:priorityRetry?'reviewer-retry-bypass':(manualExtraAuthorized?'operator-generate-extra-bypass':'unknown')};
+    if(!priorityRetry&&!manualExtraAuthorized){
       creditGate=await ensureDailyCreditCycle(db);
       if(!creditGate.open){
         publish('AUTOMATIC_BATCH_WAITING_FOR_DAILY_CREDITS',{used:creditGate.used,target:creditGate.target,reason:creditGate.reason,credits:creditGate.credits??null,cycle_id:creditGate.cycle?.id||null});
@@ -3833,7 +3834,7 @@ async function runProvider(){
       }
     }
     const used=Number(creditGate.used||0);
-    if(used>=dailyProductionLimit(db)&&!priorityRetry){
+    if(used>=Number(BASE_DAILY_PRODUCTION_LIMIT||1)&&!priorityRetry&&!manualExtraAuthorized){
       setMeta(db,'flow:dailyCreditBatchOpen','false');
       setMeta(db,'flow:dailyCreditRefreshWaiting','true');
       setMeta(db,'flow:state','ESPERANDO CRÉDITOS');
@@ -3852,7 +3853,7 @@ async function runProvider(){
       publish(waiting&&Number(waiting.nextTry||0)>Date.now()?'SERIAL_HEAD_WAIT':'IDLE',{episode:waiting?('E'+waiting.episode):null,next_try:waiting?.nextTry||0,message});
       return
     }}
-    publish(priorityRetry?'REVIEW_RETRY_PICKED':'PRODUCTION_PICKED',{episode:'E'+row.episode,job_id:row.id,used_credit_cycle:used,remaining_credit_cycle:Math.max(0,dailyProductionLimit(db)-used),credit_cycle_id:creditGate.cycle?.id||null,daily_limit_bypassed:priorityRetry});await processRow(db,row);
+    publish(priorityRetry?'REVIEW_RETRY_PICKED':(manualExtraAuthorized?'MANUAL_EXTRA_PICKED':'PRODUCTION_PICKED'),{episode:'E'+row.episode,job_id:row.id,used_credit_cycle:used,remaining_credit_cycle:Math.max(0,creditGate.target-used),credit_cycle_id:creditGate.cycle?.id||null,daily_limit_bypassed:priorityRetry||manualExtraAuthorized});await processRow(db,row);
   }catch(err){
     const message=compact(err?.stack||err?.message||err,900);
     try{if(db&&row){const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row,lc=lifecycle(db,fresh)||{},state=String(lc.state||'').toUpperCase(),attempts=Number(fresh.runtimeAttemptCount||0)+1,beforeGenerate=!AFTER_GENERATE.has(state)&&!AMBIGUOUS.has(state),browserRetrievalCrash=/Target crashed|Target closed|Browser closed/i.test(message)&&(AFTER_GENERATE.has(state)||AMBIGUOUS.has(state)),baseBackoff=browserRetrievalCrash?5000:(beforeGenerate?10000:60000),capBackoff=browserRetrievalCrash?15000:(beforeGenerate?5*60*1000:60*60*1000),backoff=Math.min(capBackoff,baseBackoff*Math.pow(2,Math.min(attempts-1,6))),nextTry=Date.now()+backoff;if(/FLOW_TRANSIENT_NO_CHARGE/.test(message)){
