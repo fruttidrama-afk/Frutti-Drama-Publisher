@@ -966,7 +966,25 @@ setTimeout(()=>{try{applyForcedPublicationNow()}catch(e){console.error('[FORCE P
 
 app.get('/factory/cards',(req,res)=>res.json({cards:db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode LIMIT 50").all().map(card)}));
 app.get('/factory/video/:id',async(req,res)=>{try{const r=db.prepare("SELECT videoPath,remoteUrl,status FROM factory_items WHERE id=?").get(req.params.id);if(!r||r.status!=='review')return res.sendStatus(404);if(r.videoPath&&fs.existsSync(r.videoPath))return stream(req,res,r.videoPath);if(isReviewStorageUri(r.remoteUrl)){const url=await signedReviewUrl(r.remoteUrl,3600);return res.redirect(302,url)}return res.sendStatus(404)}catch(e){res.status(502).json({error:'Review video storage unavailable.'})}});
-app.post('/factory/:id/approve',(req,res)=>{try{let r=db.prepare('SELECT * FROM factory_items WHERE id=?').get(req.params.id);if(!r)return res.sendStatus(404);if(r.status!=='review')return res.status(409).json({error:'Already processed.'});r=ensureCopy(r);const item=publication.enqueue(r);if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{};db.prepare("UPDATE factory_items SET status='queued',stockId=?,videoPath=NULL,remoteUrl=NULL,error=NULL,updatedAt=? WHERE id=?").run(item.id,now(),r.id);ensureBacklog(db);res.json({ok:true,publication:item})}catch(e){res.status(400).json({error:e.message})}});
+app.post('/factory/:id/approve',(req,res)=>{try{
+  let r=db.prepare('SELECT * FROM factory_items WHERE id=?').get(req.params.id);
+  if(!r)return res.sendStatus(404);
+  if(r.status!=='review')return res.status(409).json({error:'Already processed.'});
+  r=ensureCopy(r);
+  const before=storage();
+  const item=publication.enqueue(r);
+  // Local Review media is transferred to Publication by reference (zero-copy).
+  // Delete the Review source only for legacy/provider paths that explicitly made
+  // a separate durable copy. Never delete the file Publication now owns.
+  if(r.videoPath&&item?.sourceMediaTransferred!==true)try{fs.rmSync(r.videoPath,{force:true})}catch{}
+  db.prepare("UPDATE factory_items SET status='queued',stockId=?,videoPath=NULL,remoteUrl=NULL,error=NULL,updatedAt=? WHERE id=?").run(item.id,now(),r.id);
+  ensureBacklog(db);
+  console.log('[APPROVAL MEDIA HANDOFF]',JSON.stringify({episode:r.episode,job_id:r.id,publication_id:item.id,zero_copy:item?.sourceMediaTransferred===true,storage_before:before,storage_after:storage()}));
+  res.json({ok:true,publication:item});
+}catch(e){
+  console.error('[APPROVAL ERROR]',JSON.stringify({id:req.params.id,code:e?.code||null,message:String(e?.message||e),storage:storage()}));
+  res.status(400).json({error:e.message});
+}});
 function validateImportedMp4(filePath){
   const st=fs.statSync(filePath);
   if(st.size<100000)throw new Error('El archivo es demasiado pequeño para ser un MP4 válido.');
