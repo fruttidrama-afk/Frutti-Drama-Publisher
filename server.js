@@ -899,6 +899,27 @@ function repairPendingPublicationMetadata(){
  }
 }
 setTimeout(()=>{try{repairPendingPublicationMetadata()}catch(e){console.error('[PENDING PUBLICATION COPY REPAIR ERROR]',String(e?.message||e))}},1400).unref?.();
+
+function applyForcedPublicationNow(){
+  const episode=Number(process.env.PUBLISHER_FORCE_PUBLICATION_NOW_EPISODE||0);
+  const token=String(process.env.PUBLISHER_FORCE_PUBLICATION_NOW_TOKEN||'').trim();
+  if(!Number.isInteger(episode)||episode<1||!token)return;
+  const key='operator:force-publication-now:'+episode+':'+token;
+  if(metaGet(key,'')==='done')return;
+  const item=db.prepare("SELECT * FROM publication_items WHERE episode=? AND status NOT IN ('published','cancelled','deleted') ORDER BY createdAt LIMIT 1").get(episode);
+  if(!item){console.log('[FORCE PUBLICATION NOW SKIPPED]',JSON.stringify({episode,reason:'no-active-publication-item'}));setMeta(key,'done');return}
+  const stamp=new Date(Date.now()-1000).toISOString();
+  const prior={status:item.status,scheduledAt:item.scheduledAt,attempts:Number(item.attempts||0),retryAt:Number(item.retryAt||0),error:String(item.error||''),videoId:item.videoId||null,remotePrivacyStatus:item.remotePrivacyStatus||null};
+  let history=[];try{history=JSON.parse(String(item.history||'[]'))||[]}catch{}
+  history.push({status:String(item.status||'queued'),at:now(),message:'Operator emergency: publication time moved to now and retry delay cleared. Existing Facebook upload/session identity is preserved.'});
+  db.prepare("UPDATE publication_items SET scheduledAt=?,uploadAt=?,retryAt=0,error=NULL,history=?,updatedAt=? WHERE id=?")
+    .run(stamp,stamp,JSON.stringify(history.slice(-120)),now(),item.id);
+  setMeta(key,'done');
+  console.log('[FORCE PUBLICATION NOW ARMED]',JSON.stringify({episode,publicationId:item.id,prior,preservedVideoId:Boolean(item.videoId),preservedSession:Boolean(item.resumableSession)}));
+  setTimeout(()=>{try{void publication.tick()}catch(e){console.error('[FORCE PUBLICATION NOW TICK ERROR]',String(e?.message||e))}},500).unref?.();
+}
+setTimeout(()=>{try{applyForcedPublicationNow()}catch(e){console.error('[FORCE PUBLICATION NOW ERROR]',String(e?.message||e))}},1800).unref?.();
+
 app.get('/factory/cards',(req,res)=>res.json({cards:db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode LIMIT 50").all().map(card)}));
 app.get('/factory/video/:id',async(req,res)=>{try{const r=db.prepare("SELECT videoPath,remoteUrl,status FROM factory_items WHERE id=?").get(req.params.id);if(!r||r.status!=='review')return res.sendStatus(404);if(r.videoPath&&fs.existsSync(r.videoPath))return stream(req,res,r.videoPath);if(isReviewStorageUri(r.remoteUrl)){const url=await signedReviewUrl(r.remoteUrl,3600);return res.redirect(302,url)}return res.sendStatus(404)}catch(e){res.status(502).json({error:'Review video storage unavailable.'})}});
 app.post('/factory/:id/approve',(req,res)=>{try{let r=db.prepare('SELECT * FROM factory_items WHERE id=?').get(req.params.id);if(!r)return res.sendStatus(404);if(r.status!=='review')return res.status(409).json({error:'Already processed.'});r=ensureCopy(r);const item=publication.enqueue(r);if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{};db.prepare("UPDATE factory_items SET status='queued',stockId=?,videoPath=NULL,remoteUrl=NULL,error=NULL,updatedAt=? WHERE id=?").run(item.id,now(),r.id);ensureBacklog(db);res.json({ok:true,publication:item})}catch(e){res.status(400).json({error:e.message})}});
@@ -1130,7 +1151,7 @@ function health(){
  const promptIntegrity={ok:emptyActivePrompts.length===0&&bibleMismatchEpisodes.length===0,empty_active_prompts:emptyActivePrompts.length,empty_prompt_episodes:emptyActivePrompts.slice(0,20),show_bible_mismatches:bibleMismatchEpisodes.length,show_bible_mismatch_episodes:bibleMismatchEpisodes.slice(0,20)};
  const knowledge={flow_sop_version:metaGet('knowledge:flowSopVersion',''),flow_sop_sha256:metaGet('knowledge:flowSopSha256',''),declared_sha256:metaGet('knowledge:flowSopDeclaredSha256',''),loaded:metaGet('knowledge:flowSopLoaded','false')==='true',document_count:Number(metaGet('knowledge:flowSopDocumentCount','0')||0),inherit_to_publisher:metaGet('knowledge:inheritToPublisher','false')==='true'};
  const reviewCopy=db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode LIMIT 10").all().map(r=>{const x=ensureCopy(r);return{episode:Number(x.episode),title:String(x.title||''),description:String(x.description||''),creative_package_id:String(x.creativePackageId||'')}});
- const publicationCopy=db.prepare("SELECT episode,title,description,status FROM publication_items WHERE status NOT IN ('cancelled','deleted') ORDER BY episode LIMIT 20").all().map(x=>({episode:Number(x.episode),title:String(x.title||''),description:String(x.description||''),status:String(x.status||'')}));
+ const publicationCopy=db.prepare("SELECT episode,title,description,status,scheduledAt,uploadAt,attempts,retryAt,error,videoId,filePath,remotePrivacyStatus,remotePublishAt,updatedAt FROM publication_items WHERE status NOT IN ('cancelled','deleted') ORDER BY episode LIMIT 20").all().map(x=>({episode:Number(x.episode),title:String(x.title||''),description:String(x.description||''),status:String(x.status||''),scheduled_at:x.scheduledAt||null,upload_at:x.uploadAt||null,attempts:Number(x.attempts||0),retry_at:Number(x.retryAt||0)||null,error:x.error?String(x.error).slice(0,800):null,video_id:x.videoId||null,has_file:Boolean(x.filePath),remote_privacy_status:x.remotePrivacyStatus||null,remote_publish_at:x.remotePublishAt||null,updated_at:x.updatedAt||null}));
  const creditCycleRaw=metaGet('flow:dailyCreditCycle','');let creditCycle=null;try{creditCycle=creditCycleRaw?JSON.parse(creditCycleRaw):null}catch{}
  const creditCycleHealth={
    gate:'wait-for-daily-flow-refresh',
