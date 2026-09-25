@@ -27,6 +27,11 @@ for(const k of ['exactly_once_submit','strict_serial_generation','project_grid_r
 }
 must(schema.properties?.schedule?.properties?.generation_strategy?.const==='sequential','generation strategy must be sequential');
 must(schema.properties?.knowledge?.properties?.flow_sop_version?.const==='FLOW-SOP-v1.0','schema knowledge version mismatch');
+const ytSchema=(schema.properties?.publication?.properties?.providers?.items?.oneOf||[]).find(x=>x?.properties?.type?.const==='youtube');
+must(ytSchema?.properties?.privacy_before_publish?.const==='private','YouTube schema must upload private first');
+must(ytSchema?.properties?.release_mode?.const==='private_then_public_at_posting_time','YouTube schema release mode mismatch');
+must(ytSchema?.properties?.use_publish_at?.const===false,'YouTube schema must forbid publishAt');
+must(ytSchema?.properties?.upload_lead_minutes?.const===390,'YouTube schema must require 390-minute lead');
 
 for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY_ENTERED','automatic_submit_forbidden','flow-grid-tile-container','flow-tile-hover-footer','EPISODE_INTENT_REPAIRED','CREATIVE_PACKAGE_READY','creativePackageHash','source:\'creative-package\'','let editor=await waitFlowReady(page,30000)','FLOW_UNUSUAL_ACTIVITY_OVERNIGHT','30*60*1000','8*60*60*1000','24*60*60*1000']){
   must(provider.includes(token),'provider contract missing '+token);
