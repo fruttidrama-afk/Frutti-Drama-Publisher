@@ -58,6 +58,7 @@ body.completed .shell{padding-top:28px}
 .status-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
 .status{background:color-mix(in srgb,var(--surface) 82%,transparent);border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);padding:18px;border-radius:20px;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}.label{font-size:10px;text-transform:uppercase;letter-spacing:.16em;color:var(--gold);font-weight:800}.value{font-size:24px;font-weight:800;color:var(--ink);margin:10px 0 3px}
 .extra-generate{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;margin:0 0 18px;padding:18px 20px;border-radius:20px;border:1px solid color-mix(in srgb,var(--gold) 35%,transparent);background:color-mix(in srgb,var(--surface) 86%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}.extra-generate h3{margin:3px 0 5px;font-size:19px;color:var(--ink)}.extra-generate p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.extra-controls{display:flex;gap:8px;align-items:center}.extra-controls input{width:76px;min-height:42px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);padding:0 10px;font:inherit;font-weight:800;text-align:center}@media(max-width:620px){.extra-generate{grid-template-columns:1fr}.extra-controls{width:100%}.extra-controls .btn{flex:1}}
+.publication-schedule{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;margin:0 0 14px;padding:18px 20px;border-radius:20px;border:1px solid color-mix(in srgb,var(--gold) 28%,transparent);background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}.publication-schedule h3{margin:3px 0 5px;font-size:19px;color:var(--ink)}.publication-schedule p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.schedule-controls{display:flex;gap:8px;align-items:center}.schedule-controls input[type="time"]{min-height:42px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);padding:0 12px;font:inherit;font-weight:800}.schedule-tz{font-size:11px;color:var(--muted);margin-top:6px;text-align:right}@media(max-width:620px){.publication-schedule{grid-template-columns:1fr}.schedule-controls{width:100%}.schedule-controls .btn{flex:1}.schedule-tz{text-align:left}}
 .tabs{display:flex;gap:8px;margin:18px 0}.tab.active{background:var(--navy);color:#fff;border-color:var(--navy)}
 .panel{display:none}.panel.active{display:block}
 .review-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.review{background:color-mix(in srgb,var(--surface) 86%,transparent);border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);overflow:hidden;border-radius:20px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}.video{background:#151515;aspect-ratio:9/16;max-height:560px;width:100%;object-fit:contain}.review-body{padding:16px}.review h3{font:600 24px Arial,Helvetica,sans-serif;color:var(--ink);margin:5px 0}.story{font-size:14px;color:var(--muted);line-height:1.5;margin:9px 0 15px}.review-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -174,7 +175,16 @@ body.completed .shell{padding-top:28px}
       </div>
       <nav class="tabs"><button class="btn tab active" data-tab="review">REVIEW</button><button class="btn tab" data-tab="queue">PUBLISHING</button><button class="btn tab" data-tab="security">SECURITY</button><button class="btn tab" data-tab="setup">EDIT SETUP</button></nav>
       <section class="panel active" id="review"><div id="reviews" class="review-grid"></div></section>
-      <section class="panel" id="queue"><div id="queueBox" class="video-state-list"></div></section>
+      <section class="panel" id="queue">
+  <div class="publication-schedule">
+    <div><div class="eyebrow">PUBLICATION SCHEDULE</div><h3>Hora de publicación</h3><p>Cambiá la hora diaria desde acá. Los videos en stock que todavía no fueron enviados se reprograman automáticamente.</p></div>
+    <div>
+      <div class="schedule-controls"><input id="postingTime" type="time" step="60" aria-label="Hora de publicación"><button class="btn primary" id="savePostingTime" type="button">GUARDAR HORA</button></div>
+      <div class="schedule-tz" id="postingTimezone">—</div>
+    </div>
+  </div>
+  <div id="queueBox" class="video-state-list"></div>
+</section>
       <section class="panel" id="security">
   <div class="security-grid">
     <article class="security-card security-wide">
@@ -311,6 +321,9 @@ async function load(){
       :'Elegí YouTube o Facebook y conectá el destino de publicación.';
   $('#publicationButton').textContent=o.publication?(selected||'PUBLICATION').toUpperCase()+' CONNECTED ✓':(selected?'CONNECT '+selected.toUpperCase():'CHOOSE PLATFORM');
   $('#publicationButton').href=o.publication?'/integrations/platform':selected==='facebook'?'/integrations/facebook':selected==='youtube'?'/integrations/youtube':'/integrations/platform';
+  const posting=$('#postingTime'),configuredTime=String(pub.posting_times?.[0]||'19:00');
+  if(posting&&document.activeElement!==posting&&!posting.dataset.dirty)posting.value=configuredTime;
+  const postingTz=$('#postingTimezone');if(postingTz)postingTz.textContent='Zona horaria: '+String(pub.timezone||'UTC');
   $('#flowButton').textContent=o.flow?'GOOGLE FLOW CONNECTED ✓':'CONNECT GOOGLE FLOW';
   if(!$('#bible').dataset.loaded){const b=await api('/api/show-bible');$('#bible').value=b.creative_bible||'';$('#bible').dataset.loaded='1'}
   if(o.ready){
@@ -333,6 +346,21 @@ async function load(){
 
 $('#copyPublisherLink').onclick=async()=>{try{await navigator.clipboard.writeText(location.origin);toast('Publisher link copied')}catch{toast(location.origin)}};
 $('#extraGenerateBtn').onclick=()=>generateExtraToday();
+const postingTimeInput=$('#postingTime');
+if(postingTimeInput)postingTimeInput.oninput=()=>{postingTimeInput.dataset.dirty='1'};
+const savePostingTime=$('#savePostingTime');
+if(savePostingTime)savePostingTime.onclick=async()=>{
+  const time=String(postingTimeInput?.value||'').trim();
+  if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)){toast('Elegí una hora válida');return}
+  savePostingTime.disabled=true;
+  try{
+    const out=await api('/api/schedule',{method:'POST',body:JSON.stringify({posting_time:time})});
+    if(postingTimeInput)delete postingTimeInput.dataset.dirty;
+    toast('Hora guardada: '+out.posting_time+' · '+out.rescheduled+' video(s) reprogramados');
+    await load();
+  }catch(e){toast(e.message)}
+  finally{savePostingTime.disabled=false}
+};
 const installAppButton=$('#installApp');if(installAppButton)installAppButton.style.display='none';
 $('#installClose').onclick=()=>{$('#installModal').classList.remove('open');$('#installModal').setAttribute('aria-hidden','true')};
 $('#installModal').onclick=e=>{if(e.target===e.currentTarget)$('#installClose').click()};
