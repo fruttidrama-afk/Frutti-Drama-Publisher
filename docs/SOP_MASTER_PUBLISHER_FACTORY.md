@@ -298,3 +298,31 @@ Append a dated note after each newly verified class of fix:
 - inheritance impact.
 
 This log is an operational memory. It exists so the same failure is not debugged from zero twice.
+
+
+## 2026-09-25 — Dinnie iOS icon / repeat-work prevention
+
+**Symptom:** iOS Share/Add-to-Home-Screen kept showing Dinnie's artwork as a tiny mark inside a white rounded square even after the visible webpage logo looked correct.
+
+**Root causes isolated:**
+- multiple icon sources existed at once (HTML touch icon, legacy `/apple-touch-icon.png`, manifest icons, branding config URLs, favicon routes);
+- some paths still passed through dynamic resizing/compositing while others served a static asset;
+- changing only a query string was not a sufficient cache-busting strategy for iOS;
+- visual inspection of the webpage logo was incorrectly treated as evidence about the actual iOS icon;
+- the fix was being iterated without first converging every consumer onto one concrete known-good asset.
+
+**Verified fix pattern:**
+1. Use one concrete 180x180 full-bleed PNG with opaque green to every outer edge.
+2. Serve that exact asset at a brand-new concrete filename (`/apple-touch-icon-dinnie-v2.png`).
+3. Point `apple-touch-icon`, `apple-touch-icon-precomposed`, favicon/manifest and Publisher branding icon URLs to the same asset/derived copies.
+4. Route the legacy Dinnie icon endpoints to that same static source so no consumer can fall back to a padded variant.
+5. Serve with `Cache-Control: no-store` while validating.
+6. Verify production endpoint status, MIME type and byte identity across legacy/current paths.
+7. Do not call the Home Screen result proven until iOS itself displays the recreated shortcut correctly.
+
+**Production evidence after deploy:**
+- `/apple-touch-icon-dinnie-v2.png`: HTTP 200, `image/png`, no-store.
+- legacy `/apple-touch-icon.png`: same ETag and same content length as the v2 icon.
+- generation remained `GENERATION_PAUSED` with 0 remaining today during branding work.
+
+**Inheritance:** all future publishers must use the full-bleed icon SOP and one-source icon convergence instead of independent favicon/touch/manifest pipelines.
