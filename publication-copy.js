@@ -92,8 +92,8 @@ function dinnieFacts(story='',hook=''){
 function dinnieDynamicTitle(story='',hook=''){
   const f=dinnieFacts(story,hook);
   if(f.trail&&f.vanish)return"Dinnie’s Glowing Path Vanishes ✨🦕!";
-  if(f.home&&f.seed)return"A Tiny Star-Seed Finds Dinnie ⭐🦕!";
   if(f.door&&f.open&&f.star)return"Dinnie Opens a Door to Starlight ⭐✨!";
+  if(f.home&&f.seed)return"A Tiny Star-Seed Finds Dinnie ⭐🦕!";
   if(f.bridge&&f.star)return"A Bridge of Stars Appears for Dinnie ✨🦕!";
   if(f.comet)return"A Tiny Comet Leads Dinnie ☄️🦕!";
   if(f.pool&&f.portal)return"The Mirror Pool Hides Another World ✨🦕!";
@@ -111,8 +111,8 @@ function dinnieDynamicCaption(story='',hook=''){
   const f=dinnieFacts(story,hook);
   let first='Dinnie follows a gentle magical surprise into the next part of her adventure.';
   if(f.trail&&f.vanish)first='Dinnie’s glowing route suddenly disappears, turning the journey into a soft, dreamy surprise.';
-  else if(f.home&&f.seed)first='Back in her warm prehistoric forest, Dinnie notices a tiny star-like seed glowing nearby.';
   else if(f.door&&f.open&&f.star)first='A mysterious doorway comes alive for Dinnie and reveals a dazzling starlit world on the other side.';
+  else if(f.home&&f.seed)first='Back in her warm prehistoric forest, Dinnie notices a tiny star-like seed glowing nearby.';
   else if(f.bridge&&f.star)first='The night sky seems to build Dinnie a sparkling bridge, one bright point at a time.';
   else if(f.comet)first='A playful little comet becomes Dinnie’s guide and leads her toward a new mystery.';
   else if(f.pool&&f.portal)first='A shimmering pool changes before Dinnie’s eyes and begins to look like a doorway to somewhere impossible.';
@@ -124,8 +124,8 @@ function dinnieDynamicCaption(story='',hook=''){
   else if(f.door&&f.home)first='A warm little doorway gives Dinnie a glimpse of home again—but the adventure is not quite finished.';
 
   let second='The final seconds reveal a fresh clue that keeps the story moving forward.';
-  if(f.seed&&f.door)second='Its light points toward an ancient doorway that looks ready to wake up.';
-  else if(f.door&&f.star)second='Beyond it, floating lights and a distant shape invite her to keep exploring.';
+  if(f.door&&f.star)second='Beyond it, floating lights and a distant shape invite her to keep exploring.';
+  else if(f.seed&&f.door)second='Its light points toward an ancient doorway that looks ready to wake up.';
   else if(f.bridge&&f.moon)second='At the far end, a moon-shaped arch begins to glow as if it has been waiting for her.';
   else if(f.comet&&f.pool)second='At the top of the trail, a strange reflective pool hints at an entirely different place.';
   else if(f.pool&&f.portal)second='A new world appears inside the reflection, leaving Dinnie right at the edge of the next chapter.';
