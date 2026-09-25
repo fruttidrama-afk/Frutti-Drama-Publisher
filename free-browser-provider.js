@@ -180,8 +180,21 @@ function retainedDailyCount(db,day=artDay()){
   }catch{}
   return count;
 }
+function approvedPublicationCount(db,day=artDay()){
+  let count=0;
+  try{
+    const rows=db.prepare("SELECT p.createdAt,p.status,f.flowResult,f.lastProgressAt,f.updatedAt FROM publication_items p JOIN factory_items f ON f.id=p.itemId WHERE p.status NOT IN ('cancelled','deleted')").all();
+    for(const row of rows){
+      let flow={};try{flow=json(row.flowResult,{})||{}}catch{}
+      const stamp=String(flow?.generation_started_at||row.lastProgressAt||row.updatedAt||row.createdAt||'');
+      const ms=Date.parse(stamp);if(!Number.isFinite(ms))continue;
+      if(artDay(new Date(ms))===day)count++;
+    }
+  }catch{}
+  return count;
+}
 function effectiveDailyCount(db,day=artDay()){
-  return Math.max(dailyGenerationCount(db,day),retainedDailyCount(db,day));
+  return Math.max(dailyGenerationCount(db,day),retainedDailyCount(db,day),approvedPublicationCount(db,day));
 }
 function ensureConfirmedGenerationAccounting(db){
   try{
