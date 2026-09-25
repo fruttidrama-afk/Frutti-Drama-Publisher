@@ -215,7 +215,7 @@ function normalizeUnconfirmedPreGenerationRows(db){
   try{
     const forceEpisode=Number(process.env.PUBLISHER_FORCE_RESET_EPISODE||0);
     if(forceEpisode>0){
-      const resetToken=String(process.env.PUBLISHER_RUNTIME_VERSION||'default');
+      const resetToken=String(process.env.PUBLISHER_FORCE_RESET_TOKEN||process.env.PUBLISHER_RUNTIME_VERSION||'default');
       const resetKey='operator:force-reset:'+forceEpisode+':'+resetToken;
       if(meta(db,resetKey,'')!=='done'){
         const row=db.prepare("SELECT * FROM factory_items WHERE episode=? AND videoPath IS NULL").get(forceEpisode);
