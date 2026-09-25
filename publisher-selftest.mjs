@@ -112,7 +112,7 @@ has(init,"automation:projectGridRecovery",'project-grid metadata');
 const server=read('server.js');
 has(server,"app.get('/factory/knowledge'",'knowledge endpoint');
 has(server,'automation_safety','health safety block');
-has(server,'replacement creative package required','REDO requests atomic package replacement without blanking the old prompt');
+has(server,"status='feedback_wait'",'REDO enters semantic interpretation state before choosing a correction');
 has(server,'prompt_integrity','live prompt integrity health');
 has(server,'prompt_show_bible_gate:true','Show Bible prompt safety flag');
 has(server,'atomic_creative_package:true','atomic creative package safety flag');
