@@ -2540,76 +2540,122 @@ async function visibleDownloadButton(page){
   }
   return null;
 }
-async function openLatestExpectedVideoTile(page,baselineInv){
-  const expected=Math.max(1,Number(baselineInv?.video_tile_count||0)+1);
-  const tiles=page.locator('flow-grid-tile-container').filter({has:page.locator('flow-video-tile')});
-  const visible=[];
-  const count=Math.min(await tiles.count().catch(()=>0),120);
-  for(let i=0;i<count;i++){
-    const tile=tiles.nth(i);
-    if(await tile.isVisible().catch(()=>false))visible.push(tile);
+async function openVerifiedFlowAsset(page,descriptor,{db=null,row=null,signal='verified-flow-asset'}={}){
+  if(!descriptor?.asset_id)return{ready:false,opened:false,signal:'candidate-asset-id-missing'};
+  if(db){
+    const used=recoveredFlowAssetIds(db);
+    if(used.has(String(descriptor.asset_id)))return{ready:false,opened:false,signal:'candidate-asset-id-already-recovered',asset_id:descriptor.asset_id};
   }
-  // Flow virtualizes the project grid after reload. The newest tile remains at
-  // the front while older tiles may be unmounted, so visible.length can be far
-  // below the historical expected count even though the result is present.
-  if(!visible.length)return{ready:false,opened:false,signal:`no-visible-video-tiles;expected:${expected}`};
-  const target=visible[0];
+  const inv=await captureFlowInventory(page);
+  const freshDescriptor=(inv.ordered_video_assets||[]).find(x=>Number(x.dom_index)===Number(descriptor.dom_index));
+  if(!freshDescriptor||String(freshDescriptor.asset_id)!==String(descriptor.asset_id)){
+    return{ready:false,opened:false,signal:'candidate-dom-identity-changed-before-click',expected:descriptor.asset_id,actual:freshDescriptor?.asset_id||null};
+  }
+  const all=page.locator('flow-grid-tile-container');
+  const target=all.nth(Number(descriptor.dom_index));
+  if(!(await target.isVisible().catch(()=>false))||!(await target.locator('flow-video-tile,video').count().catch(()=>0))){
+    return{ready:false,opened:false,signal:'candidate-tile-not-visible'};
+  }
   await target.scrollIntoViewIfNeeded().catch(()=>{});
   await target.hover().catch(()=>{});
-  const footer=target.locator('flow-tile-hover-footer').first();
-  if(await footer.count().catch(()=>0)&&await footer.isVisible().catch(()=>false)){
-    await footer.click({force:true,timeout:5000}).catch(()=>{});
-  }else{
-    await target.click({force:true,timeout:5000}).catch(()=>{});
-  }
-  await sleep(1200);
-  const d=await visibleDownloadButton(page);
-  if(d)return{ready:true,opened:true,signal:`latest-visible-video-tile:${visible.length};expected:${expected}`,index:0};
-  await page.keyboard.press('Escape').catch(()=>{});
-  return{ready:false,opened:false,signal:`latest-video-tile-no-download:${visible.length};expected:${expected}`};
-}
-
-async function openStrictSinglePostBaselineTile(page,baselineInv){
-  const current=await captureFlowInventory(page);
-  const before=Number(baselineInv?.video_tile_count||0),after=Number(current?.video_tile_count||0);
-  const delta=after-before;
-  if(delta!==1)return{ready:false,opened:false,signal:`strict-video-dom-delta:${delta};before:${before};after:${after}`,delta,current};
-  const opened=await openLatestExpectedVideoTile(page,baselineInv);
-  return{...opened,delta,current,strict:true,signal:opened?.ready?'strict-single-post-baseline-newest-tile':String(opened?.signal||'strict-newest-not-ready')};
-}
-
-async function openUniqueFreshInventoryResult(page,baselineInv,{allowMultiple=false}={}){
-  const tiles=page.locator('flow-grid-tile-container').filter({has:page.locator('flow-video-tile,video')});
-  const count=Math.min(await tiles.count().catch(()=>0),120),baselineCount=Number(baselineInv?.video_tile_count||0);
-  const baselineList=Array.isArray(baselineInv?.ordered_video_signatures)&&baselineInv.ordered_video_signatures.length
-    ? baselineInv.ordered_video_signatures
-    : (Array.isArray(baselineInv?.video_signatures)?baselineInv.video_signatures:[]);
-  const remaining=new Map();for(const sig of baselineList)remaining.set(sig,(remaining.get(sig)||0)+1);
-  const fresh=[];
-  for(let i=0;i<count;i++){
-    const el=tiles.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
-    const aria=String(await el.getAttribute('aria-label').catch(()=>'')||'').replace(/\s+/g,' ').trim();
-    const inner=String(await el.innerText().catch(()=>'')||'').replace(/\s+/g,' ').trim();
-    const content=String(await el.textContent().catch(()=>'')||'').replace(/\s+/g,' ').trim();
-    const sig=compact(aria||inner||content,220);
-    if(!sig){if(count>baselineCount)fresh.push({el,sig:'<unsigned-new-video-tile>',i});continue}
-    const left=remaining.get(sig)||0;if(left>0){remaining.set(sig,left-1);continue}
-    fresh.push({el,sig,i});
-  }
-  if(fresh.length!==1){
-    const purePostBaselineBurst=allowMultiple&&fresh.length>1&&(count-baselineCount)===fresh.length;
-    if(!purePostBaselineBurst)return{ready:false,opened:false,signal:`fresh-video-tile-occurrences:${fresh.length};video-dom-delta:${count-baselineCount}`};
-  }
-  const target=fresh[0].el;
-  await target.scrollIntoViewIfNeeded().catch(()=>{});await target.hover().catch(()=>{});
   const footer=target.locator('flow-tile-hover-footer').first();
   if(await footer.count().catch(()=>0)&&await footer.isVisible().catch(()=>false))await footer.click({force:true,timeout:5000}).catch(()=>{});
   else await target.click({force:true,timeout:5000}).catch(()=>{});
   await sleep(1000);
+
+  const viewer=await page.evaluate(()=>{
+    const safe=v=>{
+      if(!v)return'';
+      try{const u=new URL(String(v),location.href);if(u.protocol==='blob:')return'';return u.origin+u.pathname}catch{return''}
+    };
+    return [...document.querySelectorAll('video')].map(v=>{
+      const r=v.getBoundingClientRect();
+      return{visible:r.width>40&&r.height>40,area:r.width*r.height,src:safe(v.currentSrc||v.src||''),poster:safe(v.poster||'')};
+    }).filter(x=>x.visible).sort((a,b)=>b.area-a.area)[0]||null;
+  }).catch(()=>null);
+  const viewerSeed=viewer?[viewer.src,viewer.poster].filter(Boolean).join('|'):'';
+  const viewerAssetId=viewerSeed?sha('viewer:'+viewerSeed):'';
+  if(db&&viewerAssetId&&recoveredFlowAssetIds(db).has(viewerAssetId)){
+    await page.keyboard.press('Escape').catch(()=>{});
+    return{ready:false,opened:false,signal:'viewer-asset-id-already-recovered',asset_id:descriptor.asset_id,viewer_asset_id:viewerAssetId};
+  }
   const d=await visibleDownloadButton(page);
-  if(d)return{ready:true,opened:true,signal:fresh.length===1?'unique-fresh-video-inventory-tile':('multi-fresh-post-baseline-recovery:'+fresh.length),signature:fresh[0].sig,index:fresh[0].i};
-  await page.keyboard.press('Escape').catch(()=>{});
-  return{ready:false,opened:false,signal:'unique-fresh-video-tile-no-download'};
+  if(!d){await page.keyboard.press('Escape').catch(()=>{});return{ready:false,opened:false,signal:'verified-candidate-no-download',asset_id:descriptor.asset_id}}
+  return{ready:true,opened:true,signal,asset_id:descriptor.asset_id,identity_strength:descriptor.identity_strength,signature:descriptor.signature,index:descriptor.dom_index,viewer_asset_id:viewerAssetId||null};
+}
+
+function freshFlowAssetCandidates(current,baselineInv,db,row){
+  const assets=Array.isArray(current?.ordered_video_assets)?current.ordered_video_assets:[];
+  const baselineAssets=Array.isArray(baselineInv?.ordered_video_assets)?baselineInv.ordered_video_assets:[];
+  const baselineCount=Number(baselineInv?.video_tile_count||0);
+  const usedIds=db?recoveredFlowAssetIds(db):new Set();
+  const usedSigs=db?recoveredFlowSignatures(db):new Set();
+  let fresh=[],missing=0,method='signature-multiset';
+
+  if(baselineAssets.length&&baselineAssets.some(x=>x?.asset_id)){
+    method='asset-id-multiset';
+    const remain=new Map();
+    for(const x of baselineAssets){const id=String(x?.asset_id||'');if(id)remain.set(id,(remain.get(id)||0)+1)}
+    for(const a of assets){
+      const id=String(a?.asset_id||'');
+      const n=remain.get(id)||0;
+      if(id&&n>0)remain.set(id,n-1);else fresh.push(a);
+    }
+    missing=[...remain.values()].reduce((sum,n)=>sum+Math.max(0,Number(n||0)),0);
+  }else{
+    const baselineList=Array.isArray(baselineInv?.ordered_video_signatures)&&baselineInv.ordered_video_signatures.length
+      ? baselineInv.ordered_video_signatures
+      : (Array.isArray(baselineInv?.video_signatures)?baselineInv.video_signatures:[]);
+    const remain=new Map();for(const sig of baselineList)remain.set(String(sig),(remain.get(String(sig))||0)+1);
+    for(const a of assets){
+      const sig=String(a?.signature||'');
+      const n=remain.get(sig)||0;
+      if(sig&&n>0)remain.set(sig,n-1);else fresh.push(a);
+    }
+    missing=[...remain.values()].reduce((sum,n)=>sum+Math.max(0,Number(n||0)),0);
+  }
+
+  const rejected=[];
+  fresh=fresh.filter(a=>{
+    if(a?.asset_id&&usedIds.has(String(a.asset_id))){rejected.push({asset_id:a.asset_id,reason:'asset-id-already-recovered',signature:a.signature});return false}
+    if(String(a?.identity_strength||'')!=='strong'&&a?.signature&&usedSigs.has(norm(a.signature))){rejected.push({asset_id:a.asset_id,reason:'weak-signature-already-recovered',signature:a.signature});return false}
+    return true;
+  });
+  const delta=Number(current?.video_tile_count||assets.length)-baselineCount;
+  return{fresh,missing,delta,method,rejected};
+}
+
+async function openUniqueFreshInventoryResult(page,baselineInv,{allowMultiple=false,db=null,row=null}={}){
+  const current=await captureFlowInventory(page);
+  const diff=freshFlowAssetCandidates(current,baselineInv,db,row);
+  let candidates=diff.fresh;
+  if(candidates.length>1&&row){
+    const terms=episodeRecoveryTerms(row);
+    const scored=candidates.map(a=>{
+      const n=norm(a.signature||'');const matched=terms.filter(t=>n.includes(t));
+      return{...a,matched,score:matched.length};
+    }).sort((a,b)=>b.score-a.score||Number(a.dom_index)-Number(b.dom_index));
+    if(scored[0]?.score>=2&&scored[0].score>Number(scored[1]?.score||-1))candidates=[scored[0]];
+  }
+  const purePostBaselineBurst=allowMultiple&&candidates.length>0&&(Number(current.video_tile_count||0)-Number(baselineInv?.video_tile_count||0))===candidates.length;
+  const safeUniqueReplacement=candidates.length===1&&diff.missing<=1&&Math.abs(diff.delta)<=1;
+  if(!safeUniqueReplacement&&!purePostBaselineBurst){
+    return{ready:false,opened:false,signal:`fresh-video-asset-ambiguous:fresh=${candidates.length}:missing=${diff.missing}:delta=${diff.delta}:method=${diff.method}`,candidates:candidates.slice(0,8),rejected:diff.rejected};
+  }
+  const chosen=candidates[0];
+  const opened=await openVerifiedFlowAsset(page,chosen,{db,row,signal:diff.delta===0?'unique-fresh-fixed-grid-asset':'unique-fresh-added-asset'});
+  return{...opened,missing:diff.missing,delta:diff.delta,method:diff.method,rejected:diff.rejected};
+}
+
+async function openLatestExpectedVideoTile(page,baselineInv,db=null,row=null){
+  // Kept as a compatibility wrapper. It no longer assumes DOM index 0 is the
+  // new render; it delegates to identity-aware multiset recovery.
+  return await openUniqueFreshInventoryResult(page,baselineInv,{db,row});
+}
+
+async function openStrictSinglePostBaselineTile(page,baselineInv,db=null,row=null){
+  const opened=await openUniqueFreshInventoryResult(page,baselineInv,{db,row});
+  return{...opened,strict:true,signal:opened?.ready?'strict-identity-verified-post-baseline-asset':String(opened?.signal||'strict-asset-not-ready')};
 }
 
 async function openLatestGeneratedResult(page){
