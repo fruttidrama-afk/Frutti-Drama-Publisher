@@ -2757,3 +2757,141 @@ FLOW_CHANGELOG.md
 and should persist current SOP version/hash/content or a durable knowledge record in its runtime storage.
 
 The purpose is reproducibility after chat loss, model changes, agent turnover, deploys and future Flow UI changes.
+
+---
+
+## 34. DAILY FLOW CREDIT-CYCLE GATE — renewal-driven production
+
+**Status:** MANDATORY FOR EVERY PUBLISHER  
+**Added:** 2026-09-25  
+**Purpose:** prevent the automatic 3-video batch from spending subscription/monthly credits merely because the local calendar crossed midnight.
+
+### 34.1 Provider fact and scheduling consequence
+
+Google Flow grants **50 daily credits** to users with or without a Google AI subscription. Subscription plans can also have a separate monthly credit pool. Daily unused credits do not roll over. Therefore the Publisher's production day MUST NOT be inferred from local `00:00`.
+
+The ordinary automatic batch is tied to a **Flow credit cycle**, not to a calendar day:
+
+```
+WAITING_FOR_DAILY_FLOW_CREDIT_REFRESH
+  -> observe a trustworthy live Flow balance
+  -> confirm the new daily allocation/refill
+  -> DAILY_CREDIT_CYCLE_OPEN
+  -> generate/recover serially up to the configured ordinary batch target (default 3)
+  -> capture the post-batch Flow balance
+  -> DAILY_CREDIT_BATCH_COMPLETE
+  -> return to WAITING_FOR_DAILY_FLOW_CREDIT_REFRESH
+```
+
+Changing date, restarting Railway, reopening the browser, or seeing a large paid/monthly balance MUST NOT by itself open a new automatic batch.
+
+### 34.2 Canonical numbers
+
+Default Publisher policy:
+
+- daily Flow grant: **50 credits**;
+- ordinary daily production target: **3 videos**;
+- current canonical generation cost: **15 credits per generation**;
+- ordinary batch spend: **45 credits**;
+- residual daily allowance after three normal generations: **5 credits**;
+- renewal polling cadence while waiting: **5 minutes**;
+- renewal guard window: begin active refill detection after **20 hours** from the current credit-cycle opening;
+- conservative masking fallback: **30 hours**, only when a live balance sufficient for the full normal batch is visible.
+
+Because unused daily credits do not roll over, the next daily grant may appear as a **net visible balance increase of about 45 rather than exactly 50** after a normal 3×15 batch. The detector MUST therefore reason from the prior live balance and known spend; it MUST NOT require an exact +50.
+
+### 34.3 Paid-account protection
+
+A paid account may display hundreds or thousands of monthly/subscription credits. A large balance is **not** evidence that the new daily 50-credit grant arrived.
+
+For an already-running Publisher:
+
+1. persist the current credit-cycle opening timestamp;
+2. after the normal batch, capture the live Flow balance as the post-batch baseline;
+3. preserve that baseline across midnight and restarts;
+4. when the renewal window is reached, poll the live Flow credit display;
+5. open the next ordinary batch only after a credible refill is observed.
+
+This protects the paid monthly pool from being consumed at 00:00 before the free daily grant is renewed.
+
+### 34.4 First-run bootstrap
+
+A brand-new Publisher has no prior credit baseline.
+
+- If the visible balance is consistent with the daily allocation (enough for the 45-credit ordinary batch and approximately within the 50-credit daily range), it may seed the first credit cycle.
+- If the account already has a large paid balance, the system MUST treat it as ambiguous and observe until a daily refill is detected. It must not assume that the paid balance is the daily grant.
+- Existing Publishers upgraded to this protocol bootstrap their current cycle from recent confirmed generation history, so the upgrade itself never creates an extra batch.
+
+### 34.5 Refill detection
+
+A refill is strong evidence when the current live balance increases over the persisted prior balance by an amount consistent with the daily allocation after known cycle spend. For a canonical completed 3-video batch, approximately +45 to +50 is expected.
+
+If the provider's non-rollover accounting masks a visible balance delta, the runtime may use the conservative fallback only after the configured long guard (default 30h) and only when the live Flow balance can fund the full ordinary batch. The fallback exists to avoid permanent deadlock; it is never tied to midnight.
+
+### 34.6 What bypasses the ordinary batch gate
+
+This gate controls the **ordinary autonomous 3-video batch**.
+
+It does not abandon or pause:
+- recovery of a generation that has already crossed the submit boundary;
+- retrieval/download/validation of an existing asset;
+- read-only reconciliation;
+- publication work;
+- explicit human-authorized REDO according to its exactly-once token;
+- explicit operator Generate Extra requests, subject to the existing credit/cooldown safeguards.
+
+Recovery always has priority over quota/credit-cycle scheduling because a submitted intent must be resolved without generating a duplicate.
+
+### 34.7 Interaction with Unusual Activity and insufficient credits
+
+The credit-cycle gate does not weaken the provider-wide cooldown.
+
+- confirmed daily refill does not cancel an active Unusual Activity cooldown;
+- active cooldown still blocks new submits;
+- an explicit provider insufficient-credits signal closes/holds automatic production and returns to credit observation;
+- a successful retained render may reset the unusual-activity streak under the existing policy, but does not manufacture a new credit cycle.
+
+### 34.8 Required durable state
+
+Every Publisher must persist at minimum:
+
+- `flow:dailyCreditCycle`;
+- `flow:dailyCreditCycleId`;
+- `flow:dailyCreditCycleOpenedAt`;
+- `flow:dailyCreditCycleUsed`;
+- `flow:dailyCreditCycleTarget`;
+- `flow:dailyCreditBatchOpen`;
+- `flow:dailyCreditRefreshWaiting`;
+- `flow:lastCreditsVisible`;
+- `flow:lastCreditsCheckedAt`;
+- `flow:lastCreditsEvidence`;
+- `flow:dailyCreditRenewalEvidence`.
+
+This state survives process/browser/Railway restarts.
+
+### 34.9 Health contract
+
+`/factory/health` must expose the credit-cycle state and assert:
+
+- `daily_flow_credit_refresh_gate = true`;
+- `calendar_midnight_does_not_open_batch = true`;
+- `paid_monthly_credits_protected_until_daily_refresh = true`.
+
+Publisher Factory must refuse to consider a newly generated Publisher protocol-complete if these invariants are absent.
+
+### 34.10 Acceptance tests
+
+A protocol-complete Publisher must pass all of the following without clicking Generate unnecessarily:
+
+1. local midnight with unchanged Flow balance does **not** open a new batch;
+2. a large paid/monthly balance by itself does **not** open a new batch;
+3. a credible daily refill opens exactly one new credit cycle;
+4. three ordinary successful generation intents close the default cycle;
+5. the next calendar midnight remains closed until the next Flow refill;
+6. restart during WAITING state preserves the same cycle/baseline;
+7. restart during generation preserves exactly-once/recovery semantics;
+8. active Unusual Activity cooldown wins over credit renewal;
+9. the UI/health endpoint reports the observed balance, check time, cycle ID, used/target and waiting/open state;
+10. no fourth ordinary automatic video is created merely because date/account balance changed.
+
+**Invariant:** `CALENDAR DAY ≠ FLOW CREDIT DAY`. The provider's actual daily-credit renewal is the scheduling authority for ordinary automatic generation.
