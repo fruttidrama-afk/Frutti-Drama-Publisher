@@ -165,7 +165,7 @@ body.completed .shell{padding-top:28px}
       <div class="status-grid">
         <div class="status"><div class="label">Google Flow</div><div class="value" id="flowValue">—</div><div id="flowDetail"></div></div>
         <div class="status"><div class="label" id="publicationLabel">Publishing</div><div class="value" id="publicationValue">—</div><div id="publicationDetail"></div></div>
-        <div class="status"><div class="label">Today</div><div class="value" id="dailyValue">—</div><div id="dailyDetail"></div></div>
+        <div class="status"><div class="label">Generation today</div><div class="value" id="dailyValue">—</div><div id="dailyDetail"></div></div>
         <div class="status"><div class="label">Worker</div><div class="value" id="workerValue">—</div><div>FreeBrowserProvider</div></div>
       </div>
       <div class="extra-generate">
@@ -324,7 +324,7 @@ async function load(){
     $('#publicationLabel').textContent=selected==='facebook'?'Facebook':'YouTube';
     $('#publicationValue').textContent='Connected';
     $('#publicationDetail').textContent=selected==='facebook'?(s.facebook?.pageName||'Facebook Page'):'YouTube channel';
-    $('#dailyValue').textContent=h.completed_today+' / '+h.daily_target;$('#dailyDetail').textContent=h.remaining_today+' remaining';
+    $('#dailyValue').textContent=h.completed_today+' / '+h.daily_target;$('#dailyDetail').textContent=h.remaining_today+' generation'+(h.remaining_today===1?'':'s')+' remaining · publishing 1/day';
     $('#workerValue').textContent=h.worker_alive?'Active':'Starting';
     const [cards,pubItems]=await Promise.all([api('/factory/cards'),api('/publication/items')]);
     renderReviews(cards.cards||[]);renderQueue(pubItems.items||[]);
