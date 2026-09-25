@@ -317,6 +317,7 @@ function normalizeUnconfirmedPreGenerationRows(db){
             prompt='',promptHash=NULL,promptGenerationId=NULL,characterHandles=NULL,characterRoles=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,
             creativePackageHash=NULL,creativePackageId=NULL,transportPreflight=NULL,runtimeAttemptCount=0,lastProgressAt=?,reviewVideoId=NULL,
             reviewArchivedAt=NULL,reviewOriginalSize=NULL,reviewPreviewSize=NULL,reviewArchiveError=NULL,reviewContentHash=NULL,
+            reviewFeedback=NULL,retryStrategy=NULL,reviewRetryToken=NULL,reviewRetrySubmittedToken=NULL,
             title='',description='',error=NULL,nextTry=0,updatedAt=? WHERE id=?`).run(now(),now(),bad.id);
           setLifecycle(db,bad,'FORCED_INVALID_REVIEW_RESET',{episode,reconciled_at:now(),evidence:'Operator verified this review card reused pre-existing/manual Flow media and no new episode render existed.',automatic_submit_forbidden:false});
           publish('INVALID_REVIEW_RESET',{episode:'E'+episode,job_id:bad.id,message:'Invalid reused review media removed; episode returned to draft for one clean generation.'});
@@ -1842,6 +1843,15 @@ async function openLatestExpectedVideoTile(page,baselineInv){
   return{ready:false,opened:false,signal:`latest-video-tile-no-download:${visible.length};expected:${expected}`};
 }
 
+async function openStrictSinglePostBaselineTile(page,baselineInv){
+  const current=await captureFlowInventory(page);
+  const before=Number(baselineInv?.video_tile_count||0),after=Number(current?.video_tile_count||0);
+  const delta=after-before;
+  if(delta!==1)return{ready:false,opened:false,signal:`strict-video-dom-delta:${delta};before:${before};after:${after}`,delta,current};
+  const opened=await openLatestExpectedVideoTile(page,baselineInv);
+  return{...opened,delta,current,strict:true,signal:opened?.ready?'strict-single-post-baseline-newest-tile':String(opened?.signal||'strict-newest-not-ready')};
+}
+
 async function openUniqueFreshInventoryResult(page,baselineInv,{allowMultiple=false}={}){
   const tiles=page.locator('flow-grid-tile-container').filter({has:page.locator('flow-video-tile,video')});
   const count=Math.min(await tiles.count().catch(()=>0),120),baselineCount=Number(baselineInv?.video_tile_count||0);
@@ -2426,18 +2436,127 @@ async function recoverGoldenRunIfRequested(db){
   }finally{await session.close().catch(()=>{})}
 }
 
-async function retrieveExisting(page,row,cp,lc,db){setLifecycle(db,row,'RETRIEVING',{generation_id:lc?.generation_id||row.providerRunId||'',baseline:lc?.baseline||[],baseline_inventory:lc?.baseline_inventory||null});const baseline=Array.isArray(lc?.baseline)?lc.baseline:[],baselineInventory=lc?.baseline_inventory||null,deadline=Date.now()+15*60*1000;let rendered=null,lastVideos=[],uiSignal=null,lastHeartbeat=0,emptyEvidenceSince=0;const generationStartedMs=Date.parse(String(lc?.generation_started_at||lc?.submit_boundary_at||''))||Date.now();while(Date.now()<deadline){await renderAuthGuard(page);if(Date.now()-lastHeartbeat>10000){lastHeartbeat=Date.now();try{db.prepare('UPDATE factory_items SET lastProgressAt=?,updatedAt=? WHERE id=?').run(now(),now(),row.id);}catch{}}
-  // Never inherit an asset viewer that was already open before we proved a new
-  // episode-specific result. Close it and correlate only post-baseline video.
-  const alreadyOpenDownload=await visibleDownloadButton(page).catch(()=>null);
-  if(alreadyOpenDownload){await page.keyboard.press('Escape').catch(()=>{});await sleep(350);}
-  lastVideos=await currentVideos(page);rendered=firstFreshRendered(lastVideos,baseline);if(rendered)break;const text=await getBody(page);if(flowCreditFailure(text))throw new Error('FLOW_INSUFFICIENT_CREDITS');if(/failed to generate|generation failed|couldn't generate|no se pudo generar/i.test(text))throw new Error('FLOW_GENERATION_FAILED');const stillBusy=/generating|processing|rendering|creating video|generando|procesando|upscaling/i.test(text);if(baselineInventory){
-  uiSignal=await openUniqueFreshInventoryResult(page,baselineInventory,{allowMultiple:true});
-  if(Date.now()-lastHeartbeat<2500||!uiSignal?.ready)publish('RETRIEVAL_PROGRESS',{episode:'E'+row.episode,job_id:row.id,signal:uiSignal?.signal||'none',stillBusy,videos:lastVideos.length});
-  if(uiSignal?.ready){rendered={uiReady:true,signal:uiSignal.signal,baselineInventory,index:uiSignal.index,signature:uiSignal.signature};break;}
-  const noFresh=/fresh-video-tile-occurrences:0/.test(String(uiSignal?.signal||''));
-  if(!stillBusy&&lastVideos.length===0&&noFresh&&Date.now()-generationStartedMs>20*60*1000){if(!emptyEvidenceSince)emptyEvidenceSince=Date.now();if(Date.now()-emptyEvidenceSince>20000)throw new Error('FLOW_NO_RETAINED_RENDER_AFTER_20M');}else emptyEvidenceSince=0;
-}await sleep(2500);}if(!rendered)throw new Error(`RENDER_TIMEOUT:videos=${lastVideos.length}:ui=${uiSignal?.signal||'none'}`);const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);try{fs.unlinkSync(localPath);}catch{}const dl=await downloadResult(page,rendered,localPath),valid=validateMp4(localPath),flowResult={provider:PROVIDER,generation_id:lc?.generation_id||row.providerRunId||'',generation_started_at:lc?.generation_started_at||'',duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:now()};persistReviewMetadata(db,row,flowResult);await saveReviewAsset(db,row,localPath,flowResult);try{db.prepare(`UPDATE factory_generations SET status='review',updatedAt=?,error=NULL WHERE itemId=? AND runId=?`).run(now(),row.id,String(lc?.generation_id||row.providerRunId||''));}catch{}resetNoChargeBackoff(db,row);setLifecycle(db,row,'REVIEW_READY',{...lc,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,download_quality:flowResult.download_quality,retrieved_at:now()});setMeta(db,'flow:lastSuccessfulGenerationAt',lc?.generation_started_at||now());setMeta(db,'flow:lastSuccessfulMp4At',now());setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');try{fs.writeFileSync(path.join(FACTORY_DIR,'flow-browser-self-test.json'),JSON.stringify({at:now(),ok:true,stage:'real-production-review-ready',provider:PROVIDER,episode:`T${row.season}E${row.episode}`,mp4_valid:true,duration:valid.duration,width:valid.width,height:valid.height,codec:valid.codec},null,2),{mode:0o600});}catch{}publish('REVIEW_READY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`,factory_url:`/factory/video/${row.id}`});return true;}
+async function retrieveExisting(page,row,cp,lc,db){
+  setLifecycle(db,row,'RETRIEVING',{
+    generation_id:lc?.generation_id||row.providerRunId||'',
+    generation_session_instance:lc?.generation_session_instance||null,
+    baseline:lc?.baseline||[],
+    baseline_inventory:lc?.baseline_inventory||null
+  });
+  const baseline=Array.isArray(lc?.baseline)?lc.baseline:[];
+  const baselineInventory=lc?.baseline_inventory||null;
+  const sameSubmitSession=String(lc?.generation_session_instance||'')===INSTANCE_ID;
+  const deadline=Date.now()+15*60*1000;
+  let rendered=null,lastVideos=[],uiSignal=null,lastHeartbeat=0,emptyEvidenceSince=0;
+  const generationStartedMs=Date.parse(String(lc?.generation_started_at||lc?.submit_boundary_at||''))||Date.now();
+
+  while(Date.now()<deadline){
+    await renderAuthGuard(page);
+    if(Date.now()-lastHeartbeat>10000){
+      lastHeartbeat=Date.now();
+      try{db.prepare('UPDATE factory_items SET lastProgressAt=?,updatedAt=? WHERE id=?').run(now(),now(),row.id)}catch{}
+    }
+
+    // A viewer that predates the current proof is never accepted.
+    const alreadyOpenDownload=await visibleDownloadButton(page).catch(()=>null);
+    if(alreadyOpenDownload){await page.keyboard.press('Escape').catch(()=>{});await sleep(350)}
+
+    lastVideos=await currentVideos(page);
+    rendered=firstFreshRendered(lastVideos,baseline);
+    if(rendered){
+      rendered={...rendered,recoveryProof:'fresh-video-src-post-baseline'};
+      break;
+    }
+
+    const text=await getBody(page);
+    if(flowCreditFailure(text))throw new Error('FLOW_INSUFFICIENT_CREDITS');
+    if(/failed to generate|generation failed|couldn't generate|no se pudo generar/i.test(text))throw new Error('FLOW_GENERATION_FAILED');
+    const stillBusy=/generating|processing|rendering|creating video|generando|procesando|upscaling/i.test(text);
+
+    if(baselineInventory){
+      const inv=await captureFlowInventory(page);
+      const before=Number(baselineInventory.video_tile_count||0);
+      const after=Number(inv.video_tile_count||0);
+      const delta=after-before;
+
+      // Strongest normal path: same browser session + exactly one new video tile.
+      // Flow keeps newest media at the front of the grid, so choose ONLY that tile.
+      if(sameSubmitSession&&delta===1){
+        uiSignal=await openStrictSinglePostBaselineTile(page,baselineInventory);
+        if(uiSignal?.ready){
+          rendered={uiReady:true,signal:uiSignal.signal,baselineInventory,index:uiSignal.index,signature:uiSignal.signature,recoveryProof:'same-session-exactly-one-newest-tile'};
+          break;
+        }
+      }else if(delta>0){
+        // Multiple post-baseline tiles or a restarted browser are ambiguous.
+        // Never guess the first "fresh-looking" tile: require episode correlation.
+        const correlated=await openEpisodeCorrelatedResult(page,row,baselineInventory).catch(()=>null);
+        if(correlated?.found){
+          rendered={uiReady:true,signal:correlated.signal,baselineInventory,index:correlated.index,signature:correlated.label,recoveryProof:'episode-correlated-post-baseline-tile',matchedTerms:correlated.matched};
+          break;
+        }
+        uiSignal={ready:false,signal:`strict-ambiguous-post-baseline-delta:${delta};correlation:${correlated?.signal||'none'}`};
+      }else if(!stillBusy&&Date.now()-generationStartedMs>15000){
+        // Virtualized grids can keep total count unchanged after a restart. In
+        // that case only a prompt/episode-correlated non-baseline tile is valid.
+        const correlated=await openEpisodeCorrelatedResult(page,row,baselineInventory).catch(()=>null);
+        if(correlated?.found){
+          rendered={uiReady:true,signal:correlated.signal,baselineInventory,index:correlated.index,signature:correlated.label,recoveryProof:'episode-correlated-virtualized-grid',matchedTerms:correlated.matched};
+          break;
+        }
+        uiSignal={ready:false,signal:'strict-no-correlated-post-baseline-result'};
+      }else{
+        uiSignal={ready:false,signal:`strict-waiting;delta:${delta};busy:${stillBusy?1:0}`};
+      }
+
+      if(Date.now()-lastHeartbeat<2500||!uiSignal?.ready){
+        publish('RETRIEVAL_PROGRESS',{episode:'E'+row.episode,job_id:row.id,signal:uiSignal?.signal||'none',stillBusy,videos:lastVideos.length,same_submit_session:sameSubmitSession});
+      }
+      if(!stillBusy&&lastVideos.length===0&&delta<=0&&Date.now()-generationStartedMs>20*60*1000){
+        if(!emptyEvidenceSince)emptyEvidenceSince=Date.now();
+        if(Date.now()-emptyEvidenceSince>20000)throw new Error('FLOW_NO_RETAINED_RENDER_AFTER_20M');
+      }else emptyEvidenceSince=0;
+    }
+    await sleep(2500);
+  }
+
+  if(!rendered)throw new Error(`RENDER_TIMEOUT_STRICT_MATCH:videos=${lastVideos.length}:ui=${uiSignal?.signal||'none'}`);
+
+  const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);
+  try{fs.unlinkSync(localPath)}catch{}
+  const dl=await downloadResult(page,rendered,localPath);
+  const valid=validateMp4(localPath);
+  const flowResult={
+    provider:PROVIDER,
+    generation_id:lc?.generation_id||row.providerRunId||'',
+    generation_started_at:lc?.generation_started_at||'',
+    generation_session_instance:lc?.generation_session_instance||null,
+    recovery_proof:rendered.recoveryProof||rendered.signal||'fresh-video-src-post-baseline',
+    recovery_signature:rendered.signature||null,
+    recovery_matched_terms:rendered.matchedTerms||[],
+    duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,
+    validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:now()
+  };
+  if(!/^fresh-video-src-post-baseline|same-session-exactly-one-newest-tile|episode-correlated-/.test(String(flowResult.recovery_proof||''))){
+    try{fs.unlinkSync(localPath)}catch{}
+    throw new Error('FLOW_STRICT_RECOVERY_PROOF_REQUIRED');
+  }
+
+  persistReviewMetadata(db,row,flowResult);
+  await saveReviewAsset(db,row,localPath,flowResult);
+  try{db.prepare(`UPDATE factory_generations SET status='review',updatedAt=?,error=NULL WHERE itemId=? AND runId=?`).run(now(),row.id,String(lc?.generation_id||row.providerRunId||''))}catch{}
+  resetNoChargeBackoff(db,row);
+  setLifecycle(db,row,'REVIEW_READY',{...lc,generation_id:lc?.generation_id||row.providerRunId||'',recovery_proof:flowResult.recovery_proof,size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,download_quality:flowResult.download_quality,retrieved_at:now()});
+  setMeta(db,'flow:lastSuccessfulGenerationAt',lc?.generation_started_at||now());
+  setMeta(db,'flow:lastSuccessfulMp4At',now());
+  setMeta(db,'automation:provider',PROVIDER);
+  setMeta(db,'automation:paidDependencyDetected','false');
+  setMeta(db,'automation:tinyfishRequired','false');
+  try{fs.writeFileSync(path.join(FACTORY_DIR,'flow-browser-self-test.json'),JSON.stringify({at:now(),ok:true,stage:'real-production-review-ready',provider:PROVIDER,episode:`T${row.season}E${row.episode}`,mp4_valid:true,recovery_proof:flowResult.recovery_proof,duration:valid.duration,width:valid.width,height:valid.height,codec:valid.codec},null,2),{mode:0o600})}catch{}
+  publish('REVIEW_READY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,generation_id:lc?.generation_id||row.providerRunId||'',recovery_proof:flowResult.recovery_proof,size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`,factory_url:`/factory/video/${row.id}`});
+  return true;
+}
+
 async function processRow(db,row){
   const cp=preparePromptIfNeeded(db,row);row=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);let lc=lifecycle(db,row);const state=String(lc?.state||'').toUpperCase(),session=await launchLocal(),context=session.context;
   try{
@@ -2472,12 +2591,12 @@ async function processRow(db,row){
       const claimed=db.prepare("UPDATE factory_items SET status='generating',providerRunId=?,reviewRetrySubmittedToken=reviewRetryToken,error=NULL,updatedAt=? WHERE id=? AND reviewRetryToken=? AND (reviewRetrySubmittedToken IS NULL OR reviewRetrySubmittedToken<>reviewRetryToken)").run(genId,now(),row.id,token);
       if(Number(claimed.changes||0)!==1)throw new Error('REVIEW_RETRY_ALREADY_SUBMITTED');
     }else db.prepare("UPDATE factory_items SET status='generating',providerRunId=?,error=NULL,updatedAt=? WHERE id=?").run(genId,now(),row.id);
-    setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null});
+    setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),generation_session_instance:INSTANCE_ID,baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null});
     const submitMode=await clickSubmitExactlyOnce(page,baselineInventory,baseline,baselineBusy);
     const priorConsent=meta(db,'flow:consentMode','UNKNOWN');
     const consentMode=/approve-always/i.test(submitMode)?'ALWAYS_APPROVED':(/approve-once|confirm-generate/i.test(submitMode)?'PER_GENERATION':(priorConsent==='ALWAYS_APPROVED'?'ALWAYS_APPROVED':'NO_DIALOG_OBSERVED'));
     setMeta(db,'flow:consentMode',consentMode);
-    setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null,automatic_submit_forbidden:true});
+    setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),generation_session_instance:INSTANCE_ID,submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null,automatic_submit_forbidden:true});
     const started=await waitGenerationStarted(page,baseline,baselineInventory,baselineBusy,90000);
     if(!started.started){
       const bodyAfter=await getBody(page).catch(()=>'');
@@ -2493,7 +2612,7 @@ async function processRow(db,row){
       return false
     }
     resetNoChargeBackoff(db,row);
-    const startedAt=now();lc=setLifecycle(db,row,'GENERATION_STARTED',{generation_id:genId,generation_started_at:startedAt,submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,automatic_submit_forbidden:true});
+    const startedAt=now();lc=setLifecycle(db,row,'GENERATION_STARTED',{generation_id:genId,generation_started_at:startedAt,generation_session_instance:INSTANCE_ID,submit_mode:submitMode,consent_mode:consentMode,baseline,baseline_inventory:baselineInventory,evidence:started.evidence,automatic_submit_forbidden:true});
     try{db.prepare("INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,NULL,?)").run(randomUUID(),row.id,artDay(new Date(startedAt)),sha(cp.hash+':'+genId),CREDITS_PER_GENERATION,'running',genId,startedAt,startedAt,reviewerRetry?'review_retry':'automatic')}catch{}
     setMeta(db,'flow:lastSuccessfulGenerationAt',startedAt);publish('FLOW_RENDER_CONFIRMED',{episode:'E'+row.episode,job_id:row.id,generation_id:genId,evidence:started.evidence});return await retrieveExisting(page,row,cp,lc,db);
   }finally{await session.close().catch(()=>{})}
