@@ -237,6 +237,12 @@
         "redo_token_persistent": {
           "const": true
         },
+        "semantic_redo_interpretation": {
+          "const": true
+        },
+        "post_submit_timeout_resubmit": {
+          "const": false
+        },
         "render_identity_binding": {
           "enum": [
             "unique-post-baseline-result"
@@ -278,6 +284,8 @@
         "external_reality_reconciliation",
         "redo_exactly_once",
         "redo_token_persistent",
+        "semantic_redo_interpretation",
+        "post_submit_timeout_resubmit",
         "render_identity_binding",
         "flow_sop_version",
         "flow_sop_sha256",
