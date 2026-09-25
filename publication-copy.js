@@ -72,6 +72,7 @@ function dinnieFacts(story='',hook=''){
     seed:/seed/.test(s),
     door:/door|gate|arch|threshold/.test(s),
     open:/open|unlock|reveal/.test(s),
+    enter:/\b(?:cross|crosses|crossed|enter|enters|entered|step through|steps through|walk through|walks through)\b/.test(s),
     star:/star|starlight|constellation/.test(s),
     bridge:/bridge/.test(s),
     comet:/comet/.test(s),
@@ -92,6 +93,7 @@ function dinnieFacts(story='',hook=''){
 function dinnieDynamicTitle(story='',hook=''){
   const f=dinnieFacts(story,hook);
   if(f.trail&&f.vanish)return"Dinnie’s Glowing Path Vanishes ✨🦕!";
+  if(f.enter&&f.star)return"Dinnie Steps Into the Starlight World ⭐🦕!";
   if(f.door&&f.open&&f.star)return"Dinnie Opens a Door to Starlight ⭐✨!";
   if(f.home&&f.seed)return"A Tiny Star-Seed Finds Dinnie ⭐🦕!";
   if(f.bridge&&f.star)return"A Bridge of Stars Appears for Dinnie ✨🦕!";
@@ -111,6 +113,7 @@ function dinnieDynamicCaption(story='',hook=''){
   const f=dinnieFacts(story,hook);
   let first='Dinnie follows a gentle magical surprise into the next part of her adventure.';
   if(f.trail&&f.vanish)first='Dinnie’s glowing route suddenly disappears, turning the journey into a soft, dreamy surprise.';
+  else if(f.enter&&f.star)first='Dinnie finally crosses into the starlit world, where every step makes the sky feel a little more alive.';
   else if(f.door&&f.open&&f.star)first='A mysterious doorway comes alive for Dinnie and reveals a dazzling starlit world on the other side.';
   else if(f.home&&f.seed)first='Back in her warm prehistoric forest, Dinnie notices a tiny star-like seed glowing nearby.';
   else if(f.bridge&&f.star)first='The night sky seems to build Dinnie a sparkling bridge, one bright point at a time.';
@@ -124,7 +127,8 @@ function dinnieDynamicCaption(story='',hook=''){
   else if(f.door&&f.home)first='A warm little doorway gives Dinnie a glimpse of home again—but the adventure is not quite finished.';
 
   let second='The final seconds reveal a fresh clue that keeps the story moving forward.';
-  if(f.door&&f.star)second='Beyond it, floating lights and a distant shape invite her to keep exploring.';
+  if(f.enter&&f.bridge)second='Ahead of her, points of light begin joining together into a bridge made from stars.';
+  else if(f.door&&f.star)second='Beyond it, floating lights and a distant shape invite her to keep exploring.';
   else if(f.seed&&f.door)second='Its light points toward an ancient doorway that looks ready to wake up.';
   else if(f.bridge&&f.moon)second='At the far end, a moon-shaped arch begins to glow as if it has been waiting for her.';
   else if(f.comet&&f.pool)second='At the top of the trail, a strange reflective pool hints at an entirely different place.';
