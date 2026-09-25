@@ -1,3 +1,14 @@
+## 2026-09-25 — Daily Flow credit-cycle gate
+
+- Ordinary autonomous generation no longer opens a new 3-video batch at local midnight.
+- Every Publisher now waits for evidence that Google Flow refreshed the account's 50 daily credits.
+- The credit-cycle state is durable across browser/process/Railway restarts.
+- A paid/monthly credit balance is not itself renewal evidence; monthly credits are protected from midnight-triggered automatic spending.
+- The detector is non-rollover-aware: after 3 × 15-credit generations, the next daily refill can appear as a net balance increase of roughly 45 rather than exactly 50.
+- While waiting for refresh, the runtime polls the live Flow balance on the configured cadence and exposes cycle state in health.
+- Recovery/reconciliation remains higher priority than the batch gate, and active Unusual Activity cooldown still blocks new submits.
+- Publisher Factory makes this protocol mandatory for future Publishers and existing Earth/Dinnie configs were upgraded.
+
 ## 2026-09-25 — Semantic REDO + post-submit uncertainty lock
 
 - Human `REHACER` feedback is interpreted semantically by AI before any replacement generation is authorized.
