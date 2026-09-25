@@ -99,6 +99,9 @@ for(const [token,label] of [
   ['freshFlowAssetCandidates','fixed-grid asset multiset recovery'],
   ['TARGETED_RECOVERY_REVIEW_READY','targeted existing-render recovery'],
   ['generation_submit_forbidden:true','recovery-only no-submit marker'],
+  ['nextSubmissionBaseline','next-submit temporal upper bound'],
+  ['assetPresentInInventory','temporal bracket membership check'],
+  ['download-reopen-asset-id-verified','download retry reopens same asset ID'],
   ['FLOW_STRICT_RECOVERY_PROOF_REQUIRED','strict recovery proof gate'],
   ["status IN ('review','completed')",'successful retained render daily accounting'],
   ["if(providerCooldown>Date.now())return null",'provider cooldown submit gate']
@@ -163,6 +166,8 @@ has(server,'duplicate_content_hash_guard:true','duplicate content hash guard');
 has(server,'fixed_grid_multiset_recovery:true','fixed-grid multiset recovery');
 has(server,'post_click_asset_identity_verified:true','post-click asset identity verification');
 has(server,'recovery_token_never_submits:true','targeted recovery token can never submit');
+has(server,'adjacent_submit_temporal_bracket:true','adjacent-submit temporal recovery bracket');
+has(server,'download_reopen_by_asset_identity:true','download reopen by Flow asset identity');
 has(server,'show_specific_repairs_isolated:true','show-specific repair isolation health invariant');
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
