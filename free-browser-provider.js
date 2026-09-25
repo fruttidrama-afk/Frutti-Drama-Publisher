@@ -1246,7 +1246,7 @@ function flowCreditFailure(text){
   return /not enough (?:points|credits)|insufficient (?:points|credits)|you need .* (?:points|credits)|no tienes suficientes (?:puntos|creditos)|puntos insuficientes|creditos insuficientes|sin suficientes (?:puntos|creditos)/i.test(n);
 }
 async function visibleGenerationBusyCount(page){
-  const busy=page.locator('text=/Generating|Processing|Rendering|Creating video|Generando|Procesando|Starting generation|Initiating|Creando video|Preparando video/i');
+  const busy=page.locator('text=/Generating|Processing|Rendering|Creating video|Generando|Procesando|Starting generation|Initiating|Creando video|Preparando video|Thinking|Pensando/i');
   let n=0;
   for(let i=0;i<Math.min(await busy.count().catch(()=>0),80);i++)if(await busy.nth(i).isVisible().catch(()=>false))n++;
   const progress=page.locator('text=/^(?:[1-9]|[1-9][0-9])%$/');
@@ -1413,7 +1413,7 @@ async function captureFlowInventory(page){
       const tiles=[...document.querySelectorAll('flow-grid-tile-container')].filter(el=>{const r=el.getBoundingClientRect();return r.width>20&&r.height>20;});
       const sigs=tiles.map(el=>String(el.getAttribute('aria-label')||el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,220)).filter(Boolean);
       const body=String(document.body?.innerText||'').replace(/\s+/g,' ').trim();
-      return{tile_count:tiles.length,ordered_signatures:sigs.slice(0,120),signatures:[...new Set(sigs)].slice(0,120),busy:/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation/i.test(body)};
+      return{tile_count:tiles.length,ordered_signatures:sigs.slice(0,120),signatures:[...new Set(sigs)].slice(0,120),busy:/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation|thinking|pensando/i.test(body)||/\bStop\b|\bDetener\b/i.test(body)};
     });
   }catch{return{tile_count:0,ordered_signatures:[],signatures:[],busy:false}}
 }
@@ -1473,7 +1473,7 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
   const age=Number.isFinite(boundary)?Date.now()-boundary:0;
   const currentInv=await captureFlowInventory(page);
   const body=(await getBody(page)).slice(0,14000);
-  const busy=currentInv.busy||/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation/i.test(body);
+  const busy=currentInv.busy||/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation|thinking|pensando/i.test(body)||/\bStop\b|\bDetener\b/i.test(body);
   const baselineUsable=Boolean(baselineInv&&Number(baselineInv.tile_count||0)>0&&Array.isArray(baselineInv.signatures)&&baselineInv.signatures.length>0);
   const fresh=baselineUsable&&inventoryHasNew(currentInv,baselineInv);
 
