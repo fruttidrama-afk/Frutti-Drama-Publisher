@@ -171,8 +171,9 @@ function retainedDailyCount(db,day=artDay()){
     const rows=db.prepare("SELECT status,flowResult,providerRunId,lastProgressAt,updatedAt,stockId,reviewContentHash FROM factory_items WHERE status IN ('review','queued','historical','published')").all();
     for(const row of rows){
       const flow=json(row.flowResult,{})||{};
-      const retained=Boolean(flow?.validated_ftyp||flow?.content_hash||row.reviewContentHash||row.stockId);
-      if(!retained)continue;
+      // These lifecycle states are only reachable after a retained video exists.
+      // Count the row itself as generation evidence even if a legacy recovery
+      // lost auxiliary hash/run-id fields.
       const started=String(flow?.generation_started_at||row.lastProgressAt||row.updatedAt||'');
       const ms=Date.parse(started);if(!Number.isFinite(ms))continue;
       if(artDay(new Date(ms))===day)count++;
