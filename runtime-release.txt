@@ -145,3 +145,4 @@ fix=remove-remaining-timeout-and-postsend-auto-retry-paths-20260925
 fix=daily-flow-credit-refresh-gated-generation,protect-paid-monthly-credits,no-midnight-batch-reset,50-credit-cycle-detection
 fix=final-credit-cycle-health-contract,canonical-sop-hash-sync,manual-extra-preserved
 fix=flow-asset-identity-recovery-e6-no-regenerate-20260925
+fix=flow-recovery-temporal-bracket-bounded-download-v2-20260925
