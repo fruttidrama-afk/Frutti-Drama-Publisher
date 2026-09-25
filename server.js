@@ -18,7 +18,7 @@ import { CONFIG,PROJECT_ID,PROJECT_NAME,PROJECT_URL,DAILY_LIMIT,TIMEZONE,ideaFor
 import { installPublication } from './publication.js';
 import { installFacebookPublication } from './publication-facebook.js';
 import { buildPublicationCopy } from './publication-copy.js';
-import { signedReviewUrl, deleteReviewObject, isReviewStorageUri } from './review-storage.js';
+import { signedReviewUrl, deleteReviewObject, isReviewStorageUri, uploadReviewFile } from './review-storage.js';
 
 google.options({timeout:90000,retry:false});
 const app=express(),PORT=Number(process.env.PORT||8080);
@@ -755,6 +755,45 @@ function validateImportedMp4(filePath){
   if(duration<4||duration>30)throw new Error('El video importado debe ser un clip corto válido.');
   return{size:st.size,duration,width:Number(stream.width||0),height:Number(stream.height||0)};
 }
+app.post('/publication/:id/recover-video',express.raw({type:['video/mp4','application/octet-stream'],limit:'100mb'}),async(req,res)=>{
+  let tmp='';
+  try{
+    if(!Buffer.isBuffer(req.body)||req.body.length<100000)return res.status(400).json({error:'Seleccioná el MP4 correcto.'});
+    const item=db.prepare("SELECT * FROM publication_items WHERE id=? AND COALESCE(provider,'youtube')='youtube' LIMIT 1").get(req.params.id);
+    if(!item)return res.status(404).json({error:'No existe ese video en Stock.'});
+    if(String(item.status||'')!=='backup_hold')return res.status(409).json({error:'Este video no está esperando recuperación.'});
+    const row=db.prepare('SELECT * FROM factory_items WHERE id=? LIMIT 1').get(item.itemId);
+    if(!row)return res.status(404).json({error:'No se encontró el episodio asociado.'});
+
+    fs.mkdirSync(path.join(DIR,'manual-recovery'),{recursive:true,mode:0o700});
+    tmp=path.join(DIR,'manual-recovery','publication-'+item.id+'-'+Date.now()+'.mp4');
+    fs.writeFileSync(tmp,req.body,{mode:0o600});
+    const valid=validateImportedMp4(tmp);
+    const digest=createHash('sha256').update(req.body).digest('hex');
+
+    const cloud=await uploadReviewFile(tmp,{itemId:'stock-recovery-'+item.id,revision:Number(row.revision||0)});
+    if(!cloud?.uri)throw new Error('No se pudo guardar la copia recuperada en el almacenamiento cloud privado.');
+
+    let history=[];try{history=JSON.parse(String(item.history||'[]'))||[]}catch{}
+    history.push({status:'queued',at:now(),message:'MP4 recuperado manualmente desde Google Flow, validado y guardado en cloud privado. El video vuelve a Stock y retomará el flujo normal de publicación.'});
+    const scheduledAt=String(item.scheduledAt||'');
+    const uploadAt=scheduledAt?new Date(Date.parse(scheduledAt)-390*60000).toISOString():String(item.uploadAt||'');
+    db.prepare("UPDATE publication_items SET status='queued',filePath=?,fileSize=?,videoId=NULL,resumableSession=NULL,attempts=0,retryAt=0,error=NULL,history=?,updatedAt=?,remotePrivacyStatus=NULL,remotePublishAt=NULL,remoteStatusCheckedAt=NULL,uploadAt=? WHERE id=?")
+      .run(cloud.uri,Number(cloud.size||valid.size),JSON.stringify(history.slice(-120)),now(),uploadAt,item.id);
+
+    let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
+    flow={...flow,manual_recovery_upload:true,recovered_at:now(),recovery_content_hash:digest,recovery_size:valid.size,recovery_duration:valid.duration,recovery_width:valid.width,recovery_height:valid.height,recovery_storage:'private-cloud'};
+    db.prepare("UPDATE factory_items SET status='queued',stockId=?,videoPath=NULL,remoteUrl=NULL,reviewContentHash=?,flowResult=?,error=NULL,nextTry=0,updatedAt=? WHERE id=?")
+      .run(item.id,digest,JSON.stringify(flow),now(),row.id);
+
+    try{fs.rmSync(tmp,{force:true})}catch{};tmp='';
+    console.log('[PUBLICATION MANUAL RECOVERY ACCEPTED]',JSON.stringify({episode:item.episode,publicationId:item.id,size:valid.size,duration:valid.duration,cloud:true}));
+    res.json({ok:true,episode:item.episode,publicationId:item.id,status:'queued',cloud:true,scheduledAt,uploadAt});
+  }catch(e){
+    try{if(tmp&&fs.existsSync(tmp))fs.rmSync(tmp,{force:true})}catch{}
+    res.status(400).json({error:String(e?.message||e)});
+  }
+});
 app.post('/factory/import-stock/:episode',express.raw({type:['video/mp4','application/octet-stream'],limit:'100mb'}),(req,res)=>{
   let tmp='';
   try{
@@ -935,7 +974,7 @@ function health(){
  const knowledge={flow_sop_version:metaGet('knowledge:flowSopVersion',''),flow_sop_sha256:metaGet('knowledge:flowSopSha256',''),declared_sha256:metaGet('knowledge:flowSopDeclaredSha256',''),loaded:metaGet('knowledge:flowSopLoaded','false')==='true',document_count:Number(metaGet('knowledge:flowSopDocumentCount','0')||0),inherit_to_publisher:metaGet('knowledge:inheritToPublisher','false')==='true'};
  const reviewCopy=db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode LIMIT 10").all().map(r=>{const x=ensureCopy(r);return{episode:Number(x.episode),title:String(x.title||''),description:String(x.description||''),creative_package_id:String(x.creativePackageId||'')}});
  const publicationCopy=db.prepare("SELECT episode,title,description,status FROM publication_items WHERE status NOT IN ('cancelled','deleted') ORDER BY episode LIMIT 20").all().map(x=>({episode:Number(x.episode),title:String(x.title||''),description:String(x.description||''),status:String(x.status||'')}));
- return{ok:true,at:now(),runtime_version:'publisher-runtime-v1',publisher_enabled:metaGet('automation:factoryEnabled','false')==='true',show:CONFIG.identity.show_name,scheduler_alive:true,scheduler:publication.status(),scheduler_no_end_date:true,worker_alive:workerAlive,automation_provider:'FreeBrowserProvider',generation_provider:'GoogleFlowProvider',publication_provider:selectedPublicationProvider()==='facebook'?'FacebookReelsProvider':selectedPublicationProvider()==='youtube'?'YouTubeProvider':'NotSelected',tinyfish_required:false,tinyfish_fallback:false,knowledge,flow:(()=>{const lf=liveFlowConfig();return{configured:Boolean(lf.project_id),authenticated:Boolean(flowAuth()?.ok),project_id:lf.project_id||null,project_name:lf.project_name||null,project_url:lf.project_url||null}})(),current_job:current||null,queue:counts,completed_today:completed,daily_target:dailyTarget,remaining_today:Math.max(0,dailyTarget-completed),daily_override_active:dailyTarget!==DAILY_LIMIT,provider_health:p?.state||null,last_generation:db.prepare("SELECT createdAt FROM factory_generations ORDER BY createdAt DESC LIMIT 1").get()?.createdAt||null,last_review_ready:db.prepare("SELECT updatedAt FROM factory_items WHERE status='review' ORDER BY updatedAt DESC LIMIT 1").get()?.updatedAt||null,last_publication:db.prepare("SELECT updatedAt,status,videoId FROM publication_items ORDER BY updatedAt DESC LIMIT 1").get()||null,serial_gate:{enabled:true,creative_serialized:Boolean(CONFIG.content.serialized),gate:'review_ready',strict:true},automation_safety:{exactly_once_submit:metaGet('automation:exactlyOnceSubmit','false')==='true',strict_serial_generation:metaGet('automation:strictSerialGeneration','false')==='true',project_grid_recovery:metaGet('automation:projectGridRecovery','false')==='true',review_metadata_required:metaGet('automation:reviewMetadataRequired','false')==='true',golden_test_required:metaGet('automation:goldenTestRequired','false')==='true',stable_composer_handoff:true,frutti_browser_launch_parity:true,native_no_charge_retry:false,immediate_native_retry_disabled:true,adaptive_no_charge_backoff:true,unusual_activity_exponential_backoff:true,provider_wide_unusual_activity_backoff:true,monotonic_provider_cooldown:true,successful_render_resets_provider_backoff:true,successful_redos_count_toward_daily_target:true,legacy_streak_resurrection_guard:true,strict_post_submit_recovery_match:true,catalog_wide_creative_uniqueness:true,no_landscape_repeat_cycle:true,youtube_preapproval_private_staging_disabled:true,cloud_stock_until_upload_window:true,private_upload_at_1230:true,direct_private_to_public_at_1900:true,native_publish_at_disabled:true,youtube_upload_lead_minutes_390:true,show_specific_repairs_isolated:true,prompt_show_bible_gate:true,atomic_creative_package:true,approval_before_external_storage:true,reject_purges_external_artifacts:true},prompt_integrity:promptIntegrity,review_copy:reviewCopy,publication_copy:publicationCopy,storage:storage(),security:{configured:configured(),passkeys:authState().passkeys.length,active_sessions:authState().sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).length}};
+ return{ok:true,at:now(),runtime_version:'publisher-runtime-v1',publisher_enabled:metaGet('automation:factoryEnabled','false')==='true',show:CONFIG.identity.show_name,scheduler_alive:true,scheduler:publication.status(),scheduler_no_end_date:true,worker_alive:workerAlive,automation_provider:'FreeBrowserProvider',generation_provider:'GoogleFlowProvider',publication_provider:selectedPublicationProvider()==='facebook'?'FacebookReelsProvider':selectedPublicationProvider()==='youtube'?'YouTubeProvider':'NotSelected',tinyfish_required:false,tinyfish_fallback:false,knowledge,flow:(()=>{const lf=liveFlowConfig();return{configured:Boolean(lf.project_id),authenticated:Boolean(flowAuth()?.ok),project_id:lf.project_id||null,project_name:lf.project_name||null,project_url:lf.project_url||null}})(),current_job:current||null,queue:counts,completed_today:completed,daily_target:dailyTarget,remaining_today:Math.max(0,dailyTarget-completed),daily_override_active:dailyTarget!==DAILY_LIMIT,provider_health:p?.state||null,last_generation:db.prepare("SELECT createdAt FROM factory_generations ORDER BY createdAt DESC LIMIT 1").get()?.createdAt||null,last_review_ready:db.prepare("SELECT updatedAt FROM factory_items WHERE status='review' ORDER BY updatedAt DESC LIMIT 1").get()?.updatedAt||null,last_publication:db.prepare("SELECT updatedAt,status,videoId FROM publication_items ORDER BY updatedAt DESC LIMIT 1").get()||null,serial_gate:{enabled:true,creative_serialized:Boolean(CONFIG.content.serialized),gate:'review_ready',strict:true},automation_safety:{exactly_once_submit:metaGet('automation:exactlyOnceSubmit','false')==='true',strict_serial_generation:metaGet('automation:strictSerialGeneration','false')==='true',project_grid_recovery:metaGet('automation:projectGridRecovery','false')==='true',review_metadata_required:metaGet('automation:reviewMetadataRequired','false')==='true',golden_test_required:metaGet('automation:goldenTestRequired','false')==='true',stable_composer_handoff:true,frutti_browser_launch_parity:true,native_no_charge_retry:false,immediate_native_retry_disabled:true,adaptive_no_charge_backoff:true,unusual_activity_exponential_backoff:true,provider_wide_unusual_activity_backoff:true,monotonic_provider_cooldown:true,successful_render_resets_provider_backoff:true,successful_redos_count_toward_daily_target:true,legacy_streak_resurrection_guard:true,strict_post_submit_recovery_match:true,catalog_wide_creative_uniqueness:true,no_landscape_repeat_cycle:true,youtube_preapproval_private_staging_disabled:true,cloud_stock_until_upload_window:true,private_upload_at_1230:true,direct_private_to_public_at_1900:true,native_publish_at_disabled:true,youtube_upload_lead_minutes_390:true,manual_stock_recovery_upload:true,recovery_upload_cloud_required:true,show_specific_repairs_isolated:true,prompt_show_bible_gate:true,atomic_creative_package:true,approval_before_external_storage:true,reject_purges_external_artifacts:true},prompt_integrity:promptIntegrity,review_copy:reviewCopy,publication_copy:publicationCopy,storage:storage(),security:{configured:configured(),passkeys:authState().passkeys.length,active_sessions:authState().sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).length}};
 }
 function repairObsoleteFlowSettingsErrors(){
   try{
