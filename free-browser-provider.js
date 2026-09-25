@@ -165,7 +165,24 @@ function dailyGenerationCount(db, day=artDay()) {
   // generated today, not only "automatic" generationKind rows.
   return Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE day=? AND credits>0 AND status IN ('review','completed')").get(day)?.n||0);
 }
-function effectiveDailyCount(db,day=artDay()){return dailyGenerationCount(db,day)}
+function retainedDailyCount(db,day=artDay()){
+  let count=0;
+  try{
+    const rows=db.prepare("SELECT status,flowResult,providerRunId,lastProgressAt,updatedAt,stockId,reviewContentHash FROM factory_items WHERE status IN ('review','queued','historical','published')").all();
+    for(const row of rows){
+      const flow=json(row.flowResult,{})||{};
+      const retained=Boolean(flow?.validated_ftyp||flow?.content_hash||row.reviewContentHash||row.stockId);
+      if(!retained)continue;
+      const started=String(flow?.generation_started_at||row.lastProgressAt||row.updatedAt||'');
+      const ms=Date.parse(started);if(!Number.isFinite(ms))continue;
+      if(artDay(new Date(ms))===day)count++;
+    }
+  }catch{}
+  return count;
+}
+function effectiveDailyCount(db,day=artDay()){
+  return Math.max(dailyGenerationCount(db,day),retainedDailyCount(db,day));
+}
 function ensureConfirmedGenerationAccounting(db){
   try{
     // Retained media remains a confirmed generation even after the operator
