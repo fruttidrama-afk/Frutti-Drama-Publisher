@@ -57,6 +57,11 @@ const BASE_DAILY_PRODUCTION_LIMIT=DAILY_LIMIT;
 const CREDITS_PER_GENERATION=CREDIT_PER_GENERATION;
 const DAILY_FLOW_CREDIT_BUDGET=DAILY_CREDIT_BUDGET;
 const PRODUCTION_START_EPISODE=1;
+const DAILY_FLOW_GRANT_CREDITS=Math.max(1,Number(CONFIG.generation?.daily_credit_grant||50));
+const DAILY_BATCH_CREDIT_COST=Math.max(1,Number(BASE_DAILY_PRODUCTION_LIMIT||1)*Number(CREDITS_PER_GENERATION||15));
+const CREDIT_REFRESH_POLL_MS=Math.max(60000,Number(CONFIG.generation?.credit_refresh_poll_minutes||5)*60*1000);
+const CREDIT_REFRESH_GUARD_MS=Math.max(6*60*60*1000,Number(CONFIG.generation?.credit_refresh_guard_hours||20)*60*60*1000);
+const CREDIT_REFRESH_FALLBACK_MS=Math.max(CREDIT_REFRESH_GUARD_MS+60*60*1000,Number(CONFIG.generation?.credit_refresh_fallback_hours||30)*60*60*1000);
 const escapeRe=v=>String(v??'').replace(/[.*+?^$()|[\]\\]/g,'\\$&');
 function liveProject(){
   let g={...(CONFIG.generation||{})};
@@ -844,6 +849,362 @@ async function waitFlowReady(page,timeout=60000){
   }
   publish('FLOW_READY_DIAGNOSTIC',{url:compact(page.url(),220),title,body,buttons:buttons.slice(0,30)});
   throw new Error('FLOW_NOT_READY:'+compact(page.url(),200)+':title='+title+':body='+compact(body,900));
+}
+
+// ---------------------------------------------------------------------------
+// DAILY FLOW CREDIT-CYCLE GATE
+// Google Flow grants 50 daily credits independently of the local calendar day.
+// Autonomous production is therefore keyed to the observed Flow credit refresh,
+// not to 00:00 in the Publisher timezone.
+// ---------------------------------------------------------------------------
+function parseVisibleCreditNumber(raw){
+  const digits=String(raw??'').replace(/\D/g,'');
+  if(!digits)return null;
+  const n=Number(digits);
+  return Number.isSafeInteger(n)&&n>=0&&n<10000000?n:null;
+}
+async function extractVisibleFlowCredits(page){
+  const candidates=[];
+  const creditWord=/credits?|cr[eé]ditos?|points?|puntos?/i;
+  const add=(raw,source='text')=>{
+    const line=compact(raw,320);
+    if(!line||!creditWord.test(line))return;
+    const patterns=[
+      /([0-9][0-9.,\s]*)\s*(?:google\s+flow\s+|ai\s+)?(?:credits?|cr[eé]ditos?|points?|puntos?)/ig,
+      /(?:credits?|cr[eé]ditos?|points?|puntos?)\s*[:\-]?\s*([0-9][0-9.,\s]*)/ig
+    ];
+    for(const rx of patterns){
+      let m;
+      while((m=rx.exec(line))){
+        const value=parseVisibleCreditNumber(m[1]);
+        if(value===null)continue;
+        let score=0;
+        if(/available|remaining|balance|disponib|restant|saldo|left|quedan/i.test(line))score+=8;
+        if(/google\s+flow|ai\s+credits?|cr[eé]ditos?\s+de\s+ia/i.test(line))score+=3;
+        if(/per\s+generation|por\s+generaci[oó]n|cost|cuesta|required|requiere|reserved|reservad/i.test(line))score-=7;
+        candidates.push({value,line,score,source});
+      }
+    }
+  };
+  const scan=(raw,source)=>{
+    const lines=String(raw||'').split(/\n+/).map(x=>x.replace(/\s+/g,' ').trim()).filter(Boolean);
+    for(let i=0;i<lines.length;i++){
+      add(lines[i],source);
+      if(creditWord.test(lines[i]))add([lines[i-1],lines[i],lines[i+1],lines[i+2]].filter(Boolean).join(' | '),source+'-context');
+    }
+  };
+
+  scan(await page.locator('body').innerText({timeout:10000}).catch(()=>''),'body');
+
+  const labelled=page.locator('[aria-label*="credit" i],[title*="credit" i],[aria-label*="crédito" i],[title*="crédito" i],[aria-label*="point" i],[title*="point" i],[aria-label*="punto" i],[title*="punto" i]');
+  const count=Math.min(await labelled.count().catch(()=>0),40);
+  for(let i=0;i<count;i++){
+    const el=labelled.nth(i);
+    if(!(await el.isVisible().catch(()=>false)))continue;
+    const aria=await el.getAttribute('aria-label').catch(()=>null);
+    const title=await el.getAttribute('title').catch(()=>null);
+    const text=await el.innerText().catch(()=>null);
+    const context=await el.evaluate(node=>{
+      const parts=[];let p=node;
+      for(let depth=0;depth<4&&p;depth++,p=p.parentElement){
+        const t=String(p.innerText||p.textContent||'').replace(/\s+/g,' ').trim();
+        if(t&&t.length<260)parts.push(t);
+      }
+      return parts.join(' | ');
+    }).catch(()=>'');
+    add([aria,title,text,context].filter(Boolean).join(' '),'label-context');
+  }
+
+  // The remaining Flow balance is often shown only in the Google account menu.
+  if(!candidates.length){
+    const viewport=page.viewportSize()||{width:1024,height:700};
+    const selectors=[
+      'button[aria-label*="Google Account" i]','[role="button"][aria-label*="Google Account" i]',
+      'button[aria-label*="Cuenta de Google" i]','[role="button"][aria-label*="Cuenta de Google" i]',
+      'button[aria-label*="account" i]','[role="button"][aria-label*="account" i]',
+      'button[aria-label*="cuenta" i]','[role="button"][aria-label*="cuenta" i]',
+      'button[aria-label*="profile" i]','[role="button"][aria-label*="profile" i]',
+      'button[aria-label*="perfil" i]','[role="button"][aria-label*="perfil" i]'
+    ];
+    const accountButtons=[];
+    for(const sel of selectors){
+      const loc=page.locator(sel),n=Math.min(await loc.count().catch(()=>0),12);
+      for(let i=0;i<n;i++){
+        const el=loc.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
+        const box=await el.boundingBox().catch(()=>null);
+        if(!box||box.y>180||box.x<viewport.width*.45)continue;
+        accountButtons.push({el,box});
+      }
+    }
+    accountButtons.sort((a,b)=>b.box.x-a.box.x||a.box.y-b.box.y);
+    if(accountButtons[0]){
+      await accountButtons[0].el.click({force:true,timeout:4000}).catch(()=>{});
+      await sleep(900);
+      scan(await page.locator('body').innerText({timeout:5000}).catch(()=>''),'profile-menu');
+      for(const frame of page.frames()){
+        if(frame===page.mainFrame())continue;
+        scan(await frame.locator('body').innerText({timeout:2500}).catch(()=>''),'profile-frame');
+      }
+      await page.keyboard.press('Escape').catch(()=>{});
+    }
+  }
+
+  // Conservative toolbar-number fallback. It is accepted only if no labelled
+  // balance was found, and heavily penalizes common video-resolution numbers.
+  if(!candidates.length){
+    const viewport=page.viewportSize()||{width:1024,height:700};
+    const numeric=page.locator('button,[role="button"],[role="status"],[role="meter"],[aria-valuenow],span');
+    const numericCount=Math.min(await numeric.count().catch(()=>0),650);
+    const fallback=[];
+    for(let i=0;i<numericCount;i++){
+      const el=numeric.nth(i);if(!(await el.isVisible().catch(()=>false)))continue;
+      const box=await el.boundingBox().catch(()=>null);
+      if(!box||box.y>190||box.x<viewport.width*.42)continue;
+      const raw=String(await el.innerText().catch(()=>'')||await el.getAttribute('aria-valuenow').catch(()=>'')||'').trim();
+      if(!/^[0-9][0-9.,\s]*$/.test(raw))continue;
+      const value=parseVisibleCreditNumber(raw);
+      if(value===null||value>100000)continue;
+      let score=(box.x/viewport.width)*10+Math.max(0,(190-box.y)/190)*5;
+      if(value>=25)score+=2;
+      if([720,1080,1920,3840].includes(value))score-=8;
+      if(value<=10)score-=5;
+      fallback.push({value,line:'visible Flow toolbar balance '+raw,score,source:'toolbar-number'});
+    }
+    fallback.sort((a,b)=>b.score-a.score||b.value-a.value);
+    if(fallback.length)candidates.push(fallback[0]);
+  }
+
+  if(!candidates.length)throw new Error('FLOW_CREDITS_NOT_FOUND');
+  candidates.sort((a,b)=>b.score-a.score||b.value-a.value);
+  return candidates[0];
+}
+async function syncVisibleFlowCredits(db,{force=false,maxAgeMs=CREDIT_REFRESH_POLL_MS}={}){
+  const checkedAt=meta(db,'flow:lastCreditsCheckedAt','');
+  const checkedMs=Date.parse(checkedAt);
+  const cached=parseVisibleCreditNumber(meta(db,'flow:lastCreditsVisible',''));
+  if(!force&&cached!==null&&Number.isFinite(checkedMs)&&Date.now()-checkedMs<maxAgeMs){
+    return{ok:true,credits:cached,checkedAt,cached:true,source:meta(db,'flow:lastCreditsSource','google-flow-live')};
+  }
+  const session=await launchLocal();
+  try{
+    const page=session.page||session.context.pages()[0]||await session.context.newPage();
+    await ensureExpectedFlowProject(page);
+    if(!String(page.url()).includes(projectPath()))await page.goto(flowUrl(),{waitUntil:'domcontentloaded',timeout:60000});
+    await waitFlowReady(page,60000);
+    const hit=await extractVisibleFlowCredits(page);
+    const at=now();
+    setMeta(db,'flow:lastCreditsVisible',String(hit.value));
+    setMeta(db,'flow:lastCreditsCheckedAt',at);
+    setMeta(db,'flow:lastCreditsSource',String(hit.source||'google-flow-live'));
+    setMeta(db,'flow:lastCreditsEvidence',compact(hit.line||'',500));
+    setMeta(db,'flow:lastCreditsCheckError','');
+    publish('FLOW_CREDITS_SYNCED',{credits:hit.value,source:hit.source,evidence:compact(hit.line||'',220)});
+    return{ok:true,credits:hit.value,checkedAt:at,cached:false,source:hit.source,evidence:hit.line};
+  }catch(err){
+    setMeta(db,'flow:lastCreditsCheckError',compact(err?.message||err,300));
+    throw err;
+  }finally{await session.close().catch(()=>{})}
+}
+function creditCycleState(db){return json(meta(db,'flow:dailyCreditCycle',''),null)}
+function persistCreditCycle(db,cycle){
+  setMeta(db,'flow:dailyCreditCycle',JSON.stringify(cycle));
+  setMeta(db,'flow:dailyCreditCycleId',String(cycle?.id||''));
+  setMeta(db,'flow:dailyCreditCycleOpenedAt',String(cycle?.opened_at||''));
+}
+function creditCycleUsage(db,cycle=creditCycleState(db)){
+  const startMs=Date.parse(String(cycle?.opened_at||''));
+  if(!Number.isFinite(startMs))return 0;
+  const runs=new Set();
+  try{
+    const rows=db.prepare("SELECT runId,createdAt,credits,status FROM factory_generations WHERE credits>0 AND status NOT IN ('no_generation','infra_rejected') ORDER BY createdAt").all();
+    for(const row of rows){
+      const ms=Date.parse(String(row.createdAt||''));if(!Number.isFinite(ms)||ms<startMs)continue;
+      const run=String(row.runId||'').trim();if(run)runs.add(run);
+    }
+  }catch{}
+  // A submit boundary can be ambiguous before factory_generations is inserted.
+  // Count that intent conservatively so a crash/timeout can never open a fourth slot.
+  try{
+    const rows=db.prepare("SELECT * FROM factory_items WHERE status='generating'").all();
+    for(const row of rows){
+      const lc=lifecycle(db,row)||{},boundary=Date.parse(String(lc.submit_boundary_at||''));
+      if(!Number.isFinite(boundary)||boundary<startMs)continue;
+      const state=String(lc.state||'').toUpperCase();
+      if(['TRANSIENT_NO_CHARGE_RETRY','UNUSUAL_ACTIVITY_OVERNIGHT','WAITING_FOR_CREDITS'].includes(state))continue;
+      const run=String(lc.generation_id||row.providerRunId||'').trim();if(run)runs.add(run);
+    }
+  }catch{}
+  return runs.size;
+}
+function recentCreditCycleBootstrap(db){
+  try{
+    const rows=db.prepare("SELECT runId,createdAt,credits,status FROM factory_generations WHERE credits>0 AND status NOT IN ('no_generation','infra_rejected') ORDER BY createdAt DESC LIMIT 12").all();
+    if(!rows.length)return null;
+    const latestMs=Date.parse(String(rows[0].createdAt||''));
+    if(!Number.isFinite(latestMs)||Date.now()-latestMs>36*60*60*1000)return null;
+    const cluster=rows.filter(r=>{const ms=Date.parse(String(r.createdAt||''));return Number.isFinite(ms)&&latestMs-ms<=3*60*60*1000});
+    const openedMs=Math.min(...cluster.map(r=>Date.parse(String(r.createdAt||''))).filter(Number.isFinite));
+    if(!Number.isFinite(openedMs))return null;
+    return{id:'history-'+new Date(openedMs).toISOString(),opened_at:new Date(openedMs).toISOString(),opening_balance:null,last_balance:null,last_checked_at:null,post_batch_baseline_captured:false,source:'generation-history-bootstrap',evidence:'Existing recent Flow generation cluster anchors the current daily credit cycle.',grant_credits:DAILY_FLOW_GRANT_CREDITS,batch_cost:DAILY_BATCH_CREDIT_COST,target:Number(BASE_DAILY_PRODUCTION_LIMIT||1)};
+  }catch{return null}
+}
+function openDailyCreditCycle(db,credits,source,evidence){
+  const stamp=now();
+  const cycle={
+    id:'daily-credit-'+stamp+'-'+randomUUID().slice(0,8),
+    opened_at:stamp,
+    opening_balance:Number.isFinite(Number(credits))?Number(credits):null,
+    last_balance:Number.isFinite(Number(credits))?Number(credits):null,
+    last_checked_at:Number.isFinite(Number(credits))?stamp:null,
+    post_batch_baseline_captured:false,
+    source:String(source||'flow-credit-refresh'),
+    evidence:compact(evidence||'',500),
+    grant_credits:DAILY_FLOW_GRANT_CREDITS,
+    batch_cost:DAILY_BATCH_CREDIT_COST,
+    target:Number(BASE_DAILY_PRODUCTION_LIMIT||1)
+  };
+  persistCreditCycle(db,cycle);
+  setMeta(db,'flow:dailyCreditRenewalEvidence',cycle.evidence||cycle.source);
+  setMeta(db,'flow:dailyCreditBatchOpen','true');
+  setMeta(db,'flow:dailyCreditRefreshWaiting','false');
+  setMeta(db,'flow:dailyCreditCycleUsed','0');
+  setMeta(db,'flow:dailyCreditCycleTarget',String(cycle.target));
+  publish('DAILY_FLOW_CREDIT_CYCLE_OPENED',{cycle_id:cycle.id,credits:cycle.opening_balance,grant_credits:DAILY_FLOW_GRANT_CREDITS,target:cycle.target,source:cycle.source,evidence:cycle.evidence});
+  return cycle;
+}
+async function ensureDailyCreditCycle(db){
+  let cycle=creditCycleState(db);
+  if(!cycle){
+    cycle=recentCreditCycleBootstrap(db);
+    if(cycle){
+      persistCreditCycle(db,cycle);
+      publish('DAILY_FLOW_CREDIT_CYCLE_BOOTSTRAPPED',{cycle_id:cycle.id,opened_at:cycle.opened_at,source:cycle.source});
+    }
+  }
+
+  // First-ever publisher/account bootstrap. For a free-looking balance around 50,
+  // the current daily allocation is already visibly present and can seed cycle 1.
+  // A larger paid balance is ambiguous (monthly/purchased credits may be mixed in),
+  // so it is observed but not treated as a daily refresh until a refill is seen.
+  if(!cycle){
+    let sync=null;
+    try{sync=await syncVisibleFlowCredits(db,{force:false,maxAgeMs:CREDIT_REFRESH_POLL_MS})}catch(err){
+      setMeta(db,'flow:dailyCreditBatchOpen','false');
+      setMeta(db,'flow:dailyCreditRefreshWaiting','true');
+      setMeta(db,'flow:state','ESPERANDO CRÉDITOS');
+      setMeta(db,'flow:currentStep','credit-balance-unavailable');
+      setMeta(db,'flow:message','Esperando una lectura confiable del saldo de créditos de Google Flow antes de iniciar el lote diario.');
+      return{open:false,used:0,target:Number(BASE_DAILY_PRODUCTION_LIMIT||1),reason:'credit-balance-unavailable',error:compact(err?.message||err,240)};
+    }
+    const watch=json(meta(db,'flow:dailyCreditInitialWatch',''),{})||{};
+    const previous=parseVisibleCreditNumber(watch.balance);
+    const current=Number(sync.credits);
+    if(current>=DAILY_BATCH_CREDIT_COST&&current<=DAILY_FLOW_GRANT_CREDITS+10){
+      cycle=openDailyCreditCycle(db,current,'initial-daily-allocation-visible','Visible Flow balance is consistent with the current 50-credit daily allocation.');
+    }else if(previous!==null&&current>previous){
+      const delta=current-previous;
+      if(delta>=15&&delta<=DAILY_FLOW_GRANT_CREDITS+10){
+        cycle=openDailyCreditCycle(db,current,'observed-first-daily-refill','Visible Flow balance increased by '+delta+' credits while waiting for the first daily refill.');
+      }
+    }
+    if(!cycle){
+      setMeta(db,'flow:dailyCreditInitialWatch',JSON.stringify({balance:current,checked_at:sync.checkedAt,source:sync.source}));
+      setMeta(db,'flow:dailyCreditBatchOpen','false');
+      setMeta(db,'flow:dailyCreditRefreshWaiting','true');
+      setMeta(db,'flow:state','ESPERANDO CRÉDITOS');
+      setMeta(db,'flow:currentStep','waiting-first-daily-credit-refresh');
+      setMeta(db,'flow:message','Saldo de Flow observado ('+current+'). Esperando evidencia de la renovación diaria de 50 créditos antes de iniciar el lote automático.');
+      publish('WAITING_FIRST_DAILY_FLOW_CREDIT_REFRESH',{credits:current,grant_credits:DAILY_FLOW_GRANT_CREDITS});
+      return{open:false,used:0,target:Number(BASE_DAILY_PRODUCTION_LIMIT||1),reason:'waiting-first-daily-credit-refresh',credits:current};
+    }
+  }
+
+  let used=creditCycleUsage(db,cycle);
+  const target=Number(BASE_DAILY_PRODUCTION_LIMIT||1);
+  const openedMs=Date.parse(String(cycle.opened_at||''));
+  const ageMs=Number.isFinite(openedMs)?Date.now()-openedMs:0;
+  setMeta(db,'flow:dailyCreditCycleUsed',String(used));
+  setMeta(db,'flow:dailyCreditCycleTarget',String(target));
+
+  // Capture the post-batch balance exactly once. This is the clean baseline from
+  // which the next 50-credit refresh is detected (normally +45 after 3×15 spends,
+  // because the unused 5 daily credits expire instead of rolling over).
+  if(used>=target&&!cycle.post_batch_baseline_captured){
+    try{
+      const sync=await syncVisibleFlowCredits(db,{force:true,maxAgeMs:0});
+      cycle={...cycle,last_balance:Number(sync.credits),last_checked_at:sync.checkedAt,post_batch_baseline_captured:true,post_batch_balance:Number(sync.credits),post_batch_baseline_at:sync.checkedAt};
+      persistCreditCycle(db,cycle);
+      publish('DAILY_FLOW_POST_BATCH_BALANCE_CAPTURED',{cycle_id:cycle.id,credits:sync.credits,used,target});
+    }catch(err){
+      publish('DAILY_FLOW_POST_BATCH_BALANCE_PENDING',{cycle_id:cycle.id,message:compact(err?.message||err,240)});
+    }
+  }
+
+  // Until the refresh window approaches, finish the current cycle if slots remain.
+  if(ageMs<CREDIT_REFRESH_GUARD_MS){
+    const open=used<target;
+    setMeta(db,'flow:dailyCreditBatchOpen',open?'true':'false');
+    setMeta(db,'flow:dailyCreditRefreshWaiting',open?'false':'true');
+    if(!open){
+      setMeta(db,'flow:state','ESPERANDO CRÉDITOS');
+      setMeta(db,'flow:currentStep','waiting-daily-credit-refresh');
+      setMeta(db,'flow:message','Lote de '+target+' generaciones completo. Esperando la próxima renovación diaria de 50 créditos de Flow; el cambio de fecha no abre un lote nuevo.');
+    }
+    return{open,used,target,cycle,reason:open?'current-credit-cycle-open':'batch-complete-waiting-refresh'};
+  }
+
+  // Inside the renewal window we deliberately stop automatic production until
+  // the Flow balance proves that the new daily allocation arrived.
+  let sync=null;
+  try{sync=await syncVisibleFlowCredits(db,{force:false,maxAgeMs:CREDIT_REFRESH_POLL_MS})}catch(err){
+    setMeta(db,'flow:dailyCreditBatchOpen','false');
+    setMeta(db,'flow:dailyCreditRefreshWaiting','true');
+    setMeta(db,'flow:state','ESPERANDO CRÉDITOS');
+    setMeta(db,'flow:currentStep','waiting-daily-credit-refresh');
+    setMeta(db,'flow:message','Esperando la renovación diaria de créditos. La lectura de saldo falló de forma transitoria; no se usarán créditos mensuales por calendario.');
+    return{open:false,used,target,cycle,reason:'credit-refresh-read-failed',error:compact(err?.message||err,240)};
+  }
+
+  const current=Number(sync.credits);
+  const previous=parseVisibleCreditNumber(cycle.last_balance);
+  let renewed=false,renewalReason='';
+  if(previous!==null&&current>previous){
+    const delta=current-previous;
+    // 3 canonical generations cost 45 credits. Because unused daily credits do
+    // not roll over, the visible combined balance normally rises by 45-50.
+    // For an incomplete prior cycle, smaller positive refills can be legitimate.
+    const knownSpend=Math.min(DAILY_FLOW_GRANT_CREDITS,Math.max(0,used*CREDITS_PER_GENERATION));
+    const minExpected=Math.max(10,Math.min(DAILY_FLOW_GRANT_CREDITS,knownSpend)-10);
+    if(delta>=minExpected&&delta<=DAILY_FLOW_GRANT_CREDITS+10){
+      renewed=true;
+      renewalReason='Visible Flow balance increased by '+delta+' credits after the prior credit cycle.';
+    }
+  }
+
+  cycle={...cycle,last_balance:current,last_checked_at:sync.checkedAt};
+  persistCreditCycle(db,cycle);
+
+  // Safety fallback: a daily allocation can replace unspent daily credits and
+  // therefore produce little/no net balance increase. After a wide 30h window,
+  // a sufficient live balance is accepted as renewal evidence rather than
+  // stalling forever. This path never fires early and never keys off midnight.
+  if(!renewed&&ageMs>=CREDIT_REFRESH_FALLBACK_MS&&current>=DAILY_BATCH_CREDIT_COST){
+    renewed=true;
+    renewalReason='Timed renewal fallback after '+Math.round(ageMs/3600000)+'h with at least '+DAILY_BATCH_CREDIT_COST+' live Flow credits visible; protects against non-rollover masking the balance delta.';
+  }
+
+  if(renewed){
+    const next=openDailyCreditCycle(db,current,'daily-flow-credit-refresh',renewalReason);
+    return{open:true,used:0,target,cycle:next,reason:'daily-flow-credit-refresh',credits:current};
+  }
+
+  setMeta(db,'flow:dailyCreditBatchOpen','false');
+  setMeta(db,'flow:dailyCreditRefreshWaiting','true');
+  setMeta(db,'flow:state','ESPERANDO CRÉDITOS');
+  setMeta(db,'flow:currentStep','waiting-daily-credit-refresh');
+  setMeta(db,'flow:message','Esperando que Google Flow renueve los 50 créditos diarios. Saldo visible: '+current+'. No se iniciará el lote automático por cambio de fecha.');
+  publish('WAITING_DAILY_FLOW_CREDIT_REFRESH',{cycle_id:cycle.id,credits:current,previous_balance:previous,used,target,cycle_age_hours:Math.round(ageMs/360000)/10,grant_credits:DAILY_FLOW_GRANT_CREDITS});
+  return{open:false,used,target,cycle,reason:'waiting-daily-credit-refresh',credits:current};
 }
 
 function cleanChromiumLocks() {
@@ -2771,7 +3132,7 @@ async function processRow(db,row){
     }
     const envEnabled=String(process.env.PUBLISHER_ENABLED||'true').toLowerCase()!=='false';
     const pauseAllowsSubmit=!generationPauseActive();
-    const manualSubmit=envEnabled&&pauseAllowsSubmit&&meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',autoSubmit=envEnabled&&pauseAllowsSubmit&&runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||effectiveDailyCount(db)<dailyProductionLimit(db)),submitAuthorized=manualSubmit||autoSubmit;
+    const manualSubmit=envEnabled&&pauseAllowsSubmit&&meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',creditCycleOpen=meta(db,'flow:dailyCreditBatchOpen','false')==='true',cycleUsed=creditCycleUsage(db),autoSubmit=envEnabled&&pauseAllowsSubmit&&runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||(creditCycleOpen&&cycleUsed<dailyProductionLimit(db))),submitAuthorized=manualSubmit||autoSubmit;
     publish('PREFLIGHT',{episode:'E'+row.episode,job_id:row.id});
     const pf=await preflight(page,row,cp);
     db.prepare('UPDATE factory_items SET transportPreflight=?,error=NULL,updatedAt=? WHERE id=?').run(JSON.stringify(pf).slice(0,20000),now(),row.id);
@@ -3459,10 +3820,28 @@ async function runProvider(){
     const goldenRecovery=await recoverGoldenRunIfRequested(db);
     if(goldenRecovery.needed&&!goldenRecovery.done)return;
     const feedbackState=await interpretPendingReviewFeedback(db);if(feedbackState==='retry')return;
-    const used=effectiveDailyCount(db);row=productionCandidate(db);
-    if(row&&String(row.status)==='generating'){publish('RECOVERY_PICKED',{episode:'E'+row.episode,job_id:row.id,state:String(lifecycle(db,row)?.state||''),used_today:used});await processRow(db,row);return}
+    row=productionCandidate(db);
+    const legacyUsed=effectiveDailyCount(db);
+    if(row&&String(row.status)==='generating'){publish('RECOVERY_PICKED',{episode:'E'+row.episode,job_id:row.id,state:String(lifecycle(db,row)?.state||''),used_today:legacyUsed});await processRow(db,row);return}
     const priorityRetry=isReviewerRetry(row);
-    if(used>=dailyProductionLimit(db)&&!priorityRetry){if(row&&String(lifecycle(db,row)?.state||'').toUpperCase()!=='PREFLIGHT_PASSED'){publish('NEXT_DAY_PREFLIGHT',{episode:'E'+row.episode,job_id:row.id,message:'Daily target complete; validating next job without Send.'});await processRow(db,row);return}setMeta(db,'flow:state','ESPERANDO CRÉDITOS');setMeta(db,'flow:currentStep','daily-limit');setMeta(db,'flow:message','Daily production complete: '+used+'/'+dailyProductionLimit(db)+'.');publish('DAILY_LIMIT',{used,limit:dailyProductionLimit(db),day:artDay(),next_episode:row?('E'+row.episode):null});return}
+    let creditGate={open:true,used:creditCycleUsage(db),target:dailyProductionLimit(db),reason:priorityRetry?'reviewer-retry-bypass':'unknown'};
+    if(!priorityRetry){
+      creditGate=await ensureDailyCreditCycle(db);
+      if(!creditGate.open){
+        publish('AUTOMATIC_BATCH_WAITING_FOR_DAILY_CREDITS',{used:creditGate.used,target:creditGate.target,reason:creditGate.reason,credits:creditGate.credits??null,cycle_id:creditGate.cycle?.id||null});
+        return;
+      }
+    }
+    const used=Number(creditGate.used||0);
+    if(used>=dailyProductionLimit(db)&&!priorityRetry){
+      setMeta(db,'flow:dailyCreditBatchOpen','false');
+      setMeta(db,'flow:dailyCreditRefreshWaiting','true');
+      setMeta(db,'flow:state','ESPERANDO CRÉDITOS');
+      setMeta(db,'flow:currentStep','waiting-daily-credit-refresh');
+      setMeta(db,'flow:message','Lote automático completo: '+used+'/'+dailyProductionLimit(db)+'. Esperando la próxima renovación diaria de 50 créditos de Google Flow.');
+      publish('DAILY_CREDIT_BATCH_COMPLETE',{used,limit:dailyProductionLimit(db),credit_cycle_id:creditGate.cycle?.id||null,next_episode:row?('E'+row.episode):null});
+      return;
+    }
     if(!row){ensureBacklog(db);row=productionCandidate(db);if(!row){
       const waiting=db.prepare("SELECT episode,status,nextTry,error FROM factory_items WHERE status IN ('draft','regen_wait') AND (reviewFeedback IS NULL OR TRIM(reviewFeedback)='') ORDER BY episode LIMIT 1").get();
       setMeta(db,'flow:state','CONECTADO');setMeta(db,'flow:currentStep',waiting&&Number(waiting.nextTry||0)>Date.now()?'serial-backoff':'idle');
@@ -3473,7 +3852,7 @@ async function runProvider(){
       publish(waiting&&Number(waiting.nextTry||0)>Date.now()?'SERIAL_HEAD_WAIT':'IDLE',{episode:waiting?('E'+waiting.episode):null,next_try:waiting?.nextTry||0,message});
       return
     }}
-    publish(priorityRetry?'REVIEW_RETRY_PICKED':'PRODUCTION_PICKED',{episode:'E'+row.episode,job_id:row.id,used_today:used,remaining_today:Math.max(0,dailyProductionLimit(db)-used),daily_limit_bypassed:priorityRetry});await processRow(db,row);
+    publish(priorityRetry?'REVIEW_RETRY_PICKED':'PRODUCTION_PICKED',{episode:'E'+row.episode,job_id:row.id,used_credit_cycle:used,remaining_credit_cycle:Math.max(0,dailyProductionLimit(db)-used),credit_cycle_id:creditGate.cycle?.id||null,daily_limit_bypassed:priorityRetry});await processRow(db,row);
   }catch(err){
     const message=compact(err?.stack||err?.message||err,900);
     try{if(db&&row){const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row,lc=lifecycle(db,fresh)||{},state=String(lc.state||'').toUpperCase(),attempts=Number(fresh.runtimeAttemptCount||0)+1,beforeGenerate=!AFTER_GENERATE.has(state)&&!AMBIGUOUS.has(state),browserRetrievalCrash=/Target crashed|Target closed|Browser closed/i.test(message)&&(AFTER_GENERATE.has(state)||AMBIGUOUS.has(state)),baseBackoff=browserRetrievalCrash?5000:(beforeGenerate?10000:60000),capBackoff=browserRetrievalCrash?15000:(beforeGenerate?5*60*1000:60*60*1000),backoff=Math.min(capBackoff,baseBackoff*Math.pow(2,Math.min(attempts-1,6))),nextTry=Date.now()+backoff;if(/FLOW_TRANSIENT_NO_CHARGE/.test(message)){
