@@ -407,7 +407,8 @@
       "type": "object",
       "required": [
         "providers",
-        "daily_publication_target"
+        "daily_publication_target",
+        "ai_disclosure_required"
       ],
       "properties": {
         "allowed_providers": {
@@ -435,6 +436,10 @@
           "minimum": 1,
           "maximum": 20,
           "default": 1
+        },
+        "ai_disclosure_required": {
+          "const": true,
+          "description": "Every generated video must carry the platform-native AI/synthetic-media disclosure whenever the destination exposes one."
         },
         "providers": {
           "type": "array",
