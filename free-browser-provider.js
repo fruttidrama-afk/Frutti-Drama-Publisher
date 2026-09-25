@@ -34,7 +34,6 @@ const BOOTSTRAP_LOCK=path.join(FACTORY_DIR,'flow-auth-bootstrap.active.json');
 const STATUS_FILE=path.resolve(process.cwd(),'public','free-browser-status.json');
 const PROVIDER='FreeBrowserProvider';
 const GEMINI_FEEDBACK_URL='https://gemini.google.com/app';
-const GEMINI_FEEDBACK_URL='https://gemini.google.com/app';
 async function saveReviewAsset(db,row,localPath,flowResult,stamp=now()){
   // HARD APPROVAL GATE: an unapproved review render must remain only on the
   // Publisher's private persistent volume. It must never be uploaded to
@@ -1098,137 +1097,6 @@ async function interpretPendingReviewFeedback(db){
     const retryAt=Date.now()+Math.min(15*60*1000,60000*Math.max(1,attempts));
     db.prepare("UPDATE factory_items SET runtimeAttemptCount=?,error=?,nextTry=?,updatedAt=? WHERE id=?")
       .run(attempts,'AI feedback interpretation pending: '+compact(err?.message||err,500),retryAt,now(),row.id);
-    publish('FEEDBACK_AI_INTERPRET_RETRY',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,retry_at:new Date(retryAt).toISOString(),message:compact(err?.message||err,500)});
-    return'retry';
-  }
-}
-
-function semanticFeedbackContext(db,row){
-  const prior=db.prepare("SELECT episode,hook,story,status FROM factory_items WHERE season=? AND episode<? ORDER BY episode DESC LIMIT 24").all(Number(row.season),Number(row.episode)).reverse();
-  const future=db.prepare("SELECT episode,hook,story,status FROM factory_items WHERE season=? AND episode>? ORDER BY episode LIMIT 24").all(Number(row.season),Number(row.episode));
-  return{
-    show:String(CONFIG.identity?.show_name||SHOW||'Publisher'),
-    serialized:Boolean(CONFIG.content?.serialized),
-    canon:compact(CONFIG.content?.canon||'',7000),
-    creative_bible:compact(CONFIG.content?.creative_bible||'',9000),
-    current:{episode:Number(row.episode),hook:String(row.hook||''),story:String(row.story||'')},
-    feedback:String(row.reviewFeedback||'').trim(),
-    prior:prior.map(x=>({episode:Number(x.episode),hook:String(x.hook||''),story:String(x.story||''),status:String(x.status||'')})),
-    future:future.map(x=>({episode:Number(x.episode),hook:String(x.hook||''),story:String(x.story||''),status:String(x.status||'')}))
-  };
-}
-function validateSemanticFeedbackResult(raw,row){
-  if(!raw||typeof raw!=='object')throw new Error('FEEDBACK_AI_INVALID_OBJECT');
-  const decision=String(raw.decision||'').trim();
-  if(!['render_retry','prompt_revision','creative_rewrite'].includes(decision))throw new Error('FEEDBACK_AI_INVALID_DECISION:'+decision);
-  const reason=compact(raw.reason||'',1400);
-  if(!reason)throw new Error('FEEDBACK_AI_REASON_MISSING');
-  const out={
-    decision,reason,
-    audience_known_facts:Array.isArray(raw.audience_known_facts)?raw.audience_known_facts.map(x=>compact(x,300)).filter(Boolean).slice(0,20):[],
-    must_not_repeat:Array.isArray(raw.must_not_repeat)?raw.must_not_repeat.map(x=>compact(x,300)).filter(Boolean).slice(0,20):[],
-    prompt_changes:compact(raw.prompt_changes||'',1800),
-    new_hook:compact(raw.new_hook||'',100),
-    new_story:compact(raw.new_story||'',1200),
-    new_information:compact(raw.new_information||'',700)
-  };
-  if(decision==='prompt_revision'&&!out.prompt_changes)throw new Error('FEEDBACK_AI_PROMPT_CHANGES_MISSING');
-  if(decision==='creative_rewrite'){
-    if(!out.new_hook||!out.new_story||!out.new_information)throw new Error('FEEDBACK_AI_CREATIVE_PACKAGE_INCOMPLETE');
-    if(norm(out.new_hook+' '+out.new_story)===norm(String(row.hook||'')+' '+String(row.story||'')))throw new Error('FEEDBACK_AI_REPEATED_SAME_STORY');
-  }
-  return out;
-}
-async function semanticFeedbackInterpretation(db,row){
-  publish('FEEDBACK_AI_STAGE',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,stage:'launch-browser'});
-  const session=await launchLocal();
-  const marker='PUB_AI_'+randomUUID().replace(/-/g,'').slice(0,16).toUpperCase(),start=marker+'_START',end=marker+'_END';
-  try{
-    const page=session.page;
-    await page.goto(GEMINI_FEEDBACK_URL,{waitUntil:'domcontentloaded',timeout:45000});
-    await sleep(1800);
-    for(const re of [/I agree|Acepto/i,/Get started|Empezar/i,/Continue|Continuar/i]){
-      const btn=page.getByRole('button',{name:re}).last();
-      if(await btn.count().catch(()=>0)&&await btn.isVisible().catch(()=>false)){await btn.click({timeout:3000}).catch(()=>{});await sleep(700)}
-    }
-    const body0=compact(await page.locator('body').innerText().catch(()=>''),5000);
-    if(/sign in|iniciar sesi[oó]n|gemini isn.?t available|no est[aá] disponible/i.test(body0)&&!String(page.url()).includes('gemini.google.com/app'))throw new Error('FEEDBACK_AI_GEMINI_AUTH_REQUIRED:'+compact(page.url(),220));
-    let input=null;
-    for(const candidate of [
-      page.locator('rich-textarea div[contenteditable="true"]').last(),
-      page.locator('div[contenteditable="true"][role="textbox"]').last(),
-      page.locator('div[contenteditable="true"]').last(),
-      page.locator('textarea').last()
-    ]){if(await candidate.count().catch(()=>0)&&await candidate.isVisible().catch(()=>false)){input=candidate;break}}
-    if(!input)throw new Error('FEEDBACK_AI_GEMINI_INPUT_NOT_FOUND:'+body0.slice(0,500));
-    const ctx=semanticFeedbackContext(db,row);
-    const instruction=[
-      'You are the semantic editorial reviewer for an automated short-form video Publisher.',
-      'Show: '+ctx.show+'. Serialized: '+String(ctx.serialized)+'.',
-      'Understand the HUMAN REDO feedback by meaning, never by keyword matching.',
-      'Choose exactly one action:',
-      'render_retry = story, creative package and prompt are correct; only a stochastic visual/audio/render glitch failed.',
-      'prompt_revision = the SAME story/premise is correct, but execution instructions must change (dialogue, camera, timing, character assignment, visual constraint, action clarity, etc.).',
-      'creative_rewrite = the human rejects the premise, narrative information, location/concept, repetition, continuity, or what the audience is learning. Create a materially NEW episode intent.',
-      '',
-      'Rules:',
-      '- Human feedback is authoritative even when dictated, misspelled or informal.',
-      '- If serialized, use prior canon and never re-reveal information the audience already knows unless explicitly asked.',
-      '- If non-serialized, creative_rewrite is still required when the core concept/location/premise itself is rejected rather than its rendering.',
-      '- Do not weaken the active Creative Bible or invent a change that contradicts it.',
-      '- A creative rewrite must provide genuinely new information, consequence, subject or premise rather than paraphrasing the rejected one.',
-      '',
-      'Return exactly ONE JSON object between the markers below, with no prose outside the markers.',
-      start,
-      '{"decision":"render_retry|prompt_revision|creative_rewrite","reason":"semantic explanation","audience_known_facts":["facts/context already established"],"must_not_repeat":["rejected facts/plots/concepts"],"prompt_changes":"only if prompt_revision","new_hook":"short hook only if creative_rewrite","new_story":"new concrete episode intent only if creative_rewrite","new_information":"what is genuinely new only if creative_rewrite"}',
-      end,
-      '',
-      'PUBLISHER CONTEXT JSON:',
-      JSON.stringify(ctx)
-    ].join('\n');
-    await input.click({timeout:5000});
-    await input.fill(instruction).catch(async()=>{await page.keyboard.press('Control+A').catch(()=>{});await page.keyboard.insertText(instruction)});
-    let sent=false;
-    for(const re of [/Send message|Enviar mensaje|Send|Enviar/i]){
-      const b=page.getByRole('button',{name:re}).last();
-      if(await b.count().catch(()=>0)&&await b.isVisible().catch(()=>false)&&await b.isEnabled().catch(()=>false)){await b.click({timeout:4000}).catch(()=>{});sent=true;break}
-    }
-    if(!sent)await page.keyboard.press('Enter');
-    const deadline=Date.now()+60000;let parsed=null,lastBody='';
-    while(Date.now()<deadline){
-      await sleep(1000);lastBody=await page.locator('body').innerText().catch(()=>lastBody);
-      const pos=lastBody.lastIndexOf(start);
-      if(pos>=0){const e=lastBody.indexOf(end,pos+start.length);if(e>pos){const raw=lastBody.slice(pos+start.length,e).trim().replace(/^\x60\x60\x60(?:json)?\s*/i,'').replace(/\s*\x60\x60\x60$/,'');try{parsed=JSON.parse(raw)}catch{};if(parsed)break}}
-    }
-    if(!parsed)throw new Error('FEEDBACK_AI_GEMINI_RESPONSE_NOT_PARSED:'+compact(lastBody.slice(-1800),1800));
-    return validateSemanticFeedbackResult(parsed,row);
-  }finally{await session.close().catch(()=>{})}
-}
-function applySemanticFeedbackDecision(db,row,ai){
-  const stamp=now(),interpretation=JSON.stringify({...ai,interpreted_at:stamp,engine:'gemini-web-semantic'});
-  if(ai.decision==='render_retry'){
-    db.prepare(`UPDATE factory_items SET status='regen_wait',retryStrategy='reuse_prompt',reviewInterpretation=?,reviewInterpretationAt=?,providerRunId=NULL,flowResult=NULL,error='AI: creative package is correct; repeat only the render.',nextTry=0,runtimeAttemptCount=0,updatedAt=? WHERE id=?`).run(interpretation,stamp,stamp,row.id);
-  }else if(ai.decision==='prompt_revision'){
-    db.prepare(`UPDATE factory_items SET status='regen_wait',retryStrategy='revise_prompt',reviewInterpretation=?,reviewInterpretationAt=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,characterHandles=NULL,characterRoles=NULL,creativePackageHash=NULL,creativePackageId=NULL,title='',description='',providerRunId=NULL,flowResult=NULL,error='AI: preserve the episode intent and rebuild the prompt from the review feedback.',nextTry=0,runtimeAttemptCount=0,updatedAt=? WHERE id=?`).run(interpretation,stamp,stamp,row.id);
-  }else{
-    db.prepare(`UPDATE factory_items SET hook=?,story=?,status='regen_wait',retryStrategy='new_story',reviewInterpretation=?,reviewInterpretationAt=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,characterHandles=NULL,characterRoles=NULL,creativePackageHash=NULL,creativePackageId=NULL,title='',description='',providerRunId=NULL,flowResult=NULL,error='AI: narrative/concept feedback replaced the creative package with a new episode intent.',nextTry=0,runtimeAttemptCount=0,updatedAt=? WHERE id=?`).run(ai.new_hook,ai.new_story,interpretation,stamp,stamp,row.id);
-  }
-  const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row;
-  setLifecycle(db,fresh,'RETRY_REQUESTED',{generation_id:null,generation_started_at:null,submit_boundary_at:null,baseline:[],baseline_inventory:null,last_error:null,retry_at:null,reviewer_retry:true,retry_token:String(fresh.reviewRetryToken||''),review_feedback:String(fresh.reviewFeedback||'').slice(0,1200),retry_strategy:String(fresh.retryStrategy||''),ai_interpretation:interpretation,retry_requested_at:stamp,automatic_submit_forbidden:false});
-  return fresh;
-}
-async function interpretPendingReviewFeedback(db){
-  const row=db.prepare("SELECT * FROM factory_items WHERE status='feedback_wait' AND retryStrategy='ai_pending' AND reviewFeedback IS NOT NULL AND nextTry<=? ORDER BY updatedAt,episode LIMIT 1").get(Date.now());
-  if(!row)return'none';
-  publish('FEEDBACK_AI_INTERPRET_START',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,message:'Semantic AI is interpreting the complete REDO feedback and show context before any re-render is allowed.'});
-  try{
-    const ai=await semanticFeedbackInterpretation(db,row);
-    publish('FEEDBACK_AI_RESULT',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,decision:ai.decision,reason:ai.reason,new_hook:ai.new_hook||null,new_information:ai.new_information||null});
-    applySemanticFeedbackDecision(db,row,ai);
-    return'ready';
-  }catch(err){
-    const attempts=Number(row.runtimeAttemptCount||0)+1,retryAt=Date.now()+Math.min(15*60*1000,60000*Math.max(1,attempts));
-    db.prepare("UPDATE factory_items SET runtimeAttemptCount=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,'Semantic AI interpretation pending: '+compact(err?.message||err,500),retryAt,now(),row.id);
     publish('FEEDBACK_AI_INTERPRET_RETRY',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,retry_at:new Date(retryAt).toISOString(),message:compact(err?.message||err,500)});
     return'retry';
   }
@@ -3577,8 +3445,6 @@ async function runProvider(){
     const migrated=await migrateProfileOnce(db);if(!migrated)return;
     const goldenRecovery=await recoverGoldenRunIfRequested(db);
     if(goldenRecovery.needed&&!goldenRecovery.done)return;
-    const feedbackState=await interpretPendingReviewFeedback(db);
-    if(feedbackState!=='none')return;
     const feedbackState=await interpretPendingReviewFeedback(db);if(feedbackState==='retry')return;
     const used=effectiveDailyCount(db);row=productionCandidate(db);
     if(row&&String(row.status)==='generating'){publish('RECOVERY_PICKED',{episode:'E'+row.episode,job_id:row.id,state:String(lifecycle(db,row)?.state||''),used_today:used});await processRow(db,row);return}
