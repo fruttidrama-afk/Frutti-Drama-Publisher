@@ -21,6 +21,8 @@
     "mp4_validation": true,
     "review_ready_gate": true,
     "final_metadata_before_review": true,
-    "synthetic_media_disclosure": true
+    "synthetic_media_disclosure": true,
+    "semantic_redo_interpretation": true,
+    "post_submit_timeout_resubmit": false
   }
 }
