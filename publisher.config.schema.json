@@ -377,7 +377,8 @@
     "publication": {
       "type": "object",
       "required": [
-        "providers"
+        "providers",
+        "daily_publication_target"
       ],
       "properties": {
         "allowed_providers": {
