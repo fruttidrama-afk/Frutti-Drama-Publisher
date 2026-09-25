@@ -66,6 +66,8 @@ for(const [token,label] of [
   ['flow:transientCooldownUntil','provider-wide no-charge cooldown'],
   ["'flow:noChargeStreak:provider'",'provider-wide no-charge streak persistence'],
   ['FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIRED','legacy successful-render backoff repair'],
+  ['FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIRED_V2','post-success provider streak repair v2'],
+  ['flow:legacyNoChargeStreakMigratedV2','legacy streak resurrection guard'],
   ["status IN ('review','completed')",'successful retained render daily accounting'],
   ["if(providerCooldown>Date.now())return null",'provider cooldown submit gate']
 ]) has(provider,token,label);
@@ -106,6 +108,7 @@ has(server,'provider_wide_unusual_activity_backoff:true','provider-wide unusual-
 has(server,'monotonic_provider_cooldown:true','monotonic provider cooldown health invariant');
 has(server,'successful_render_resets_provider_backoff:true','successful render resets provider backoff');
 has(server,'successful_redos_count_toward_daily_target:true','successful REDO renders count toward daily target');
+has(server,'legacy_streak_resurrection_guard:true','legacy streak resurrection guard');
 has(server,'show_specific_repairs_isolated:true','show-specific repair isolation health invariant');
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
