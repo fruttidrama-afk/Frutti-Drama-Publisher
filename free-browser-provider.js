@@ -191,7 +191,12 @@ function approvedPublicationCount(db,day=artDay()){
     const rows=db.prepare("SELECT p.createdAt,p.status,f.flowResult,f.lastProgressAt,f.updatedAt FROM publication_items p JOIN factory_items f ON f.id=p.itemId WHERE p.status NOT IN ('cancelled','deleted')").all();
     for(const row of rows){
       let flow={};try{flow=json(row.flowResult,{})||{}}catch{}
-      if(dayFromCandidates(flow?.generation_started_at,row.lastProgressAt,row.updatedAt,row.createdAt)===day)count++;
+      // Approval/publication creation is hard evidence that this retained video
+      // exists. Prefer today's publication timestamp before legacy factory
+      // timestamps, which may predate a reset/recovery and previously caused a
+      // false 2/3 count followed by an unwanted fourth generation.
+      if(dayFromCandidates(row.createdAt)===day){count++;continue}
+      if(dayFromCandidates(flow?.generation_started_at,row.lastProgressAt,row.updatedAt)===day)count++;
     }
   }catch{}
   return count;
@@ -310,7 +315,7 @@ function normalizeUnconfirmedPreGenerationRows(db){
         const resetKey='operator:force-reset-invalid-review:'+episode+':'+forcedReviewToken;
         if(meta(db,resetKey,'')==='done')continue;
         const bad=db.prepare("SELECT * FROM factory_items WHERE episode=? LIMIT 1").get(episode);
-        if(bad&&String(bad.status||'')==='review'){
+        if(bad&&['review','generating'].includes(String(bad.status||''))){
           try{if(bad.videoPath&&fs.existsSync(bad.videoPath))fs.unlinkSync(bad.videoPath)}catch{}
           db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Invalid review reset: no episode-specific Flow generation was proven.',updatedAt=? WHERE itemId=?").run(now(),bad.id);
           db.prepare(`UPDATE factory_items SET status='draft',videoPath=NULL,remoteUrl=NULL,stockId=NULL,providerRunId=NULL,flowResult=NULL,
@@ -320,7 +325,7 @@ function normalizeUnconfirmedPreGenerationRows(db){
             reviewFeedback=NULL,retryStrategy=NULL,reviewRetryToken=NULL,reviewRetrySubmittedToken=NULL,
             title='',description='',error=NULL,nextTry=0,updatedAt=? WHERE id=?`).run(now(),now(),bad.id);
           setLifecycle(db,bad,'FORCED_INVALID_REVIEW_RESET',{episode,reconciled_at:now(),evidence:'Operator verified this review card reused pre-existing/manual Flow media and no new episode render existed.',automatic_submit_forbidden:false});
-          publish('INVALID_REVIEW_RESET',{episode:'E'+episode,job_id:bad.id,message:'Invalid reused review media removed; episode returned to draft for one clean generation.'});
+          publish('INVALID_REVIEW_RESET',{episode:'E'+episode,job_id:bad.id,message:'Invalid or excess generation cleared; episode returned to draft without counting or retrieving the orphan Flow output.'});
         }
         setMeta(db,resetKey,'done');
       }
