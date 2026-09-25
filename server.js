@@ -931,6 +931,59 @@ app.get('/api/status',(req,res)=>{
     onboarding:{publication:publicationOk&&Boolean(selected),youtube:selected==='youtube'&&youtubeConnected,facebook:selected==='facebook'&&facebookOk,flow:flowConnected,bible:bibleConfigured,ready}
   });
 });
+function scheduleParts(date,tz){
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(date);
+  return Object.fromEntries(parts.filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
+}
+function scheduleDayKey(date,tz){const p=scheduleParts(date,tz);return p.year+'-'+p.month+'-'+p.day}
+function scheduleAddDay(day,n=1){const d=new Date(day+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
+function scheduleLocalDate(day,time,tz){
+  const [y,m,d]=day.split('-').map(Number),[hh,mm]=time.split(':').map(Number);
+  const target=Date.UTC(y,m-1,d,hh,mm,0);let guess=target;
+  for(let i=0;i<4;i++){
+    const p=scheduleParts(new Date(guess),tz);
+    const seen=Date.UTC(Number(p.year),Number(p.month)-1,Number(p.day),Number(p.hour),Number(p.minute),Number(p.second));
+    const diff=target-seen;if(Math.abs(diff)<1000)break;guess+=diff;
+  }
+  return new Date(guess);
+}
+function reschedulePendingPublications(){
+  const time=String(CONFIG.schedule?.posting_times?.[0]||'19:00');
+  const tz=String(CONFIG.schedule?.timezone||CONFIG.identity?.timezone||'UTC');
+  const rows=db.prepare("SELECT id,provider,videoId,status FROM publication_items WHERE status NOT IN ('published','cancelled','deleted') AND videoId IS NULL ORDER BY episode,createdAt").all();
+  let day=scheduleDayKey(new Date(),tz),cursor=null,changed=0;
+  for(const row of rows){
+    let next;
+    while(true){
+      const d=scheduleLocalDate(day,time,tz);
+      if(d.getTime()>Date.now()+5*60*1000 && (!cursor||d.getTime()>cursor.getTime())){next=d;break}
+      day=scheduleAddDay(day,1);
+    }
+    const provider=String(row.provider||CONFIG.publication?.selected_provider||'youtube');
+    const lead=provider==='facebook'?0:Math.max(0,Number(CONFIG.schedule?.upload_lead_minutes||0))*60000;
+    db.prepare("UPDATE publication_items SET scheduledAt=?,uploadAt=?,updatedAt=? WHERE id=?")
+      .run(next.toISOString(),new Date(next.getTime()-lead).toISOString(),now(),row.id);
+    cursor=next;day=scheduleAddDay(day,1);changed++;
+  }
+  return changed;
+}
+app.get('/api/schedule',(req,res)=>res.json({
+  posting_time:String(CONFIG.schedule?.posting_times?.[0]||'19:00'),
+  posting_times:CONFIG.schedule?.posting_times||['19:00'],
+  timezone:String(CONFIG.schedule?.timezone||CONFIG.identity?.timezone||'UTC')
+}));
+app.post('/api/schedule',(req,res)=>{
+  const time=String(req.body?.posting_time||'').trim();
+  if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time))return res.status(400).json({error:'Use a valid 24-hour time, for example 19:00.'});
+  CONFIG.schedule={...(CONFIG.schedule||{}),posting_times:[time]};
+  try{
+    fs.writeFileSync(path.join(DATA_DIR,'publisher-config.json'),JSON.stringify(CONFIG,null,2),{mode:0o600});
+    const rescheduled=reschedulePendingPublications();
+    return res.json({ok:true,posting_time:time,timezone:CONFIG.schedule.timezone||CONFIG.identity?.timezone||'UTC',rescheduled});
+  }catch(e){
+    return res.status(500).json({error:'Could not save publication time: '+String(e?.message||e)});
+  }
+});
 app.get('/api/show-bible',(req,res)=>res.json({creative_bible:String(CONFIG.content.creative_bible||'')}));
 app.post('/api/show-bible',(req,res)=>{const bible=String(req.body?.creative_bible||'').trim().slice(0,80000);if(bible.length<20)return res.status(400).json({error:'The Show Bible needs at least 20 characters.'});CONFIG.content.creative_bible=bible;try{fs.writeFileSync(path.join(DATA_DIR,'publisher-config.json'),JSON.stringify(CONFIG,null,2),{mode:0o600});ensureBacklog(db)}catch(e){return res.status(500).json({error:'Could not save/rematerialize Show Bible packages: '+e.message})}res.json({ok:true,length:bible.length,prompts_rematerialized:true})});
 app.get('/api/config/export',(req,res)=>{const c=structuredClone(CONFIG);res.set('Content-Disposition','attachment; filename="publisher-config.json"');res.type('json').send(JSON.stringify(c,null,2))});
