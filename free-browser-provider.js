@@ -2975,23 +2975,29 @@ async function downloadResult(page,rendered,localPath){
   let attempt=await immediateDownloadChoice(page,localPath,{preferWanted:false});
   if(attempt.ok)return{method:attempt.method};
   // Flow can remount/close the editor between correlation and the actual
-  // download click. Re-open the exact post-baseline video tile we correlated,
-  // then retry the native download menu once without submitting anything new.
-  if(Number.isInteger(Number(rendered?.index))){
-    await page.keyboard.press('Escape').catch(()=>{});
-    await sleep(500);
+  // download click. Re-open by VERIFIED ASSET ID, never by a stale positional
+  // index. DOM order can change while Flow virtualizes the project grid.
+  if(rendered?.asset_id||rendered?.assetId){
+    await page.keyboard.press('Escape').catch(()=>{});await sleep(500);
+    const wantedId=String(rendered.asset_id||rendered.assetId);
+    const inv=await captureFlowInventory(page);
+    const descriptor=(inv.ordered_video_assets||[]).find(x=>String(x?.asset_id||'')===wantedId);
+    if(descriptor){
+      const reopened=await openVerifiedFlowAsset(page,descriptor,{signal:'download-reopen-asset-id-verified'});
+      if(reopened?.ready){
+        attempt=await immediateDownloadChoice(page,localPath,{preferWanted:false});
+        if(attempt.ok)return{method:attempt.method+' after asset-id verified reopen'};
+      }
+    }
+  }else if(Number.isInteger(Number(rendered?.index))){
+    // Legacy fallback only for rows created before asset identities existed.
+    await page.keyboard.press('Escape').catch(()=>{});await sleep(500);
     const tiles=page.locator('flow-grid-tile-container').filter({has:page.locator('flow-video-tile,video')});
     const idx=Number(rendered.index),count=await tiles.count().catch(()=>0);
     if(idx>=0&&idx<count){
-      const tile=tiles.nth(idx);
-      await tile.scrollIntoViewIfNeeded().catch(()=>{});
-      await tile.hover().catch(()=>{});
-      const footer=tile.locator('flow-tile-hover-footer').first();
-      if(await footer.count().catch(()=>0)&&await footer.isVisible().catch(()=>false))await footer.click({force:true,timeout:5000}).catch(()=>{});
-      else await tile.click({force:true,timeout:5000}).catch(()=>{});
-      await sleep(1200);
+      const tile=tiles.nth(idx);await tile.scrollIntoViewIfNeeded().catch(()=>{});await tile.click({force:true,timeout:5000}).catch(()=>{});await sleep(1200);
       attempt=await immediateDownloadChoice(page,localPath,{preferWanted:false});
-      if(attempt.ok)return{method:attempt.method+' after tile reopen'};
+      if(attempt.ok)return{method:attempt.method+' after legacy positional reopen'};
     }
   }
   throw new Error('UNIQUE_FRESH_TILE_DOWNLOAD_FAILED:'+String(attempt.reason||'unknown'));
