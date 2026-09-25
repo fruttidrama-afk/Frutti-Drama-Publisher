@@ -127,3 +127,4 @@ fix=unusual-activity-backoff-30m-1h-2h-4h-8h-24h
 fix=provider-wide-monotonic-unusual-activity-backoff
 2026-09-24T12:38:00-03:00 extra-generation-control
 fix=daily-counter-and-success-resets-flow-backoff
+fix=clear-legacy-flow-streaks-after-success-v2
