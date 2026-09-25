@@ -55,6 +55,7 @@ Publisher Factory does not mark a Railway deployment ready unless `/factory/heal
 - Flow recovery accepts only a provably post-submit result: a fresh video src, the single newest tile created in the same submit session, or an episode-correlated non-baseline tile; ambiguous old media is never guessed;
 - Earth in 10 runs a catalog-wide uniqueness gate across draft, Review, stock, queued, uploaded and published episode metadata; the autonomous location bank never cycles back to an already-used landscape and stops rather than repeat;
 - YouTube is publication-only, never stock storage: after approval, videos stay in private cloud storage; on the publication day they upload to YouTube as plain PRIVATE at 12:30 ART with no publishAt, then at 19:00 ART the runtime explicitly edits privacy PRIVATE → PUBLIC. No upload occurs immediately after approval and native YouTube scheduling is forbidden;
+- when a stock item loses its safe media copy, it enters RESCATE REQUERIDO; opening that video exposes a contextual “Subir el video esperado” control. The uploaded MP4 is validated, saved to private cloud, linked to that exact publication item, and returned to Stock without a new Flow generation;
 - show-specific forensic repair code absent from generic Publishers;
 - strict serial gate enabled.
 
