@@ -33,3 +33,13 @@ Canonical recovery rule: UNCERTAINTY → RECONCILE; NEVER BLINDLY RESUBMIT.
 **Permanent rule:** recovery is identity-first. Capture stable tile/media identifiers before selection, diff the post-submit grid against the baseline as a multiset, reject any `assetId` already present in `flow_recovered_assets`, re-read the same tile identity immediately before click, and persist the selected `flow_asset_id` with the Review item. After download, reject any SHA-256 already bound to another episode or listed in `flow_rejected_media_hashes`. A targeted recovery token is retrieval-only and must never fall through to Generate.
 
 **Recovery of an already-generated correct render:** keep generation locked; select the unique unused Flow asset that matches the episode terms and the submit baseline, download that existing asset, validate it, and replace the wrong Review media. Never regenerate merely because recovery was wrong.
+
+## APPROVAL_ENOSPC_SAME_VOLUME_COPY
+
+**Symptom:** pressing APPROVE fails with `ENOSPC: no space left on device, copyfile '<review.mp4>' -> '<publication.mp4>'`.
+
+**Root cause:** the old approval path duplicated the entire validated Review MP4 on the same persistent `/data` volume before deleting the Review copy. This required temporary free space equal to another full video and could fail even though the original approved media was already durable.
+
+**Permanent rule:** approval uses a zero-copy ownership handoff. The publication row points to the exact existing Review MP4 path and records its current size; after that row is durable, the factory row clears its own `videoPath`. There is only one local copy. Publication owns and deletes that file later when the remote platform has durably accepted/published it or the publication is explicitly purged.
+
+**Recovery:** keep the Review item and original MP4 intact; do not regenerate and do not redownload. Deploy the zero-copy approval path, reclaim only recreatable cache data if needed, and retry the explicit approval.
