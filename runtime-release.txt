@@ -134,3 +134,4 @@ fix=db-aware-earth-backlog-uniqueness-20260925
 fix=earth-uniqueness-ignore-show-bible-prompt-20260925
 fix=no-youtube-private-stock-cloud-until-release-20260925
 fix=hold-legacy-missing-youtube-until-cloud-backup-20260925
+fix=youtube-1230-private-1900-public-no-publishat-20260925
