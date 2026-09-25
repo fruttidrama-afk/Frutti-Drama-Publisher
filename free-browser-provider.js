@@ -29,6 +29,8 @@ const GOLDEN_RECOVERY_TOKEN=String(process.env.PUBLISHER_RECOVER_GOLDEN_RUN||'')
 const EXPECTED_FLOW_PROJECT_NAME=String(process.env.PUBLISHER_EXPECTED_FLOW_PROJECT_NAME||'').trim();
 const GOLDEN_RECOVERY_EPISODE=Math.max(1,Number(process.env.PUBLISHER_RECOVERY_TARGET_EPISODE||1));
 const GOLDEN_RECOVERY_TERMS=String(process.env.PUBLISHER_RECOVERY_PROMPT_TERMS||'').split('|').map(x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()).filter(Boolean);
+const GOLDEN_RECOVERY_ALLOW_NEWEST_UNUSED=String(process.env.PUBLISHER_RECOVERY_ALLOW_NEWEST_UNUSED||'false').toLowerCase()==='true';
+const GOLDEN_RECOVERY_SEARCH_ALL_PROJECTS=String(process.env.PUBLISHER_RECOVERY_SEARCH_ALL_PROJECTS||'false').toLowerCase()==='true';
 
 const BOOTSTRAP_LOCK=path.join(FACTORY_DIR,'flow-auth-bootstrap.active.json');
 const STATUS_FILE=path.resolve(process.cwd(),'public','free-browser-status.json');
