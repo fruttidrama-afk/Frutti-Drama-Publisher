@@ -741,6 +741,55 @@ setTimeout(()=>{try{repairPendingPublicationMetadata()}catch(e){console.error('[
 app.get('/factory/cards',(req,res)=>res.json({cards:db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode LIMIT 50").all().map(card)}));
 app.get('/factory/video/:id',async(req,res)=>{try{const r=db.prepare("SELECT videoPath,remoteUrl,status FROM factory_items WHERE id=?").get(req.params.id);if(!r||r.status!=='review')return res.sendStatus(404);if(r.videoPath&&fs.existsSync(r.videoPath))return stream(req,res,r.videoPath);if(isReviewStorageUri(r.remoteUrl)){const url=await signedReviewUrl(r.remoteUrl,3600);return res.redirect(302,url)}return res.sendStatus(404)}catch(e){res.status(502).json({error:'Review video storage unavailable.'})}});
 app.post('/factory/:id/approve',(req,res)=>{try{let r=db.prepare('SELECT * FROM factory_items WHERE id=?').get(req.params.id);if(!r)return res.sendStatus(404);if(r.status!=='review')return res.status(409).json({error:'Already processed.'});r=ensureCopy(r);const item=publication.enqueue(r);if(r.videoPath)try{fs.rmSync(r.videoPath,{force:true})}catch{};db.prepare("UPDATE factory_items SET status='queued',stockId=?,videoPath=NULL,remoteUrl=NULL,error=NULL,updatedAt=? WHERE id=?").run(item.id,now(),r.id);ensureBacklog(db);res.json({ok:true,publication:item})}catch(e){res.status(400).json({error:e.message})}});
+function validateImportedMp4(filePath){
+  const st=fs.statSync(filePath);
+  if(st.size<100000)throw new Error('El archivo es demasiado pequeño para ser un MP4 válido.');
+  const head=fs.readFileSync(filePath).subarray(0,256);
+  if(!head.includes(Buffer.from('ftyp')))throw new Error('El archivo no parece ser un MP4 válido.');
+  const probe=spawnSync('ffprobe',['-v','error','-show_entries','format=duration:stream=codec_type,width,height','-of','json',filePath],{encoding:'utf8',timeout:30000});
+  if(probe.status!==0)throw new Error('No se pudo validar el video.');
+  let parsed={};try{parsed=JSON.parse(String(probe.stdout||'{}'))||{}}catch{}
+  const stream=(parsed.streams||[]).find(x=>x.codec_type==='video');
+  if(!stream)throw new Error('El MP4 no contiene una pista de video válida.');
+  const duration=Number(parsed?.format?.duration||0);
+  if(duration<4||duration>30)throw new Error('El video importado debe ser un clip corto válido.');
+  return{size:st.size,duration,width:Number(stream.width||0),height:Number(stream.height||0)};
+}
+app.post('/factory/import-stock/:episode',express.raw({type:['video/mp4','application/octet-stream'],limit:'100mb'}),(req,res)=>{
+  let tmp='';
+  try{
+    const episode=Number(req.params.episode);
+    if(!Number.isInteger(episode)||episode<1)return res.status(400).json({error:'Episodio inválido.'});
+    if(!Buffer.isBuffer(req.body)||req.body.length<100000)return res.status(400).json({error:'Seleccioná un archivo MP4 válido.'});
+    let row=db.prepare('SELECT * FROM factory_items WHERE episode=? ORDER BY season DESC LIMIT 1').get(episode);
+    if(!row)return res.status(404).json({error:'No existe ese episodio en el Publisher.'});
+    const existing=db.prepare("SELECT id,status FROM publication_items WHERE itemId=? AND status NOT IN ('cancelled','deleted') LIMIT 1").get(row.id);
+    if(existing)return res.status(409).json({error:'Ese episodio ya está en Publishing.'});
+
+    fs.mkdirSync(path.join(DIR,'manual-imports'),{recursive:true,mode:0o700});
+    tmp=path.join(DIR,'manual-imports','episode-'+episode+'-'+Date.now()+'.mp4');
+    fs.writeFileSync(tmp,req.body,{mode:0o600});
+    const valid=validateImportedMp4(tmp);
+    const digest=createHash('sha256').update(req.body).digest('hex');
+
+    try{if(row.videoPath&&row.videoPath!==tmp&&fs.existsSync(row.videoPath))fs.rmSync(row.videoPath,{force:true})}catch{}
+    row=materializeCreativePackage(db,row,{force:false}).row;
+    db.prepare(`UPDATE factory_items SET status='review',videoPath=?,remoteUrl=NULL,stockId=NULL,providerRunId=NULL,
+      flowResult=?,reviewContentHash=?,error=NULL,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?`)
+      .run(tmp,JSON.stringify({manual_stock_import:true,operator_selected_existing_flow_video:true,validated_ftyp:true,content_hash:digest,size:valid.size,duration:valid.duration,width:valid.width,height:valid.height}),digest,now(),now(),row.id);
+    row=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);
+    row=ensureCopy(row);
+    const item=publication.enqueue(row);
+    db.prepare("UPDATE factory_items SET status='queued',stockId=?,videoPath=NULL,remoteUrl=NULL,error=NULL,updatedAt=? WHERE id=?").run(item.id,now(),row.id);
+    try{if(fs.existsSync(tmp))fs.rmSync(tmp,{force:true})}catch{}
+    tmp='';
+    ensureBacklog(db);
+    res.json({ok:true,episode,title:item.title,description:item.description,scheduledAt:item.scheduledAt,publication:item});
+  }catch(e){
+    try{if(tmp&&fs.existsSync(tmp))fs.rmSync(tmp,{force:true})}catch{}
+    res.status(400).json({error:String(e?.message||e)});
+  }
+});
 app.post('/factory/:id/reject',async(req,res)=>{
  let r=db.prepare('SELECT * FROM factory_items WHERE id=?').get(req.params.id);
  if(!r)return res.sendStatus(404);
