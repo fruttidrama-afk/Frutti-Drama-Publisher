@@ -915,11 +915,10 @@ async function configureFlow(page){
 
   let summary=label;
   try{summary=compact(await(await settingsButton(page)).innerText(),340)||summary}catch{}
-  const body=compact(await getBody(page),5000);
-  const combined=summary+' '+body;
-  if(!/video/i.test(combined)||!/(?:9\s*:\s*16|9_16|crop_9_16)/i.test(combined)||!(/\bx1\b/i.test(combined)||/\bx\s*1\b/i.test(combined))){
-    throw new Error('FLOW_SETTINGS_NOT_CONFIRMED:'+compact(summary||body,700));
-  }
+  // Do not re-infer the selected values after closing Flow's settings sheet.
+  // The current UI collapses to an icon-only "tune" button, so the selected
+  // values disappear from accessible text. The hard gates are the successful
+  // checked clicks above (Video, 9:16, Omni Flash, x1).
   const applied={label:summary||'settings-applied',mode:'Video',ratio:'9:16',model:'Omni 1.1 Flash',resolution:resolutionApplied?'720p':'model-default',duration:durationApplied?'10s':'prompt/model-default',count:'x1',ingredients:false};
   publish('FLOW_SETTINGS_APPLIED',{message:JSON.stringify(applied)});
   return applied;
