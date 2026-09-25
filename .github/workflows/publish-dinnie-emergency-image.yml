@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: "52398ad2b3a948659ea33af01e3c7077f7783974"
+          ref: "ae58ff6d31a67840fa298aa1f7a3b665bb0226b8"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -36,4 +36,4 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/fruttidrama-afk/Frutti-Drama-Publisher
             org.opencontainers.image.description=Dinnie emergency publisher runtime
-            org.opencontainers.image.revision=52398ad2b3a948659ea33af01e3c7077f7783974
+            org.opencontainers.image.revision=ae58ff6d31a67840fa298aa1f7a3b665bb0226b8
