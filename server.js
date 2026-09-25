@@ -1038,9 +1038,13 @@ app.get('/api/show-bible',(req,res)=>res.json({creative_bible:String(CONFIG.cont
 app.post('/api/show-bible',(req,res)=>{const bible=String(req.body?.creative_bible||'').trim().slice(0,80000);if(bible.length<20)return res.status(400).json({error:'The Show Bible needs at least 20 characters.'});CONFIG.content.creative_bible=bible;try{fs.writeFileSync(path.join(DATA_DIR,'publisher-config.json'),JSON.stringify(CONFIG,null,2),{mode:0o600});ensureBacklog(db)}catch(e){return res.status(500).json({error:'Could not save/rematerialize Show Bible packages: '+e.message})}res.json({ok:true,length:bible.length,prompts_rematerialized:true})});
 app.get('/api/config/export',(req,res)=>{const c=structuredClone(CONFIG);res.set('Content-Disposition','attachment; filename="publisher-config.json"');res.type('json').send(JSON.stringify(c,null,2))});
 
-app.get('/security',(req,res)=>res.sendFile('security.html',{root:'public'}));
-app.use(express.static('public'));
-app.get('/',(req,res)=>res.sendFile('index.html',{root:'public'}));
+app.get('/security',(req,res)=>res.sendFile('security.html',{root:'public',headers:{'Cache-Control':'no-store, max-age=0'}}));
+app.use(express.static('public',{
+  setHeaders(res,filePath){
+    if(/\.html$/i.test(filePath))res.setHeader('Cache-Control','no-store, max-age=0');
+  }
+}));
+app.get('/',(req,res)=>res.sendFile('index.html',{root:'public',headers:{'Cache-Control':'no-store, max-age=0'}}));
 
 setInterval(()=>{try{activateReadyAutomation()}catch{}},30000).unref?.();
 app.listen(PORT,'0.0.0.0',()=>{console.log('Publisher Runtime v1 listening',PORT);setTimeout(()=>activateReadyAutomation(),1400).unref?.()});
