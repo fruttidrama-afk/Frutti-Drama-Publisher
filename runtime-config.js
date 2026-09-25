@@ -134,14 +134,14 @@ export function loadConfig(){
           ?[...new Set(schedule.posting_times.map(v=>clean(v,5)).filter(v=>/^\d{2}:\d{2}$/.test(v)))].slice(0,20)
           :['19:00'];
       })(),
-      upload_lead_minutes:0
+      upload_lead_minutes:390
     },
     publication:(()=>{
       const p=c.publication||{allowed_providers:['youtube','facebook'],selected_provider:null,providers:[]};
       return{
         ...p,
         providers:(Array.isArray(p.providers)?p.providers:[]).map(x=>String(x?.type||'').toLowerCase()==='youtube'
-          ?{...x,privacy_before_publish:'none',upload_policy:'direct-public-at-release',stock_storage:'private-cloud-storage'}
+          ?{...x,privacy_before_publish:'private',upload_policy:'private-at-12:30-public-at-19:00',stock_storage:'private-cloud-storage',upload_lead_minutes:390,native_publish_at:false}
           :x)
       };
     })(),
