@@ -29,7 +29,15 @@ must(manifest.master_sha256===hash,'manifest SOP hash mismatch');
 must(manifest.inheritance_required===true,'inheritance must be required');
 must(manifest.runtime_contract?.semantic_redo_interpretation===true,'semantic REDO interpretation must be inherited');
 must(manifest.runtime_contract?.post_submit_timeout_resubmit===false,'post-submit timeout resubmission must be forbidden');
+must(manifest.runtime_contract?.daily_flow_credit_refresh_gate===true,'daily Flow credit refresh gate must be inherited');
+must(manifest.runtime_contract?.calendar_midnight_opens_batch===false,'midnight must not open an automatic batch');
+must(manifest.runtime_contract?.daily_flow_credit_grant===50,'knowledge contract must encode 50 daily Flow credits');
+must(manifest.runtime_contract?.paid_monthly_credits_protected_until_daily_refresh===true,'paid monthly credits must be protected');
 must(machine.generation?.post_submit_timeout_action==='reconcile_only_no_resubmit','machine SOP timeout action');
+must(machine.generation?.daily_credit_grant===50,'machine SOP daily credit grant');
+must(machine.generation?.automatic_batch_credit_gate==='wait-for-daily-flow-refresh','machine SOP renewal-driven gate');
+must(machine.generation?.calendar_midnight_opens_batch===false,'machine SOP midnight rule');
+must(machine.generation?.paid_monthly_credits_protected===true,'machine SOP paid-credit protection');
 must(machine.review?.feedback_interpreter==='semantic-ai','machine SOP semantic feedback interpreter');
 must(Array.isArray(manifest.canonical_files)&&manifest.canonical_files.length>=7,'knowledge pack incomplete');
 
@@ -59,7 +67,12 @@ for(const [token,label] of [
   ['GEMINI_FEEDBACK_URL','semantic AI feedback surface'],
   ['FEEDBACK_AI_INTERPRET_START','semantic REDO interpreter'],
   ['creative_rewrite','semantic creative replacement decision'],
-  ['POST_SUBMIT_TIMEOUT_RECONCILIATION_ONLY','post-submit timeout reconciliation-only marker']
+  ['POST_SUBMIT_TIMEOUT_RECONCILIATION_ONLY','post-submit timeout reconciliation-only marker'],
+  ['DAILY_FLOW_GRANT_CREDITS','50-credit daily Flow grant'],
+  ['ensureDailyCreditCycle','daily credit-cycle scheduler gate'],
+  ['WAITING_DAILY_FLOW_CREDIT_REFRESH','daily refill waiting state'],
+  ['flow:dailyCreditBatchOpen','durable daily batch gate'],
+  ['daily-flow-credit-refresh','daily refill cycle-opening evidence']
 ]) has(provider,token,label);
 must(!provider.includes("await waitFlowReady(page,30000);\n  const editor=await promptEditor(page);"),'Flow composer must not be re-queried immediately after readiness');
 for(const [token,label] of [
@@ -153,6 +166,10 @@ has(server,'approval_before_external_storage:true','pre-approval external storag
 has(server,'reject_purges_external_artifacts:true','rejection purge safety flag');
 has(server,'semantic_ai_redo_interpretation:true','semantic AI REDO health invariant');
 has(server,'post_submit_timeout_never_resubmits:true','post-submit timeout no-resubmit health invariant');
+has(server,'daily_flow_credit_refresh_gate:true','daily Flow refill gate health invariant');
+has(server,'calendar_midnight_does_not_open_batch:true','midnight must not open automatic batch');
+has(server,'paid_monthly_credits_protected_until_daily_refresh:true','paid credits protected until daily refill');
+has(server,'credit_cycle:creditCycleHealth','credit-cycle health observability');
 has(server,"retryStrategy='ai_pending'",'REDO enters semantic AI pending state');
 has(server,'purgeRejected','reject endpoint purges any accidental publication artifacts');
 has(publication,'APPROVAL_GATE','publication enqueue requires explicit approval');
@@ -173,6 +190,11 @@ const schema=JSON.parse(read('publisher.config.schema.json'));
 must(schema.properties?.schedule?.properties?.generation_strategy?.const==='sequential','Publisher Factory must enforce sequential Flow generation');
 must(schema.properties?.automation?.properties?.exactly_once_submit?.const===true,'schema exactly-once invariant');
 must(schema.properties?.automation?.properties?.strict_serial_generation?.const===true,'schema strict serial invariant');
+must(schema.properties?.generation?.properties?.daily_credit_grant?.const===50,'schema daily Flow grant invariant');
+must(schema.properties?.generation?.properties?.automatic_batch_credit_gate?.const==='wait-for-daily-flow-refresh','schema renewal-driven batch gate invariant');
+must(schema.properties?.generation?.properties?.credit_refresh_poll_minutes?.default===5,'schema credit poll default');
+must(schema.properties?.generation?.properties?.credit_refresh_guard_hours?.default===20,'schema credit guard default');
+must(schema.properties?.generation?.properties?.credit_refresh_fallback_hours?.default===30,'schema credit fallback default');
 must(schema.properties?.knowledge?.properties?.flow_sop_version?.const==='FLOW-SOP-v1.0','schema SOP inheritance version');
 must(schema.properties?.review?.properties?.archive_provider?.const==='local-only','unapproved review media must stay local');
 must(schema.properties?.review?.properties?.external_storage_before_approval?.const===false,'external review storage before approval must be forbidden');
