@@ -118,6 +118,9 @@ has(publication,'APPROVAL_GATE','publication enqueue requires explicit approval'
 has(publication,'purgeRejected','rejected publication artifacts are purged');
 has(publication,'purgePrivateVideosByTitle','operator cleanup can delete legacy private orphan uploads');
 has(publication,'readReviewRange','approved publication may stream from private cloud storage');
+has(publication,'publishNowLikeManual','YouTube release must remain a direct PRIVATE to PUBLIC edit at release time');
+has(publication,"status:{privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}",'YouTube staging upload must remain plain PRIVATE with no publishAt');
+if(publication.includes("privacyStatus:'private',publishAt:item.scheduledAt"))throw new Error('Native YouTube publishAt scheduling must stay disabled');
 
 const schema=JSON.parse(read('publisher.config.schema.json'));
 must(schema.properties?.schedule?.properties?.generation_strategy?.const==='sequential','Publisher Factory must enforce sequential Flow generation');
