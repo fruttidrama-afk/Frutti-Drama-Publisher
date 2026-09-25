@@ -2092,8 +2092,28 @@ async function downloadResult(page,rendered,localPath){
   if(!rendered?.uiReady)throw new Error('DOWNLOAD_WITHOUT_UNIQUE_FRESH_EVIDENCE');
   // Recovery from a project tile prioritizes the already-rendered native file.
   // Do not start a fresh 1080p upscale job while the serial queue is blocked.
-  const attempt=await immediateDownloadChoice(page,localPath,{preferWanted:false});
+  let attempt=await immediateDownloadChoice(page,localPath,{preferWanted:false});
   if(attempt.ok)return{method:attempt.method};
+  // Flow can remount/close the editor between correlation and the actual
+  // download click. Re-open the exact post-baseline video tile we correlated,
+  // then retry the native download menu once without submitting anything new.
+  if(Number.isInteger(Number(rendered?.index))){
+    await page.keyboard.press('Escape').catch(()=>{});
+    await sleep(500);
+    const tiles=page.locator('flow-grid-tile-container').filter({has:page.locator('flow-video-tile,video')});
+    const idx=Number(rendered.index),count=await tiles.count().catch(()=>0);
+    if(idx>=0&&idx<count){
+      const tile=tiles.nth(idx);
+      await tile.scrollIntoViewIfNeeded().catch(()=>{});
+      await tile.hover().catch(()=>{});
+      const footer=tile.locator('flow-tile-hover-footer').first();
+      if(await footer.count().catch(()=>0)&&await footer.isVisible().catch(()=>false))await footer.click({force:true,timeout:5000}).catch(()=>{});
+      else await tile.click({force:true,timeout:5000}).catch(()=>{});
+      await sleep(1200);
+      attempt=await immediateDownloadChoice(page,localPath,{preferWanted:false});
+      if(attempt.ok)return{method:attempt.method+' after tile reopen'};
+    }
+  }
   throw new Error('UNIQUE_FRESH_TILE_DOWNLOAD_FAILED:'+String(attempt.reason||'unknown'));
 }
 function validateMp4(localPath){
@@ -2346,7 +2366,7 @@ async function retrieveExisting(page,row,cp,lc,db){setLifecycle(db,row,'RETRIEVI
   lastVideos=await currentVideos(page);rendered=firstFreshRendered(lastVideos,baseline);if(rendered)break;const text=await getBody(page);if(flowCreditFailure(text))throw new Error('FLOW_INSUFFICIENT_CREDITS');if(/failed to generate|generation failed|couldn't generate|no se pudo generar/i.test(text))throw new Error('FLOW_GENERATION_FAILED');const stillBusy=/generating|processing|rendering|creating video|generando|procesando|upscaling/i.test(text);if(baselineInventory){
   uiSignal=await openUniqueFreshInventoryResult(page,baselineInventory,{allowMultiple:true});
   if(Date.now()-lastHeartbeat<2500||!uiSignal?.ready)publish('RETRIEVAL_PROGRESS',{episode:'E'+row.episode,job_id:row.id,signal:uiSignal?.signal||'none',stillBusy,videos:lastVideos.length});
-  if(uiSignal?.ready){rendered={uiReady:true,signal:uiSignal.signal,baselineInventory};break;}
+  if(uiSignal?.ready){rendered={uiReady:true,signal:uiSignal.signal,baselineInventory,index:uiSignal.index,signature:uiSignal.signature};break;}
   const noFresh=/fresh-video-tile-occurrences:0/.test(String(uiSignal?.signal||''));
   if(!stillBusy&&lastVideos.length===0&&noFresh&&Date.now()-generationStartedMs>20*60*1000){if(!emptyEvidenceSince)emptyEvidenceSince=Date.now();if(Date.now()-emptyEvidenceSince>20000)throw new Error('FLOW_NO_RETAINED_RENDER_AFTER_20M');}else emptyEvidenceSince=0;
 }await sleep(2500);}if(!rendered)throw new Error(`RENDER_TIMEOUT:videos=${lastVideos.length}:ui=${uiSignal?.signal||'none'}`);const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);try{fs.unlinkSync(localPath);}catch{}const dl=await downloadResult(page,rendered,localPath),valid=validateMp4(localPath),flowResult={provider:PROVIDER,generation_id:lc?.generation_id||row.providerRunId||'',generation_started_at:lc?.generation_started_at||'',duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:now()};persistReviewMetadata(db,row,flowResult);await saveReviewAsset(db,row,localPath,flowResult);try{db.prepare(`UPDATE factory_generations SET status='review',updatedAt=?,error=NULL WHERE itemId=? AND runId=?`).run(now(),row.id,String(lc?.generation_id||row.providerRunId||''));}catch{}setLifecycle(db,row,'REVIEW_READY',{...lc,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,download_quality:flowResult.download_quality,retrieved_at:now()});setMeta(db,'flow:lastSuccessfulGenerationAt',lc?.generation_started_at||now());setMeta(db,'flow:lastSuccessfulMp4At',now());setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');try{fs.writeFileSync(path.join(FACTORY_DIR,'flow-browser-self-test.json'),JSON.stringify({at:now(),ok:true,stage:'real-production-review-ready',provider:PROVIDER,episode:`T${row.season}E${row.episode}`,mp4_valid:true,duration:valid.duration,width:valid.width,height:valid.height,codec:valid.codec},null,2),{mode:0o600});}catch{}publish('REVIEW_READY',{episode:`T${row.season}E${row.episode}`,job_id:row.id,generation_id:lc?.generation_id||row.providerRunId||'',size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`,factory_url:`/factory/video/${row.id}`});return true;}
