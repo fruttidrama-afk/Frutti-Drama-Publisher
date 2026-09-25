@@ -240,9 +240,15 @@ body.completed .shell{padding-top:28px}
       <div class="stock-view-box"><span>Estado</span><strong id="stockViewState">—</strong></div>
       <div class="stock-view-box"><span>Publicación</span><strong id="stockViewDate">—</strong></div>
       <div class="stock-view-box"><span>Resolución</span><strong id="stockViewResolution">—</strong></div>
-      <div class="stock-view-box"><span>YouTube</span><strong id="stockViewYoutube">—</strong></div>
+      <div class="stock-view-box"><span id="stockViewPlatformLabel">Plataforma</span><strong id="stockViewYoutube">—</strong></div>
     </div>
     <div class="stock-view-text"><span>Qué está pasando</span><div id="stockViewMessage">—</div></div>
+    <div class="stock-recovery" id="publicationActionPanel">
+      <div class="eyebrow">ACCIÓN REQUERIDA</div>
+      <h4 id="publicationActionTitle">Reconectar publicación</h4>
+      <p id="publicationActionText">La autorización del destino necesita renovarse.</p>
+      <div class="stock-recovery-actions"><a class="btn primary" id="publicationActionButton" href="/integrations/platform">RECONECTAR</a></div>
+    </div>
     <div class="stock-recovery" id="stockRecoveryPanel">
       <div class="eyebrow">RECUPERACIÓN MANUAL</div>
       <h4>Subir el video esperado</h4>
@@ -444,7 +450,7 @@ function resolutionText(st){
   return'SIN ACCIÓN PENDIENTE';
 }
 let stockRecoveryTarget=null;
-function closeStockView(){const m=$('#stockViewModal');m.classList.remove('open');m.setAttribute('aria-hidden','true');$('#stockViewMedia').innerHTML='';stockRecoveryTarget=null;const p=$('#stockRecoveryPanel');if(p)p.classList.remove('show');const f=$('#stockRecoveryFile');if(f)f.value=''}
+function closeStockView(){const m=$('#stockViewModal');m.classList.remove('open');m.setAttribute('aria-hidden','true');$('#stockViewMedia').innerHTML='';stockRecoveryTarget=null;const p=$('#stockRecoveryPanel');if(p)p.classList.remove('show');const a=$('#publicationActionPanel');if(a)a.classList.remove('show');const f=$('#stockRecoveryFile');if(f)f.value=''}
 function openStockView(x){
   const st=publicationUi(x),m=$('#stockViewModal'),media=$('#stockViewMedia');
   $('#stockViewEpisode').textContent='EPISODIO '+x.episode;
@@ -452,8 +458,18 @@ function openStockView(x){
   $('#stockViewState').textContent=st.label;
   $('#stockViewDate').textContent=fmt(x.scheduledAt);
   $('#stockViewResolution').textContent=resolutionText(st);
-  $('#stockViewYoutube').textContent=x.videoId||'Todavía no subido';
+  const provider=String(x.provider||'').toLowerCase();
+  $('#stockViewPlatformLabel').textContent=provider==='facebook'?'Facebook':provider==='youtube'?'YouTube':'Plataforma';
+  $('#stockViewYoutube').textContent=x.videoId||(provider==='facebook'?'Todavía no publicado':'Todavía no subido');
   $('#stockViewMessage').textContent=st.detail;
+  const actionPanel=$('#publicationActionPanel'),actionButton=$('#publicationActionButton');
+  if(actionPanel)actionPanel.classList.toggle('show',st.actionRequired);
+  if(actionButton){
+    actionButton.href=provider==='facebook'?'/integrations/facebook':provider==='youtube'?'/integrations/youtube':'/integrations/platform';
+    actionButton.textContent=provider==='facebook'?'RECONECTAR FACEBOOK':provider==='youtube'?'RECONECTAR YOUTUBE':'RECONECTAR PUBLICACIÓN';
+  }
+  if($('#publicationActionTitle'))$('#publicationActionTitle').textContent=provider==='facebook'?'Facebook necesita autorización':'Reconectar publicación';
+  if($('#publicationActionText'))$('#publicationActionText').textContent=st.detail;
   $('#stockViewCopyTitle').textContent=x.title||'—';
   $('#stockViewDescription').textContent=x.description||'—';
   stockRecoveryTarget=x;
