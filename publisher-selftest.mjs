@@ -90,7 +90,15 @@ for(const [token,label] of [
   ['FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIRED_V2','post-success provider streak repair v2'],
   ['flow:legacyNoChargeStreakMigratedV2','legacy streak resurrection guard'],
   ['openStrictSinglePostBaselineTile','strict single post-baseline tile recovery'],
-  ['same-session-exactly-one-newest-tile','same-session recovery proof'],
+  ['same-session-identity-verified-post-baseline-asset','same-session identity-verified recovery proof'],
+  ['flow_recovered_assets','recovered Flow asset registry'],
+  ['flow_rejected_media_hashes','wrong-media quarantine registry'],
+  ['FLOW_ASSET_ID_ALREADY_RECOVERED','reused Flow asset ID rejection'],
+  ['FLOW_REJECTED_MEDIA_REUSED','rejected content hash reuse rejection'],
+  ['openVerifiedFlowAsset','post-click Flow asset verifier'],
+  ['freshFlowAssetCandidates','fixed-grid asset multiset recovery'],
+  ['TARGETED_RECOVERY_REVIEW_READY','targeted existing-render recovery'],
+  ['generation_submit_forbidden:true','recovery-only no-submit marker'],
   ['FLOW_STRICT_RECOVERY_PROOF_REQUIRED','strict recovery proof gate'],
   ["status IN ('review','completed')",'successful retained render daily accounting'],
   ["if(providerCooldown>Date.now())return null",'provider cooldown submit gate']
@@ -149,6 +157,12 @@ has(server,'native_publish_at_disabled:true','native publishAt disabled');
 has(server,'youtube_upload_lead_minutes_390:true','390-minute YouTube upload lead');
 has(server,'manual_stock_recovery_upload:true','manual Stock recovery upload invariant');
 has(server,'recovery_upload_cloud_required:true','recovery upload must persist to cloud');
+has(server,'flow_asset_identity_gate:true','Flow asset identity gate');
+has(server,'recovered_asset_reuse_blocked:true','recovered Flow asset reuse blocked');
+has(server,'duplicate_content_hash_guard:true','duplicate content hash guard');
+has(server,'fixed_grid_multiset_recovery:true','fixed-grid multiset recovery');
+has(server,'post_click_asset_identity_verified:true','post-click asset identity verification');
+has(server,'recovery_token_never_submits:true','targeted recovery token can never submit');
 has(server,'show_specific_repairs_isolated:true','show-specific repair isolation health invariant');
 has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts');
 
