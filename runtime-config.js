@@ -149,9 +149,13 @@ export function loadConfig(){
       const p=c.publication||{allowed_providers:['youtube','facebook'],selected_provider:null,providers:[]};
       return{
         ...p,
-        providers:(Array.isArray(p.providers)?p.providers:[]).map(x=>String(x?.type||'').toLowerCase()==='youtube'
-          ?{...x,privacy_before_publish:'private',upload_policy:'private-at-12:30-public-at-19:00',stock_storage:'private-cloud-storage',upload_lead_minutes:390,native_publish_at:false,release_mode:'private_then_public_at_posting_time',use_publish_at:false,metadata_final_before_upload:true,preserve_private_lead_window:true}
-          :x)
+        ai_disclosure_required:true,
+        providers:(Array.isArray(p.providers)?p.providers:[]).map(x=>{
+          const type=String(x?.type||'').toLowerCase();
+          if(type==='youtube')return{...x,contains_synthetic_media:true,privacy_before_publish:'private',upload_policy:'private-at-12:30-public-at-19:00',stock_storage:'private-cloud-storage',upload_lead_minutes:390,native_publish_at:false,release_mode:'private_then_public_at_posting_time',use_publish_at:false,metadata_final_before_upload:true,preserve_private_lead_window:true};
+          if(type==='facebook')return{...x,contains_synthetic_media:true};
+          return{...x,contains_synthetic_media:true};
+        })
       };
     })(),
     security:c.security||{passkeys:true,recovery_pin:true,session_management:true}
