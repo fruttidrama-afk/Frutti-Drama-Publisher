@@ -281,7 +281,7 @@
           "const": "FLOW-SOP-v1.0"
         },
         "flow_sop_sha256": {
-          "const": "8172f4b415e516fb1ec211a338ef7872740d7931adfbc5ab31572344a5bc9162"
+          "const": "9e475a5f610cbbaa2940e1f1353e5316bea8cfd7febf7423b0ece603788c874c"
         },
         "inherit_flow_sop": {
           "const": true
@@ -642,7 +642,7 @@
           "const": "FLOW-SOP-v1.0"
         },
         "flow_sop_sha256": {
-          "const": "8172f4b415e516fb1ec211a338ef7872740d7931adfbc5ab31572344a5bc9162"
+          "const": "9e475a5f610cbbaa2940e1f1353e5316bea8cfd7febf7423b0ece603788c874c"
         },
         "inherit": {
           "const": true
