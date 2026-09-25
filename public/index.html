@@ -79,7 +79,7 @@ body.completed .shell{padding-top:28px}
 .stock-view-backdrop.open{display:flex}.stock-view-card{width:min(760px,100%);max-height:92dvh;overflow:auto;background:color-mix(in srgb,var(--surface) 94%,var(--navy));border:1px solid color-mix(in srgb,var(--gold) 38%,transparent);border-radius:26px;padding:18px;box-shadow:0 30px 100px rgba(0,0,0,.42)}
 .stock-view-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:14px}.stock-view-head h3{font-size:25px;margin:5px 0 0}.stock-view-media{display:flex;justify-content:center;min-height:220px;background:#05080a;border-radius:20px;overflow:hidden;border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);margin-bottom:14px}.stock-view-media video{display:block;width:100%;max-height:62dvh;aspect-ratio:9/16;object-fit:contain;background:#000}
 .stock-view-placeholder{min-height:280px;width:100%;display:grid;place-items:center;text-align:center;padding:30px;color:var(--muted);line-height:1.5}
-.stock-view-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.stock-view-box{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:15px;padding:12px;background:color-mix(in srgb,var(--surface) 80%,transparent)}.stock-view-box span,.stock-view-text span{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);font-weight:800;margin-bottom:5px}.stock-view-text{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:15px;padding:13px;margin-top:10px;background:color-mix(in srgb,var(--surface) 80%,transparent)}.stock-view-text div{white-space:pre-wrap;line-height:1.5;font-size:13px}
+.stock-view-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.stock-view-box{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:15px;padding:12px;background:color-mix(in srgb,var(--surface) 80%,transparent)}.stock-view-box span,.stock-view-text span{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);font-weight:800;margin-bottom:5px}.stock-view-text{border:1px solid color-mix(in srgb,var(--ink) 14%,transparent);border-radius:15px;padding:13px;margin-top:10px;background:color-mix(in srgb,var(--surface) 80%,transparent)}.stock-view-text div{white-space:pre-wrap;line-height:1.5;font-size:13px}.stock-recovery{display:none;margin-top:12px;padding:16px;border:1px solid color-mix(in srgb,#c8784a 38%,transparent);border-radius:16px;background:color-mix(in srgb,#c8784a 9%,var(--surface))}.stock-recovery.show{display:block}.stock-recovery h4{margin:3px 0 6px;font-size:18px;color:var(--ink)}.stock-recovery p{margin:0 0 12px;color:var(--muted);font-size:13px;line-height:1.45}.stock-recovery-actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}.stock-recovery-actions input[type=file]{min-height:44px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);padding:8px;min-width:0}@media(max-width:620px){.stock-recovery-actions{grid-template-columns:1fr}.stock-recovery-actions .btn{width:100%}}
 @media(max-width:720px){.video-state-card{grid-template-columns:60px 1fr}.video-state-card>.state-wrap{grid-column:2;justify-self:start}.video-state-ep{width:50px;height:50px}.stock-view-grid{grid-template-columns:1fr}.stock-view-card{padding:14px;border-radius:22px}}
 
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#111;color:#fff;padding:12px 16px;display:none;z-index:20}
@@ -242,6 +242,15 @@ body.completed .shell{padding-top:28px}
       <div class="stock-view-box"><span>YouTube</span><strong id="stockViewYoutube">—</strong></div>
     </div>
     <div class="stock-view-text"><span>Qué está pasando</span><div id="stockViewMessage">—</div></div>
+    <div class="stock-recovery" id="stockRecoveryPanel">
+      <div class="eyebrow">RECUPERACIÓN MANUAL</div>
+      <h4>Subir el video esperado</h4>
+      <p>Descargá de Google Flow el MP4 correcto para este episodio y subilo acá. El Publisher lo valida, lo guarda en cloud privado y devuelve el episodio a Stock sin generar un video nuevo.</p>
+      <div class="stock-recovery-actions">
+        <input id="stockRecoveryFile" type="file" accept="video/mp4,.mp4" aria-label="MP4 esperado">
+        <button class="btn primary" id="stockRecoveryUpload" type="button">SUBIR VIDEO ESPERADO</button>
+      </div>
+    </div>
     <div class="stock-view-text"><span>Título</span><div id="stockViewCopyTitle">—</div></div>
     <div class="stock-view-text"><span>Descripción</span><div id="stockViewDescription">—</div></div>
   </div>
@@ -433,7 +442,8 @@ function resolutionText(st){
   if(st.resolution==='automatic')return'SE RESUELVE SOLO';
   return'SIN ACCIÓN PENDIENTE';
 }
-function closeStockView(){const m=$('#stockViewModal');m.classList.remove('open');m.setAttribute('aria-hidden','true');$('#stockViewMedia').innerHTML=''}
+let stockRecoveryTarget=null;
+function closeStockView(){const m=$('#stockViewModal');m.classList.remove('open');m.setAttribute('aria-hidden','true');$('#stockViewMedia').innerHTML='';stockRecoveryTarget=null;const p=$('#stockRecoveryPanel');if(p)p.classList.remove('show');const f=$('#stockRecoveryFile');if(f)f.value=''}
 function openStockView(x){
   const st=publicationUi(x),m=$('#stockViewModal'),media=$('#stockViewMedia');
   $('#stockViewEpisode').textContent='EPISODIO '+x.episode;
@@ -445,6 +455,10 @@ function openStockView(x){
   $('#stockViewMessage').textContent=st.detail;
   $('#stockViewCopyTitle').textContent=x.title||'—';
   $('#stockViewDescription').textContent=x.description||'—';
+  stockRecoveryTarget=x;
+  const recoveryPanel=$('#stockRecoveryPanel'),recoveryFile=$('#stockRecoveryFile');
+  if(recoveryFile)recoveryFile.value='';
+  if(recoveryPanel)recoveryPanel.classList.toggle('show',String(x.status||'')==='backup_hold');
   media.innerHTML='';
   if(x.stockVideoUrl){
     const v=document.createElement('video');v.controls=true;v.playsInline=true;v.preload='metadata';v.src=x.stockVideoUrl;media.append(v);
@@ -462,6 +476,22 @@ function openStockView(x){
   m.classList.add('open');m.setAttribute('aria-hidden','false');
 }
 $('#stockViewClose').onclick=closeStockView;
+const stockRecoveryUpload=$('#stockRecoveryUpload');
+if(stockRecoveryUpload)stockRecoveryUpload.onclick=async()=>{
+  const target=stockRecoveryTarget,file=$('#stockRecoveryFile')?.files?.[0];
+  if(!target||String(target.status||'')!=='backup_hold'){toast('Este video ya no requiere recuperación');return}
+  if(!file){toast('Elegí el MP4 correcto de Google Flow');return}
+  stockRecoveryUpload.disabled=true;stockRecoveryUpload.textContent='SUBIENDO…';
+  try{
+    const r=await fetch('/publication/'+encodeURIComponent(target.id)+'/recover-video',{method:'POST',headers:{'Content-Type':'video/mp4'},body:file});
+    const out=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(out.error||('HTTP '+r.status));
+    toast('Episodio '+target.episode+' recuperado y guardado en cloud');
+    closeStockView();
+    await load();
+  }catch(e){toast(e.message)}
+  finally{stockRecoveryUpload.disabled=false;stockRecoveryUpload.textContent='SUBIR VIDEO ESPERADO'}
+};
 $('#stockViewModal').onclick=e=>{if(e.target===e.currentTarget)closeStockView()};
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#stockViewModal').classList.contains('open'))closeStockView()});
 function renderQueue(items){
