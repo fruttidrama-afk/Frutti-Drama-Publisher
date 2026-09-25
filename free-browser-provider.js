@@ -1562,17 +1562,31 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
   let currentInv=await captureFlowInventory(page);
   let body=(await getBody(page)).slice(0,14000);
 
-  const lateConsent=await findGenerationConsentAction(page).catch(()=>null);
-  if(lateConsent){
-    await trustedClick(lateConsent.el);
+  const lateAlways=page.getByText(/^(?:Always approve|Approve always|Aprobar siempre)$/i).last();
+  if(await lateAlways.count().catch(()=>0)&&await lateAlways.isVisible().catch(()=>false)){
+    await lateAlways.scrollIntoViewIfNeeded().catch(()=>{});
+    await trustedClick(lateAlways);
     publish('LATE_POINT_CONSENT_RECOVERED',{
       episode:'T'+row.season+'E'+row.episode,job_id:row.id,
-      label:compact(lateConsent.label,160),
-      message:'Delayed Flow generation consent accepted once; generation remains unconfirmed until a fresh video result appears.'
+      label:'Always approve',
+      message:'Latest pending Flow consent set to Always approve; older stale consent cards are not clicked.'
     });
     await sleep(900);
     currentInv=await captureFlowInventory(page);
     body=(await getBody(page)).slice(0,14000);
+  }else{
+    const lateConsent=await findGenerationConsentAction(page).catch(()=>null);
+    if(lateConsent){
+      await trustedClick(lateConsent.el);
+      publish('LATE_POINT_CONSENT_RECOVERED',{
+        episode:'T'+row.season+'E'+row.episode,job_id:row.id,
+        label:compact(lateConsent.label,160),
+        message:'Delayed Flow generation consent accepted once; generation remains unconfirmed until a fresh video result appears.'
+      });
+      await sleep(900);
+      currentInv=await captureFlowInventory(page);
+      body=(await getBody(page)).slice(0,14000);
+    }
   }
 
   const visibleBusy=currentInv.busy||/generating|processing|rendering|creating video|generando|procesando|initiating|starting generation/i.test(body)||/\bStop\b|\bDetener\b/i.test(body);
