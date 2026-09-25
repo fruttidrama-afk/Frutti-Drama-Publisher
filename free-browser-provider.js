@@ -2035,6 +2035,7 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
     });
   }
 
+  // POST_SUBMIT_TIMEOUT_RECONCILIATION_ONLY
   // SOP invariant: elapsed time plus an unchanged project grid is NOT positive
   // proof that Google Flow did not accept the submit. Once the exactly-once
   // boundary has been crossed, this job remains read-only recovery/reconciliation
