@@ -145,7 +145,10 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
   function enqueue(row){
     if(String(row?.status||'')!=='review')throw new Error('APPROVAL_GATE: only an explicit human-approved review item may enter Facebook publication.');
     const existing=db.prepare('SELECT * FROM publication_items WHERE itemId=?').get(row.id);
-    if(existing)return publicItem(existing);
+    if(existing){
+      const sourceMediaTransferred=Boolean(row.videoPath&&existing.filePath&&path.resolve(String(row.videoPath))===path.resolve(String(existing.filePath)));
+      return {...publicItem(existing),sourceMediaTransferred};
+    }
     const {title,description}=metadata(row,config),scheduledAt=nextSlot(db,config),id=randomUUID();
     if(!row.videoPath||!fs.existsSync(row.videoPath))throw new Error('El MP4 aprobado no está disponible localmente.');
     // ZERO-COPY APPROVAL HANDOFF: Publication takes ownership of the exact
