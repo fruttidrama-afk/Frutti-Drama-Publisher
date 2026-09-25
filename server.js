@@ -185,6 +185,10 @@ app.get('/auth/sessions',secure,(req,res)=>{const cur=sessionParse(req)?.id,s=au
 app.delete('/auth/sessions/:id',secure,(req,res)=>{const s=authState(),r=s.sessions.find(x=>x.id===req.params.id);if(!r)return res.sendStatus(404);r.revokedAt=now();saveAuth(s);if(sessionParse(req)?.id===r.id)res.clearCookie(SESSION_COOKIE,{path:'/'});res.json({ok:true,current:r.id===sessionParse(req)?.id})});
 app.post('/auth/pin/change',secure,(req,res)=>{const old=String(req.body.currentPin||''),next=String(req.body.newPin||'');if(!pinOk(old))return res.status(401).json({error:'Current PIN is incorrect.'});if(!/^\d{6}$/.test(next))return res.status(400).json({error:'New PIN must contain six digits.'});setPin(next);res.json({ok:true})});
 
+function isDinnieBrand(){return /dinnie\s*(?:the\s*)?dinosaur|dinnie/i.test(String(CONFIG.identity?.show_name||CONFIG.identity?.publisher_name||''))}
+function dinnieStaticIconBuffer(){
+  try{return Buffer.from(fs.readFileSync(path.join('public','dinnie-touch-icon.b64'),'utf8').trim(),'base64')}catch{return null}
+}
 function brandPublic(){
   const b=CONFIG.branding||{},t=b.theme||{},hasLogo=Boolean(String(b.logo_url||'').trim());
   return{
@@ -196,10 +200,10 @@ function brandPublic(){
     // broken-image behavior from third-party storage redirects and lets us
     // normalize transparency/padding consistently.
     logo_url:hasLogo?'/brand/logo.png?v=20260925-botanical':null,
-    icon_180_url:'/apple-touch-icon.png?v=20260925-botanical',
-    icon_192_url:'/brand/icon-192.png?v=20260925-botanical',
-    icon_512_url:'/brand/icon-512.png?v=20260925-botanical',
-    maskable_icon_url:'/brand/icon-maskable-512.png?v=20260925-botanical',
+    icon_180_url:isDinnieBrand()?'/dinnie-touch-icon.png?v=20260925-edgefill':'/apple-touch-icon.png?v=20260925-fullbleed',
+    icon_192_url:isDinnieBrand()?'/dinnie-touch-icon.png?v=20260925-edgefill':'/brand/icon-192.png?v=20260925-fullbleed',
+    icon_512_url:isDinnieBrand()?'/dinnie-touch-icon.png?v=20260925-edgefill':'/brand/icon-512.png?v=20260925-fullbleed',
+    maskable_icon_url:isDinnieBrand()?'/dinnie-touch-icon.png?v=20260925-edgefill':'/brand/icon-maskable-512.png?v=20260925-fullbleed',
     safe_area_ratio:Number(b.safe_area_ratio||.8),
     tagline:b.tagline||CONFIG.identity.description||'',
     theme:{primary:t.primary||'#0d3152',secondary:t.secondary||'#b59a64',accent:t.accent||'#b59a64',background:t.background||'#f7f6f2',surface:t.surface||'#ffffff',text:t.text||'#1d1d1b'}
@@ -301,6 +305,19 @@ async function brandedIconPng(size,{maskable=false}={}){
     .png({compressionLevel:9})
     .toBuffer();
 }
+app.get('/dinnie-touch-icon.png',(req,res)=>{
+  const buf=dinnieStaticIconBuffer();
+  if(!buf)return res.sendStatus(404);
+  res.set('Cache-Control','no-store, max-age=0');
+  res.set('Content-Type','image/png');
+  res.set('Content-Length',String(buf.length));
+  res.send(buf);
+});
+app.get('/favicon.ico',(req,res)=>{
+  if(!isDinnieBrand())return res.redirect(302,'/brand/icon-192.png');
+  const buf=dinnieStaticIconBuffer();if(!buf)return res.sendStatus(404);
+  res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(buf);
+});
 app.get('/brand/logo.svg',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await normalizedBrandLogoPng())});
 app.get('/brand/logo.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await normalizedBrandLogoPng())});
 app.get('/apple-touch-icon.png',async(req,res)=>{res.set('Cache-Control','no-store, max-age=0');res.type('image/png').send(await brandedIconPng(180))});
@@ -323,7 +340,7 @@ app.get('/manifest.webmanifest',(req,res)=>{
 });
 
 app.use((req,res,next)=>{
- if(['/setup','/setup/activate','/login','/auth/public-info','/auth/pin','/auth/passkeys/options','/auth/passkeys/verify','/oauth2callback','/facebook/oauth/callback','/factory/health','/brand/logo.svg','/brand/logo.png','/apple-touch-icon.png','/brand/icon-192.png','/brand/icon-512.png','/brand/icon-maskable-512.png','/manifest.webmanifest'].includes(req.path))return next();
+ if(['/setup','/setup/activate','/login','/auth/public-info','/auth/pin','/auth/passkeys/options','/auth/passkeys/verify','/oauth2callback','/facebook/oauth/callback','/factory/health','/brand/logo.svg','/brand/logo.png','/apple-touch-icon.png','/dinnie-touch-icon.png','/favicon.ico','/brand/icon-192.png','/brand/icon-512.png','/brand/icon-maskable-512.png','/manifest.webmanifest'].includes(req.path))return next();
  if(req.path.startsWith('/public/'))return next();
  return secure(req,res,next);
 });
