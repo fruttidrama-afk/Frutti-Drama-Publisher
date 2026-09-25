@@ -82,16 +82,16 @@ function isAuthError(e){
 function isRateLimit(e){return [4,17,32,613].includes(Number(e?.code))||/rate limit|too many/i.test(String(e?.message||''))}
 function canonical(row){
   const s=String(row.status||'').toLowerCase();
-  if(s==='published'||String(row.remotePrivacyStatus||'').toLowerCase()==='public')return{key:'public',label:'PÚBLICO',message:'Facebook confirma que el Reel fue enviado a publicación.'};
-  if(['processing','publishing'].includes(s))return{key:'pending',label:'PENDIENTE',message:'Facebook está procesando el Reel aprobado.'};
-  if(s==='auth_wait')return{key:'pending',label:'ERROR',message:'Facebook necesita reconexión antes de continuar.'};
-  if(s==='queued')return{key:'stock',label:'EN STOCK',message:'El video aprobado está guardado en el Publisher y se publicará automáticamente en Facebook a la hora configurada.'};
-  if(s==='error')return{key:'pending',label:'PENDIENTE',message:String(row.error||'Facebook volverá a intentarlo automáticamente.')};
-  return{key:'pending',label:'PENDIENTE',message:String(row.error||'Esperando el siguiente paso de publicación en Facebook.')};
+  if(s==='published'||String(row.remotePrivacyStatus||'').toLowerCase()==='public')return{key:'public',label:'PÚBLICO',message:'Facebook confirma que el Reel fue enviado a publicación.',resolution:'none',actionRequired:false};
+  if(['processing','publishing'].includes(s))return{key:'pending',label:'PENDIENTE',message:'Facebook está procesando el Reel aprobado.',resolution:'automatic',actionRequired:false};
+  if(s==='auth_wait')return{key:'pending',label:'RECONECTAR FACEBOOK',message:'La autorización de Facebook venció o dejó de incluir la Página configurada. Reconectá la misma cuenta/Página; el Reel se reanuda automáticamente sin duplicarse.',resolution:'action_required',actionRequired:true};
+  if(s==='queued')return{key:'stock',label:'EN STOCK',message:'El video aprobado está guardado en el Publisher y se publicará automáticamente en Facebook a la hora configurada.',resolution:'automatic',actionRequired:false};
+  if(s==='error')return{key:'pending',label:'PENDIENTE',message:String(row.error||'Facebook volverá a intentarlo automáticamente.'),resolution:'automatic',actionRequired:false};
+  return{key:'pending',label:'PENDIENTE',message:String(row.error||'Esperando el siguiente paso de publicación en Facebook.'),resolution:'automatic',actionRequired:false};
 }
 function publicItem(row){
   const state=canonical(row);
-  return{...row,history:JSON.parse(row.history||'[]'),resumableSession:undefined,filePath:Boolean(row.filePath),canonicalStatus:state.key,canonicalLabel:state.label,canonicalMessage:state.message,canonicalResolution:state.key==='public'?'none':'automatic',canonicalActionRequired:safeAction(row)};
+  return{...row,history:JSON.parse(row.history||'[]'),resumableSession:undefined,filePath:Boolean(row.filePath),canonicalStatus:state.key,canonicalLabel:state.label,canonicalMessage:state.message,canonicalResolution:state.resolution||'automatic',canonicalActionRequired:Boolean(state.actionRequired??safeAction(row))};
 }
 function safeAction(row){return String(row.status||'')==='auth_wait'}
 function hist(row,status,message=''){const h=JSON.parse(row.history||'[]');h.push({status,at:now(),message});row.history=JSON.stringify(h.slice(-120));row.status=status;row.updatedAt=now()}
