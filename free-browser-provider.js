@@ -3083,78 +3083,149 @@ async function recoverGoldenRunIfRequested(db){
   const metaKey='recovery:golden:'+GOLDEN_RECOVERY_TOKEN;
   const prior=json(meta(db,metaKey,''),null);
   if(prior?.status==='completed')return{needed:true,done:true,prior};
-  let row=db.prepare('SELECT * FROM factory_items WHERE episode=? LIMIT 1').get(GOLDEN_RECOVERY_EPISODE);
+
+  let row=db.prepare('SELECT * FROM factory_items WHERE episode=? ORDER BY season DESC LIMIT 1').get(GOLDEN_RECOVERY_EPISODE);
   if(!row)throw new Error('GOLDEN_RECOVERY_TARGET_EPISODE_NOT_FOUND:'+GOLDEN_RECOVERY_EPISODE);
   const forceReplace=String(process.env.PUBLISHER_RECOVERY_FORCE_REPLACE||'false').toLowerCase()==='true';
   if(!forceReplace&&row.videoPath&&fs.existsSync(row.videoPath)&&String(row.status)==='review'){
     const done={status:'completed',at:now(),episode:row.episode,job_id:row.id,existing:true};
     setMeta(db,metaKey,JSON.stringify(done));return{needed:true,done:true,prior:done};
   }
-  publish('GOLDEN_RECOVERY_START',{episode:'E'+row.episode,job_id:row.id});
+
+  // Preserve the proven-wrong media hash before replacing the Review file.
+  // This prevents that exact old render from ever being accepted again.
+  const priorWrongHash=String(row.reviewContentHash||'').trim();
+  if(forceReplace&&priorWrongHash){
+    try{db.prepare("INSERT OR IGNORE INTO flow_rejected_media_hashes(contentHash,episode,reason,rejectedAt) VALUES(?,?,?,?)")
+      .run(priorWrongHash,Number(row.episode||0),'Operator confirmed wrong Flow asset was recovered for this episode.',now())}catch{}
+  }
+
+  publish('TARGETED_RECOVERY_START',{
+    episode:'E'+row.episode,job_id:row.id,
+    recovery_token:GOLDEN_RECOVERY_TOKEN,
+    generation_submit_forbidden:true,
+    message:'Recovery-only mode: existing Flow media will be identified and downloaded. Generate is forbidden.'
+  });
+
   const session=await launchLocal();
   try{
     const page=session.page||session.context.pages()[0]||await session.context.newPage();
     await ensureExpectedFlowProject(page);
     if(!String(page.url()).includes(projectPath()))await page.goto(flowUrl(),{waitUntil:'domcontentloaded',timeout:60000});
     await waitFlowReady(page,60000);await renderAuthGuard(page);
-    let found=await findGoldenRecoveryAsset(page);
-    let searchedProjects=[];
-    if(!found.found){
-      // The Chrome Recorder Golden Run began at Flow home and selected the
-      // third project card. Browser session history is not guaranteed to sync
-      // across profiles, so search project cards directly, prioritizing card #3.
+
+    let found=await findGoldenRecoveryAsset(page,true,db,row);
+    const searchedProjects=[];
+    if(!found.found&&GOLDEN_RECOVERY_SEARCH_ALL_PROJECTS){
+      // Disabled by default. A targeted recovery must stay inside the exact
+      // configured project unless an operator explicitly authorizes a broader search.
       try{
-        await page.goto('https://flow.google.com/',{waitUntil:'domcontentloaded',timeout:60000});await sleep(2500);
+        await page.goto('https://flow.google.com/',{waitUntil:'domcontentloaded',timeout:60000});await sleep(2200);
         const cards=page.locator('flow-project-card');
-        const discovered=[];
-        for(let i=0;i<Math.min(await cards.count().catch(()=>0),30);i++){
+        for(let i=0;i<Math.min(await cards.count().catch(()=>0),30)&&!found.found;i++){
           const card=cards.nth(i);if(!(await card.isVisible().catch(()=>false)))continue;
           const a=card.locator('a[href*="/project/"]').first();
-          const href=String(await a.getAttribute('href').catch(()=>'')||'');
-          const text=compact(await card.innerText().catch(()=>''),500);
-          const img=card.locator('img').first();
-          const alt=compact((await img.getAttribute('alt').catch(()=>''))||'',220);
-          if(href)discovered.push({i,href,text,alt});
+          const href=String(await a.getAttribute('href').catch(()=>'')||'');if(!href)continue;
+          const absolute=href.startsWith('http')?href:'https://flow.google.com'+href;
+          searchedProjects.push({index:i,href});
+          await page.goto(absolute,{waitUntil:'domcontentloaded',timeout:60000}).catch(()=>{});await sleep(2200);
+          try{await waitFlowReady(page,20000)}catch{}
+          const attempt=await findGoldenRecoveryAsset(page,true,db,row);
+          if(attempt?.found)found={...attempt,project_href:href,project_index:i};
         }
-        const order=[...discovered.filter(x=>x.i===2),...discovered.filter(x=>x.i!==2)];
-        for(const p of order){
-          const absolute=p.href.startsWith('http')?p.href:'https://flow.google.com'+p.href;
-          searchedProjects.push({index:p.i,href:p.href,text:p.text,alt:p.alt});
-          await page.goto(absolute,{waitUntil:'domcontentloaded',timeout:60000}).catch(()=>{});await sleep(2500);
-          try{await waitFlowReady(page,25000)}catch{}
-          const attempt=await findGoldenRecoveryAsset(page,true);
-          if(attempt?.found){found={...attempt,project_href:p.href,project_index:p.i,project_text:p.text};break}
-        }
-      }catch(e){
-        searchedProjects.push({error:compact(e?.message||e,300)});
-      }
+      }catch(e){searchedProjects.push({error:compact(e?.message||e,300)})}
     }
+
     if(!found.found){
-      setMeta(db,metaKey,JSON.stringify({status:'pending',at:now(),episode:row.episode,job_id:row.id,last:'asset-not-found',candidates:found.candidates||[],searched_projects:searchedProjects}));
-      publish('GOLDEN_RECOVERY_PENDING',{episode:'E'+row.episode,job_id:row.id,message:'Patagonia Golden Run asset not uniquely found yet; production remains paused. diag='+compact(JSON.stringify({url:found.url,body_has_terms:found.body_has_terms,partial:(found.partial||[]).slice(0,12),buttons:(found.buttons||[]).slice(0,40),history_tags:found.history_tags||[],history_body:compact(found.history_body||'',2200),searched_projects:searchedProjects}),9000),url:found.url,body_has_terms:found.body_has_terms,partial:found.partial,buttons:found.buttons});
+      const pending={status:'pending',at:now(),episode:row.episode,job_id:row.id,last:'identity-verified-asset-not-found',candidates:found.candidates||[],rejected:found.rejected||[],searched_projects:searchedProjects};
+      setMeta(db,metaKey,JSON.stringify(pending));
+      publish('TARGETED_RECOVERY_PENDING',{
+        episode:'E'+row.episode,job_id:row.id,
+        candidates:(found.candidates||[]).slice(0,12),
+        rejected:(found.rejected||[]).slice(0,12),
+        generation_submit_forbidden:true,
+        message:'No unique unused Flow asset matched strongly enough. Recovery remains read-only; no regeneration will occur.'
+      });
       return{needed:true,done:false};
     }
+
     const localPath=path.join(VIDEO_DIR,`${row.id}.mp4`);
-    try{fs.unlinkSync(localPath);}catch{}
-    const dl=await downloadResult(page,{uiReady:true,signal:'golden-run-prompt-match'},localPath);
+    try{fs.unlinkSync(localPath)}catch{}
+    const dl=await downloadResult(page,{uiReady:true,signal:'targeted-recovery-identity-verified',asset_id:found.asset_id,viewer_asset_id:found.viewer_asset_id},localPath);
     const valid=validateMp4(localPath);
-    const recoveredAt=now(),runId='manual-flow-golden-run:'+GOLDEN_RECOVERY_TOKEN;
-    const flowResult={provider:PROVIDER,manual_golden_run:true,recovery_token:GOLDEN_RECOVERY_TOKEN,matched_terms:GOLDEN_RECOVERY_TERMS,matched_label:found.label,duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:recoveredAt};
+    const recoveredAt=now();
+    const existingLifecycle=lifecycle(db,row)||{};
+    const existingGenerationId=String(row.providerRunId||existingLifecycle.generation_id||'');
+    const runId=existingGenerationId||('existing-flow-recovery:'+GOLDEN_RECOVERY_TOKEN);
+    const flowResult={
+      provider:PROVIDER,
+      targeted_existing_recovery:true,
+      recovery_token:GOLDEN_RECOVERY_TOKEN,
+      generation_id:runId,
+      flow_asset_id:String(found.asset_id||''),
+      viewer_asset_id:String(found.viewer_asset_id||''),
+      recovery_proof:'operator-confirmed-existing-flow-asset-identity-verified',
+      recovery_signature:String(found.signature||found.label||''),
+      matched_terms:Array.isArray(found.matched)?found.matched:GOLDEN_RECOVERY_TERMS,
+      matched_label:found.label||null,
+      identity_strength:found.identity_strength||null,
+      fresh_against_submit_baseline:Boolean(found.fresh),
+      source:found.source||'targeted-identity-scan',
+      duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,
+      validated_ftyp:true,
+      download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',
+      retrieved_at:recoveredAt
+    };
     persistReviewMetadata(db,row,flowResult);
     await saveReviewAsset(db,row,localPath,flowResult,recoveredAt);
+
+    // This is recovery of an existing render, not another generation. Preserve
+    // the original generation accounting and merely mark its row review-ready.
+    if(existingGenerationId){
+      try{db.prepare("UPDATE factory_generations SET status='review',error=NULL,updatedAt=? WHERE itemId=? AND runId=?")
+        .run(recoveredAt,row.id,existingGenerationId)}catch{}
+    }else{
+      try{
+        const exists=Number(db.prepare("SELECT COUNT(*) n FROM factory_generations WHERE itemId=? AND day=? AND credits>0").get(row.id,artDay())?.n||0);
+        if(!exists)db.prepare(`INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(randomUUID(),row.id,artDay(),String(row.promptHash||sha(runId)),0,'review',runId,recoveredAt,recoveredAt,'existing-render-recovery-no-new-generation','recovery');
+      }catch(e){publish('TARGETED_RECOVERY_ACCOUNTING_WARNING',{message:compact(e?.message||e,300)})}
+    }
+
     db.prepare('UPDATE factory_items SET providerRunId=NULL,updatedAt=? WHERE id=?').run(recoveredAt,row.id);
-    if(forceReplace){
-      try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Superseded by verified Golden Run recovery from the exact Earth Flow project.',updatedAt=? WHERE itemId=? AND day=?").run(recoveredAt,row.id,artDay())}catch{}
-    }
-    const exists=Number(db.prepare('SELECT COUNT(*) n FROM factory_generations WHERE runId=? OR (itemId=? AND day=? AND status=? AND error=?)').get(runId,row.id,artDay(),'review','manual-golden-run')?.n||0);
-    if(!exists){
-      try{db.prepare(`INSERT INTO factory_generations(id,itemId,day,promptHash,credits,status,runId,createdAt,updatedAt,error,generationKind) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(randomUUID(),row.id,artDay(),sha(runId+':'+row.id),CREDITS_PER_GENERATION,'review',runId,recoveredAt,recoveredAt,'manual-golden-run','automatic')}catch(e){publish('GOLDEN_RECOVERY_ACCOUNTING_WARNING',{message:compact(e?.message||e,300)})}
-    }
-    setLifecycle(db,row,'REVIEW_READY',{generation_id:runId,manual_golden_run:true,recovery_token:GOLDEN_RECOVERY_TOKEN,size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,retrieved_at:recoveredAt,automatic_submit_forbidden:true});
-    const done={status:'completed',at:recoveredAt,episode:row.episode,job_id:row.id,run_id:runId,size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`};
+    setLifecycle(db,row,'REVIEW_READY',{
+      ...existingLifecycle,
+      generation_id:runId,
+      targeted_existing_recovery:true,
+      recovery_token:GOLDEN_RECOVERY_TOKEN,
+      flow_asset_id:flowResult.flow_asset_id,
+      viewer_asset_id:flowResult.viewer_asset_id,
+      recovery_signature:flowResult.recovery_signature,
+      recovery_proof:flowResult.recovery_proof,
+      size:valid.size,duration:valid.duration,width:valid.width,height:valid.height,
+      retrieved_at:recoveredAt,
+      automatic_submit_forbidden:true
+    });
+    const done={
+      status:'completed',at:recoveredAt,episode:row.episode,job_id:row.id,run_id:runId,
+      flow_asset_id:flowResult.flow_asset_id,
+      viewer_asset_id:flowResult.viewer_asset_id,
+      recovery_signature:flowResult.recovery_signature,
+      content_hash:flowResult.content_hash||null,
+      size:valid.size,duration:valid.duration,resolution:`${valid.width}x${valid.height}`
+    };
     setMeta(db,metaKey,JSON.stringify(done));
     setMeta(db,'flow:lastSuccessfulMp4At',recoveredAt);
-    publish('GOLDEN_RECOVERY_REVIEW_READY',{episode:'E'+row.episode,job_id:row.id,size:valid.size,duration:valid.duration,resolution:done.resolution,factory_url:`/factory/video/${row.id}`});
+    publish('TARGETED_RECOVERY_REVIEW_READY',{
+      episode:'E'+row.episode,job_id:row.id,
+      flow_asset_id:String(flowResult.flow_asset_id||'').slice(0,24),
+      viewer_asset_id:String(flowResult.viewer_asset_id||'').slice(0,24)||null,
+      recovery_signature:compact(flowResult.recovery_signature,220),
+      content_hash:String(flowResult.content_hash||'').slice(0,24),
+      size:valid.size,duration:valid.duration,resolution:done.resolution,
+      no_new_generation:true,
+      factory_url:`/factory/video/${row.id}`
+    });
     return{needed:true,done:true,prior:done};
   }finally{await session.close().catch(()=>{})}
 }
