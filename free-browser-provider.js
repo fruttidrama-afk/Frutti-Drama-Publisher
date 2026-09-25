@@ -1556,19 +1556,23 @@ async function visibleExact(page,text) {
 }
 async function clickInteractive(locator) { await locator.evaluate(el=>{const t=el.closest('button,[role="button"],[role="option"],[role="menuitem"],[role="radio"],[role="tab"]')||el;if(typeof t.click==='function')t.click();else t.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));}); }
 async function trustedClick(locator){
+  const bounded=async(p,label,ms=5000)=>await Promise.race([
+    p,
+    sleep(ms).then(()=>{throw new Error('TRUSTED_POINTER_TIMEOUT:'+label)})
+  ]);
   try{
-    await locator.scrollIntoViewIfNeeded().catch(()=>{});
+    await locator.scrollIntoViewIfNeeded({timeout:4000}).catch(()=>{});
     const box=await locator.boundingBox().catch(()=>null);
     if(box){
       const page=locator.page();
-      await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
-      await page.mouse.down();
+      await bounded(page.mouse.move(box.x+box.width/2,box.y+box.height/2),'move');
+      await bounded(page.mouse.down(),'down');
       await sleep(80);
-      await page.mouse.up();
+      await bounded(page.mouse.up(),'up');
       return true;
     }
   }catch{}
-  await locator.click({timeout:4000}).catch(async()=>{await clickInteractive(locator)});
+  await locator.click({timeout:4000}).catch(async()=>{await Promise.race([clickInteractive(locator),sleep(5000)])});
   return true;
 }
 async function settingsButton(page) {
