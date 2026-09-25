@@ -182,6 +182,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     const existing=db.prepare('SELECT * FROM publication_items WHERE itemId=?').get(row.id);if(existing)return publicItem(existing);
     const {title,description}=metadata(row,config),scheduledAt=nextSlot(db,config),uploadAt=new Date(Date.parse(scheduledAt)-390*60000).toISOString(),id=randomUUID();
     let filePath=null,fileSize=0,videoId=row.reviewVideoId||null;
+    let sourceMediaTransferred=false;
     if(!videoId){
       if(isReviewStorageUri(row.remoteUrl)){
         filePath=String(row.remoteUrl);
@@ -189,7 +190,13 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
         if(!fileSize)throw new Error('El MP4 aprobado en cloud storage no tiene tamaño verificable.');
       }else{
         if(!row.videoPath||!fs.existsSync(row.videoPath))throw new Error('El MP4 aprobado no está disponible.');
-        filePath=path.join(publicationDir,id+'.mp4');fs.copyFileSync(row.videoPath,filePath);fileSize=fs.statSync(filePath).size;
+        // ZERO-COPY APPROVAL HANDOFF: the Review file already lives on the
+        // persistent /data volume. Approval transfers ownership of that exact
+        // file to Publication instead of duplicating bytes into /publication.
+        // This makes approval safe even when the persistent volume is nearly full.
+        filePath=String(row.videoPath);
+        fileSize=fs.statSync(filePath).size;
+        sourceMediaTransferred=true;
       }
     }else fileSize=Number(row.reviewOriginalSize||0);
     const item={id,itemId:row.id,episode:Number(row.episode),title,description,scheduledAt,uploadAt,status:'queued',filePath,fileSize,videoId,resumableSession:null,playlistId:null,attempts:0,retryAt:0,error:null,history:JSON.stringify([{status:'queued',at:now(),message:'Approved for publication.'}]),createdAt:now(),updatedAt:now()};
@@ -197,7 +204,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       .run(item.id,item.itemId,item.episode,item.title,item.description,item.scheduledAt,item.uploadAt,item.status,item.filePath,item.fileSize,item.videoId,item.resumableSession,item.playlistId,item.attempts,item.retryAt,item.error,item.history,item.createdAt,item.updatedAt);
     db.prepare("UPDATE publication_items SET provider='youtube' WHERE id=?").run(item.id);
     item.provider='youtube';
-    return publicItem(item);
+    return {...publicItem(item),sourceMediaTransferred};
   }
 
   async function request(url,options={}){
