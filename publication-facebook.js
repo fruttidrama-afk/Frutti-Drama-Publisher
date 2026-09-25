@@ -103,13 +103,14 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     "ALTER TABLE publication_items ADD COLUMN remoteUrl TEXT",
     "ALTER TABLE publication_items ADD COLUMN remotePrivacyStatus TEXT",
     "ALTER TABLE publication_items ADD COLUMN remotePublishAt TEXT",
-    "ALTER TABLE publication_items ADD COLUMN remoteStatusCheckedAt TEXT"
+    "ALTER TABLE publication_items ADD COLUMN remoteStatusCheckedAt TEXT",
+    "ALTER TABLE publication_items ADD COLUMN aiDisclosureSyncedAt TEXT"
   ]){try{db.exec(sql)}catch{}}
   let running=false,lastHeartbeat=null,lastError=null;
 
   function save(row){
-    db.prepare(`UPDATE publication_items SET title=?,description=?,scheduledAt=?,uploadAt=?,status=?,filePath=?,fileSize=?,videoId=?,resumableSession=?,playlistId=?,attempts=?,retryAt=?,error=?,history=?,updatedAt=?,provider=?,remoteUrl=?,remotePrivacyStatus=?,remotePublishAt=?,remoteStatusCheckedAt=? WHERE id=?`)
-      .run(row.title,row.description,row.scheduledAt,row.uploadAt,row.status,row.filePath,row.fileSize,row.videoId,row.resumableSession,row.playlistId,row.attempts,row.retryAt,row.error,row.history,row.updatedAt,row.provider||'facebook',row.remoteUrl||null,row.remotePrivacyStatus||null,row.remotePublishAt||null,row.remoteStatusCheckedAt||null,row.id);
+    db.prepare(`UPDATE publication_items SET title=?,description=?,scheduledAt=?,uploadAt=?,status=?,filePath=?,fileSize=?,videoId=?,resumableSession=?,playlistId=?,attempts=?,retryAt=?,error=?,history=?,updatedAt=?,provider=?,remoteUrl=?,remotePrivacyStatus=?,remotePublishAt=?,remoteStatusCheckedAt=?,aiDisclosureSyncedAt=? WHERE id=?`)
+      .run(row.title,row.description,row.scheduledAt,row.uploadAt,row.status,row.filePath,row.fileSize,row.videoId,row.resumableSession,row.playlistId,row.attempts,row.retryAt,row.error,row.history,row.updatedAt,row.provider||'facebook',row.remoteUrl||null,row.remotePrivacyStatus||null,row.remotePublishAt||null,row.remoteStatusCheckedAt||null,row.aiDisclosureSyncedAt||null,row.id);
   }
   function connection(){
     const c=loadFacebookConnection?.()||{};
@@ -172,9 +173,27 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     item.fileSize=data.length;item.remotePrivacyStatus='uploaded';hist(item,'publishing','Facebook received the Reel binary.');save(item);
   }
   async function finish(item,c){
-    const j=await graph('me/video_reels',{method:'POST',params:{video_id:item.videoId,upload_phase:'finish',video_state:'PUBLISHED',description:item.description||'',title:item.title||''},token:c.page_access_token});
-    if(j?.success!==true)throw new Error('Facebook did not confirm Reel publish.');
-    item.remotePrivacyStatus='processing';item.remotePublishAt=now();hist(item,'processing','Facebook accepted the Reel for publishing.');save(item);
+    const provider=providerConfig(config);
+    if(provider.contains_synthetic_media!==true||config.publication?.ai_disclosure_required!==true){
+      throw new Error('AI_DISCLOSURE_CONTRACT_REQUIRED: Facebook publication is blocked unless native AI disclosure is mandatory.');
+    }
+    const j=await graph('me/video_reels',{
+      method:'POST',
+      params:{
+        video_id:item.videoId,
+        upload_phase:'finish',
+        video_state:'PUBLISHED',
+        description:item.description||'',
+        title:item.title||'',
+        is_ai_generated:true
+      },
+      token:c.page_access_token
+    });
+    if(j?.success!==true)throw new Error('Facebook did not confirm Reel publish with AI disclosure.');
+    item.aiDisclosureSyncedAt=now();
+    item.remotePrivacyStatus='processing';item.remotePublishAt=now();
+    hist(item,'processing','Facebook accepted the Reel for publishing with native AI-generated disclosure enabled (is_ai_generated=true).');
+    save(item);
   }
   async function publish(item){
     let c=connection();
