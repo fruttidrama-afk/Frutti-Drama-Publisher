@@ -89,6 +89,8 @@ has(runtimeConfig,'PROMPT_QUALITY_GATE','nonempty prompt quality gate');
 has(runtimeConfig,'earthIdeaConflict','Earth catalog-wide uniqueness matcher');
 has(runtimeConfig,'EARTH_UNIQUE_IDEA_BANK_EXHAUSTED','Earth no-repeat exhaustion guard');
 has(runtimeConfig,'EARTH_DUPLICATE_LANDSCAPE_BLOCKED','Earth duplicate landscape hard gate');
+has(runtimeConfig,'Compare canonical episode metadata only','Earth uniqueness excludes embedded Show Bible prompt examples');
+must(!runtimeConfig.includes("[other.hook,other.story,other.title,other.description,other.prompt]"),'Earth uniqueness must never compare full prompt/Show Bible text');
 
 const init=read('runtime-init.js');
 has(init,'runtime_knowledge','runtime knowledge table');
