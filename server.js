@@ -834,7 +834,6 @@ function retainedGeneratedToday(day=publisherDay()){
    const rows=db.prepare("SELECT status,flowResult,lastProgressAt,updatedAt,stockId,reviewContentHash FROM factory_items WHERE status IN ('review','queued','historical','published')").all();
    for(const row of rows){
      let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
-     if(!(flow?.validated_ftyp||flow?.content_hash||row.reviewContentHash||row.stockId))continue;
      const stamp=String(flow?.generation_started_at||row.lastProgressAt||row.updatedAt||'');
      const ms=Date.parse(stamp);if(!Number.isFinite(ms))continue;
      const d=new Intl.DateTimeFormat('en-CA',{timeZone:TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(ms));
