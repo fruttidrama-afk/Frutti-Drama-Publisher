@@ -20,11 +20,16 @@ must(sop.sop_id==='FLOW-SOP-v1.0','wrong SOP version');
 must(sop.sha256===sha,'SOP JSON hash does not match master');
 must(manifest.master_sha256===sha,'manifest hash does not match master');
 must(manifest.inheritance_required===true,'knowledge inheritance not mandatory');
+must(manifest.runtime_contract?.semantic_redo_interpretation===true,'knowledge contract must require semantic REDO interpretation');
+must(manifest.runtime_contract?.post_submit_timeout_resubmit===false,'knowledge contract must forbid post-submit timeout resubmit');
+must(sop.generation?.post_submit_timeout_action==='reconcile_only_no_resubmit','machine SOP timeout action mismatch');
+must(sop.review?.feedback_interpreter==='semantic-ai','machine SOP semantic feedback interpreter missing');
 
 const a=schema.properties?.automation?.properties||{};
-for(const k of ['exactly_once_submit','strict_serial_generation','project_grid_recovery','current_consent_only','review_metadata_required','golden_test_required']){
+for(const k of ['exactly_once_submit','strict_serial_generation','project_grid_recovery','current_consent_only','review_metadata_required','golden_test_required','semantic_redo_interpretation']){
   must(a[k]?.const===true,'schema invariant '+k+' must be const true');
 }
+must(a.post_submit_timeout_resubmit?.const===false,'schema invariant post_submit_timeout_resubmit must be const false');
 must(schema.properties?.schedule?.properties?.generation_strategy?.const==='sequential','generation strategy must be sequential');
 must(schema.properties?.knowledge?.properties?.flow_sop_version?.const==='FLOW-SOP-v1.0','schema knowledge version mismatch');
 const ytSchema=(schema.properties?.publication?.properties?.providers?.items?.oneOf||[]).find(x=>x?.properties?.type?.const==='youtube');
@@ -33,7 +38,7 @@ must(ytSchema?.properties?.release_mode?.const==='private_then_public_at_posting
 must(ytSchema?.properties?.use_publish_at?.const===false,'YouTube schema must forbid publishAt');
 must(ytSchema?.properties?.upload_lead_minutes?.const===390,'YouTube schema must require 390-minute lead');
 
-for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY_ENTERED','automatic_submit_forbidden','flow-grid-tile-container','flow-tile-hover-footer','EPISODE_INTENT_REPAIRED','CREATIVE_PACKAGE_READY','creativePackageHash','source:\'creative-package\'','let editor=await waitFlowReady(page,30000)','FLOW_UNUSUAL_ACTIVITY_OVERNIGHT','30*60*1000','8*60*60*1000','24*60*60*1000']){
+for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY_ENTERED','automatic_submit_forbidden','flow-grid-tile-container','flow-tile-hover-footer','EPISODE_INTENT_REPAIRED','CREATIVE_PACKAGE_READY','creativePackageHash','source:\'creative-package\'','let editor=await waitFlowReady(page,30000)','FLOW_UNUSUAL_ACTIVITY_OVERNIGHT','30*60*1000','8*60*60*1000','24*60*60*1000','GEMINI_FEEDBACK_URL','FEEDBACK_AI_INTERPRET_START','creative_rewrite','POST_SUBMIT_TIMEOUT_RECONCILIATION_ONLY']){
   must(provider.includes(token),'provider contract missing '+token);
 }
 must(!provider.includes("await waitFlowReady(page,30000);\n  const editor=await promptEditor(page);"),'provider must not re-query the Flow composer immediately after readiness');
@@ -53,7 +58,7 @@ for(const token of ['EARTH_IN_10_AUTONOMOUS_EPISODES','enforceEpisodeIntent','ef
 for(const token of ['runtime_knowledge','creativePackageHash','creativePackageId','knowledge:flowSopLoaded','automation:exactlyOnceSubmit','automation:strictSerialGeneration']){
   must(init.includes(token),'runtime-init contract missing '+token);
 }
-for(const token of ["app.get('/factory/knowledge'","automation_safety","stable_composer_handoff:true","native_no_charge_retry:false","immediate_native_retry_disabled:true","adaptive_no_charge_backoff:true","unusual_activity_exponential_backoff:true","provider_wide_unusual_activity_backoff:true","monotonic_provider_cooldown:true","successful_render_resets_provider_backoff:true","successful_redos_count_toward_daily_target:true","legacy_streak_resurrection_guard:true","strict_post_submit_recovery_match:true","catalog_wide_creative_uniqueness:true","no_landscape_repeat_cycle:true","youtube_preapproval_private_staging_disabled:true","cloud_stock_until_upload_window:true","private_upload_at_1230:true","direct_private_to_public_at_1900:true","native_publish_at_disabled:true","youtube_upload_lead_minutes_390:true","manual_stock_recovery_upload:true","recovery_upload_cloud_required:true","show_specific_repairs_isolated:true","replacement creative package required","prompt_integrity","prompt_show_bible_gate:true","atomic_creative_package:true","approval_before_external_storage:true","reject_purges_external_artifacts:true","prompts_rematerialized:true","signedReviewUrl","deleteReviewObject"]){
+for(const token of ["app.get('/factory/knowledge'","automation_safety","stable_composer_handoff:true","native_no_charge_retry:false","immediate_native_retry_disabled:true","adaptive_no_charge_backoff:true","unusual_activity_exponential_backoff:true","provider_wide_unusual_activity_backoff:true","monotonic_provider_cooldown:true","successful_render_resets_provider_backoff:true","successful_redos_count_toward_daily_target:true","legacy_streak_resurrection_guard:true","strict_post_submit_recovery_match:true","catalog_wide_creative_uniqueness:true","no_landscape_repeat_cycle:true","youtube_preapproval_private_staging_disabled:true","cloud_stock_until_upload_window:true","private_upload_at_1230:true","direct_private_to_public_at_1900:true","native_publish_at_disabled:true","youtube_upload_lead_minutes_390:true","manual_stock_recovery_upload:true","recovery_upload_cloud_required:true","show_specific_repairs_isolated:true","replacement creative package required","prompt_integrity","prompt_show_bible_gate:true","atomic_creative_package:true","approval_before_external_storage:true","reject_purges_external_artifacts:true","semantic_ai_redo_interpretation:true","post_submit_timeout_never_resubmits:true","ai_pending","prompts_rematerialized:true","signedReviewUrl","deleteReviewObject"]){
   must(server.includes(token),'server contract missing '+token);
 }
 for(const token of ['earthPromptIsEpisodeBound','episode-generation-prompt','creativePackageDigest','quota_wait','shiftPendingQueueAfter','stored-package']){
