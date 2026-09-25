@@ -3428,11 +3428,12 @@ async function processRow(db,row){
       if(Number(claimed.changes||0)!==1)throw new Error('REVIEW_RETRY_ALREADY_SUBMITTED');
     }else db.prepare("UPDATE factory_items SET status='generating',providerRunId=?,error=NULL,updatedAt=? WHERE id=?").run(genId,now(),row.id);
     setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),generation_session_instance:INSTANCE_ID,baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null});
-    const submitMode=await clickSubmitExactlyOnce(page,baselineInventory,baseline,baselineBusy);
+    const submit=await clickSubmitExactlyOnce(page,baselineInventory,baseline,baselineBusy);
+    const submitMode=String(submit?.mode||'start-generation-direct');
     const priorConsent=meta(db,'flow:consentMode','UNKNOWN');
-    const consentMode=/approve-always/i.test(submitMode)?'ALWAYS_APPROVED':(/approve-once|confirm-generate/i.test(submitMode)?'PER_GENERATION':(priorConsent==='ALWAYS_APPROVED'?'ALWAYS_APPROVED':'NO_DIALOG_OBSERVED'));
+    const consentMode=/approve-always/i.test(submitMode)?'ALWAYS_APPROVED':(/approve-once|confirm-generate|confirmation-dialog|confirmation-point-cost/i.test(submitMode)?'PER_GENERATION':(priorConsent==='ALWAYS_APPROVED'?'ALWAYS_APPROVED':'NO_DIALOG_OBSERVED'));
     setMeta(db,'flow:consentMode',consentMode);
-    setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),generation_session_instance:INSTANCE_ID,submit_mode:submitMode,consent_mode:consentMode,pre_consent_fingerprint:submit.pre_consent_fingerprint||'',baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null,automatic_submit_forbidden:true});
+    setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),generation_session_instance:INSTANCE_ID,submit_mode:submitMode,consent_mode:consentMode,pre_consent_fingerprint:String(submit?.pre_consent_fingerprint||''),baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null,automatic_submit_forbidden:true});
     const started=await waitGenerationStarted(page,baseline,baselineInventory,baselineBusy,90000);
     if(!started.started){
       const bodyAfter=await getBody(page).catch(()=>'');
