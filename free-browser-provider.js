@@ -1494,7 +1494,7 @@ async function reconcileAmbiguousGeneric(page,row,lc,db){
       publish('AMBIGUOUS_CORRELATED_RENDER',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,label:correlated.label,matched:correlated.matched,signal:correlated.signal});
       return{mode:'retrieve',lifecycle:next};
     }
-    publish('AMBIGUOUS_CORRELATION_DIAGNOSTIC',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,terms:episodeRecoveryTerms(row),samples:(currentInv?.ordered_signatures||currentInv?.signatures||[]).slice(0,18)});
+    publish('AMBIGUOUS_CORRELATION_DIAGNOSTIC',{episode:'T'+row.season+'E'+row.episode,job_id:row.id,terms:episodeRecoveryTerms(row),samples:(currentInv?.ordered_signatures||currentInv?.signatures||[]).slice(0,18),page_body:compact(body,2600)});
   }
 
   if(fresh||busy){
