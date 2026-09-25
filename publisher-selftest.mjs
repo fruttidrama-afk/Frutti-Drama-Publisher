@@ -56,7 +56,7 @@ for(const [token,label] of [
   ['CREATIVE_PACKAGE_READY','prompt/title/description package checkpoint'],
   ["status IN ('regen_wait','draft') AND retryStrategy IN ('reuse_prompt','revise_prompt','new_story')",'human REDO priority queue including semantic creative rewrites'],
   ['creativePackageHash','creative package hash link'],
-  ['fresh-video-tile-occurrences','fresh Flow video correlation gate'],
+  ['fresh-video-asset-ambiguous','fresh Flow video correlation ambiguity guard'],
   ['FLOW_DUPLICATE_REVIEW_MEDIA','duplicate review-media rejection'],
   ["source:'creative-package'",'review metadata preservation'],
   ['let editor=await waitFlowReady(page,30000)','stable Flow composer handoff'],
