@@ -36,7 +36,7 @@ for(const token of ["const salt=parseInt(randomUUID().replace(/-/g,'').slice(0,8
   must(provider.includes(token),'Frutti-compatible browser launch contract missing '+token);
 }
 must(!provider.includes('--disk-cache-dir=/tmp/publisher-chrome-cache'),'canonical browser launch must not add custom disk-cache fingerprint flags');
-for(const token of ['function scheduleNoChargeRetry(db,row,opts={})','flow:transientCooldownUntil',"'flow:noChargeStreak:provider'","if(providerCooldown>Date.now())return null",'FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIRED',"status IN ('review','completed')"]){
+for(const token of ['function scheduleNoChargeRetry(db,row,opts={})','flow:transientCooldownUntil',"'flow:noChargeStreak:provider'","if(providerCooldown>Date.now())return null",'FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIRED',"status IN ('review','completed')",'flow:legacyNoChargeStreakMigratedV2','FLOW_PROVIDER_BACKOFF_SUCCESS_REPAIRED_V2']){
   must(provider.includes(token),'provider no-charge runtime contract missing '+token);
 }
 for(const forbidden of ['FLOW_FAILED_TILE_RETRY_CLICKED','clickNativeRetry','repairEarthE10NoGeneration','repairEarthE11KnownNoCharge','repairEarthTodayAfterOperatorConfirmedOnlyFirstRender','realignEarthE11ToFruttiProtocol','rearmEarthE11AfterFullFruttiPort','rearmEarthE11AfterStableComposerFix']){
@@ -48,7 +48,7 @@ for(const token of ['EARTH_IN_10_AUTONOMOUS_EPISODES','enforceEpisodeIntent','ef
 for(const token of ['runtime_knowledge','creativePackageHash','creativePackageId','knowledge:flowSopLoaded','automation:exactlyOnceSubmit','automation:strictSerialGeneration']){
   must(init.includes(token),'runtime-init contract missing '+token);
 }
-for(const token of ["app.get('/factory/knowledge'","automation_safety","stable_composer_handoff:true","native_no_charge_retry:false","immediate_native_retry_disabled:true","adaptive_no_charge_backoff:true","unusual_activity_exponential_backoff:true","provider_wide_unusual_activity_backoff:true","monotonic_provider_cooldown:true","successful_render_resets_provider_backoff:true","successful_redos_count_toward_daily_target:true","show_specific_repairs_isolated:true","replacement creative package required","prompt_integrity","prompt_show_bible_gate:true","atomic_creative_package:true","approval_before_external_storage:true","reject_purges_external_artifacts:true","prompts_rematerialized:true","signedReviewUrl","deleteReviewObject"]){
+for(const token of ["app.get('/factory/knowledge'","automation_safety","stable_composer_handoff:true","native_no_charge_retry:false","immediate_native_retry_disabled:true","adaptive_no_charge_backoff:true","unusual_activity_exponential_backoff:true","provider_wide_unusual_activity_backoff:true","monotonic_provider_cooldown:true","successful_render_resets_provider_backoff:true","successful_redos_count_toward_daily_target:true","legacy_streak_resurrection_guard:true","show_specific_repairs_isolated:true","replacement creative package required","prompt_integrity","prompt_show_bible_gate:true","atomic_creative_package:true","approval_before_external_storage:true","reject_purges_external_artifacts:true","prompts_rematerialized:true","signedReviewUrl","deleteReviewObject"]){
   must(server.includes(token),'server contract missing '+token);
 }
 for(const token of ['earthPromptIsEpisodeBound','episode-generation-prompt','creativePackageDigest','quota_wait','shiftPendingQueueAfter','stored-package']){
