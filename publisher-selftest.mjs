@@ -44,6 +44,8 @@ for(const [token,label] of [
   ['CREATIVE_PACKAGE_READY','prompt/title/description package checkpoint'],
   ["status IN ('regen_wait','draft') AND retryStrategy IN ('reuse_prompt','revise_prompt')",'human REDO priority queue'],
   ['creativePackageHash','creative package hash link'],
+  ['fresh-video-tile-occurrences','fresh Flow video correlation gate'],
+  ['FLOW_DUPLICATE_REVIEW_MEDIA','duplicate review-media rejection'],
   ["source:'creative-package'",'review metadata preservation'],
   ['let editor=await waitFlowReady(page,30000)','stable Flow composer handoff'],
   ['FLOW_UNUSUAL_ACTIVITY_OVERNIGHT','24h unusual-activity fallback'],
@@ -70,7 +72,7 @@ for(const forbidden of ['FLOW_FAILED_TILE_RETRY_CLICKED','clickNativeRetry','rep
 }
 has(runtimeConfig,'EARTH_IN_10_AUTONOMOUS_EPISODES','Earth autonomous geographic ideas');
 has(runtimeConfig,'enforceEpisodeIntent','Earth episode intent validator');
-has(runtimeConfig,'EARTH_IN_10_CONTENT_GATE','Earth generic prompt block');
+has(runtimeConfig,'CONTENT_GATE','generic planner-placeholder prompt block');
 has(runtimeConfig,'effectiveVideoVisualStyle','video/web style isolation');
 has(runtimeConfig,'publisherWebStyleLeak','web-style contamination detector');
 has(runtimeConfig,'materializeCreativePackage','atomic prompt/title/description creation');
