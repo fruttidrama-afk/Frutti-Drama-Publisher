@@ -203,6 +203,19 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
         sourceMediaTransferred=true;
       }
     }else fileSize=Number(row.reviewOriginalSize||0);
+
+    // DUPLICATE-MEDIA HARD STOP: two episodes may never enter publication backed
+    // by the same YouTube video ID or the same persisted media object/path.
+    // This specifically prevents the E17/E18 class of failure where different
+    // episode metadata can accidentally point at one recovered/generated video.
+    if(videoId){
+      const dupVideo=db.prepare("SELECT episode,itemId FROM publication_items WHERE videoId=? AND status NOT IN ('cancelled','deleted')").get(videoId);
+      if(dupVideo)throw new Error('DUPLICATE_MEDIA_BLOCKED: YouTube videoId is already assigned to episode '+dupVideo.episode+'.');
+    }
+    if(filePath){
+      const dupFile=db.prepare("SELECT episode,itemId FROM publication_items WHERE filePath=? AND status NOT IN ('cancelled','deleted')").get(filePath);
+      if(dupFile)throw new Error('DUPLICATE_MEDIA_BLOCKED: media object/path is already assigned to episode '+dupFile.episode+'.');
+    }
     const item={id,itemId:row.id,episode:Number(row.episode),title,description,scheduledAt,uploadAt,status:'queued',filePath,fileSize,videoId,resumableSession:null,playlistId:null,attempts:0,retryAt:0,error:null,history:JSON.stringify([{status:'queued',at:now(),message:'Approved for publication.'}]),createdAt:now(),updatedAt:now()};
     db.prepare('INSERT INTO publication_items(id,itemId,episode,title,description,scheduledAt,uploadAt,status,filePath,fileSize,videoId,resumableSession,playlistId,attempts,retryAt,error,history,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
       .run(item.id,item.itemId,item.episode,item.title,item.description,item.scheduledAt,item.uploadAt,item.status,item.filePath,item.fileSize,item.videoId,item.resumableSession,item.playlistId,item.attempts,item.retryAt,item.error,item.history,item.createdAt,item.updatedAt);
