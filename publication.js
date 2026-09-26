@@ -312,7 +312,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     const updated=(await yt.videos.update({part:['snippet','status'],requestBody:{
       id:item.videoId,
       snippet:{title:item.title,description:item.description,categoryId:v.snippet?.categoryId||'24',tags:[...(v.snippet?.tags||[]).filter(x=>!String(x).startsWith('publisher-runtime-')),'publisher-runtime-'+item.id]},
-      status:{privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}
+      status:{privacyStatus, selfDeclaredMadeForKids:false,containsSyntheticMedia:true}
     }})).data;
     item.aiDisclosureSyncedAt=now();
     item.remotePublishAt=null;
@@ -421,7 +421,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     if(report.length)console.log('[PUBLICATION COPY AUDIT]',JSON.stringify({corrected,factoryCorrected,synced,quotaNormalized:Boolean(quotaRetryAt),items:report}));
   }
 
-  async function upload(item){
+  async function upload(item,privacyStatus='private'){
     if(item.videoId)return;
     if(!item.filePath)throw new Error('Archivo de publicación ausente.');
     const cloudSource=isReviewStorageUri(item.filePath);
@@ -575,14 +575,14 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
         const localDay=dayKey(new Date(base),tz);
         const release=zonedLocal(localDay,'19:00',tz);
         const scheduledAt=release.toISOString();
-        const uploadAt=new Date(release.getTime()-390*60000).toISOString();
+        const uploadAt=scheduledAt;
         if(String(item.scheduledAt)!==scheduledAt||String(item.uploadAt)!==uploadAt){
           item.scheduledAt=scheduledAt;item.uploadAt=uploadAt;
-          hist(item,item.status,'YouTube clock normalized: cloud stock until 12:30 ART, plain PRIVATE upload at 12:30, explicit PUBLIC edit at 19:00; publishAt forbidden.');
+          hist(item,item.status,'YouTube clock normalized: keep media in Publisher stock until release time; upload directly PUBLIC at 19:00 ART. Pre-publication YouTube uploads are forbidden.');
           save(db,item);changed.push({episode:item.episode,uploadAt,scheduledAt,videoId:Boolean(item.videoId)});
         }
       }
-      if(changed.length)console.log('[PUBLICATION 12_30_PRIVATE_19_00_PUBLIC NORMALIZED]',JSON.stringify({timezone:tz,changed}));
+      if(changed.length)console.log('[PUBLICATION STOCK_UNTIL_19_DIRECT_PUBLIC NORMALIZED]',JSON.stringify({timezone:tz,changed}));
     }catch(e){console.log('[PUBLICATION TIMED POLICY NORMALIZE WARNING]',String(e?.message||e).slice(0,500))}
   }
   normalizeTimedYoutubePublicationPolicy();
@@ -630,33 +630,24 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
           if(!loadToken())throw new Error('YOUTUBE_AUTH_REQUIRED');
           if(item.resumableSession&&!item.videoId){const resolved=await reconcileAmbiguous(item);if(resolved&&item.status==='attention')continue}
 
-          // FIXED YOUTUBE CLOCK (FruttiDrama parity):
-          // approval -> private cloud only;
-          // 12:30 ART on release day -> upload plain PRIVATE (no publishAt);
-          // 19:00 ART -> explicit PRIVATE -> PUBLIC edit.
-          if(!item.videoId&&clock<uploadAt){
-            item.attempts=0;item.retryAt=0;item.error=null;save(db,item);
-            continue;
-          }
-
-          if(!item.videoId){
-            await upload(item);
-            await stageMetadata(item);
-            hist(item,'uploaded','Uploaded plain PRIVATE at the configured 12:30 publication-prep time. No publishAt is set.');
-            item.attempts=0;item.retryAt=0;item.error=null;save(db,item);
-          }else if(item.remotePublishAt){
-            // Strip any legacy/native schedule. The only release mechanism is
-            // the explicit privacy edit at 19:00.
-            await stageMetadata(item);
-          }
-
+          // YOUTUBE DISTRIBUTION-SAFE CLOCK:
+          // approval -> Publisher/cloud stock only; NOTHING is uploaded to YouTube early.
+          // release time (19:00 ART) -> upload directly PUBLIC in the initial videos.insert.
+          // A future episode must never exist on YouTube as PRIVATE or scheduled.
           if(clock<releaseAt){
             item.attempts=0;item.retryAt=0;item.error=null;save(db,item);
             continue;
           }
 
-          await publishNowLikeManual(item);
-          await verify(item);
+          if(!item.videoId){
+            await upload(item,'public');
+            await verify(item);
+          }else{
+            // Legacy repair path only: an already-uploaded PRIVATE video from the
+            // retired staging policy is released immediately once its release time arrives.
+            await publishNowLikeManual(item);
+            await verify(item);
+          }
           item.attempts=0;item.retryAt=0;item.error=null;save(db,item);
         }catch(e){
           const raw=String(e?.message||e);item.attempts=Number(item.attempts||0)+1;
