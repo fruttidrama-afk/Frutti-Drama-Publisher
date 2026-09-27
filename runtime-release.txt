@@ -166,3 +166,5 @@ release=2026-09-27-unattended-generation-recovery-v4
 fix=download-menu-retryable-recovery-20260927
 fix=tini-browser-child-reaper-20260927
 release=2026-09-27-unattended-generation-recovery-v5
+fix=flow-download-menu-late-render-rescan-20260927
+release=2026-09-27-unattended-generation-recovery-v6
