@@ -445,7 +445,7 @@ function setLifecycle(db, row, state, extra={}) {
   return value;
 }
 function publish(state, extra={}) {
-  const payload = { state, at:now(), provider:PROVIDER, tinyfish_required:false, ...extra };
+  const payload = { state, at:now(), provider:PROVIDER, ...extra };
   try { fs.writeFileSync(STATUS_FILE, JSON.stringify(payload, null, 2), { encoding:'utf8', mode:0o644 }); } catch {}
   const logDetail=extra?.message||compact(JSON.stringify(extra||{}),2400);
   console.log('[FREE BROWSER]', state, compact(JSON.stringify(extra||{}),3200));
@@ -1561,7 +1561,10 @@ async function seedPersistentProfile(storage, ua='') {
     const p = ctx.pages()[0] || await ctx.newPage(); await p.goto(flowUrl(),{waitUntil:'domcontentloaded',timeout:60000}); await waitFlowReady(p,60000);
   } finally { await ctx.close().catch(()=>{}); }
 }
-async function migrateProfileOnce(db) {
+async function purgeRemovedProviderMetadata(db){
+  try{db.prepare("DELETE FROM factory_meta WHERE key LIKE 'automation:tinyfish%'").run();}catch{}
+}
+function migrateProfileOnce(db) {
   const cookies=path.join(PROFILE_DIR,'Default','Cookies');
   if(fs.existsSync(cookies)){
     setMeta(db,'automation:provider',PROVIDER);
@@ -4185,7 +4188,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);resumeRecoverableManualHold(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);repairProviderBackoffAfterConfirmedSuccessV2(db);normalizeLiveNoChargeCooldown(db);
+    db=dbOpen();purgeRemovedProviderMetadata(db);ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);resumeRecoverableManualHold(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);repairProviderBackoffAfterConfirmedSuccessV2(db);normalizeLiveNoChargeCooldown(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
