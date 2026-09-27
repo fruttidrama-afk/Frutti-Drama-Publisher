@@ -158,10 +158,13 @@ has(server,'catalog_wide_creative_uniqueness:true','catalog-wide creative unique
 has(server,'no_landscape_repeat_cycle:true','no landscape repeat cycle invariant');
 has(server,'youtube_preapproval_private_staging_disabled:true','no YouTube staging immediately after approval');
 has(server,'cloud_stock_until_upload_window:true','cloud stock until upload window');
-has(server,'private_upload_at_1230:true','private upload at 12:30');
-has(server,'direct_private_to_public_at_1900:true','direct private-to-public edit at 19:00');
+has(server,'private_upload_at_1230:false','pre-publication private upload disabled');
+has(server,'direct_private_to_public_at_1900:false','new videos do not use private-to-public staging');
+has(server,'direct_public_upload_at_1900:true','direct public upload at 19:00');
 has(server,'native_publish_at_disabled:true','native publishAt disabled');
-has(server,'youtube_upload_lead_minutes_390:true','390-minute YouTube upload lead');
+has(server,'youtube_upload_lead_minutes_390:false','legacy 390-minute YouTube lead disabled');
+has(server,'zero_use_credit_rollover_self_heal:true','zero-use credit rollover self-heal');
+has(server,'quarantined_submit_recovery_self_heal:true','quarantined submit recovery self-heal');
 has(server,'manual_stock_recovery_upload:true','manual Stock recovery upload invariant');
 has(server,'recovery_upload_cloud_required:true','recovery upload must persist to cloud');
 has(server,'flow_asset_identity_gate:true','Flow asset identity gate');
