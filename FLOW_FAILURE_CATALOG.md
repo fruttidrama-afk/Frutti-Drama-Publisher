@@ -43,3 +43,31 @@ Canonical recovery rule: UNCERTAINTY → RECONCILE; NEVER BLINDLY RESUBMIT.
 **Permanent rule:** approval uses a zero-copy ownership handoff. The publication row points to the exact existing Review MP4 path and records its current size; after that row is durable, the factory row clears its own `videoPath`. There is only one local copy. Publication owns and deletes that file later when the remote platform has durably accepted/published it or the publication is explicitly purged.
 
 **Recovery:** keep the Review item and original MP4 intact; do not regenerate and do not redownload. Deploy the zero-copy approval path, reclaim only recreatable cache data if needed, and retry the explicit approval.
+
+## FLOW-ERR-030 ZERO_USE_NON_ROLLOVER_CREDIT_DEADLOCK
+
+**Symptom:** a Publisher remains at 0/3 after a new day even though enough Flow credits are visible.
+
+**Root cause:** the prior daily cycle spent zero automatic credits. A non-rollover daily grant can replace the still-unused daily allocation without increasing the combined visible balance, so a detector that requires `current > previous` can wait forever.
+
+**Permanent recovery:** after the normal guard window and a publisher-local day change, permit the next canonical batch when prior-cycle use is exactly zero and the live balance funds the complete batch. Keep positive-delta evidence mandatory for partially/fully consumed cycles so paid/monthly credits remain protected. Fallback must not exceed 24 hours.
+
+## FLOW-ERR-031 QUARANTINED_SUBMIT_NEVER_RESUMES
+
+**Symptom:** one `manual_hold` row permanently blocks every later serial episode although its lifecycle explicitly allows automatic recovery.
+
+**Root cause:** quarantine removed the row from production selection but no transition returned it to read-only reconciliation.
+
+**Permanent recovery:** if the row has real submit evidence, `automatic_recovery_forbidden=false`, and a recognized recoverable quarantine state, move the SAME row back to post-submit retrieval with `automatic_submit_forbidden=true`. Never authorize another Generate click.
+
+## FLOW-ERR-032 LONG_LIVED_BROWSER_CHILD_LEAK
+
+**Symptom:** after many unattended browser sessions, Xvfb/Chrome fails with process-fork errors even though the web service itself is alive.
+
+**Permanent recovery:** run the container under a subreaper such as `tini`; close browser contexts normally and let the init process reap orphaned descendants. A worker restart must resume durable lifecycle state instead of resubmitting.
+
+## FLOW-ERR-033 FLOW_DOWNLOAD_MENU_LATE_RENDER
+
+**Symptom:** the verified fresh Flow asset is open and the download control is visible, but the first menu scan returns no quality options.
+
+**Permanent recovery:** wait and re-scan the SAME download menu, including semantic menu-item roles. If still unavailable, close/reopen the SAME verified asset by identity and retry later. Never regenerate the episode.
