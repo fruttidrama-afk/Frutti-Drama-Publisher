@@ -16,3 +16,13 @@
 - FIXED_SIZE_FLOW_GRID → tile count is not identity. A new render may replace/reorder a tile while video_tile_count stays constant. Never use "first tile" or DOM index alone.
 - TARGETED_RECOVERY → a recovery token is read-only with respect to generation. It may inspect/open/download existing Flow media but must return before any Generate path, whether recovery succeeds or remains pending.
 - APPROVAL_ENOSPC → do not copy the Review MP4 to another directory on the same /data volume. Transfer ownership of the exact existing local path to the publication row, then clear factory_items.videoPath only after the publication row is durable. Never regenerate/redownload because approval ran out of disk space.
+
+## 24-hour unattended self-heal rules
+
+- PANEL CLOSED / NO OPERATOR SESSION → this is normal operation, not an exceptional state. Scheduler and worker progress must be server-side and persistent.
+- ZERO-USE DAILY CYCLE + NEW LOCAL DAY + FULL-BATCH LIVE BALANCE → after the normal guard, open the next daily credit cycle even if the visible combined balance did not rise; this handles non-rollover masking. Never apply this shortcut after prior-cycle automatic credits were consumed.
+- RECOVERABLE MANUAL_HOLD + SUBMIT EVIDENCE → resume read-only reconciliation of that same submit with Generate locked.
+- FLOW GRID / VIEWER TRANSIENT → reload the exact verified project or reopen the exact asset identity; preserve the original submit boundary.
+- DOWNLOAD MENU EMPTY AFTER OPEN → wait/re-scan; then reopen the same verified asset. No regeneration.
+- BROWSER/XVFB PROCESS EXHAUSTION → recycle the browser/container safely; persistent DB/lifecycle decides whether to retrieve or generate. Post-submit work always returns to retrieval.
+- Any automatic cycle or recovery path that requires a human to open the Publisher panel is a failed implementation.
