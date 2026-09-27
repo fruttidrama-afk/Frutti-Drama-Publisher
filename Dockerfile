@@ -3,7 +3,7 @@ LABEL org.opencontainers.image.source="https://github.com/fruttidrama-afk/Frutti
 LABEL org.opencontainers.image.description="Publisher Factory autonomous publisher runtime"
 WORKDIR /app
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends chromium ffmpeg xvfb xdotool scrot ca-certificates curl gnupg fonts-liberation fonts-noto-color-emoji \
+  && apt-get install -y --no-install-recommends chromium ffmpeg xvfb xdotool scrot tini ca-certificates curl gnupg fonts-liberation fonts-noto-color-emoji \
   && mkdir -p /etc/apt/keyrings \
   && curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg \
   && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
@@ -30,4 +30,5 @@ RUN node --check runtime-config.js \
 COPY public ./public
 ENV NODE_ENV=production
 ENV CHROMIUM_PATH=/usr/bin/chromium
+ENTRYPOINT ["/usr/bin/tini","--"]
 CMD ["node","--import=./runtime-init.js","--import=./free-browser-provider.js","--import=./flow-bootstrap.js","server.js"]
