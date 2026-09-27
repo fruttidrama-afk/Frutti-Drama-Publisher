@@ -163,3 +163,6 @@ fix=runtime-config-direct-public-no-early-youtube-20260927
 fix=credit-refresh-fallback-max-24h-20260927
 fix=publisher-schema-current-policy-20260927
 release=2026-09-27-unattended-generation-recovery-v4
+fix=download-menu-retryable-recovery-20260927
+fix=tini-browser-child-reaper-20260927
+release=2026-09-27-unattended-generation-recovery-v5
