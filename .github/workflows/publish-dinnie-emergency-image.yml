@@ -37,3 +37,35 @@ jobs:
             org.opencontainers.image.source=https://github.com/fruttidrama-afk/Frutti-Drama-Publisher
             org.opencontainers.image.description=Dinnie emergency publisher runtime
             org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Redeploy Dinnie on Railway
+        shell: bash
+        env:
+          RAILWAY_TOKEN: ${{ secrets.DINNIE_RAILWAY_TOKEN || secrets.RAILWAY_TOKEN || secrets.RAILWAY_PROJECT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RAILWAY_TOKEN:-}" ]; then
+            echo "::error::No Dinnie Railway project token is configured in GitHub Actions."
+            exit 1
+          fi
+          npx -y @railway/cli@latest service redeploy --service dinnie-the-dinosaur --yes
+
+      - name: Verify Dinnie live runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://dinnie-the-dinosaur-production.up.railway.app/factory/health"
+          for attempt in $(seq 1 18); do
+            body="$(curl -fsSL --max-time 20 "$url" || true)"
+            if echo "$body" | grep -q '"quarantined_submit_recovery_self_heal":true' \
+              && echo "$body" | grep -q '"zero_use_credit_rollover_self_heal":true'; then
+              echo "Dinnie is live on the current autonomous runtime."
+              echo "$body" | head -c 8000
+              exit 0
+            fi
+            echo "Waiting for Dinnie runtime rollout (attempt $attempt/18)..."
+            sleep 10
+          done
+          echo "::error::Dinnie did not expose the current runtime after redeploy."
+          exit 1
+
