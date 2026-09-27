@@ -44,7 +44,7 @@ must(g.daily_credit_grant?.const===50,'schema daily_credit_grant must be const 5
 must(g.automatic_batch_credit_gate?.const==='wait-for-daily-flow-refresh','schema must require renewal-driven automatic batch');
 must(g.credit_refresh_poll_minutes?.default===5,'schema credit refresh poll default must be 5 minutes');
 must(g.credit_refresh_guard_hours?.default===20,'schema credit refresh guard default must be 20h');
-must(g.credit_refresh_fallback_hours?.default===30,'schema credit refresh fallback default must be 30h');
+must(g.credit_refresh_fallback_hours?.default===24,'schema credit refresh fallback default must be 24h');
 must(schema.properties?.schedule?.properties?.generation_strategy?.const==='sequential','generation strategy must be sequential');
 must(schema.properties?.knowledge?.properties?.flow_sop_version?.const==='FLOW-SOP-v1.0','schema knowledge version mismatch');
 must(schema.properties?.publication?.properties?.ai_disclosure_required?.const===true,'publication schema must require native AI disclosure');
@@ -53,10 +53,11 @@ const ytSchema=providerSchemas.find(x=>x?.properties?.type?.const==='youtube');
 const fbSchema=providerSchemas.find(x=>x?.properties?.type?.const==='facebook');
 must(ytSchema?.properties?.contains_synthetic_media?.const===true,'YouTube schema must require synthetic-media disclosure');
 must(fbSchema?.properties?.contains_synthetic_media?.const===true,'Facebook schema must require AI-generated disclosure');
-must(ytSchema?.properties?.privacy_before_publish?.const==='private','YouTube schema must upload private first');
-must(ytSchema?.properties?.release_mode?.const==='private_then_public_at_posting_time','YouTube schema release mode mismatch');
+must(ytSchema?.properties?.privacy_before_publish?.const==='not_uploaded','YouTube schema must keep future media off-platform');
+must(ytSchema?.properties?.release_mode?.const==='direct_public_at_posting_time','YouTube schema release mode mismatch');
 must(ytSchema?.properties?.use_publish_at?.const===false,'YouTube schema must forbid publishAt');
-must(ytSchema?.properties?.upload_lead_minutes?.const===390,'YouTube schema must require 390-minute lead');
+must(ytSchema?.properties?.preserve_private_lead_window?.const===false,'YouTube schema must forbid a private lead window');
+must(ytSchema?.properties?.upload_lead_minutes?.const===0,'YouTube schema must require zero-minute lead');
 
 for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY_ENTERED','automatic_submit_forbidden','flow-grid-tile-container','flow-tile-hover-footer','EPISODE_INTENT_REPAIRED','CREATIVE_PACKAGE_READY','creativePackageHash','source:\'creative-package\'','let editor=await waitFlowReady(page,30000)','FLOW_UNUSUAL_ACTIVITY_OVERNIGHT','30*60*1000','8*60*60*1000','24*60*60*1000','GEMINI_FEEDBACK_URL','FEEDBACK_AI_INTERPRET_START','creative_rewrite','POST_SUBMIT_TIMEOUT_RECONCILIATION_ONLY','DAILY_FLOW_GRANT_CREDITS','ensureDailyCreditCycle','WAITING_DAILY_FLOW_CREDIT_REFRESH','flow:dailyCreditBatchOpen','daily-flow-credit-refresh']){
   must(provider.includes(token),'provider contract missing '+token);
