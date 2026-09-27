@@ -2938,19 +2938,26 @@ async function immediateDownloadChoice(page,localPath,{preferWanted=true}={}){
     if(ok)return{ok:true,method:wanted};
     return{ok:false,reason:'preferred-quality-deferred',preferred:wanted};
   }
-  const menuItems=page.locator('flow-menu-item');
   const visibleItems=[];
-  for(let i=0;i<Math.min(await menuItems.count().catch(()=>0),20);i++){
-    const it=menuItems.nth(i);
-    if(!(await it.isVisible().catch(()=>false)))continue;
-    const text=compact(await it.innerText().catch(()=>''),120);
-    const aria=compact(await it.getAttribute('aria-label').catch(()=>''),120);
-    const href=String(await it.evaluate(el=>{
-      const a=el.matches?.('a[href]')?el:el.querySelector?.('a[href]');
-      return a?.href||el.closest?.('a[href]')?.href||'';
-    }).catch(()=>'' )||'');
-    const label=compact(text+' '+aria,160);
-    visibleItems.push({it,text,aria,label,href});
+  // Flow sometimes paints the download popover a few animation frames after
+  // the trigger becomes clickable. A single 500ms scan can therefore see an
+  // empty menu even though the verified render is ready. Wait/re-scan the same
+  // read-only menu before yielding to the outer recovery loop.
+  for(let scan=0;scan<4&&visibleItems.length===0;scan++){
+    const menuItems=page.locator('flow-menu-item,[role="menuitem"]');
+    for(let i=0;i<Math.min(await menuItems.count().catch(()=>0),24);i++){
+      const it=menuItems.nth(i);
+      if(!(await it.isVisible().catch(()=>false)))continue;
+      const text=compact(await it.innerText().catch(()=>''),120);
+      const aria=compact(await it.getAttribute('aria-label').catch(()=>''),120);
+      const href=String(await it.evaluate(el=>{
+        const a=el.matches?.('a[href]')?el:el.querySelector?.('a[href]');
+        return a?.href||el.closest?.('a[href]')?.href||'';
+      }).catch(()=>'' )||'');
+      const label=compact(text+' '+aria,160);
+      if(label||href)visibleItems.push({it,text,aria,label,href});
+    }
+    if(!visibleItems.length)await sleep(350*(scan+1));
   }
   publish('DOWNLOAD_MENU_OPTIONS',{message:visibleItems.map(x=>(x.label||'(unlabeled)')+(x.href?' href='+compact(x.href,180):'')).join(' | ')});
   const fallback=
