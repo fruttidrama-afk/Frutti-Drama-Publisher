@@ -159,3 +159,7 @@ fix=runtime-contract-no-early-youtube-alignment-20260927
 release=2026-09-27-unattended-generation-recovery-v2
 fix=publisher-selftest-direct-public-policy-alignment-20260927
 release=2026-09-27-unattended-generation-recovery-v3
+fix=runtime-config-direct-public-no-early-youtube-20260927
+fix=credit-refresh-fallback-max-24h-20260927
+fix=publisher-schema-current-policy-20260927
+release=2026-09-27-unattended-generation-recovery-v4
