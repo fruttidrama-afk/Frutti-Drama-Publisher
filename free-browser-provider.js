@@ -2926,7 +2926,12 @@ async function openDownloadMenu(page){
 }
 async function immediateDownloadChoice(page,localPath,{preferWanted=true}={}){
   const wanted=CONFIG.generation.download_quality||'1080p Upscaled';
-  if(!await openDownloadMenu(page))return{ok:false,reason:'no-download-control'};
+  try{
+    if(!await openDownloadMenu(page))return{ok:false,reason:'no-download-control'};
+  }catch(e){
+    publish('DOWNLOAD_MENU_RETRYABLE',{message:'Flow download control was visible but could not be opened; recovery will reopen the verified asset instead of failing the job.'});
+    return{ok:false,reason:'download-menu-click-failed'};
+  }
   const opt=page.getByText(new RegExp(escapeRe(wanted),'i')).last();
   if(preferWanted&&await opt.count().catch(()=>0)&&await opt.isVisible().catch(()=>false)){
     const ok=await clickAndCaptureDownload(page,opt,localPath,20000);
