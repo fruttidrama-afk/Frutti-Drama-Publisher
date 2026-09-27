@@ -3317,6 +3317,7 @@ async function retrieveExisting(page,row,cp,lc,db){
   const sameSubmitSession=String(lc?.generation_session_instance||'')===INSTANCE_ID;
   const deadline=Date.now()+15*60*1000;
   let rendered=null,lastVideos=[],uiSignal=null,lastHeartbeat=0,emptyEvidenceSince=0;
+  let transientFreshSeenMs=Date.parse(String(lc?.transient_fresh_seen_at||''))||0;
   const generationStartedMs=Date.parse(String(lc?.generation_started_at||lc?.submit_boundary_at||''))||Date.now();
 
   while(Date.now()<deadline){
@@ -3348,6 +3349,25 @@ async function retrieveExisting(page,row,cp,lc,db){
       const before=Number(baselineInventory.video_tile_count||0);
       const after=Number(inv.video_tile_count||0);
       const delta=after-before;
+
+      // Persist proof that this exact submit produced a temporary post-baseline
+      // render slot. SOP 33.9 allows one clean retry only if that slot later
+      // disappears and the baseline remains stable with no busy/render state.
+      if(delta>0&&!transientFreshSeenMs){
+        transientFreshSeenMs=Date.now();
+        lc=setLifecycle(db,row,'RETRIEVING',{
+          ...lc,
+          transient_fresh_seen_at:new Date(transientFreshSeenMs).toISOString(),
+          transient_fresh_delta:delta,
+          transient_fresh_evidence:'post-baseline project tile observed during retrieval'
+        });
+        publish('TRANSIENT_FRESH_TILE_OBSERVED',{
+          episode:'E'+row.episode,
+          job_id:row.id,
+          delta,
+          message:'A post-baseline Flow tile was observed. If it later disappears for the full safety window, SOP 33.9 permits one clean no-generation retry.'
+        });
+      }
 
       // Strongest normal path: same browser session + exactly one new video tile.
       // Flow keeps newest media at the front of the grid, so choose ONLY that tile.
@@ -3382,9 +3402,9 @@ async function retrieveExisting(page,row,cp,lc,db){
       if(Date.now()-lastHeartbeat<2500||!uiSignal?.ready){
         publish('RETRIEVAL_PROGRESS',{episode:'E'+row.episode,job_id:row.id,signal:uiSignal?.signal||'none',stillBusy,videos:lastVideos.length,same_submit_session:sameSubmitSession});
       }
-      if(!stillBusy&&lastVideos.length===0&&delta<=0&&Date.now()-generationStartedMs>20*60*1000){
+      if(transientFreshSeenMs&&!stillBusy&&lastVideos.length===0&&delta<=0&&Date.now()-generationStartedMs>20*60*1000){
         if(!emptyEvidenceSince)emptyEvidenceSince=Date.now();
-        if(Date.now()-emptyEvidenceSince>20000)throw new Error('FLOW_NO_RETAINED_RENDER_AFTER_20M');
+        if(Date.now()-emptyEvidenceSince>20000)throw new Error('FLOW_NO_RETAINED_RENDER_AFTER_TRANSIENT_TILE');
       }else emptyEvidenceSince=0;
     }
     await sleep(2500);
@@ -4236,13 +4256,35 @@ async function runProvider(){
   setLifecycle(db,fresh,'WAITING_FOR_CREDITS',{prior_generation_id:run,last_error:message,attempt_count:attempts,retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:false});
   setMeta(db,'flow:state','ESPERANDO CRÉDITOS');
   setMeta(db,'flow:message','Google Flow reported insufficient credits. Production will retry later without counting this as a completed generation.');
-}else if(/FLOW_NO_RETAINED_RENDER_AFTER_(?:20M|TRANSIENT_TILE)/.test(message)){
+}else if(/FLOW_NO_RETAINED_RENDER_AFTER_TRANSIENT_TILE/.test(message)){
   const run=String(lc?.generation_id||fresh.providerRunId||'');
+  if(run)try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Temporary Flow render slot disappeared without leaving a retained asset; SOP 33.9 clean retry authorized.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),fresh.id,run)}catch{}
+  const reviewerRetry=Boolean(lc?.reviewer_retry&&String(fresh.reviewRetryToken||'').trim());
   const retryAt=Date.now()+60000;
-  db.prepare("UPDATE factory_items SET status='generating',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?")
-    .run(attempts,now(),'SUBMIT_AMBIGUOUS — result not recovered yet; Generate remains locked.',retryAt,now(),fresh.id);
-  setLifecycle(db,fresh,'SUBMIT_AMBIGUOUS',{...lc,generation_id:run||lc?.generation_id||'',reconciled_at:now(),last_error:message,retry_at:new Date(retryAt).toISOString(),automatic_submit_forbidden:true});
-  publish('NO_RETAINED_RENDER_LOCKED',{episode:'E'+fresh.episode,job_id:fresh.id,message:'Result not recovered yet. Exactly-once rule keeps Generate locked; recovery will continue without resubmitting the prompt.'});
+  db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,flowResult=NULL,runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?")
+    .run(attempts,now(),'TRANSIENT_TILE_VANISHED — no retained asset after stable safety window; one clean serial retry authorized by SOP 33.9.',retryAt,now(),fresh.id);
+  if(reviewerRetry)try{db.prepare("UPDATE factory_items SET reviewRetrySubmittedToken=NULL WHERE id=?").run(fresh.id)}catch{}
+  setLifecycle(db,fresh,'TRANSIENT_TILE_VANISHED_RETRY_AUTHORIZED',{
+    ...lc,
+    prior_generation_id:run,
+    generation_id:null,
+    generation_started_at:null,
+    submit_boundary_at:null,
+    baseline:[],
+    baseline_inventory:null,
+    reconciled_at:now(),
+    last_error:message,
+    retry_at:new Date(retryAt).toISOString(),
+    automatic_submit_forbidden:false,
+    transient_retry_authorized:true
+  });
+  publish('TRANSIENT_TILE_RETRY_AUTHORIZED',{
+    episode:'E'+fresh.episode,
+    job_id:fresh.id,
+    prior_generation_id:run,
+    retry_at:new Date(retryAt).toISOString(),
+    message:'Temporary render slot vanished and no retained asset remained for the full safety window. Prior run was released from daily accounting and the same episode will retry once automatically.'
+  });
 }else if(/FLOW_GENERATION_FAILED/.test(message)){db.prepare("UPDATE factory_items SET status='failed_after_generate',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=0,updatedAt=? WHERE id=?").run(attempts,now(),message,now(),fresh.id);setLifecycle(db,fresh,'FAILED_AFTER_GENERATE',{last_error:message,attempt_count:attempts})}else if(AFTER_GENERATE.has(state)){db.prepare("UPDATE factory_items SET status='generating',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id);setLifecycle(db,fresh,'RETRIEVAL_PENDING',{...lc,last_error:message,attempt_count:attempts,retry_at:new Date(nextTry).toISOString()})}else if(AMBIGUOUS.has(state)){db.prepare("UPDATE factory_items SET status='generating',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id)}else if(reviewerRetryTokenConsumed(fresh)){
   db.prepare("UPDATE factory_items SET status='manual_hold',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=0,updatedAt=? WHERE id=?").run(attempts,now(),message,now(),fresh.id);
   setLifecycle(db,fresh,'MANUAL_HOLD_CONSUMED_RETRY',{...lc,last_error:message,attempt_count:attempts,automatic_submit_forbidden:true,retry_token:String(fresh.reviewRetryToken||'')});
