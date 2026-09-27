@@ -87,8 +87,12 @@ const PRODUCTION_START_EPISODE=1;
 const DAILY_FLOW_GRANT_CREDITS=Math.max(1,Number(CONFIG.generation?.daily_credit_grant||50));
 const DAILY_BATCH_CREDIT_COST=Math.max(1,Number(BASE_DAILY_PRODUCTION_LIMIT||1)*Number(CREDITS_PER_GENERATION||15));
 const CREDIT_REFRESH_POLL_MS=Math.max(60000,Number(CONFIG.generation?.credit_refresh_poll_minutes||5)*60*1000);
-const CREDIT_REFRESH_GUARD_MS=Math.max(6*60*60*1000,Number(CONFIG.generation?.credit_refresh_guard_hours||20)*60*60*1000);
-const CREDIT_REFRESH_FALLBACK_MS=Math.max(CREDIT_REFRESH_GUARD_MS+60*60*1000,Number(CONFIG.generation?.credit_refresh_fallback_hours||30)*60*60*1000);
+const CREDIT_REFRESH_GUARD_MS=Math.max(6*60*60*1000,Math.min(20,Number(CONFIG.generation?.credit_refresh_guard_hours||20))*60*60*1000);
+// Unattended publishers must never wait beyond one full day merely because
+// non-rollover daily credits were not spent and therefore produced no visible
+// balance delta. Keep the fallback inside 24h while preserving a wide guard.
+const CREDIT_REFRESH_FALLBACK_HOURS=Math.min(24,Math.max(21,Number(CONFIG.generation?.credit_refresh_fallback_hours||24)));
+const CREDIT_REFRESH_FALLBACK_MS=Math.max(CREDIT_REFRESH_GUARD_MS+60*60*1000,CREDIT_REFRESH_FALLBACK_HOURS*60*60*1000);
 const escapeRe=v=>String(v??'').replace(/[.*+?^$()|[\]\\]/g,'\\$&');
 function liveProject(){
   let g={...(CONFIG.generation||{})};
@@ -1213,7 +1217,29 @@ async function ensureDailyCreditCycle(db){
   const current=Number(sync.credits);
   const previous=parseVisibleCreditNumber(cycle.last_balance);
   let renewed=false,renewalReason='';
-  if(previous!==null&&current>previous){
+
+  // Critical non-rollover case: if the previous daily cycle consumed ZERO
+  // automatic generations, the next 50-credit allocation can replace the
+  // unspent daily credits without changing the visible combined balance at all.
+  // Waiting for a positive delta in that case deadlocks the publisher forever.
+  // We only use this no-delta path for a zero-use prior cycle, after the normal
+  // guard window, after the publisher-local day changed, and only when the live
+  // balance can fund the complete canonical batch. Partially/fully consumed
+  // cycles still require balance evidence, protecting paid/monthly credits.
+  const openedLocalDay=Number.isFinite(openedMs)?artDay(new Date(openedMs)):'';
+  const currentLocalDay=artDay();
+  if(
+    used===0 &&
+    openedLocalDay &&
+    openedLocalDay!==currentLocalDay &&
+    ageMs>=CREDIT_REFRESH_GUARD_MS &&
+    current>=DAILY_BATCH_CREDIT_COST
+  ){
+    renewed=true;
+    renewalReason='Zero-use prior daily cycle crossed a publisher-local day after the guard window with enough live Flow credits for the full batch; non-rollover can mask the refill delta.';
+  }
+
+  if(!renewed&&previous!==null&&current>previous){
     const delta=current-previous;
     // 3 canonical generations cost 45 credits. Because unused daily credits do
     // not roll over, the visible combined balance normally rises by 45-50.
@@ -3567,6 +3593,51 @@ function quarantineStaleReviewerRetryAmbiguous(db){
   return held;
 }
 
+function resumeRecoverableManualHold(db){
+  // A quarantine is not a terminal state. If we have real submit evidence and
+  // explicitly allowed read-only recovery, resume that SAME submit before any
+  // later episode. This closes the unattended deadlock where a prior-day
+  // ambiguous render sat in manual_hold forever and permanently blocked serial
+  // continuity. No Generate click is authorized by this transition.
+  const rows=db.prepare("SELECT * FROM factory_items WHERE status='manual_hold' ORDER BY episode").all();
+  for(const row of rows){
+    const lc=lifecycle(db,row)||{};
+    if(lc.automatic_recovery_forbidden!==false)continue;
+    const hasSubmitEvidence=Boolean(
+      String(row.providerRunId||'').trim() ||
+      String(lc.generation_id||'').trim() ||
+      String(lc.submit_boundary_at||'').trim()
+    );
+    if(!hasSubmitEvidence)continue;
+    const state=String(lc.state||'').toUpperCase();
+    if(![
+      'MANUAL_HOLD_PRIOR_DAY_AMBIGUOUS',
+      'MANUAL_HOLD_STALE_REDO_AMBIGUOUS',
+      'MANUAL_HOLD_SUBMIT_NOT_CONFIRMED'
+    ].includes(state))continue;
+
+    const stamp=now();
+    db.prepare("UPDATE factory_items SET status='generating',nextTry=0,error='Quarantined submit resumed in recovery-only mode; Generate remains locked.',lastProgressAt=?,updatedAt=? WHERE id=?")
+      .run(stamp,stamp,row.id);
+    setLifecycle(db,row,'SUBMIT_AMBIGUOUS',{
+      ...lc,
+      resumed_from_manual_hold:state,
+      resumed_at:stamp,
+      recovery_mode:'prompt-correlated',
+      automatic_submit_forbidden:true,
+      automatic_recovery_forbidden:false
+    });
+    publish('MANUAL_HOLD_RECOVERY_RESUMED',{
+      episode:'E'+row.episode,
+      job_id:row.id,
+      prior_state:state,
+      message:'Quarantined submit returned to read-only recovery. The existing Flow result must be reconciled before any later serial generation.'
+    });
+    return true;
+  }
+  return false;
+}
+
 
 function normalizeRecoverableBrowserRetrievalCrash(db){
   try{
@@ -4082,7 +4153,7 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);repairProviderBackoffAfterConfirmedSuccessV2(db);normalizeLiveNoChargeCooldown(db);
+    db=dbOpen();ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);resumeRecoverableManualHold(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);repairProviderBackoffAfterConfirmedSuccessV2(db);normalizeLiveNoChargeCooldown(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
