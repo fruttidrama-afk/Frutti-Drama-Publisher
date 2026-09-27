@@ -1065,10 +1065,23 @@ function creditCycleUsage(db,cycle=creditCycleState(db)){
   if(!Number.isFinite(startMs))return 0;
   const runs=new Set();
   try{
-    const rows=db.prepare("SELECT runId,createdAt,credits,status FROM factory_generations WHERE credits>0 AND status NOT IN ('no_generation','infra_rejected') ORDER BY createdAt").all();
+    const rows=db.prepare("SELECT itemId,runId,createdAt,credits,status FROM factory_generations WHERE credits>0 AND status NOT IN ('no_generation','infra_rejected') ORDER BY createdAt").all();
     for(const row of rows){
-      const ms=Date.parse(String(row.createdAt||''));if(!Number.isFinite(ms)||ms<startMs)continue;
-      const run=String(row.runId||'').trim();if(run)runs.add(run);
+      const run=String(row.runId||'').trim();
+      let effectiveAt=String(row.createdAt||'');
+      // Repaired legacy/recovery rows can be inserted into factory_generations
+      // long after the actual Flow submit. Never let that bookkeeping timestamp
+      // steal a slot from the current daily credit cycle.
+      try{
+        const item=row.itemId?db.prepare("SELECT providerRunId FROM factory_items WHERE id=?").get(row.itemId):null;
+        const lc=item?lifecycle(db,{id:row.itemId})||{}:{};
+        const lcRun=String(lc.generation_id||item?.providerRunId||'').trim();
+        if(run&&lcRun===run){
+          effectiveAt=String(lc.generation_started_at||lc.submit_boundary_at||effectiveAt);
+        }
+      }catch{}
+      const ms=Date.parse(effectiveAt);if(!Number.isFinite(ms)||ms<startMs)continue;
+      if(run)runs.add(run);
     }
   }catch{}
   // A submit boundary can be ambiguous before factory_generations is inserted.
@@ -4261,13 +4274,22 @@ async function runProvider(){
   setMeta(db,'flow:message','Google Flow reported insufficient credits. Production will retry later without counting this as a completed generation.');
 }else if(/FLOW_NO_RETAINED_RENDER_AFTER_TRANSIENT_TILE/.test(message)){
   const run=String(lc?.generation_id||fresh.providerRunId||'');
-  if(run)try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Temporary Flow render slot disappeared without leaving a retained asset; SOP 33.9 clean retry authorized.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),fresh.id,run)}catch{}
+  if(run)try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Temporary Flow render slot disappeared without leaving a retained asset; released from generation accounting.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),fresh.id,run)}catch{}
   const reviewerRetry=Boolean(lc?.reviewer_retry&&String(fresh.reviewRetryToken||'').trim());
-  const retryAt=Date.now()+60000;
+  const priorRetries=Math.max(0,Number(lc?.transient_retry_count||0)||0);
+  const cleanRetry=priorRetries<1;
+  const retryAt=Date.now()+(cleanRetry?60000:30*60*1000);
+  if(!cleanRetry){
+    const currentCooldown=Number(meta(db,'flow:transientCooldownUntil','0'))||0;
+    setMeta(db,'flow:transientCooldownUntil',String(Math.max(currentCooldown,retryAt)));
+  }
   db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,flowResult=NULL,runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?")
-    .run(attempts,now(),'TRANSIENT_TILE_VANISHED — no retained asset after stable safety window; one clean serial retry authorized by SOP 33.9.',retryAt,now(),fresh.id);
+    .run(attempts,now(),cleanRetry
+      ?'TRANSIENT_TILE_VANISHED — one clean serial retry authorized by SOP 33.9.'
+      :'TRANSIENT_TILE_REPEAT — clean retry also vanished; provider cooldown armed before the same episode retries automatically.',
+      retryAt,now(),fresh.id);
   if(reviewerRetry)try{db.prepare("UPDATE factory_items SET reviewRetrySubmittedToken=NULL WHERE id=?").run(fresh.id)}catch{}
-  setLifecycle(db,fresh,'TRANSIENT_TILE_VANISHED_RETRY_AUTHORIZED',{
+  setLifecycle(db,fresh,cleanRetry?'TRANSIENT_TILE_VANISHED_RETRY_AUTHORIZED':'TRANSIENT_TILE_PROVIDER_COOLDOWN',{
     ...lc,
     prior_generation_id:run,
     generation_id:null,
@@ -4279,14 +4301,19 @@ async function runProvider(){
     last_error:message,
     retry_at:new Date(retryAt).toISOString(),
     automatic_submit_forbidden:false,
-    transient_retry_authorized:true
+    transient_retry_authorized:cleanRetry,
+    transient_retry_count:priorRetries+1,
+    provider_cooldown:!cleanRetry
   });
-  publish('TRANSIENT_TILE_RETRY_AUTHORIZED',{
+  publish(cleanRetry?'TRANSIENT_TILE_RETRY_AUTHORIZED':'TRANSIENT_TILE_PROVIDER_COOLDOWN',{
     episode:'E'+fresh.episode,
     job_id:fresh.id,
     prior_generation_id:run,
     retry_at:new Date(retryAt).toISOString(),
-    message:'Temporary render slot vanished and no retained asset remained for the full safety window. Prior run was released from daily accounting and the same episode will retry once automatically.'
+    transient_retry_count:priorRetries+1,
+    message:cleanRetry
+      ?'Temporary render slot vanished and no retained asset remained for the full safety window. One clean retry is authorized.'
+      :'The one clean retry also vanished. The same episode is preserved and will retry automatically after a 30-minute provider cooldown; later episodes cannot bypass it.'
   });
 }else if(/FLOW_GENERATION_FAILED/.test(message)){db.prepare("UPDATE factory_items SET status='failed_after_generate',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=0,updatedAt=? WHERE id=?").run(attempts,now(),message,now(),fresh.id);setLifecycle(db,fresh,'FAILED_AFTER_GENERATE',{last_error:message,attempt_count:attempts})}else if(AFTER_GENERATE.has(state)){db.prepare("UPDATE factory_items SET status='generating',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id);setLifecycle(db,fresh,'RETRIEVAL_PENDING',{...lc,last_error:message,attempt_count:attempts,retry_at:new Date(nextTry).toISOString()})}else if(AMBIGUOUS.has(state)){db.prepare("UPDATE factory_items SET status='generating',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id)}else if(reviewerRetryTokenConsumed(fresh)){
   db.prepare("UPDATE factory_items SET status='manual_hold',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=0,updatedAt=? WHERE id=?").run(attempts,now(),message,now(),fresh.id);
