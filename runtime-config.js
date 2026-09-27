@@ -127,7 +127,7 @@ export function loadConfig(){
       automatic_batch_credit_gate:clean(generation.automatic_batch_credit_gate||'wait-for-daily-flow-refresh',80),
       credit_refresh_poll_minutes:Math.max(1,Math.min(60,Number(generation.credit_refresh_poll_minutes||5))),
       credit_refresh_guard_hours:Math.max(6,Math.min(28,Number(generation.credit_refresh_guard_hours||20))),
-      credit_refresh_fallback_hours:Math.max(21,Math.min(48,Number(generation.credit_refresh_fallback_hours||30)))
+      credit_refresh_fallback_hours:Math.max(21,Math.min(24,Number(generation.credit_refresh_fallback_hours||24)))
     },
     automation:{provider:'free-browser-provider',persistent_profile:true,tinyfish_required:false,semantic_field_safety:true,external_reality_reconciliation:true,...(c.automation||{})},
     review:{mode:clean(review.mode||'review',40),archive_provider:'local-only',hot_originals:Number(review.hot_originals??2),archive_below_free_percent:Number(review.archive_below_free_percent??45)},
@@ -143,7 +143,7 @@ export function loadConfig(){
           ?[...new Set(schedule.posting_times.map(v=>clean(v,5)).filter(v=>/^\d{2}:\d{2}$/.test(v)))].slice(0,20)
           :['19:00'];
       })(),
-      upload_lead_minutes:youtubePublicationConfigured?390:Math.max(0,Math.min(1440,Number(schedule.upload_lead_minutes??0)))
+      upload_lead_minutes:youtubePublicationConfigured?0:Math.max(0,Math.min(1440,Number(schedule.upload_lead_minutes??0)))
     },
     publication:(()=>{
       const p=c.publication||{allowed_providers:['youtube','facebook'],selected_provider:null,providers:[]};
@@ -152,7 +152,7 @@ export function loadConfig(){
         ai_disclosure_required:true,
         providers:(Array.isArray(p.providers)?p.providers:[]).map(x=>{
           const type=String(x?.type||'').toLowerCase();
-          if(type==='youtube')return{...x,contains_synthetic_media:true,privacy_before_publish:'private',upload_policy:'private-at-12:30-public-at-19:00',stock_storage:'private-cloud-storage',upload_lead_minutes:390,native_publish_at:false,release_mode:'private_then_public_at_posting_time',use_publish_at:false,metadata_final_before_upload:true,preserve_private_lead_window:true};
+          if(type==='youtube')return{...x,contains_synthetic_media:true,privacy_before_publish:'not_uploaded',upload_policy:'publisher-stock-until-19:00-then-direct-public',stock_storage:'private-cloud-storage',upload_lead_minutes:0,native_publish_at:false,release_mode:'direct_public_at_posting_time',use_publish_at:false,metadata_final_before_upload:true,preserve_private_lead_window:false};
           if(type==='facebook')return{...x,contains_synthetic_media:true};
           return{...x,contains_synthetic_media:true};
         })
@@ -183,7 +183,7 @@ export const DAILY_FLOW_GRANT=Number(CONFIG.generation.daily_credit_grant||50);
 export const AUTOMATIC_BATCH_CREDIT_GATE=String(CONFIG.generation.automatic_batch_credit_gate||'wait-for-daily-flow-refresh');
 export const CREDIT_REFRESH_POLL_MINUTES=Number(CONFIG.generation.credit_refresh_poll_minutes||5);
 export const CREDIT_REFRESH_GUARD_HOURS=Number(CONFIG.generation.credit_refresh_guard_hours||20);
-export const CREDIT_REFRESH_FALLBACK_HOURS=Number(CONFIG.generation.credit_refresh_fallback_hours||30);
+export const CREDIT_REFRESH_FALLBACK_HOURS=Number(CONFIG.generation.credit_refresh_fallback_hours||24);
 export const TIMEZONE=CONFIG.schedule.timezone;
 
 export function registry(){
