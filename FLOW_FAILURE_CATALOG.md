@@ -71,3 +71,20 @@ Canonical recovery rule: UNCERTAINTY → RECONCILE; NEVER BLINDLY RESUBMIT.
 **Symptom:** the verified fresh Flow asset is open and the download control is visible, but the first menu scan returns no quality options.
 
 **Permanent recovery:** wait and re-scan the SAME download menu, including semantic menu-item roles. If still unavailable, close/reopen the SAME verified asset by identity and retry later. Never regenerate the episode.
+
+## FLOW-ERR-034 VANISHED_TRANSIENT_TILE_RECOVERY_LOOP
+
+**Symptom:** Flow briefly creates a post-submit tile (often at a very low progress percentage), then the tile disappears; the exact project returns to the pre-submit baseline and the Publisher remains in retrieval forever.
+
+**Root cause:** the runtime preserved the exactly-once submit lock but failed to implement SOP 33.9's terminal branch for a temporary render slot that vanishes without leaving a retained asset. A timeout was incorrectly treated as permanent ambiguity even after the worker had durable proof that a fresh post-baseline tile existed and later disappeared.
+
+**Permanent recovery:** persist the first post-baseline transient-tile observation in the generation lifecycle. If the same submit is old enough for the safety threshold, the exact project is verified, no busy state or playable media remains, the grid is back at/below baseline, and that empty state is stable for the secondary safety window, mark the prior generation `no_generation`, remove it from logical daily accounting, clear the old run identity, and authorize one clean serial retry of the same episode. A plain timeout without prior transient-tile proof is still ambiguous and must never authorize a duplicate submit.
+
+## FLOW-ERR-035 PINNED_CHILD_RUNTIME_NEVER_UPDATES
+
+**Symptom:** Publisher Factory/runtime fixes are deployed centrally, but one child Publisher remains on old behavior for days and never receives the fixes.
+
+**Root cause:** the child service is sourced from a mutable GHCR tag whose build workflow was hard-pinned to an old repository commit, and/or the image was pushed without a deterministic Railway redeploy. Updating the shared runtime repository alone therefore did not update the running child.
+
+**Permanent recovery:** child-image workflows must build current `main`, never a historical hard-coded SHA unless explicitly performing a rollback. After pushing the child tag, CI must trigger a Railway redeploy and then verify the live `/factory/health` capability flags. Image publication without live-runtime verification is not considered a completed deployment.
+
