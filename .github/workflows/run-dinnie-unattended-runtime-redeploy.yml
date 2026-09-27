@@ -39,3 +39,4 @@ jobs:
           done
           echo "::error::Dinnie did not expose the current unattended runtime within the verification window."
           exit 1
+# retrigger: 2026-09-27T20:36Z
