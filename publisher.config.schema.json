@@ -237,8 +237,8 @@
         "credit_refresh_fallback_hours": {
           "type": "number",
           "minimum": 21,
-          "maximum": 48,
-          "default": 30
+          "maximum": 24,
+          "default": 24
         }
       }
     },
@@ -399,7 +399,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 1440,
-          "description": "Provider-specific lead time. YouTube defaults to 390 minutes; Facebook Reels may publish at the scheduled runtime moment."
+          "description": "Provider-specific lead time. YouTube uploads directly PUBLIC at the scheduled runtime moment, so its lead time is 0."
         }
       }
     },
@@ -462,7 +462,7 @@
                     "const": "youtube"
                   },
                   "privacy_before_publish": {
-                    "const": "private"
+                    "const": "not_uploaded"
                   },
                   "playlist_strategy": {
                     "type": "string"
@@ -483,7 +483,7 @@
                     "const": true
                   },
                   "release_mode": {
-                    "const": "private_then_public_at_posting_time"
+                    "const": "direct_public_at_posting_time"
                   },
                   "use_publish_at": {
                     "const": false
@@ -492,10 +492,10 @@
                     "const": true
                   },
                   "preserve_private_lead_window": {
-                    "const": true
+                    "const": false
                   },
                   "upload_lead_minutes": {
-                    "const": 390
+                    "const": 0
                   }
                 }
               },
