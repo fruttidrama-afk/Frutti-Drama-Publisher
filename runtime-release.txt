@@ -157,3 +157,5 @@ release=2026-09-27-unattended-generation-recovery-v1
 fix=truthful-direct-public-runtime-health-20260927
 fix=runtime-contract-no-early-youtube-alignment-20260927
 release=2026-09-27-unattended-generation-recovery-v2
+fix=publisher-selftest-direct-public-policy-alignment-20260927
+release=2026-09-27-unattended-generation-recovery-v3
