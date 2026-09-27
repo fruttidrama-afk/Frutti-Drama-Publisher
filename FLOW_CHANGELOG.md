@@ -67,3 +67,13 @@
 - A Flow download menu that appears late is re-scanned before the job backs off; download failure always retries the same verified asset and never regenerates.
 - The canonical runtime image is rebuilt/published from central Publisher Factory changes so image-based child publishers can inherit the same recovery code.
 - Health/runtime checks must prove these capabilities without requiring a panel visit.
+
+## 2026-09-27 — vanished-render self-heal + child runtime deployment parity
+
+- Implemented SOP 33.9 in the reusable FreeBrowserProvider: a proven fresh post-baseline tile that later disappears can no longer trap a Publisher in retrieval forever.
+- The worker now persists transient-tile evidence, requires the full safety window plus a stable no-busy/no-media baseline, releases the vanished run from daily accounting as `no_generation`, and authorizes one clean serial retry. A timeout alone still never authorizes another Generate click.
+- FruttiDrama T3E2 was identified as the exact failure pattern: a fresh 2% tile appeared after one submit, vanished, and the project returned to its 28-tile baseline. The stale run was released from accounting and T3E2 was automatically retried without human panel intervention.
+- The Dinnie emergency runtime workflow was found hard-pinned to a historical commit. The pin was removed; the child tag now builds current `main`.
+- Child-image publication is no longer treated as deployment completion. Dinnie CI now redeploys the Railway service after the image push and verifies live runtime capability flags.
+- Earth remained correctly bounded to three new automatic generations in its current credit cycle; recovery of an earlier already-submitted render is not counted as a new current-cycle submit.
+
