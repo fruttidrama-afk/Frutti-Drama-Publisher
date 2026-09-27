@@ -218,9 +218,10 @@ has(publication,"status:{privacyStatus:'private',selfDeclaredMadeForKids:false,c
 has(facebookPublication,'is_ai_generated:true','Facebook Reels publish with native AI-generated disclosure');
 has(facebookPublication,'ensureAiDisclosure','Facebook published-Reel AI disclosure repair');
 has(facebookPublication,"params:{is_ai_generated:true}",'Facebook legacy Reel in-place AI disclosure retrofit');
-has(publication,"new Date(Date.parse(scheduledAt)-390*60000).toISOString()",'YouTube upload occurs 390 minutes before release');
 has(publication,"zonedLocal(localDay,'19:00',tz)",'YouTube release is normalized to 19:00');
-has(publication,'Uploaded plain PRIVATE at the configured 12:30 publication-prep time. No publishAt is set.','12:30 private upload audit message');
+has(publication,'const uploadAt=scheduledAt;','YouTube upload clock equals release clock');
+has(publication,"await upload(item,'public')",'YouTube uploads directly PUBLIC at release time');
+has(publication,'Pre-publication YouTube uploads are forbidden.','no-early-YouTube audit message');
 if(publication.includes("privacyStatus:'private',publishAt:item.scheduledAt"))throw new Error('Native YouTube publishAt scheduling must stay disabled');
 
 const schema=JSON.parse(read('publisher.config.schema.json'));
@@ -231,7 +232,7 @@ must(schema.properties?.generation?.properties?.daily_credit_grant?.const===50,'
 must(schema.properties?.generation?.properties?.automatic_batch_credit_gate?.const==='wait-for-daily-flow-refresh','schema renewal-driven batch gate invariant');
 must(schema.properties?.generation?.properties?.credit_refresh_poll_minutes?.default===5,'schema credit poll default');
 must(schema.properties?.generation?.properties?.credit_refresh_guard_hours?.default===20,'schema credit guard default');
-must(schema.properties?.generation?.properties?.credit_refresh_fallback_hours?.default===30,'schema credit fallback default');
+must(schema.properties?.generation?.properties?.credit_refresh_fallback_hours?.default===24,'schema credit fallback default');
 must(schema.properties?.knowledge?.properties?.flow_sop_version?.const==='FLOW-SOP-v1.0','schema SOP inheritance version');
 must(schema.properties?.review?.properties?.archive_provider?.const==='local-only','unapproved review media must stay local');
 must(schema.properties?.review?.properties?.external_storage_before_approval?.const===false,'external review storage before approval must be forbidden');
@@ -243,10 +244,11 @@ const ytSchema=providerSchemas.find(x=>x?.properties?.type?.const==='youtube');
 const fbSchema=providerSchemas.find(x=>x?.properties?.type?.const==='facebook');
 must(ytSchema?.properties?.contains_synthetic_media?.const===true,'YouTube synthetic-media disclosure invariant');
 must(fbSchema?.properties?.contains_synthetic_media?.const===true,'Facebook AI disclosure invariant');
-must(ytSchema?.properties?.privacy_before_publish?.const==='private','YouTube schema private-first policy');
-must(ytSchema?.properties?.release_mode?.const==='private_then_public_at_posting_time','YouTube schema explicit private-to-public release');
+must(ytSchema?.properties?.privacy_before_publish?.const==='not_uploaded','YouTube schema off-platform-before-release policy');
+must(ytSchema?.properties?.release_mode?.const==='direct_public_at_posting_time','YouTube schema direct-public release');
 must(ytSchema?.properties?.use_publish_at?.const===false,'YouTube schema forbids publishAt');
-must(ytSchema?.properties?.upload_lead_minutes?.const===390,'YouTube schema 390-minute lead');
+must(ytSchema?.properties?.preserve_private_lead_window?.const===false,'YouTube schema forbids private lead window');
+must(ytSchema?.properties?.upload_lead_minutes?.const===0,'YouTube schema zero-minute lead');
 
 console.log(JSON.stringify({
   ok:true,
