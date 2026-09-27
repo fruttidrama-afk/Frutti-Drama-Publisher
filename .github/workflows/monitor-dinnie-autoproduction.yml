@@ -1,0 +1,64 @@
+name: Monitor Dinnie Autoproduction
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/monitor-dinnie-autoproduction.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for autonomous recovery/generation progress
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://dinnie-the-dinosaur-production.up.railway.app/factory/health"
+          for attempt in $(seq 1 48); do
+            body="$(curl -fsSL --max-time 20 "$url" || true)"
+            echo "attempt=$attempt"
+            if [ -n "$body" ]; then
+              printf '%s' "$body" > /tmp/health.json
+              python - <<'PY'
+import json
+try:
+    h=json.load(open("/tmp/health.json"))
+    print(json.dumps({
+        "at":h.get("at"),
+        "provider_health":h.get("provider_health"),
+        "current_job":h.get("current_job"),
+        "queue":h.get("queue"),
+        "completed_today":h.get("completed_today"),
+        "remaining_today":h.get("remaining_today"),
+        "last_generation":h.get("last_generation"),
+        "last_review_ready":h.get("last_review_ready"),
+        "credit_cycle":h.get("credit_cycle")
+    }, ensure_ascii=False))
+except Exception as e:
+    print("health parse failed:",e)
+PY
+              if python - <<'PY'
+import json,sys
+try:
+    h=json.load(open("/tmp/health.json"))
+    cj=h.get("current_job") or {}
+    progressed=(int(h.get("completed_today") or 0)>=1 or int(cj.get("episode") or 0)>=6 and str(cj.get("status") or "") in {"generating","review"})
+    current=(h.get("automation_safety") or {}).get("quarantined_submit_recovery_self_heal") is True
+    sys.exit(0 if progressed and current else 1)
+except:
+    sys.exit(1)
+PY
+              then
+                echo "Dinnie autonomous pipeline has progressed beyond the stale E5 hold."
+                exit 0
+              fi
+            fi
+            sleep 15
+          done
+          echo "::error::Dinnie did not make autonomous recovery/generation progress within the monitoring window."
+          exit 1
