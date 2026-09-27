@@ -168,3 +168,6 @@ fix=tini-browser-child-reaper-20260927
 release=2026-09-27-unattended-generation-recovery-v5
 fix=flow-download-menu-late-render-rescan-20260927
 release=2026-09-27-unattended-generation-recovery-v6
+fix=sop-33-9-vanished-render-self-heal-20260927
+fix=dinnie-current-runtime-image-unpinned-20260927
+release=2026-09-27-unattended-generation-recovery-v5
