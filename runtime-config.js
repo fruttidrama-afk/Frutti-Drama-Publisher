@@ -129,7 +129,7 @@ export function loadConfig(){
       credit_refresh_guard_hours:Math.max(6,Math.min(28,Number(generation.credit_refresh_guard_hours||20))),
       credit_refresh_fallback_hours:Math.max(21,Math.min(24,Number(generation.credit_refresh_fallback_hours||24)))
     },
-    automation:{provider:'free-browser-provider',persistent_profile:true,tinyfish_required:false,semantic_field_safety:true,external_reality_reconciliation:true,...(c.automation||{})},
+    automation:(()=>{const a={...(c.automation||{})};for(const k of ['tinyfish_required','tinyfish_fallback','tinyfishRequired','tinyfishFallback'])delete a[k];return{...a,provider:'free-browser-provider',persistent_profile:true,semantic_field_safety:true,external_reality_reconciliation:true};})(),
     review:{mode:clean(review.mode||'review',40),archive_provider:'local-only',hot_originals:Number(review.hot_originals??2),archive_below_free_percent:Number(review.archive_below_free_percent??45)},
     schedule:{
       timezone:clean(schedule.timezone||identity.timezone||'UTC',100),
