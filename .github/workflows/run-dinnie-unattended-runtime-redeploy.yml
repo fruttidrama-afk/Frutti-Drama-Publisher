@@ -1,0 +1,41 @@
+name: Run Dinnie Unattended Runtime Redeploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/run-dinnie-unattended-runtime-redeploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger one-time Dinnie runtime redeploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --max-time 60 "https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/dinnie-unattended-runtime-redeploy-20260927"
+          echo
+      - name: Verify current runtime and automatic production
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://dinnie-the-dinosaur-production.up.railway.app/factory/health"
+          for attempt in $(seq 1 30); do
+            body="$(curl -fsSL --max-time 20 "$url" || true)"
+            echo "attempt=$attempt"
+            echo "$body" | head -c 3000
+            echo
+            if echo "$body" | grep -q '"quarantined_submit_recovery_self_heal":true' \
+              && echo "$body" | grep -q '"zero_use_credit_rollover_self_heal":true'; then
+              echo "Dinnie is live on the current unattended runtime."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Dinnie did not expose the current unattended runtime within the verification window."
+          exit 1
