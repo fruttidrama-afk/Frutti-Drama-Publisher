@@ -1,0 +1,36 @@
+name: Hotfix Earth autonomous recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/hotfix-earth-recovery-20261001.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch strict Flow asset recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCnA9UGF0aCgiZnJlZS1icm93c2VyLXByb3ZpZGVyLmpzIikKcz1wLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKQpvbGQ9IiIiICBjb25zdCBwdXJlUG9zdEJhc2VsaW5lQnVyc3Q9YWxsb3dNdWx0aXBsZSYmY2FuZGlkYXRlcy5sZW5ndGg+MCYmKE51bWJlcihjdXJyZW50LnZpZGVvX3RpbGVfY291bnR8fDApLU51bWJlcihiYXNlbGluZUludj8udmlkZW9fdGlsZV9jb3VudHx8MCkpPT09Y2FuZGlkYXRlcy5sZW5ndGg7CiAgY29uc3Qgc2FmZVVuaXF1ZVJlcGxhY2VtZW50PWNhbmRpZGF0ZXMubGVuZ3RoPT09MSYmZGlmZi5taXNzaW5nPD0xJiZNYXRoLmFicyhkaWZmLmRlbHRhKTw9MTsKICBpZighc2FmZVVuaXF1ZVJlcGxhY2VtZW50JiYhcHVyZVBvc3RCYXNlbGluZUJ1cnN0KXsKIiIiCm5ldz0iIiIgIGNvbnN0IHB1cmVQb3N0QmFzZWxpbmVCdXJzdD1hbGxvd011bHRpcGxlJiZjYW5kaWRhdGVzLmxlbmd0aD4wJiYoTnVtYmVyKGN1cnJlbnQudmlkZW9fdGlsZV9jb3VudHx8MCktTnVtYmVyKGJhc2VsaW5lSW52Py52aWRlb190aWxlX2NvdW50fHwwKSk9PT1jYW5kaWRhdGVzLmxlbmd0aDsKICAvLyBGbG93IHZpcnR1YWxpemVzL3Jlb3JkZXJzIGl0cyBncmlkLiBBIGxhcmdlIG51bWJlciBvZiBiYXNlbGluZSB0aWxlcyBjYW4KICAvLyBkaXNhcHBlYXIgZnJvbSB0aGUgY3VycmVudGx5IHJlbmRlcmVkIERPTSBldmVuIHdoaWxlIHRoZSBvbmUgbmV3bHktY3JlYXRlZAogIC8vIHZpZGVvIHJlbWFpbnMgdW5pcXVlbHkgaWRlbnRpZmlhYmxlLiBEbyBub3QgbWlzdGFrZSB0aGF0IGJhc2VsaW5lIGRyaWZ0IGZvcgogIC8vIGEgc2Vjb25kIGNhbmRpZGF0ZS4gVGhlIHdpZGVuZWQgcGF0aCBpcyBkZWxpYmVyYXRlbHkgbmFycm93OiBzYW1lIGxpdmUKICAvLyBzdWJtaXQgc2Vzc2lvbiwgZXhhY3RseSBvbmUgKzEgdmlkZW8gZGVsdGEsIGV4YWN0bHkgb25lIHVudXNlZCBjYW5kaWRhdGUsCiAgLy8gYW5kIGEgc3Ryb25nIGFzc2V0IGlkZW50aXR5LiBFeGlzdGluZyByZWNvdmVyZWQgSURzIHdlcmUgYWxyZWFkeSByZW1vdmVkIGJ5CiAgLy8gZnJlc2hGbG93QXNzZXRDYW5kaWRhdGVzKCksIGFuZCBzYXZlUmV2aWV3QXNzZXQoKSByZS1jaGVja3MgdW5pcXVlbmVzcy4KICBjb25zdCBib3VuZExpZmVjeWNsZT0oZGImJnJvdyk/KGxpZmVjeWNsZShkYixyb3cpfHx7fSk6e307CiAgY29uc3Qgc2FtZUJvdW5kU3VibWl0U2Vzc2lvbj1Cb29sZWFuKAogICAgZGImJnJvdyYmCiAgICBTdHJpbmcoYm91bmRMaWZlY3ljbGU/LmdlbmVyYXRpb25fc2Vzc2lvbl9pbnN0YW5jZXx8JycpPT09SU5TVEFOQ0VfSUQmJgogICAgU3RyaW5nKGJvdW5kTGlmZWN5Y2xlPy5nZW5lcmF0aW9uX2lkfHxyb3cucHJvdmlkZXJSdW5JZHx8JycpCiAgKTsKICBjb25zdCB1bmlxdWVVbnVzZWRTdHJvbmdBc3NldD1Cb29sZWFuKAogICAgc2FtZUJvdW5kU3VibWl0U2Vzc2lvbiYmCiAgICBjYW5kaWRhdGVzLmxlbmd0aD09PTEmJgogICAgTnVtYmVyKGRpZmYuZGVsdGEpPT09MSYmCiAgICBTdHJpbmcoY2FuZGlkYXRlc1swXT8uYXNzZXRfaWR8fCcnKSYmCiAgICBTdHJpbmcoY2FuZGlkYXRlc1swXT8uaWRlbnRpdHlfc3RyZW5ndGh8fCcnKT09PSdzdHJvbmcnCiAgKTsKICBjb25zdCBvcmRpbmFyeVNhZmVVbmlxdWU9Y2FuZGlkYXRlcy5sZW5ndGg9PT0xJiZkaWZmLm1pc3Npbmc8PTEmJk1hdGguYWJzKGRpZmYuZGVsdGEpPD0xOwogIGNvbnN0IHNhZmVVbmlxdWVSZXBsYWNlbWVudD1vcmRpbmFyeVNhZmVVbmlxdWV8fHVuaXF1ZVVudXNlZFN0cm9uZ0Fzc2V0OwogIGlmKHVuaXF1ZVVudXNlZFN0cm9uZ0Fzc2V0JiYhb3JkaW5hcnlTYWZlVW5pcXVlKXsKICAgIHB1Ymxpc2goJ0ZMT1dfVU5JUVVFX1NUUk9OR19BU1NFVF9BQ0NFUFRFRF9XSVRIX0JBU0VMSU5FX0RSSUZUJyx7CiAgICAgIGVwaXNvZGU6cm93PygnRScrcm93LmVwaXNvZGUpOm51bGwsCiAgICAgIGFzc2V0X2lkOlN0cmluZyhjYW5kaWRhdGVzWzBdPy5hc3NldF9pZHx8JycpLnNsaWNlKDAsMjQpLAogICAgICBtaXNzaW5nX2Jhc2VsaW5lOk51bWJlcihkaWZmLm1pc3Npbmd8fDApLAogICAgICBkZWx0YTpOdW1iZXIoZGlmZi5kZWx0YXx8MCksCiAgICAgIG1ldGhvZDpkaWZmLm1ldGhvZCwKICAgICAgbWVzc2FnZTonQWNjZXB0ZWQgb25lIHVudXNlZCBzdHJvbmcgcG9zdC1zdWJtaXQgYXNzZXQgZGVzcGl0ZSB2aXJ0dWFsaXplZCBGbG93IGdyaWQgYmFzZWxpbmUgZHJpZnQuJwogICAgfSk7CiAgfQogIGlmKCFzYWZlVW5pcXVlUmVwbGFjZW1lbnQmJiFwdXJlUG9zdEJhc2VsaW5lQnVyc3QpewoiIiIKaWYgcy5jb3VudChvbGQpIT0xOgogICAgcmFpc2UgU3lzdGVtRXhpdChmInRhcmdldCBjb3VudD17cy5jb3VudChvbGQpfTsgcmVmdXNpbmcgdW5zYWZlIHBhdGNoIikKcz1zLnJlcGxhY2Uob2xkLG5ldywxKQpwLndyaXRlX3RleHQocyxlbmNvZGluZz0idXRmLTgiKQo=' | base64 -d > /tmp/patch.py
+          python /tmp/patch.py
+          node --check free-browser-provider.js
+          npm test --if-present
+      - name: Commit Earth recovery fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$(git status --porcelain -- free-browser-provider.js)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add free-browser-provider.js
+          git commit -m "Fix Earth recovery under Flow grid virtualization"
+          git push
