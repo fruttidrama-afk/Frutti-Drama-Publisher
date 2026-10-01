@@ -1,0 +1,28 @@
+name: Deploy Earth recovery hotfix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/deploy-earth-recovery-20261001.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Trigger watched runtime release
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "fix=earth-unique-strong-asset-baseline-drift-autorecovery-20261001" >> runtime-release.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime-release.txt
+          git commit -m "Release Earth autonomous recovery fix"
+          git push
