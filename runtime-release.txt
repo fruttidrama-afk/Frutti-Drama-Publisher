@@ -173,3 +173,4 @@ fix=dinnie-current-runtime-image-unpinned-20260927
 release=2026-09-27-unattended-generation-recovery-v5
 fix=bounded-transient-retries-credit-cycle-accounting-20260927
 release=2026-09-27-unattended-generation-recovery-v6
+fix=earth-unique-strong-asset-baseline-drift-autorecovery-20261001
