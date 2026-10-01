@@ -2714,7 +2714,38 @@ async function openUniqueFreshInventoryResult(page,baselineInv,{allowMultiple=fa
     if(scored[0]?.score>=2&&scored[0].score>Number(scored[1]?.score||-1))candidates=[scored[0]];
   }
   const purePostBaselineBurst=allowMultiple&&candidates.length>0&&(Number(current.video_tile_count||0)-Number(baselineInv?.video_tile_count||0))===candidates.length;
-  const safeUniqueReplacement=candidates.length===1&&diff.missing<=1&&Math.abs(diff.delta)<=1;
+  // Flow virtualizes/reorders its grid. A large number of baseline tiles can
+  // disappear from the currently rendered DOM even while the one newly-created
+  // video remains uniquely identifiable. Do not mistake that baseline drift for
+  // a second candidate. The widened path is deliberately narrow: same live
+  // submit session, exactly one +1 video delta, exactly one unused candidate,
+  // and a strong asset identity. Existing recovered IDs were already removed by
+  // freshFlowAssetCandidates(), and saveReviewAsset() re-checks uniqueness.
+  const boundLifecycle=(db&&row)?(lifecycle(db,row)||{}):{};
+  const sameBoundSubmitSession=Boolean(
+    db&&row&&
+    String(boundLifecycle?.generation_session_instance||'')===INSTANCE_ID&&
+    String(boundLifecycle?.generation_id||row.providerRunId||'')
+  );
+  const uniqueUnusedStrongAsset=Boolean(
+    sameBoundSubmitSession&&
+    candidates.length===1&&
+    Number(diff.delta)===1&&
+    String(candidates[0]?.asset_id||'')&&
+    String(candidates[0]?.identity_strength||'')==='strong'
+  );
+  const ordinarySafeUnique=candidates.length===1&&diff.missing<=1&&Math.abs(diff.delta)<=1;
+  const safeUniqueReplacement=ordinarySafeUnique||uniqueUnusedStrongAsset;
+  if(uniqueUnusedStrongAsset&&!ordinarySafeUnique){
+    publish('FLOW_UNIQUE_STRONG_ASSET_ACCEPTED_WITH_BASELINE_DRIFT',{
+      episode:row?('E'+row.episode):null,
+      asset_id:String(candidates[0]?.asset_id||'').slice(0,24),
+      missing_baseline:Number(diff.missing||0),
+      delta:Number(diff.delta||0),
+      method:diff.method,
+      message:'Accepted one unused strong post-submit asset despite virtualized Flow grid baseline drift.'
+    });
+  }
   if(!safeUniqueReplacement&&!purePostBaselineBurst){
     return{ready:false,opened:false,signal:`fresh-video-asset-ambiguous:fresh=${candidates.length}:missing=${diff.missing}:delta=${diff.delta}:method=${diff.method}`,candidates:candidates.slice(0,8),rejected:diff.rejected};
   }
