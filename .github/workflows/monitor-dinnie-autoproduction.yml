@@ -1,6 +1,8 @@
 name: Monitor Dinnie Autoproduction
 
 on:
+  schedule:
+    - cron: "*/15 * * * *"
   push:
     branches: [main]
     paths:
@@ -10,30 +12,91 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: dinnie-autoproduction-watchdog
+  cancel-in-progress: false
+
 jobs:
   monitor:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
-      - name: Wait for autonomous recovery or generation progress
+      - name: Check unattended runtime and self-heal if needed
         shell: bash
         run: |
           set -euo pipefail
-          url="https://dinnie-the-dinosaur-production.up.railway.app/factory/health"
-          for attempt in $(seq 1 40); do
-            body="$(curl -fsSL --max-time 20 "$url" || true)"
-            echo "attempt=$attempt"
-            if [ -n "$body" ]; then
-              echo "$body" | jq '{at,provider_health,current_job,queue,completed_today,remaining_today,last_generation,last_review_ready,credit_cycle}'
-              current="$(echo "$body" | jq -r '.automation_safety.quarantined_submit_recovery_self_heal // false')"
-              episode="$(echo "$body" | jq -r '.current_job.episode // 0')"
-              status="$(echo "$body" | jq -r '.current_job.status // ""')"
-              completed="$(echo "$body" | jq -r '.completed_today // 0')"
-              if [ "$current" = "true" ] && { [ "$completed" -ge 1 ] || { [ "$episode" -ge 6 ] && { [ "$status" = "generating" ] || [ "$status" = "review" ]; }; }; }; then
-                echo "Dinnie autonomous pipeline progressed beyond the stale E5 hold."
-                exit 0
+          health_url="https://dinnie-the-dinosaur-production.up.railway.app/factory/health"
+          redeploy_url="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/dinnie-unattended-runtime-redeploy-20260927"
+
+          check_health() {
+            body="$(curl -fsSL --max-time 20 "$health_url" || true)"
+            if [ -z "$body" ]; then
+              echo "Dinnie health endpoint is unavailable."
+              return 1
+            fi
+            echo "$body" | jq '{at,publisher_enabled,scheduler_alive,worker_alive,automation_provider,publication_provider,provider_health,current_job,queue,completed_today,remaining_today,last_generation,last_publication,credit_cycle}'
+
+            ok="$(echo "$body" | jq -r '.ok // false')"
+            enabled="$(echo "$body" | jq -r '.publisher_enabled // false')"
+            scheduler="$(echo "$body" | jq -r '.scheduler_alive // false')"
+            worker="$(echo "$body" | jq -r '.worker_alive // false')"
+            provider="$(echo "$body" | jq -r '.automation_provider // ""')"
+            publication="$(echo "$body" | jq -r '.publication_provider // ""')"
+            safety1="$(echo "$body" | jq -r '.automation_safety.quarantined_submit_recovery_self_heal // false')"
+            safety2="$(echo "$body" | jq -r '.automation_safety.zero_use_credit_rollover_self_heal // false')"
+
+            if [ "$ok" != "true" ] || [ "$enabled" != "true" ] || [ "$scheduler" != "true" ] || [ "$worker" != "true" ] || [ "$provider" != "FreeBrowserProvider" ] || [ "$publication" != "FacebookReelsProvider" ] || [ "$safety1" != "true" ] || [ "$safety2" != "true" ]; then
+              return 1
+            fi
+
+            # A review card is an intentional human gate, not an automation failure.
+            review_count="$(echo "$body" | jq -r '.queue.review // 0')"
+            remaining="$(echo "$body" | jq -r '.remaining_today // 0')"
+            if [ "$review_count" -gt 0 ] || [ "$remaining" -le 0 ]; then
+              return 0
+            fi
+
+            # With work remaining and no human review gate, a head job that has made
+            # no progress for 30 minutes is considered stalled and is safe to recover
+            # by restarting the persistent runtime. Exactly-once lifecycle state stays
+            # on the volume, so restart must not create a duplicate submit.
+            progress="$(echo "$body" | jq -r '.current_job.lastProgressAt // empty')"
+            status="$(echo "$body" | jq -r '.current_job.status // empty')"
+            if [ -n "$progress" ] && { [ "$status" = "draft" ] || [ "$status" = "regen_wait" ] || [ "$status" = "generating" ]; }; then
+              age="$(python - "$progress" <<'PY'
+          import sys,datetime
+          try:
+              t=datetime.datetime.fromisoformat(sys.argv[1].replace('Z','+00:00'))
+              print(max(0,int((datetime.datetime.now(datetime.timezone.utc)-t).total_seconds())))
+          except Exception:
+              print(0)
+          PY
+          )"
+              if [ "$age" -gt 1800 ]; then
+                echo "Dinnie head-of-line job is stalled for ${age}s with no review gate."
+                return 1
               fi
             fi
+            return 0
+          }
+
+          if check_health; then
+            echo "Dinnie autonomous generation/publication runtime is healthy."
+            exit 0
+          fi
+
+          echo "Dinnie watchdog detected an unhealthy/stalled unattended runtime; requesting one safe redeploy."
+          curl -fsSL --max-time 60 "$redeploy_url"
+          echo
+
+          for attempt in $(seq 1 20); do
             sleep 15
+            if check_health; then
+              echo "Dinnie autonomous runtime recovered after redeploy."
+              exit 0
+            fi
+            echo "recovery_check=$attempt"
           done
-          echo "::error::Dinnie did not make autonomous recovery/generation progress within the monitoring window."
+
+          echo "::error::Dinnie unattended runtime did not recover within the watchdog window."
           exit 1
