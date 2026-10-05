@@ -3416,12 +3416,19 @@ async function retrieveExisting(page,row,cp,lc,db){
         });
       }
 
-      // Strongest normal path: same browser session + exactly one new video tile.
-      // Flow keeps newest media at the front of the grid, so choose ONLY that tile.
-      if(sameSubmitSession&&delta===1){
+      // Exactly one identity-verified post-baseline asset is sufficient even if the
+      // browser process restarted. openStrictSinglePostBaselineTile performs an
+      // identity-aware multiset diff against the persisted pre-submit inventory
+      // and rejects assets already consumed by another episode, so this never
+      // falls back to positional/newest-tile guessing.
+      if(delta===1){
         uiSignal=await openStrictSinglePostBaselineTile(page,baselineInventory,db,row);
         if(uiSignal?.ready){
-          rendered={uiReady:true,signal:uiSignal.signal,baselineInventory,index:uiSignal.index,signature:uiSignal.signature,assetId:uiSignal.asset_id||null,viewerAssetId:uiSignal.viewer_asset_id||null,identityStrength:uiSignal.identity_strength||null,recoveryProof:'same-session-identity-verified-post-baseline-asset'};
+          const recoveryProof=sameSubmitSession
+            ? 'same-session-identity-verified-post-baseline-asset'
+            : 'restarted-session-identity-verified-post-baseline-asset';
+          rendered={uiReady:true,signal:uiSignal.signal,baselineInventory,index:uiSignal.index,signature:uiSignal.signature,assetId:uiSignal.asset_id||null,viewerAssetId:uiSignal.viewer_asset_id||null,identityStrength:uiSignal.identity_strength||null,recoveryProof};
+          if(!sameSubmitSession)publish('RESTARTED_SESSION_UNIQUE_ASSET_RECOVERED',{episode:'E'+row.episode,job_id:row.id,asset_id:String(rendered.assetId||'').slice(0,24),signal:uiSignal.signal,message:'Recovered the sole identity-verified post-baseline Flow asset after browser restart; no new Generate click was used.'});
           break;
         }
       }else if(delta>0){
@@ -3477,7 +3484,7 @@ async function retrieveExisting(page,row,cp,lc,db){
     duration:valid.duration,width:valid.width,height:valid.height,size:valid.size,codec:valid.codec,
     validated_ftyp:true,download_quality:dl.method||CONFIG.generation.download_quality||'downloaded asset',retrieved_at:now()
   };
-  if(!/^fresh-video-src-post-baseline|same-session-identity-verified-post-baseline-asset|episode-correlated-/.test(String(flowResult.recovery_proof||''))){
+  if(!/^fresh-video-src-post-baseline|same-session-identity-verified-post-baseline-asset|restarted-session-identity-verified-post-baseline-asset|episode-correlated-/.test(String(flowResult.recovery_proof||''))){
     try{fs.unlinkSync(localPath)}catch{}
     throw new Error('FLOW_STRICT_RECOVERY_PROOF_REQUIRED');
   }
