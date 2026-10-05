@@ -7,6 +7,10 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/monitor-dinnie-autoproduction.yml"
+      - "unattended-supervisor.js"
+      - "free-browser-provider.js"
+      - "publication-facebook.js"
+      - "package.json"
   workflow_dispatch:
 
 permissions:
@@ -21,12 +25,39 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - name: Check unattended runtime and self-heal if needed
+      - name: Check outcome SLA and self-heal if needed
         shell: bash
         run: |
           set -euo pipefail
           health_url="https://dinnie-the-dinosaur-production.up.railway.app/factory/health"
+          autonomy_url="https://dinnie-the-dinosaur-production.up.railway.app/autonomy-status.json"
           redeploy_url="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/dinnie-unattended-runtime-redeploy-20260927"
+
+          age_seconds() {
+            python - "$1" <<'PY'
+          import sys,datetime
+          try:
+              t=datetime.datetime.fromisoformat(sys.argv[1].replace('Z','+00:00'))
+              print(max(0,int((datetime.datetime.now(datetime.timezone.utc)-t).total_seconds())))
+          except Exception:
+              print(999999999)
+          PY
+          }
+
+          publication_overdue() {
+            python - "$1" <<'PY'
+          import sys,datetime
+          from zoneinfo import ZoneInfo
+          raw=sys.argv[1]
+          try:
+              t=datetime.datetime.fromisoformat(raw.replace('Z','+00:00')).astimezone(ZoneInfo('America/Argentina/Buenos_Aires'))
+          except Exception:
+              print('true'); raise SystemExit
+          now=datetime.datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
+          # Publication SLA is one confirmed Reel per local day once the release window has passed.
+          print('true' if now.hour>=20 and t.date()!=now.date() else 'false')
+          PY
+          }
 
           check_health() {
             body="$(curl -fsSL --max-time 20 "$health_url" || true)"
@@ -42,38 +73,53 @@ jobs:
             worker="$(echo "$body" | jq -r '.worker_alive // false')"
             provider="$(echo "$body" | jq -r '.automation_provider // ""')"
             publication="$(echo "$body" | jq -r '.publication_provider // ""')"
-            safety1="$(echo "$body" | jq -r '.automation_safety.quarantined_submit_recovery_self_heal // false')"
-            safety2="$(echo "$body" | jq -r '.automation_safety.zero_use_credit_rollover_self_heal // false')"
+            remaining="$(echo "$body" | jq -r '.remaining_today // 0')"
+            last_generation="$(echo "$body" | jq -r '.last_generation // empty')"
+            last_publication="$(echo "$body" | jq -r '.last_publication.updatedAt // empty')"
+            stock="$(echo "$body" | jq -r '(.queue.queued // 0) + (.queue.historical // 0)')"
 
-            if [ "$ok" != "true" ] || [ "$enabled" != "true" ] || [ "$scheduler" != "true" ] || [ "$worker" != "true" ] || [ "$provider" != "FreeBrowserProvider" ] || [ "$publication" != "FacebookReelsProvider" ] || [ "$safety1" != "true" ] || [ "$safety2" != "true" ]; then
+            if [ "$ok" != "true" ] || [ "$enabled" != "true" ] || [ "$scheduler" != "true" ] || [ "$worker" != "true" ] || [ "$provider" != "FreeBrowserProvider" ] || [ "$publication" != "FacebookReelsProvider" ]; then
+              echo "Runtime liveness contract failed."
               return 1
             fi
 
-            # A review card is an intentional human gate, not an automation failure.
-            review_count="$(echo "$body" | jq -r '.queue.review // 0')"
-            remaining="$(echo "$body" | jq -r '.remaining_today // 0')"
-            if [ "$review_count" -gt 0 ] || [ "$remaining" -le 0 ]; then
-              return 0
+            # REVIEW IS NOT A PRODUCTION GATE. If the daily generation obligation is
+            # incomplete, a fresh review card must never make this check healthy.
+            if [ "$remaining" -gt 0 ]; then
+              if [ -z "$last_generation" ]; then
+                echo "Generation SLA failed: work remains but no successful generation exists."
+                return 1
+              fi
+              gen_age="$(age_seconds "$last_generation")"
+              if [ "$gen_age" -gt 10800 ]; then
+                echo "Generation SLA failed: last successful generation is ${gen_age}s old while ${remaining} videos remain today."
+                return 1
+              fi
             fi
 
-            # With work remaining and no human review gate, a head job that has made
-            # no progress for 30 minutes is considered stalled and is safe to recover
-            # by restarting the persistent runtime. Exactly-once lifecycle state stays
-            # on the volume, so restart must not create a duplicate submit.
-            progress="$(echo "$body" | jq -r '.current_job.lastProgressAt // empty')"
-            status="$(echo "$body" | jq -r '.current_job.status // empty')"
-            if [ -n "$progress" ] && { [ "$status" = "draft" ] || [ "$status" = "regen_wait" ] || [ "$status" = "generating" ]; }; then
-              age="$(python - "$progress" <<'PY'
-          import sys,datetime
-          try:
-              t=datetime.datetime.fromisoformat(sys.argv[1].replace('Z','+00:00'))
-              print(max(0,int((datetime.datetime.now(datetime.timezone.utc)-t).total_seconds())))
-          except Exception:
-              print(0)
-          PY
-          )"
-              if [ "$age" -gt 1800 ]; then
-                echo "Dinnie head-of-line job is stalled for ${age}s with no review gate."
+            # With publishable stock, lack of a confirmed publication after the
+            # local release window is a publication failure even if the timer is alive.
+            if [ "$stock" -gt 0 ]; then
+              if [ -z "$last_publication" ]; then
+                local_hour="$(TZ=America/Argentina/Buenos_Aires date +%H)"
+                if [ "$local_hour" -ge 20 ]; then
+                  echo "Publication SLA failed: stock exists but no confirmed publication exists."
+                  return 1
+                fi
+              elif [ "$(publication_overdue "$last_publication")" = "true" ]; then
+                echo "Publication SLA failed: stock exists but no Reel was confirmed today after the release window."
+                return 1
+              fi
+            fi
+
+            # New runtime exposes a durable outcome ledger. If present, trust it as
+            # an additional contract; absence during rollout is not itself fatal.
+            auto="$(curl -fsSL --max-time 10 "$autonomy_url" || true)"
+            if [ -n "$auto" ]; then
+              echo "$auto" | jq '{version,generation,publication,quarantine}' || true
+              auto_ok="$(echo "$auto" | jq -r '.ok // false')"
+              if [ "$auto_ok" != "true" ]; then
+                echo "Autonomy supervisor reports unhealthy state."
                 return 1
               fi
             fi
@@ -81,11 +127,11 @@ jobs:
           }
 
           if check_health; then
-            echo "Dinnie autonomous generation/publication runtime is healthy."
+            echo "Dinnie outcome SLA is healthy."
             exit 0
           fi
 
-          echo "Dinnie watchdog detected an unhealthy/stalled unattended runtime; requesting one safe redeploy."
+          echo "Dinnie watchdog detected an outcome failure; requesting one safe redeploy."
           curl -fsSL --max-time 60 "$redeploy_url"
           echo
 
