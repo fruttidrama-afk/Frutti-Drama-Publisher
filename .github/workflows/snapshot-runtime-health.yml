@@ -1,0 +1,59 @@
+name: Snapshot Runtime Health
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/snapshot-runtime-health.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: runtime-health-snapshot
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Capture public runtime outcomes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ops-diagnostics
+          python - <<'PY'
+          import json, subprocess, datetime
+          endpoints = {
+            "dinnie_health": "https://dinnie-the-dinosaur-production.up.railway.app/factory/health",
+            "dinnie_autonomy": "https://dinnie-the-dinosaur-production.up.railway.app/autonomy-status.json",
+            "earth_health": "https://earth-in-10-production.up.railway.app/factory/health",
+            "earth_autonomy": "https://earth-in-10-production.up.railway.app/autonomy-status.json",
+          }
+          out={"capturedAt":datetime.datetime.now(datetime.timezone.utc).isoformat(),"endpoints":{}}
+          for name,url in endpoints.items():
+              p=subprocess.run(["curl","-sS","--max-time","20","-w","\n%{http_code}",url],capture_output=True,text=True)
+              raw=p.stdout
+              body, _, code=raw.rpartition("\n")
+              row={"httpCode":int(code) if code.isdigit() else None,"curlExit":p.returncode}
+              if p.stderr.strip(): row["error"]=p.stderr.strip()[:1000]
+              try: row["body"]=json.loads(body) if body else None
+              except Exception: row["bodyText"]=body[:5000]
+              out["endpoints"][name]=row
+          open("ops-diagnostics/runtime-health.json","w").write(json.dumps(out,indent=2,sort_keys=True)+"\n")
+          PY
+      - name: Commit snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "runtime-health-snapshot"
+          git config user.email "runtime-health-snapshot@users.noreply.github.com"
+          git add ops-diagnostics/runtime-health.json
+          git commit -m "Snapshot Dinnie and Earth runtime health" || exit 0
+          git pull --rebase origin main
+          git push origin HEAD:main
