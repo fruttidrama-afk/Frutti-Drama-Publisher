@@ -1,0 +1,52 @@
+name: Patch Dinnie restarted-session recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/patch-dinnie-restarted-session-recovery.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Permit identity-verified single-delta recovery after browser restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('free-browser-provider.js')
+          s=p.read_text()
+          old="""      // Strongest normal path: same browser session + exactly one new video tile.\n      // Flow keeps newest media at the front of the grid, so choose ONLY that tile.\n      if(sameSubmitSession&&delta===1){\n        uiSignal=await openStrictSinglePostBaselineTile(page,baselineInventory,db,row);\n        if(uiSignal?.ready){\n          rendered={uiReady:true,signal:uiSignal.signal,baselineInventory,index:uiSignal.index,signature:uiSignal.signature,assetId:uiSignal.asset_id||null,viewerAssetId:uiSignal.viewer_asset_id||null,identityStrength:uiSignal.identity_strength||null,recoveryProof:'same-session-identity-verified-post-baseline-asset'};\n          break;\n        }\n      }else if(delta>0){\n"""
+          new="""      // Exactly one identity-verified post-baseline asset is sufficient even if the\n      // browser process restarted. openStrictSinglePostBaselineTile performs an\n      // identity-aware multiset diff against the persisted pre-submit inventory\n      // and rejects assets already consumed by another episode, so this never\n      // falls back to positional/newest-tile guessing.\n      if(delta===1){\n        uiSignal=await openStrictSinglePostBaselineTile(page,baselineInventory,db,row);\n        if(uiSignal?.ready){\n          const recoveryProof=sameSubmitSession\n            ? 'same-session-identity-verified-post-baseline-asset'\n            : 'restarted-session-identity-verified-post-baseline-asset';\n          rendered={uiReady:true,signal:uiSignal.signal,baselineInventory,index:uiSignal.index,signature:uiSignal.signature,assetId:uiSignal.asset_id||null,viewerAssetId:uiSignal.viewer_asset_id||null,identityStrength:uiSignal.identity_strength||null,recoveryProof};\n          if(!sameSubmitSession)publish('RESTARTED_SESSION_UNIQUE_ASSET_RECOVERED',{episode:'E'+row.episode,job_id:row.id,asset_id:String(rendered.assetId||'').slice(0,24),signal:uiSignal.signal,message:'Recovered the sole identity-verified post-baseline Flow asset after browser restart; no new Generate click was used.'});\n          break;\n        }\n      }else if(delta>0){\n"""
+          if s.count(old)!=1:
+              raise SystemExit(f'unsafe patch: expected one retrieval block, found {s.count(old)}')
+          s=s.replace(old,new,1)
+          old_guard="/^fresh-video-src-post-baseline|same-session-identity-verified-post-baseline-asset|episode-correlated-/"
+          new_guard="/^fresh-video-src-post-baseline|same-session-identity-verified-post-baseline-asset|restarted-session-identity-verified-post-baseline-asset|episode-correlated-/"
+          if s.count(old_guard)!=1:
+              raise SystemExit(f'unsafe patch: expected one recovery proof guard, found {s.count(old_guard)}')
+          s=s.replace(old_guard,new_guard,1)
+          p.write_text(s)
+          PY
+          node --check free-browser-provider.js
+          git diff --check
+      - name: Commit verified recovery fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "publisher-autonomy-repair"
+          git config user.email "publisher-autonomy-repair@users.noreply.github.com"
+          git add free-browser-provider.js
+          git commit -m "Recover unique Flow asset safely after browser restart" || exit 0
+          git pull --rebase origin main
+          git push origin HEAD:main
