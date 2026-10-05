@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-10-05T22:38:28.716688+00:00",
+  "capturedAt": "2026-10-05T22:46:02.425229+00:00",
   "endpoints": {
     "dinnie_autonomy": {
       "body": {
@@ -11,7 +11,7 @@
     },
     "dinnie_health": {
       "body": {
-        "at": "2026-10-05T22:38:28.808Z",
+        "at": "2026-10-05T22:46:02.599Z",
         "automation_provider": "FreeBrowserProvider",
         "automation_safety": {
           "adaptive_no_charge_backoff": true,
@@ -90,7 +90,7 @@
         "current_job": {
           "episode": 5,
           "error": "Error: RENDER_TIMEOUT_STRICT_MATCH:videos=0:ui=strict-ambiguous-post-baseline-delta:1;correlation:no-unique-correlated-visible-asset at retrieveExisting (file:///app/free-browser-provider.js:3429:22) at async processRow (file:///app/free-browser-provider.js:3478:41) at async runProvider (file:///app/free-browser-provider.js:4230:180)",
-          "lastProgressAt": "2026-10-05T22:38:28.022Z",
+          "lastProgressAt": "2026-10-05T22:45:54.842Z",
           "status": "generating"
         },
         "daily_override_active": false,
@@ -212,7 +212,7 @@
           "graphVersion": "v26.0",
           "indefinite": true,
           "lastError": null,
-          "lastHeartbeat": "2026-10-05T22:38:14.059Z",
+          "lastHeartbeat": "2026-10-05T22:45:44.057Z",
           "provider": "facebook",
           "running": false
         },
@@ -245,7 +245,7 @@
       "body": {
         "code": 404,
         "message": "Application not found",
-        "request_id": "e-RK84_GQ2Ozqncw-_9nXA",
+        "request_id": "pvJF5Q5ESqeLDkM49o6EoQ",
         "status": "error"
       },
       "curlExit": 0,
@@ -255,7 +255,7 @@
       "body": {
         "code": 404,
         "message": "Application not found",
-        "request_id": "NwHhzgA4T5mxe5l16WHkDg",
+        "request_id": "9JyNmBacQ-OZFsG9n6XIxQ",
         "status": "error"
       },
       "curlExit": 0,
