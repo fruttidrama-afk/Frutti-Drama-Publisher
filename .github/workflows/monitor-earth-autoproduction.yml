@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: earth-autoproduction-watchdog
@@ -61,24 +61,11 @@ jobs:
           echo "unhealthy=$unhealthy" >> "$GITHUB_OUTPUT"
           echo "reason=$reason" >> "$GITHUB_OUTPUT"
 
-      - name: Force one fresh Railway source release when unhealthy
+      - name: Record degraded state without paging the operator
         if: steps.check.outputs.unhealthy == 'true'
         shell: bash
         run: |
-          set -euo pipefail
-          git clone "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
-          cd repo
-          git config user.name "publisher-autonomy-watchdog"
-          git config user.email "publisher-autonomy-watchdog@users.noreply.github.com"
-          printf 'earth-watchdog-release=%s reason=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${{ steps.check.outputs.reason }}" > runtime-release.txt
-          git add runtime-release.txt
-          git commit -m "Self-heal Earth unattended runtime" || exit 0
-          git push origin HEAD:main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Fail loudly if outcome SLA was unhealthy
-        if: steps.check.outputs.unhealthy == 'true'
-        run: |
-          echo "::error::Earth unattended outcome SLA was unhealthy; a fresh source release was requested."
-          exit 1
+          echo "::warning::Earth unattended outcome SLA is unhealthy: ${{ steps.check.outputs.reason }}"
+          echo "The watchdog intentionally does not fail the workflow or create self-heal commits."
+          echo "Railway deployment recovery is handled separately; repeated Git commits cannot repair a missing/failed deployment and only create mail/Pages churn."
+          exit 0
