@@ -23,6 +23,7 @@ import { signedReviewUrl, deleteReviewObject, isReviewStorageUri, uploadReviewFi
 
 google.options({timeout:90000,retry:false});
 const app=express(),PORT=Number(process.env.PORT||8080);
+const ONESHOT_KIND=String(process.env.PUBLISHER_ONESHOT_KIND||'').trim().toLowerCase();
 app.set('trust proxy',1);
 const DATA_DIR=path.resolve(process.env.DATA_DIR||'/data'),DIR=path.join(DATA_DIR,'publisher-runtime'),DB_PATH=path.join(DIR,'factory.sqlite');
 const AUTH_PATH=path.join(DIR,'auth.json'),SECRET_PATH=path.join(DIR,'secrets.json'),YT_TOKEN_PATH=path.join(DIR,'youtube-token.json');
@@ -491,8 +492,8 @@ async function refreshFacebookPageConnection(){
   return facebookConnection();
 }
 
-const youtubePublication=installPublication({app,db,config:CONFIG,youtubeApi,authedClient,loadToken,dataDir:DIR,isEnabled:()=>selectedPublicationProvider()==='youtube'});
-const facebookPublication=installFacebookPublication({db,config:CONFIG,dataDir:DIR,loadFacebookConnection:facebookConnection,refreshFacebookConnection:refreshFacebookPageConnection,isEnabled:()=>selectedPublicationProvider()==='facebook'});
+const youtubePublication=installPublication({app,db,config:CONFIG,youtubeApi,authedClient,loadToken,dataDir:DIR,isEnabled:()=>ONESHOT_KIND!=='generation'&&selectedPublicationProvider()==='youtube'});
+const facebookPublication=installFacebookPublication({db,config:CONFIG,dataDir:DIR,loadFacebookConnection:facebookConnection,refreshFacebookConnection:refreshFacebookPageConnection,isEnabled:()=>ONESHOT_KIND!=='generation'&&selectedPublicationProvider()==='facebook'});
 const publication={
   enqueue(row){
     const p=selectedPublicationProvider();
