@@ -124,13 +124,16 @@ jobs:
             exit 0
           fi
 
-          echo "Dinnie watchdog detected an outcome failure; requesting one safe redeploy."
-          if ! curl -fsSL --max-time 60 "$redeploy_url"; then
-            echo
-            echo "::warning::Dinnie redeploy request failed. Incident remains recorded, but the workflow will not page the operator every 15 minutes."
+          echo "Dinnie watchdog detected an outcome failure; requesting one bounded Railway recovery."
+          response_file="$(mktemp)"
+          status="$(curl -sSL --max-time 60 -o "$response_file" -w '%{http_code}' "$redeploy_url" || true)"
+          cat "$response_file" || true
+          echo
+          echo "recovery_controller_http_status=$status"
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::warning::Dinnie recovery controller could not redeploy Railway. The controller persisted the infrastructure error and the watchdog will retry later without creating commits or paging every cycle."
             exit 0
           fi
-          echo
 
           for attempt in $(seq 1 20); do
             sleep 15
