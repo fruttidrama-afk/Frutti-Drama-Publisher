@@ -184,7 +184,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       const sourceMediaTransferred=Boolean(row.videoPath&&existing.filePath&&!isReviewStorageUri(existing.filePath)&&path.resolve(String(row.videoPath))===path.resolve(String(existing.filePath)));
       return {...publicItem(existing),sourceMediaTransferred};
     }
-    const {title,description}=metadata(row,config),scheduledAt=nextSlot(db,config),uploadAt=new Date(Date.parse(scheduledAt)-390*60000).toISOString(),id=randomUUID();
+    const {title,description}=metadata(row,config),scheduledAt=nextSlot(db,config),uploadAt=scheduledAt,id=randomUUID();
     let filePath=null,fileSize=0,videoId=row.reviewVideoId||null;
     let sourceMediaTransferred=false;
     if(!videoId){
@@ -434,13 +434,13 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     if(report.length)console.log('[PUBLICATION COPY AUDIT]',JSON.stringify({corrected,factoryCorrected,synced,quotaNormalized:Boolean(quotaRetryAt),items:report}));
   }
 
-  async function upload(item,privacyStatus='private'){
+  async function upload(item,privacyStatus='public'){
     if(item.videoId)return;
     if(!item.filePath)throw new Error('Archivo de publicación ausente.');
     const cloudSource=isReviewStorageUri(item.filePath);
     if(!cloudSource&&!fs.existsSync(item.filePath))throw new Error('Archivo de publicación ausente.');
     if(!item.resumableSession){
-      const r=await request('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Content-Length':String(item.fileSize),'X-Upload-Content-Type':'video/mp4'},body:JSON.stringify({snippet:{title:item.title,description:item.description,categoryId:'24',tags:['publisher-runtime-'+item.id]},status:{privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}})});
+      const r=await request('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Content-Length':String(item.fileSize),'X-Upload-Content-Type':'video/mp4'},body:JSON.stringify({snippet:{title:item.title,description:item.description,categoryId:'24',tags:['publisher-runtime-'+item.id]},status:{privacyStatus:String(privacyStatus||'public'),selfDeclaredMadeForKids:false,containsSyntheticMedia:true}})});
       if(!r.ok)throw new Error('YouTube resumable init failed ('+r.status+').');
       const session=r.headers.get('location');if(!session||new URL(session).hostname!=='www.googleapis.com')throw new Error('YouTube returned an invalid resumable session.');
       item.resumableSession=session;hist(item,'uploading','Resumable session persisted before bytes.');save(db,item);
@@ -535,7 +535,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     for(const item of pending){
       const scheduledAt=nextFreeSlotAfter(cursor,used);
       used.add(scheduledAt);cursor=Date.parse(scheduledAt);
-      const uploadAt=new Date(Date.parse(scheduledAt)-390*60000).toISOString();
+      const uploadAt=scheduledAt;
       if(item.scheduledAt!==scheduledAt||item.uploadAt!==uploadAt){
         item.scheduledAt=scheduledAt;item.uploadAt=uploadAt;
         hist(item,item.status,'Publication slot moved forward automatically because YouTube API quota resets after the previous slot.');
