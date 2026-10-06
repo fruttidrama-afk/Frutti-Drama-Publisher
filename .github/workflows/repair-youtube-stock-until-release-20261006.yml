@@ -1,0 +1,86 @@
+name: Repair YouTube Stock Until Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/repair-youtube-stock-until-release-20261006.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce Publisher-stock-until-release policy
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('publication.js')
+          s = p.read_text()
+
+          old = "const {title,description}=metadata(row,config),scheduledAt=nextSlot(db,config),uploadAt=new Date(Date.parse(scheduledAt)-390*60000).toISOString(),id=randomUUID();"
+          new = "const {title,description}=metadata(row,config),scheduledAt=nextSlot(db,config),uploadAt=scheduledAt,id=randomUUID();"
+          if s.count(old) != 1:
+              raise SystemExit(f'expected exactly one enqueue lead-time expression, found {s.count(old)}')
+          s = s.replace(old, new)
+
+          old = "const uploadAt=new Date(Date.parse(scheduledAt)-390*60000).toISOString();"
+          if s.count(old) != 1:
+              raise SystemExit(f'expected exactly one quota-reschedule lead-time expression, found {s.count(old)}')
+          s = s.replace(old, "const uploadAt=scheduledAt;")
+
+          old = "async function upload(item,privacyStatus='private'){"
+          if s.count(old) != 1:
+              raise SystemExit(f'expected exactly one upload default, found {s.count(old)}')
+          s = s.replace(old, "async function upload(item,privacyStatus='public'){")
+
+          old = "status:{privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}"
+          if s.count(old) != 1:
+              raise SystemExit(f'expected exactly one hard-coded private videos.insert status, found {s.count(old)}')
+          s = s.replace(old, "status:{privacyStatus:String(privacyStatus||'public'),selfDeclaredMadeForKids:false,containsSyntheticMedia:true}")
+
+          p.write_text(s)
+
+          t = Path('publisher-selftest.mjs')
+          st = t.read_text()
+          marker = "has(publication,'containsSyntheticMedia:true','YouTube synthetic-media disclosure');"
+          guard = "must(!publication.includes(\"uploadAt=new Date(Date.parse(scheduledAt)-390*60000)\"),'YouTube publication must not retain the retired 390-minute lead-time expression');"
+          if marker not in st:
+              raise SystemExit('publisher selftest insertion marker missing')
+          if guard not in st:
+              insert = "\n".join([
+                  marker,
+                  "has(publication,\"scheduledAt=nextSlot(db,config),uploadAt=scheduledAt\",'new approved videos stay in Publisher stock until release time');",
+                  "has(publication,\"async function upload(item,privacyStatus='public')\",'YouTube upload defaults to PUBLIC at release time');",
+                  "has(publication,\"privacyStatus:String(privacyStatus||'public')\",'videos.insert honors direct-public release policy');",
+                  guard,
+              ])
+              st = st.replace(marker, insert)
+              t.write_text(st)
+
+      - name: Validate repaired runtime
+        run: |
+          node --check publication.js
+          node publisher-selftest.mjs
+
+      - name: Commit repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- publication.js publisher-selftest.mjs; then
+            echo "Repair already applied."
+            exit 0
+          fi
+          git config user.name "publisher-factory-repair"
+          git config user.email "fruttidrama@gmail.com"
+          git add publication.js publisher-selftest.mjs
+          git commit -m "Keep YouTube media in Stock until direct public release"
+          git push origin HEAD:main
