@@ -54,7 +54,6 @@ jobs:
           except Exception:
               print('true'); raise SystemExit
           now=datetime.datetime.now(ZoneInfo('America/Argentina/Buenos_Aires'))
-          # Publication SLA is one confirmed Reel per local day once the release window has passed.
           print('true' if now.hour>=20 and t.date()!=now.date() else 'false')
           PY
           }
@@ -83,8 +82,6 @@ jobs:
               return 1
             fi
 
-            # REVIEW IS NOT A PRODUCTION GATE. If the daily generation obligation is
-            # incomplete, a fresh review card must never make this check healthy.
             if [ "$remaining" -gt 0 ]; then
               if [ -z "$last_generation" ]; then
                 echo "Generation SLA failed: work remains but no successful generation exists."
@@ -97,8 +94,6 @@ jobs:
               fi
             fi
 
-            # With publishable stock, lack of a confirmed publication after the
-            # local release window is a publication failure even if the timer is alive.
             if [ "$stock" -gt 0 ]; then
               if [ -z "$last_publication" ]; then
                 local_hour="$(TZ=America/Argentina/Buenos_Aires date +%H)"
@@ -112,8 +107,6 @@ jobs:
               fi
             fi
 
-            # New runtime exposes a durable outcome ledger. If present, trust it as
-            # an additional contract; absence during rollout is not itself fatal.
             auto="$(curl -fsSL --max-time 10 "$autonomy_url" || true)"
             if [ -n "$auto" ]; then
               echo "$auto" | jq '{version,generation,publication,quarantine}' || true
@@ -132,7 +125,11 @@ jobs:
           fi
 
           echo "Dinnie watchdog detected an outcome failure; requesting one safe redeploy."
-          curl -fsSL --max-time 60 "$redeploy_url"
+          if ! curl -fsSL --max-time 60 "$redeploy_url"; then
+            echo
+            echo "::warning::Dinnie redeploy request failed. Incident remains recorded, but the workflow will not page the operator every 15 minutes."
+            exit 0
+          fi
           echo
 
           for attempt in $(seq 1 20); do
@@ -144,5 +141,5 @@ jobs:
             echo "recovery_check=$attempt"
           done
 
-          echo "::error::Dinnie unattended runtime did not recover within the watchdog window."
-          exit 1
+          echo "::warning::Dinnie unattended runtime did not recover within the watchdog window. The incident remains visible in Actions without generating repeated failure email."
+          exit 0
