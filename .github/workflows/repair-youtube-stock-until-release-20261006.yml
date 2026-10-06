@@ -51,6 +51,12 @@ jobs:
 
           t = Path('publisher-selftest.mjs')
           st = t.read_text()
+          old_expect = "has(publication,\"status:{privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}\",'YouTube upload is plain PRIVATE with native synthetic-media disclosure');"
+          new_expect = "has(publication,\"status:{privacyStatus:String(privacyStatus||'public'),selfDeclaredMadeForKids:false,containsSyntheticMedia:true}\",'YouTube videos.insert honors direct-public release while preserving synthetic-media disclosure');"
+          if st.count(old_expect) != 1:
+              raise SystemExit(f'expected exactly one retired private-upload selftest, found {st.count(old_expect)}')
+          st = st.replace(old_expect, new_expect)
+
           marker = "has(publication,'containsSyntheticMedia:true','YouTube synthetic-media disclosure');"
           guard = "must(!publication.includes(\"uploadAt=new Date(Date.parse(scheduledAt)-390*60000)\"),'YouTube publication must not retain the retired 390-minute lead-time expression');"
           if marker not in st:
@@ -64,7 +70,7 @@ jobs:
                   guard,
               ])
               st = st.replace(marker, insert)
-              t.write_text(st)
+          t.write_text(st)
 
       - name: Validate repaired runtime
         run: |
@@ -85,4 +91,4 @@ jobs:
           git commit -m "Keep YouTube media in Stock until direct public release"
           git push origin HEAD:main
 
-# one-time trigger: 2026-10-06T18:35Z
+# one-time trigger: 2026-10-06T18:39Z
