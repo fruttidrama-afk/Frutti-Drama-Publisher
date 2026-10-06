@@ -1,0 +1,36 @@
+name: Validate Free Runtime
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cloudflare/**"
+      - "scripts/free-runtime-runner.mjs"
+      - ".github/workflows/free-runtime-runner.yml"
+      - ".github/workflows/validate-free-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Syntax checks
+        run: |
+          node --check cloudflare/orchestrator/src/index.js
+          node --check scripts/free-runtime-runner.mjs
+      - name: Infrastructure policy checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq "Railway is no longer an allowed deployment target" cloudflare/orchestrator/README.md
+          grep -Fq "crons = [\"*/5 * * * *\"]" cloudflare/orchestrator/wrangler.toml.example
+          grep -Fq "UNIQUE(publisher_id, local_day, kind, ordinal)" cloudflare/orchestrator/schema.sql
+          grep -Fq "One publisher = one mutable encrypted state bundle" cloudflare/orchestrator/src/index.js
+          grep -Fq "PUBLISHER_ONESHOT_KIND" scripts/free-runtime-runner.mjs
