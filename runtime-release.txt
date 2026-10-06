@@ -1,1 +1,1 @@
-earth-watchdog-release=2026-10-05T23:47:25Z reason=health-endpoint-unavailable
+earth-watchdog-release=2026-10-06T00:00:16Z reason=health-endpoint-unavailable
