@@ -91,16 +91,17 @@ async function dispatchDue(env){
   const pubs=(await env.DB.prepare("SELECT * FROM publishers WHERE enabled=1 ORDER BY id").all()).results||[];
   for(const p of pubs){
     await ensureToday(env,p);
-    const activeGen=await env.DB.prepare("SELECT id FROM obligations WHERE publisher_id=? AND kind='generation' AND status IN ('dispatching','dispatched','running') LIMIT 1").bind(p.id).first();
-    if(!activeGen){
-      const o=await env.DB.prepare("SELECT * FROM obligations WHERE publisher_id=? AND kind='generation' AND status='pending' ORDER BY local_day,ordinal LIMIT 1").bind(p.id).first();
-      if(o)await dispatchGithub(env,p,o);
-    }
+    // One publisher = one mutable encrypted state bundle. Never run generation
+    // and publication concurrently against the same snapshot.
+    const active=await env.DB.prepare("SELECT id FROM obligations WHERE publisher_id=? AND status IN ('dispatching','dispatched','running') LIMIT 1").bind(p.id).first();
+    if(active)continue;
 
-    const activePub=await env.DB.prepare("SELECT id FROM obligations WHERE publisher_id=? AND kind='publication' AND status IN ('dispatching','dispatched','running') LIMIT 1").bind(p.id).first();
-    if(!activePub&&Number(p.approved_stock||0)>0){
-      const o=await env.DB.prepare("SELECT * FROM obligations WHERE publisher_id=? AND kind='publication' AND status='pending' ORDER BY local_day,ordinal LIMIT 1").bind(p.id).first();
-      if(o)await dispatchGithub(env,p,o);
+    const generation=await env.DB.prepare("SELECT * FROM obligations WHERE publisher_id=? AND kind='generation' AND status='pending' ORDER BY local_day,ordinal LIMIT 1").bind(p.id).first();
+    if(generation){await dispatchGithub(env,p,generation);continue}
+
+    if(Number(p.approved_stock||0)>0){
+      const publication=await env.DB.prepare("SELECT * FROM obligations WHERE publisher_id=? AND kind='publication' AND status='pending' ORDER BY local_day,ordinal LIMIT 1").bind(p.id).first();
+      if(publication)await dispatchGithub(env,p,publication);
     }
   }
 }
