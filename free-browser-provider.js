@@ -35,6 +35,7 @@ const GOLDEN_RECOVERY_SEARCH_ALL_PROJECTS=String(process.env.PUBLISHER_RECOVERY_
 const BOOTSTRAP_LOCK=path.join(FACTORY_DIR,'flow-auth-bootstrap.active.json');
 const STATUS_FILE=path.resolve(process.cwd(),'public','free-browser-status.json');
 const PROVIDER='FreeBrowserProvider';
+const ONESHOT_KIND=String(process.env.PUBLISHER_ONESHOT_KIND||'').trim().toLowerCase();
 const GEMINI_FEEDBACK_URL='https://gemini.google.com/app';
 async function saveReviewAsset(db,row,localPath,flowResult,stamp=now()){
   // HARD APPROVAL GATE: an unapproved review render must remain only on the
@@ -4235,6 +4236,7 @@ async function configurePublisherFactorySupabasePasskeysIfRequested(db){
 }
 
 async function runProvider(){
+  if(ONESHOT_KIND==='publication'){publish('ONESHOT_PUBLICATION_ONLY',{message:'Generation worker disabled for publication-only ephemeral runner.'});return}
   if(bootstrapOwnsProfile()){publish('AUTH_BOOTSTRAP_ACTIVE',{message:'Flow bootstrap owns the persistent browser profile; provider is paused.'});return}
   if(!acquireLock())return;let db,row=null;
   try{
