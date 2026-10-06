@@ -84,3 +84,5 @@ jobs:
           git add publication.js publisher-selftest.mjs
           git commit -m "Keep YouTube media in Stock until direct public release"
           git push origin HEAD:main
+
+# one-time trigger: 2026-10-06T18:35Z
