@@ -31,8 +31,33 @@ const run=(args,{capture=false}={})=>{
   return String(x.stdout||'');
 };
 
-console.log('Inspecting Railway volume metadata for',target);
+console.log('Inspecting Railway migration metadata for',target);
 run(['link','--project',cfg.project_id,'--environment',cfg.environment_id,'--service',cfg.service_id]);
-const listing=run(['volume','files','--volume',cfg.volume_id,'list','/','--json'],{capture:true});
-let parsed;try{parsed=JSON.parse(listing)}catch{parsed={raw:listing.slice(0,20000)}}
-console.log(JSON.stringify({target,project_id:cfg.project_id,environment_id:cfg.environment_id,service_id:cfg.service_id,volume_id:cfg.volume_id,listing:parsed},null,2));
+
+const rawVars=run(['variable','list','--json'],{capture:true});
+let vars={};try{vars=JSON.parse(rawVars)||{}}catch{}
+let embedded={};try{embedded=JSON.parse(String(vars.PUBLISHER_CONFIG_JSON||'{}'))||{}}catch{}
+const safe={
+  target,
+  project_id:cfg.project_id,
+  environment_id:cfg.environment_id,
+  service_id:cfg.service_id,
+  volume_id:cfg.volume_id,
+  expected_flow_project_name:String(vars.PUBLISHER_EXPECTED_FLOW_PROJECT_NAME||''),
+  instance_id:String(vars.PUBLISHER_INSTANCE_ID||''),
+  runtime_version:String(vars.PUBLISHER_RUNTIME_VERSION||''),
+  embedded_generation:{
+    project_id:String(embedded?.generation?.project_id||''),
+    project_name:String(embedded?.generation?.project_name||''),
+    project_url:String(embedded?.generation?.project_url||'')
+  }
+};
+console.log('SAFE_VARIABLE_SNAPSHOT '+JSON.stringify(safe));
+
+try{
+  const listing=run(['volume','files','--volume',cfg.volume_id,'list','/','--json'],{capture:true});
+  let parsed;try{parsed=JSON.parse(listing)}catch{parsed={raw:listing.slice(0,20000)}}
+  console.log(JSON.stringify({target,listing:parsed},null,2));
+}catch(e){
+  console.log('VOLUME_FILE_ACCESS_BLOCKED '+JSON.stringify({target,error:String(e?.message||e).slice(0,1500)}));
+}
