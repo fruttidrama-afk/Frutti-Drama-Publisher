@@ -1,0 +1,36 @@
+name: Inspect Railway Volumes For Migration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/migrate-railway-volume.yml"
+      - "scripts/railway-volume-inspect.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [earth, frutti, dinnie]
+    env:
+      MIGRATION_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@5.63.1
+
+      - name: Inspect preserved volume
+        run: node scripts/railway-volume-inspect.mjs
