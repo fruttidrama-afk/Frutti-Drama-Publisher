@@ -29,8 +29,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fq "Railway is no longer an allowed deployment target" cloudflare/orchestrator/README.md
-          grep -Fq "crons = [\"*/5 * * * *\"]" cloudflare/orchestrator/wrangler.toml.example
-          grep -Fq "UNIQUE(publisher_id, local_day, kind, ordinal)" cloudflare/orchestrator/schema.sql
-          grep -Fq "One publisher = one mutable encrypted state bundle" cloudflare/orchestrator/src/index.js
           grep -Fq "PUBLISHER_ONESHOT_KIND" scripts/free-runtime-runner.mjs
+          grep -Fq "publisher-factory-free-runtime" scripts/free-runtime-runner.mjs
+          grep -Fq "id-token: write" .github/workflows/free-runtime-runner.yml
+          grep -Fq 'cron: "*/5 * * * *"' .github/workflows/free-runtime-runner.yml
+          grep -Fq "Railway is retired" docs/SOP_MASTER_PUBLISHER_FACTORY.md
+          curl -fsSL --max-time 20 "https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-free-runtime/health" | jq -e '.ok == true and .version == "publisher-free-runtime-supabase-v1"' >/dev/null
+          # Cloudflare remains a tested optional portability adapter, not the active dependency.
+          grep -Fq "UNIQUE(publisher_id, local_day, kind, ordinal)" cloudflare/orchestrator/schema.sql
