@@ -1,0 +1,40 @@
+name: Bootstrap Flow Dinnie Account V2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ops/trigger-flow-dinnie-v2.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publisher-flow-dinnie-bootstrap-v2
+  cancel-in-progress: true
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      DISPLAY: ':99'
+      TARGET_KEY: dinnie
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Install browser bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 120 sudo apt-get update -qq
+          timeout 180 sudo apt-get install -y -qq xvfb x11vnc novnc websockify curl
+          timeout 90 curl -L --fail --retry 3 -o /tmp/cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i /tmp/cloudflared.deb
+          timeout 180 npm install --ignore-scripts --no-audit --no-fund
+      - name: Bootstrap isolated Dinnie Flow account
+        run: bash scripts/run-flow-account-bootstrap-v2.sh
