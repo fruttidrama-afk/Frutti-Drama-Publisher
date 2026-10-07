@@ -1,0 +1,78 @@
+name: Bootstrap Portable Flow Auth
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/bootstrap-flow-portable.yml"
+      - "scripts/bootstrap-flow-portable.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publisher-flow-bootstrap-portable
+  cancel-in-progress: true
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      DISPLAY: ':99'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+
+      - name: Install browser bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb x11vnc novnc websockify jq curl
+          curl -L --fail --retry 3 -o /tmp/cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i /tmp/cloudflared.deb
+          npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Login, capture portable auth and persist
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROFILE=/tmp/flow-bootstrap-profile
+          mkdir -p "$PROFILE"
+          START_URL="$(node scripts/bootstrap-flow-portable.mjs config)"
+          VNC_PASSWORD="$(openssl rand -hex 8)"
+          x11vnc -storepasswd "$VNC_PASSWORD" /tmp/x11vnc.pass >/dev/null
+          Xvfb :99 -screen 0 1440x900x24 -nolisten tcp -ac >/tmp/xvfb.log 2>&1 &
+          sleep 2
+          google-chrome --user-data-dir="$PROFILE" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --remote-allow-origins='*' --no-sandbox --disable-dev-shm-usage --disable-gpu --password-store=basic --no-first-run --no-default-browser-check --window-size=1440,900 "$START_URL" >/tmp/chrome.log 2>&1 &
+          x11vnc -display :99 -rfbport 5900 -rfbauth /tmp/x11vnc.pass -forever -shared -noxdamage >/tmp/x11vnc.log 2>&1 &
+          websockify --web=/usr/share/novnc 6080 localhost:5900 >/tmp/novnc.log 2>&1 &
+          cloudflared tunnel --no-autoupdate --url http://127.0.0.1:6080 >/tmp/cloudflared.log 2>&1 &
+          URL=""
+          for i in $(seq 1 75); do
+            URL="$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' /tmp/cloudflared.log | head -1 || true)"
+            if [ -n "$URL" ] && curl -fsS --max-time 1 http://127.0.0.1:9222/json/version >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          test -n "$URL"
+          FULL_URL="$URL/vnc.html?autoconnect=true&resize=scale"
+          echo "TEMPORARY FLOW LOGIN URL: $FULL_URL"
+          echo "TEMPORARY VNC PASSWORD: $VNC_PASSWORD"
+          FLOW_BOOTSTRAP_URL="$FULL_URL" FLOW_BOOTSTRAP_PASSWORD="$VNC_PASSWORD" node scripts/bootstrap-flow-portable.mjs announce
+          node scripts/bootstrap-flow-portable.mjs waitsignal
+          node scripts/bootstrap-flow-portable.mjs capture
+          tar -czf /tmp/flow-profile.tgz -C /tmp flow-auth-state.json
+          FLOW_BOOTSTRAP_ARCHIVE=/tmp/flow-profile.tgz node scripts/bootstrap-flow-portable.mjs upload
+
+      - name: Diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          tail -100 /tmp/chrome.log 2>/dev/null || true
+          tail -100 /tmp/novnc.log 2>/dev/null || true
+          tail -100 /tmp/cloudflared.log 2>/dev/null || true
