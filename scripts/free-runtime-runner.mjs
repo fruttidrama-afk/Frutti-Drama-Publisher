@@ -129,7 +129,8 @@ function statusSnapshot(){
 fs.rmSync(ROOT,{recursive:true,force:true});fs.mkdirSync(DATA,{recursive:true});
 let child=null,job=null;
 try{
-  console.log('Free Runtime',FREE_RUNTIME_VERSION);\n  job=await claim();
+  console.log('Free Runtime',FREE_RUNTIME_VERSION);
+  job=await claim();
   if(!job){console.log('No durable obligation is due.');process.exit(0)}
   CURRENT=job;
   const p=job.publisher,o=job.obligation,claimId=job.claim_id;
