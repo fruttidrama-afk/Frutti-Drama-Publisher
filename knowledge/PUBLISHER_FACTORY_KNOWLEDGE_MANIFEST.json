@@ -32,6 +32,19 @@
     "native_ai_disclosure_required": true,
     "youtube_contains_synthetic_media_always": true,
     "facebook_is_ai_generated_always": true,
-    "legacy_ai_disclosure_repair_enabled": true
+    "legacy_ai_disclosure_repair_enabled": true,
+    "infrastructure_policy": "free-no-expiry-v1",
+    "expiring_trial_infrastructure_forbidden": true,
+    "railway_allowed": false,
+    "active_free_runtime": "supabase-postgres-storage+github-actions",
+    "durable_daily_obligation_ledger": true,
+    "ephemeral_runner_state_externalized": true,
+    "github_oidc_runner_auth": true,
+    "historical_deficit_auto_extra_generation": false,
+    "youtube_privacy_before_publish": "not_uploaded",
+    "youtube_upload_lead_minutes": 0,
+    "youtube_release_mode": "direct_public_at_posting_time",
+    "youtube_use_publish_at": false,
+    "youtube_private_lead_window": false
   }
 }
