@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 55
     env:
-      DISPLAY: :99
+      DISPLAY: ':99'
       FLOW_BOOTSTRAP_PROFILE: ${{ runner.temp }}/flow-bootstrap-profile
     steps:
       - uses: actions/checkout@v4
