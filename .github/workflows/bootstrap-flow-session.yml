@@ -36,7 +36,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq xvfb x11vnc novnc websockify jq curl
-          curl -L --fail --retry 3 -o "${RUNNER_TEMP}/cloudflared.deb"             https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          curl -L --fail --retry 3 -o "${RUNNER_TEMP}/cloudflared.deb" https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i "${RUNNER_TEMP}/cloudflared.deb"
           npm install --ignore-scripts --no-audit --no-fund
 
@@ -46,17 +46,12 @@ jobs:
           set -euo pipefail
           mkdir -p "$FLOW_BOOTSTRAP_PROFILE"
           START_URL="$(node scripts/bootstrap-flow-session.mjs config)"
-          VNC_PASSWORD="$(python3 - <<'PY'
-import secrets,string
-alphabet=string.ascii_letters+string.digits
-print(''.join(secrets.choice(alphabet) for _ in range(14)))
-PY
-)"
+          VNC_PASSWORD="$(openssl rand -hex 8)"
           echo "$VNC_PASSWORD" > "${RUNNER_TEMP}/vnc-password.txt"
           x11vnc -storepasswd "$VNC_PASSWORD" "${RUNNER_TEMP}/x11vnc.pass" >/dev/null
           Xvfb :99 -screen 0 1440x900x24 -nolisten tcp -ac >"${RUNNER_TEMP}/xvfb.log" 2>&1 &
           sleep 2
-          google-chrome             --user-data-dir="$FLOW_BOOTSTRAP_PROFILE"             --remote-debugging-address=127.0.0.1             --remote-debugging-port=9222             --remote-allow-origins='*'             --no-sandbox --disable-dev-shm-usage --disable-gpu             --window-size=1440,900             "$START_URL" >"${RUNNER_TEMP}/chrome.log" 2>&1 &
+          google-chrome --user-data-dir="$FLOW_BOOTSTRAP_PROFILE" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --remote-allow-origins='*' --no-sandbox --disable-dev-shm-usage --disable-gpu --window-size=1440,900 "$START_URL" >"${RUNNER_TEMP}/chrome.log" 2>&1 &
           x11vnc -display :99 -rfbport 5900 -rfbauth "${RUNNER_TEMP}/x11vnc.pass" -forever -shared -noxdamage >"${RUNNER_TEMP}/x11vnc.log" 2>&1 &
           websockify --web=/usr/share/novnc 6080 localhost:5900 >"${RUNNER_TEMP}/novnc.log" 2>&1 &
           cloudflared tunnel --no-autoupdate --url http://127.0.0.1:6080 >"${RUNNER_TEMP}/cloudflared.log" 2>&1 &
