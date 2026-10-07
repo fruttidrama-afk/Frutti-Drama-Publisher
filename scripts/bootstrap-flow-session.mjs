@@ -131,3 +131,4 @@ if(MODE==='config'){
 }else{
   throw new Error('MODE must be config|wait|upload|announce');
 }
+// BOOTSTRAP_RESTART_MARKER: 2026-10-07-resume-1416
