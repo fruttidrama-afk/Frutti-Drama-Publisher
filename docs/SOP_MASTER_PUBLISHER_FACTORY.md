@@ -149,12 +149,20 @@ A REDO is explicit operator authorization for another generation of that episode
 # 5. Publication SOP — YouTube
 
 For the established YouTube workflow:
-- do not upload directly public;
-- do not upload immediately when review is approved;
-- do not use YouTube `publishAt` as a substitute for the established two-step flow;
-- at the configured private-upload time, upload as **private**;
-- at the configured public time, edit the existing video and switch it to **public**;
-- publication state in the Publisher must reflect the real YouTube state.
+- approval moves the video into Publisher-controlled Stock only;
+- **do not upload to YouTube before the actual publication time**;
+- do not create future/private YouTube staging as a substitute for Stock;
+- do not use YouTube `publishAt` for future scheduling;
+- at the configured publication time, upload the approved Stock video directly as **public** with final title, description and native AI disclosure;
+- legacy private videos that already exist on YouTube may be reconciled/released in place, but new videos must never use that retired path;
+- publication state in the Publisher must reflect the real remote YouTube state.
+
+Required invariants:
+- `privacy_before_publish = not_uploaded`;
+- `upload_lead_minutes = 0`;
+- `release_mode = direct_public_at_posting_time`;
+- `use_publish_at = false`;
+- `preserve_private_lead_window = false`.
 
 Publication time must be configurable from the Publisher UI and persisted.
 
@@ -233,18 +241,21 @@ Never judge success from the logo on the webpage. Validate the actual icon endpo
 
 A repository commit is not a production deployment.
 
+The canonical runtime architecture must not depend on Railway or any expiring free trial. The active target is the provider-replaceable **Free Runtime**: Supabase Free for durable control/state/media plus public GitHub Actions for ephemeral execution.
+
 Required chain:
 1. commit source;
-2. wait for runtime image workflow;
-3. confirm workflow success;
-4. make Railway use the newly built image if necessary;
-5. trigger redeploy;
-6. wait for deployment SUCCESS;
-7. query production health/endpoint;
-8. inspect the actual UI behavior;
-9. verify no generation/publishing side effect was introduced.
+2. wait for validation workflow;
+3. confirm validation success;
+4. confirm the Supabase Edge control plane is active;
+5. confirm the scheduled GitHub worker can authenticate with GitHub OIDC without stored runner secrets;
+6. confirm the publisher has a durable state snapshot and authenticated Flow profile snapshot;
+7. run one targeted Golden Test obligation;
+8. verify Review/Stock/publication state remotely;
+9. enable unattended obligations only after the Golden Test passes;
+10. verify no generation/publishing side effect was introduced.
 
-If a workflow is still "in_progress", do not tell the operator the production fix is already live.
+If a workflow is still `in_progress`, if migration state is not `ready`, or if the Golden Test has not passed, do not tell the operator the publisher is autonomous.
 
 ---
 
@@ -369,3 +380,79 @@ Publisher Factory inheritance:
 - contract/self-tests fail if either YouTube or Facebook native disclosure support disappears.
 
 **Invariant:** PUBLICATION SUCCESS IS NOT COMPLETE WITHOUT THE PLATFORM-NATIVE AI DISCLOSURE.
+
+
+---
+
+# 16. Free-no-expiry infrastructure policy — 2026-10-06
+
+**Non-negotiable invariant:** Publisher Factory must not use infrastructure whose normal free operation ends automatically after a trial period, promotional credit period, or mandatory paid upgrade.
+
+Railway is retired from the canonical architecture because the deployed publishers became unavailable when its trial expired. Existing Railway identifiers/volumes may be used only as migration evidence; Railway must never be selected as an automatic fallback.
+
+## Active Free Runtime
+
+Current deployable control plane:
+- **Supabase Free**: durable publisher registry, daily obligation ledger, private runtime-state storage and Edge control endpoint;
+- **GitHub Actions on the public runtime repository**: ephemeral Chromium/FreeBrowserProvider execution;
+- **GitHub OIDC**: secretless runner authentication to the Supabase Edge control plane;
+- Publisher web UI remains static/provider-independent.
+
+The earlier Cloudflare Workers/D1/R2 implementation remains an optional replaceable adapter, not a dependency. Business state must be portable so another free provider can replace Supabase if its plan changes later.
+
+## Durable obligation contract
+
+For every enabled publisher and every local calendar day:
+- create exactly 3 generation obligations by default;
+- create exactly 1 publication obligation by default;
+- generation and publication obligations are independent;
+- only one mutable publisher-state job may run at a time;
+- a job is leased, persisted and reconciled after crashes;
+- a timeout after a Flow submit is **reconciliation-only** and never authorizes a duplicate submit;
+- historical missed obligations remain visible as debt; they do not automatically increase today's Google Flow generation target or spend paid monthly credits.
+
+The automatic Flow batch remains capped by the daily free-credit refresh. Only the explicit human **Generate Extra** action may raise the daily target.
+
+## State/media contract
+
+The runtime may be ephemeral, but state may not be:
+- SQLite/runtime state is snapshotted between runs;
+- the authenticated Flow browser profile is snapshotted separately;
+- private snapshots must never be exposed through a public bucket;
+- Review originals remain approval-gated;
+- approved Stock is durable independently of the runner;
+- the next run restores state before doing any external action.
+
+## Authentication contract
+
+GitHub Actions must authenticate to the control plane using GitHub OIDC bound to:
+- repository `fruttidrama-afk/Frutti-Drama-Publisher`;
+- branch `main`;
+- the canonical Free Runtime workflow;
+- a dedicated audience.
+
+Do not place long-lived Supabase service-role keys, Google cookies or publication access tokens in a public repository or workflow input.
+
+## Migration gate
+
+A publisher cannot be marked `enabled`/autonomous until:
+1. its creative/runtime config is present;
+2. durable state has been imported or safely reconstructed;
+3. an authenticated Flow profile is present;
+4. exactly-once recovery state is reconciled;
+5. one generation Golden Test reaches Review without duplicate submit;
+6. one publication Golden Test confirms the remote platform result;
+7. the scheduled worker passes at least one unattended cycle.
+
+## Acceptance test
+
+The business-health test is outcome-based, not process-based:
+
+If the operator does not open a publisher for 10 days, then—assuming the platform accounts remain authenticated, daily Flow free credits arrive, and enough approved Stock exists—the publisher must show:
+- **30 new Review-ready videos** (3 × 10);
+- **10 confirmed publications** (1 × 10);
+- zero duplicate submissions;
+- zero rejected videos published;
+- zero need to keep a browser/panel/chat open.
+
+A green heartbeat without those outcomes is not automation health.
