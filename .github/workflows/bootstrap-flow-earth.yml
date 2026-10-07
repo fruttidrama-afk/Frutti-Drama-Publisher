@@ -1,0 +1,38 @@
+name: Bootstrap Flow Earth Account
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/bootstrap-flow-earth.yml"
+      - "scripts/bootstrap-flow-account.mjs"
+      - "scripts/run-flow-account-bootstrap.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      DISPLAY: ':99'
+      TARGET_KEY: earth
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Install browser bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb x11vnc novnc websockify curl
+          curl -L --fail --retry 3 -o /tmp/cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i /tmp/cloudflared.deb
+          npm install --ignore-scripts --no-audit --no-fund
+      - name: Bootstrap isolated Earth Flow account
+        run: bash scripts/run-flow-account-bootstrap.sh
