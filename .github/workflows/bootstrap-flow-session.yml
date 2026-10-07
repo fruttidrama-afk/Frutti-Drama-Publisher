@@ -55,7 +55,7 @@ jobs:
           Xvfb :99 -screen 0 1440x900x24 -nolisten tcp -ac >"/tmp/xvfb.log" 2>&1 &
           sleep 2
 
-          google-chrome             --user-data-dir="$FLOW_BOOTSTRAP_PROFILE"             --remote-debugging-address=127.0.0.1             --remote-debugging-port=0             --remote-allow-origins='*'             --no-sandbox             --disable-dev-shm-usage             --disable-gpu             --window-size=1440,900             "$START_URL" >"/tmp/chrome.log" 2>&1 &
+          google-chrome             --user-data-dir="$FLOW_BOOTSTRAP_PROFILE"             --no-sandbox             --disable-dev-shm-usage             --disable-gpu             --window-size=1440,900             "$START_URL" >"/tmp/chrome.log" 2>&1 &
 
           x11vnc -display :99 -rfbport 5900 -rfbauth "/tmp/x11vnc.pass" -forever -shared -noxdamage >"/tmp/x11vnc.log" 2>&1 &
           websockify --web=/usr/share/novnc 6080 localhost:5900 >"/tmp/novnc.log" 2>&1 &
@@ -87,10 +87,10 @@ jobs:
 
           FLOW_BOOTSTRAP_URL="$FULL_URL" FLOW_BOOTSTRAP_PASSWORD="$VNC_PASSWORD" node scripts/bootstrap-flow-session.mjs announce
 
-          # Keep browser + VNC + tunnel in THIS SAME STEP. GitHub cleans
-          # background processes when a step ends, which previously caused the
-          # Cloudflare 502 and CDP timeout.
-          node scripts/bootstrap-flow-session.mjs wait
+          # Keep browser + VNC + tunnel in this same step. The operator signs
+          # in through noVNC, then ChatGPT flips migration_state to
+          # capture_requested. This avoids fragile Chrome CDP detection.
+          node scripts/bootstrap-flow-session.mjs waitsignal
 
           pkill -TERM -f 'google-chrome.*flow-bootstrap-profile' || true
           sleep 4
