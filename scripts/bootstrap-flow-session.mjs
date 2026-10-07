@@ -112,6 +112,13 @@ async function upload(){
   if(!r.ok)throw new Error('PROFILE_UPLOAD_'+r.status+' '+(await r.text()).slice(0,500));
   console.log('PROFILE_UPLOAD_OK',await r.text());
 }
+async function announce(){
+  const url=String(process.env.FLOW_BOOTSTRAP_URL||'').trim();
+  const password=String(process.env.FLOW_BOOTSTRAP_PASSWORD||'').trim();
+  const r=await api('/session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url,password})});
+  if(!r.ok)throw new Error('SESSION_ANNOUNCE_'+r.status+' '+(await r.text()).slice(0,500));
+  console.log('SESSION_ANNOUNCED');
+}
 if(MODE==='config'){
   const j=await getConfig();
   process.stdout.write(String(j.start_url||'https://flow.google.com/'));
@@ -119,6 +126,8 @@ if(MODE==='config'){
   await waitAuth();
 }else if(MODE==='upload'){
   await upload();
+}else if(MODE==='announce'){
+  await announce();
 }else{
-  throw new Error('MODE must be config|wait|upload');
+  throw new Error('MODE must be config|wait|upload|announce');
 }
