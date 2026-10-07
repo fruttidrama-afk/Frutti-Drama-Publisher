@@ -40,65 +40,74 @@ jobs:
           sudo dpkg -i "/tmp/cloudflared.deb"
           npm install --ignore-scripts --no-audit --no-fund
 
-      - name: Start temporary protected browser
+      - name: Run temporary Flow login and persist profile
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf "$FLOW_BOOTSTRAP_PROFILE"
           mkdir -p "$FLOW_BOOTSTRAP_PROFILE"
+
           START_URL="$(node scripts/bootstrap-flow-session.mjs config)"
           VNC_PASSWORD="$(openssl rand -hex 8)"
           echo "$VNC_PASSWORD" > "/tmp/vnc-password.txt"
           x11vnc -storepasswd "$VNC_PASSWORD" "/tmp/x11vnc.pass" >/dev/null
+
           Xvfb :99 -screen 0 1440x900x24 -nolisten tcp -ac >"/tmp/xvfb.log" 2>&1 &
           sleep 2
-          google-chrome --user-data-dir="$FLOW_BOOTSTRAP_PROFILE" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --remote-allow-origins='*' --no-sandbox --disable-dev-shm-usage --disable-gpu --window-size=1440,900 "$START_URL" >"/tmp/chrome.log" 2>&1 &
+
+          google-chrome             --user-data-dir="$FLOW_BOOTSTRAP_PROFILE"             --remote-debugging-address=127.0.0.1             --remote-debugging-port=9222             --remote-allow-origins='*'             --no-sandbox             --disable-dev-shm-usage             --disable-gpu             --window-size=1440,900             "$START_URL" >"/tmp/chrome.log" 2>&1 &
+
           x11vnc -display :99 -rfbport 5900 -rfbauth "/tmp/x11vnc.pass" -forever -shared -noxdamage >"/tmp/x11vnc.log" 2>&1 &
           websockify --web=/usr/share/novnc 6080 localhost:5900 >"/tmp/novnc.log" 2>&1 &
           cloudflared tunnel --no-autoupdate --url http://127.0.0.1:6080 >"/tmp/cloudflared.log" 2>&1 &
-          for i in $(seq 1 60); do
-            URL="$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "/tmp/cloudflared.log" | head -1 || true)"
-            if [ -n "$URL" ]; then
-              echo "============================================================"
-              FULL_URL="$URL/vnc.html?autoconnect=true&resize=scale"
-              echo "TEMPORARY FLOW LOGIN URL: $FULL_URL"
-              echo "TEMPORARY VNC PASSWORD: $VNC_PASSWORD"
-              FLOW_BOOTSTRAP_URL="$FULL_URL" FLOW_BOOTSTRAP_PASSWORD="$VNC_PASSWORD" node scripts/bootstrap-flow-session.mjs announce
-              echo "This session closes automatically as soon as Google Flow is authenticated."
-              echo "============================================================"
-              exit 0
+
+          URL=""
+          for i in $(seq 1 75); do
+            if curl -fsS --max-time 1 http://127.0.0.1:6080/vnc.html >/dev/null 2>&1; then
+              URL="$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "/tmp/cloudflared.log" | head -1 || true)"
+              if [ -n "$URL" ]; then
+                break
+              fi
             fi
             sleep 1
           done
-          cat "/tmp/cloudflared.log"
-          exit 1
 
-      - name: Wait for Google Flow authentication
-        run: node scripts/bootstrap-flow-session.mjs wait
+          if [ -z "$URL" ]; then
+            echo "Local noVNC/tunnel never became healthy"
+            tail -120 /tmp/novnc.log || true
+            tail -120 /tmp/cloudflared.log || true
+            exit 1
+          fi
 
-      - name: Stop Chrome and archive profile
-        if: success()
-        shell: bash
-        run: |
-          set -euo pipefail
+          FULL_URL="$URL/vnc.html?autoconnect=true&resize=scale"
+          echo "============================================================"
+          echo "TEMPORARY FLOW LOGIN URL: $FULL_URL"
+          echo "TEMPORARY VNC PASSWORD: $VNC_PASSWORD"
+          echo "============================================================"
+
+          FLOW_BOOTSTRAP_URL="$FULL_URL" FLOW_BOOTSTRAP_PASSWORD="$VNC_PASSWORD" node scripts/bootstrap-flow-session.mjs announce
+
+          # Keep browser + VNC + tunnel in THIS SAME STEP. GitHub cleans
+          # background processes when a step ends, which previously caused the
+          # Cloudflare 502 and CDP timeout.
+          node scripts/bootstrap-flow-session.mjs wait
+
           pkill -TERM -f 'google-chrome.*flow-bootstrap-profile' || true
-          sleep 3
+          sleep 4
           rm -f "$FLOW_BOOTSTRAP_PROFILE"/SingletonCookie "$FLOW_BOOTSTRAP_PROFILE"/SingletonLock "$FLOW_BOOTSTRAP_PROFILE"/SingletonSocket "$FLOW_BOOTSTRAP_PROFILE"/DevToolsActivePort
           find "$FLOW_BOOTSTRAP_PROFILE" -type d \( -name Cache -o -name 'Code Cache' -o -name GPUCache -o -name ShaderCache \) -prune -exec rm -rf {} + || true
           tar -czf "/tmp/flow-profile.tgz" -C "$(dirname "$FLOW_BOOTSTRAP_PROFILE")" "$(basename "$FLOW_BOOTSTRAP_PROFILE")"
-
-      - name: Persist portable profile to free runtime
-        if: success()
-        env:
-          FLOW_BOOTSTRAP_ARCHIVE: /tmp/flow-profile.tgz
-        run: node scripts/bootstrap-flow-session.mjs upload
+          FLOW_BOOTSTRAP_ARCHIVE="/tmp/flow-profile.tgz" node scripts/bootstrap-flow-session.mjs upload
 
       - name: Diagnostics
         if: failure()
         shell: bash
         run: |
           echo '--- cloudflared ---'
-          tail -80 "/tmp/cloudflared.log" 2>/dev/null || true
+          tail -120 "/tmp/cloudflared.log" 2>/dev/null || true
+          echo '--- novnc ---'
+          tail -120 "/tmp/novnc.log" 2>/dev/null || true
           echo '--- chrome ---'
-          tail -80 "/tmp/chrome.log" 2>/dev/null || true
+          tail -120 "/tmp/chrome.log" 2>/dev/null || true
           echo '--- x11vnc ---'
-          tail -80 "/tmp/x11vnc.log" 2>/dev/null || true
+          tail -120 "/tmp/x11vnc.log" 2>/dev/null || true
