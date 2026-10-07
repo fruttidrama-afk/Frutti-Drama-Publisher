@@ -1,35 +1,26 @@
-name: Free Runtime Runner
+name: Free Runtime Scheduler
 
 on:
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       publisher_id:
-        description: Publisher ID
-        required: true
-        type: string
-      obligation_id:
-        description: Durable obligation ID
-        required: true
+        description: Optional Publisher UUID for a targeted Golden Test
+        required: false
         type: string
       kind:
-        description: generation or publication
-        required: true
+        description: Optional targeted obligation kind
+        required: false
         type: choice
-        options: [generation, publication]
-      local_day:
-        description: Publisher local day
-        required: true
-        type: string
-      ordinal:
-        description: Daily ordinal
-        required: true
-        type: string
+        options: ["", generation, publication]
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
-  group: free-runtime-${{ inputs.publisher_id }}
+  group: publisher-free-runtime-global
   cancel-in-progress: false
 
 jobs:
@@ -37,14 +28,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      PUBLISHER_ID: ${{ inputs.publisher_id }}
-      OBLIGATION_ID: ${{ inputs.obligation_id }}
-      OBLIGATION_KIND: ${{ inputs.kind }}
-      OBLIGATION_DAY: ${{ inputs.local_day }}
-      OBLIGATION_ORDINAL: ${{ inputs.ordinal }}
-      FREE_RUNTIME_ORCHESTRATOR_URL: ${{ secrets.FREE_RUNTIME_ORCHESTRATOR_URL }}
-      FREE_RUNTIME_RUNNER_SECRET: ${{ secrets.FREE_RUNTIME_RUNNER_SECRET }}
-      FREE_RUNTIME_STATE_KEY: ${{ secrets.FREE_RUNTIME_STATE_KEY }}
+      FREE_RUNTIME_ORCHESTRATOR_URL: https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-free-runtime
+      MANUAL_PUBLISHER_ID: ${{ inputs.publisher_id || '' }}
+      MANUAL_KIND: ${{ inputs.kind || '' }}
       CHROMIUM_PATH: /usr/bin/google-chrome
     steps:
       - uses: actions/checkout@v4
@@ -54,29 +40,28 @@ jobs:
           node-version: '24.14.0'
           cache: npm
 
-      - name: Infrastructure contract preflight
+      - name: Free-runtime preflight
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$FREE_RUNTIME_ORCHESTRATOR_URL"
-          test -n "$FREE_RUNTIME_RUNNER_SECRET"
-          test -n "$FREE_RUNTIME_STATE_KEY"
-          command -v openssl
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+          test -n "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
           command -v tar
           command -v google-chrome
           node --version
+          node --check scripts/free-runtime-runner.mjs
 
       - name: Install runtime dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Execute one durable obligation
+      - name: Claim and execute one durable obligation
         run: node scripts/free-runtime-runner.mjs
 
       - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: free-runtime-${{ inputs.publisher_id }}-${{ inputs.obligation_id }}
+          name: free-runtime-diagnostics-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/publisher-free-runtime/runtime.log
           if-no-files-found: ignore
