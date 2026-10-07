@@ -38,3 +38,4 @@ node scripts/bootstrap-flow-account.mjs capture
 tar -czf "$AUTH_ARCHIVE" -C /tmp flow-auth-state.json
 FLOW_BOOTSTRAP_ARCHIVE="$AUTH_ARCHIVE" node scripts/bootstrap-flow-account.mjs upload
 node scripts/bootstrap-flow-account.mjs complete
+# EARTH_RESUME_MARKER: 2026-10-07T20:36-03:00
