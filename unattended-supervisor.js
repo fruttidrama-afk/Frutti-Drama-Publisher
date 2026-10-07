@@ -159,8 +159,10 @@ function obligations(db){
     records.push({day:d,generation_target:gTarget,generation_completed:g,generation_deficit:def,publication_target:pTarget,publication_completed:p});d=addDay(d,1);
   }
   const todayCompleted=gens.get(today)||0,publishedToday=pubs.get(today)||0,priorDeficit=records.filter(x=>x.day!==today).reduce((s,x)=>s+x.generation_deficit,0);
-  const target=Math.min(MAX_CATCHUP_TARGET,BASE_TARGET+priorDeficit);
-  if(priorDeficit>0)setMeta(db,'automation:manualDailyTarget:'+today,String(Math.max(target,BASE_TARGET)));
+  // Historical deficit is observability, not authorization to spend paid Flow credits.
+  // Automatic production must remain capped at the normal daily batch. Only the
+  // explicit operator "Generate extra" control may raise manualDailyTarget.
+  const target=BASE_TARGET;
   return{today,totalDeficit,priorDeficit,todayCompleted,publishedToday,target,stock,records};
 }
 function writeStatus(payload){try{fs.mkdirSync(PUBLIC_DIR,{recursive:true});fs.writeFileSync(STATUS_FILE,JSON.stringify(payload,null,2),{mode:0o644})}catch{}}
