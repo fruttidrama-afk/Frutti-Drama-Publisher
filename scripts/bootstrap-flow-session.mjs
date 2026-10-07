@@ -1,11 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { chromium } from 'playwright-core';
 
 const MODE=String(process.argv[2]||'').trim();
 const EDGE='https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-flow-bootstrap';
 const AUD='publisher-factory-flow-bootstrap';
 const CONFIG_FILE=path.resolve(process.env.RUNNER_TEMP||'/tmp','flow-bootstrap-config.json');
+const PROFILE_DIR=path.resolve(process.env.FLOW_BOOTSTRAP_PROFILE||'/tmp/flow-bootstrap-profile');
+const STATE_FILE=path.resolve(process.env.FLOW_AUTH_STATE_FILE||'/tmp/flow-auth-state.json');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 
 async function oidc(){
   const base=String(process.env.ACTIONS_ID_TOKEN_REQUEST_URL||'');
@@ -49,6 +53,71 @@ async function waitSignal(){
   }
   throw new Error('CAPTURE_SIGNAL_TIMEOUT');
 }
+async function persistProject(t,id,name){
+  const r=await api('/project',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({publisher_id:t.id,project_id:id,project_name:name})});
+  if(!r.ok)console.log('PROJECT_PERSIST_WARNING',t.name,r.status,(await r.text()).slice(0,300));
+  else console.log('RESOLVED_FLOW_PROJECT',t.name,id);
+}
+async function discoverProjects(page,cfg){
+  await page.goto('https://flow.google.com/',{waitUntil:'domcontentloaded',timeout:60000}).catch(()=>{});
+  await sleep(3500);
+  // Scroll repeatedly so lazy-loaded project cards become visible.
+  for(let i=0;i<12;i++){
+    await page.mouse.wheel(0,2200).catch(()=>{});
+    await sleep(450);
+  }
+  await page.mouse.wheel(0,-30000).catch(()=>{});
+  await sleep(800);
+  const cards=page.locator('flow-project-card');
+  const rows=[];
+  for(let i=0;i<Math.min(await cards.count().catch(()=>0),120);i++){
+    const c=cards.nth(i);
+    const txt=String(await c.innerText().catch(()=>'')).replace(/\s+/g,' ').trim();
+    const href=String(await c.locator('a[href*="/project/"]').first().getAttribute('href').catch(()=>'')||'');
+    const m=href.match(/\/project\/([a-zA-Z0-9-]+)/);
+    if(m?.[1])rows.push({id:m[1],text:txt});
+  }
+  console.log('FLOW_PROJECT_COUNT',rows.length);
+  for(const t of cfg.targets||[]){
+    const configured=String(t.project_url||'').match(/\/project\/([a-zA-Z0-9-]+)/)?.[1]||'';
+    if(configured){await persistProject(t,configured,t.project_name||t.name);continue}
+    const expected=norm(t.project_name||t.name);
+    const matches=rows.filter(x=>{
+      const n=norm(x.text);
+      return expected&&(n===expected||n.startsWith(expected+' ')||n.includes(expected));
+    });
+    if(matches.length===1)await persistProject(t,matches[0].id,t.project_name||t.name);
+    else console.log('FLOW_PROJECT_UNRESOLVED',t.name,'matches='+matches.length);
+  }
+}
+async function capture(){
+  const cfg=fs.existsSync(CONFIG_FILE)?JSON.parse(fs.readFileSync(CONFIG_FILE,'utf8')):await getConfig();
+  const ctx=await chromium.launchPersistentContext(PROFILE_DIR,{
+    executablePath:'/usr/bin/google-chrome',
+    headless:true,
+    locale:'en-US',
+    timezoneId:'America/Argentina/Buenos_Aires',
+    viewport:{width:1440,height:900},
+    args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--password-store=basic','--no-first-run','--no-default-browser-check']
+  });
+  try{
+    const page=ctx.pages()[0]||await ctx.newPage();
+    await page.goto('https://flow.google.com/',{waitUntil:'domcontentloaded',timeout:60000}).catch(()=>{});
+    await sleep(3000);
+    const url=String(page.url()||'');
+    const body=String(await page.locator('body').innerText().catch(()=>'')).slice(0,12000);
+    if(/accounts\.google\.com|ServiceLogin|signin\/v2/i.test(url)||/email or phone|enter your password|sign in to continue/i.test(body)){
+      throw new Error('FLOW_SESSION_NOT_AUTHENTICATED');
+    }
+    await discoverProjects(page,cfg);
+    await ctx.storageState({path:STATE_FILE});
+    const size=fs.statSync(STATE_FILE).size;
+    console.log('FLOW_STORAGE_STATE_CAPTURED',size);
+    if(size<500)throw new Error('FLOW_STORAGE_STATE_TOO_SMALL');
+  } finally {
+    await ctx.close().catch(()=>{});
+  }
+}
 async function upload(){
   const tar=String(process.env.FLOW_BOOTSTRAP_ARCHIVE||'');
   if(!tar||!fs.existsSync(tar))throw new Error('PROFILE_ARCHIVE_MISSING');
@@ -64,9 +133,11 @@ if(MODE==='config'){
   await announce();
 }else if(MODE==='waitsignal'){
   await waitSignal();
+}else if(MODE==='capture'){
+  await capture();
 }else if(MODE==='upload'){
   await upload();
 }else{
-  throw new Error('MODE must be config|announce|waitsignal|upload');
+  throw new Error('MODE must be config|announce|waitsignal|capture|upload');
 }
-// BOOTSTRAP_SIGNAL_PROTOCOL: v1
+// PORTABLE_FLOW_AUTH: storage-state-v1
