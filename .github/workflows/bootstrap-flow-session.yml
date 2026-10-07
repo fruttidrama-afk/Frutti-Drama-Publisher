@@ -59,8 +59,10 @@ jobs:
             URL="$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "/tmp/cloudflared.log" | head -1 || true)"
             if [ -n "$URL" ]; then
               echo "============================================================"
-              echo "TEMPORARY FLOW LOGIN URL: $URL/vnc.html?autoconnect=true&resize=scale"
+              FULL_URL="$URL/vnc.html?autoconnect=true&resize=scale"
+              echo "TEMPORARY FLOW LOGIN URL: $FULL_URL"
               echo "TEMPORARY VNC PASSWORD: $VNC_PASSWORD"
+              FLOW_BOOTSTRAP_URL="$FULL_URL" FLOW_BOOTSTRAP_PASSWORD="$VNC_PASSWORD" node scripts/bootstrap-flow-session.mjs announce
               echo "This session closes automatically as soon as Google Flow is authenticated."
               echo "============================================================"
               exit 0
