@@ -29,7 +29,7 @@ async function report(payload){
   if(!r.ok)throw new Error('PREFLIGHT_REPORT_'+r.status+' '+(await r.text()).slice(0,500));
 }
 function untar(){
-  fs.rmSync(ROOT,{recursive:true,force:true});fs.mkdirSync(ROOT,{recursive:true});
+  fs.mkdirSync(ROOT,{recursive:true});
   const r=spawnSync('tar',['-xzf',TAR,'-C',ROOT],{stdio:'inherit'});
   if(r.status!==0)throw new Error('PROFILE_TAR_EXTRACT_FAILED');
 }
