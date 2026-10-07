@@ -1,0 +1,107 @@
+name: Bootstrap Flow Session
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/bootstrap-flow-session.yml"
+      - "scripts/bootstrap-flow-session.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publisher-flow-bootstrap
+  cancel-in-progress: true
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      DISPLAY: :99
+      FLOW_BOOTSTRAP_PROFILE: ${{ runner.temp }}/flow-bootstrap-profile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+
+      - name: Install browser bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb x11vnc novnc websockify jq curl
+          curl -L --fail --retry 3 -o "${RUNNER_TEMP}/cloudflared.deb"             https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i "${RUNNER_TEMP}/cloudflared.deb"
+          npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Start temporary protected browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$FLOW_BOOTSTRAP_PROFILE"
+          START_URL="$(node scripts/bootstrap-flow-session.mjs config)"
+          VNC_PASSWORD="$(python3 - <<'PY'
+import secrets,string
+alphabet=string.ascii_letters+string.digits
+print(''.join(secrets.choice(alphabet) for _ in range(14)))
+PY
+)"
+          echo "$VNC_PASSWORD" > "${RUNNER_TEMP}/vnc-password.txt"
+          x11vnc -storepasswd "$VNC_PASSWORD" "${RUNNER_TEMP}/x11vnc.pass" >/dev/null
+          Xvfb :99 -screen 0 1440x900x24 -nolisten tcp -ac >"${RUNNER_TEMP}/xvfb.log" 2>&1 &
+          sleep 2
+          google-chrome             --user-data-dir="$FLOW_BOOTSTRAP_PROFILE"             --remote-debugging-address=127.0.0.1             --remote-debugging-port=9222             --remote-allow-origins='*'             --no-sandbox --disable-dev-shm-usage --disable-gpu             --window-size=1440,900             "$START_URL" >"${RUNNER_TEMP}/chrome.log" 2>&1 &
+          x11vnc -display :99 -rfbport 5900 -rfbauth "${RUNNER_TEMP}/x11vnc.pass" -forever -shared -noxdamage >"${RUNNER_TEMP}/x11vnc.log" 2>&1 &
+          websockify --web=/usr/share/novnc 6080 localhost:5900 >"${RUNNER_TEMP}/novnc.log" 2>&1 &
+          cloudflared tunnel --no-autoupdate --url http://127.0.0.1:6080 >"${RUNNER_TEMP}/cloudflared.log" 2>&1 &
+          for i in $(seq 1 60); do
+            URL="$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "${RUNNER_TEMP}/cloudflared.log" | head -1 || true)"
+            if [ -n "$URL" ]; then
+              echo "============================================================"
+              echo "TEMPORARY FLOW LOGIN URL: $URL/vnc.html?autoconnect=true&resize=scale"
+              echo "TEMPORARY VNC PASSWORD: $VNC_PASSWORD"
+              echo "This session closes automatically as soon as Google Flow is authenticated."
+              echo "============================================================"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "${RUNNER_TEMP}/cloudflared.log"
+          exit 1
+
+      - name: Wait for Google Flow authentication
+        run: node scripts/bootstrap-flow-session.mjs wait
+
+      - name: Stop Chrome and archive profile
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkill -TERM -f 'google-chrome.*flow-bootstrap-profile' || true
+          sleep 3
+          rm -f "$FLOW_BOOTSTRAP_PROFILE"/SingletonCookie "$FLOW_BOOTSTRAP_PROFILE"/SingletonLock "$FLOW_BOOTSTRAP_PROFILE"/SingletonSocket "$FLOW_BOOTSTRAP_PROFILE"/DevToolsActivePort
+          find "$FLOW_BOOTSTRAP_PROFILE" -type d \( -name Cache -o -name 'Code Cache' -o -name GPUCache -o -name ShaderCache \) -prune -exec rm -rf {} + || true
+          tar -czf "${RUNNER_TEMP}/flow-profile.tgz" -C "$(dirname "$FLOW_BOOTSTRAP_PROFILE")" "$(basename "$FLOW_BOOTSTRAP_PROFILE")"
+
+      - name: Persist portable profile to free runtime
+        if: success()
+        env:
+          FLOW_BOOTSTRAP_ARCHIVE: ${{ runner.temp }}/flow-profile.tgz
+        run: node scripts/bootstrap-flow-session.mjs upload
+
+      - name: Diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          echo '--- cloudflared ---'
+          tail -80 "${RUNNER_TEMP}/cloudflared.log" 2>/dev/null || true
+          echo '--- chrome ---'
+          tail -80 "${RUNNER_TEMP}/chrome.log" 2>/dev/null || true
+          echo '--- x11vnc ---'
+          tail -80 "${RUNNER_TEMP}/x11vnc.log" 2>/dev/null || true
