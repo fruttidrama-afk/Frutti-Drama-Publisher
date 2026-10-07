@@ -7,7 +7,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/free-runtime-runner.yml"
-      - "scripts/free-runtime-runner.mjs"
+      - "scripts/free-runtime-runner-v2.mjs"
       - "free-browser-provider.js"
       - "unattended-supervisor.js"
       - "server.js"
@@ -56,13 +56,13 @@ jobs:
           command -v tar
           command -v google-chrome
           node --version
-          node --check scripts/free-runtime-runner.mjs
+          node --check scripts/free-runtime-runner-v2.mjs
 
       - name: Install runtime dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
 
       - name: Claim and execute one durable obligation
-        run: node scripts/free-runtime-runner.mjs
+        run: node scripts/free-runtime-runner-v2.mjs
 
       - name: Upload diagnostics on failure
         if: failure()
