@@ -31,14 +31,30 @@ async function getConfig(){
   return j;
 }
 async function cdp(){
-  for(let i=0;i<120;i++){
+  const activePortFile=path.join(PROFILE_DIR,'DevToolsActivePort');
+  for(let i=0;i<180;i++){
+    const candidates=[];
     try{
-      const r=await fetch('http://127.0.0.1:9222/json/version',{signal:AbortSignal.timeout(700)});
-      if(r.ok)return chromium.connectOverCDP('http://127.0.0.1:9222',{timeout:5000});
+      if(fs.existsSync(activePortFile)){
+        const [port]=fs.readFileSync(activePortFile,'utf8').trim().split(/\\r?\\n/);
+        if(/^\\d+$/.test(String(port||'')))candidates.push('http://127.0.0.1:'+port);
+      }
     }catch{}
+    candidates.push('http://127.0.0.1:9222');
+    for(const endpoint of [...new Set(candidates)]){
+      try{
+        const r=await fetch(endpoint+'/json/version',{signal:AbortSignal.timeout(900)});
+        if(r.ok){
+          console.log('CHROME_CDP_READY',endpoint);
+          return chromium.connectOverCDP(endpoint,{timeout:8000});
+        }
+      }catch{}
+    }
     await sleep(1000);
   }
-  throw new Error('CHROME_CDP_TIMEOUT');
+  let diag='';
+  try{diag=fs.existsSync(activePortFile)?fs.readFileSync(activePortFile,'utf8').slice(0,300):'DevToolsActivePort missing'}catch{}
+  throw new Error('CHROME_CDP_TIMEOUT '+diag);
 }
 async function authenticated(page){
   const url=String(page.url()||'');
