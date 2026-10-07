@@ -72,6 +72,8 @@ async function capture(){
     }
     await page.goto('https://flow.google.com/',{waitUntil:'domcontentloaded',timeout:60000}).catch(()=>{});
     await sleep(3000);
+    const visibleProjectCards=await page.locator('flow-project-card').count().catch(()=>0);
+    if(visibleProjectCards<1)throw new Error('FLOW_AUTHENTICATION_NOT_CONFIRMED');
     for(let i=0;i<10;i++){await page.mouse.wheel(0,1800).catch(()=>{});await sleep(300)}
     await page.mouse.wheel(0,-25000).catch(()=>{});
     const cards=page.locator('flow-project-card');
