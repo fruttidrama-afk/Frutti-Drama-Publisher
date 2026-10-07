@@ -3,6 +3,14 @@ name: Free Runtime Scheduler
 on:
   schedule:
     - cron: "*/5 * * * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/free-runtime-runner.yml"
+      - "scripts/free-runtime-runner.mjs"
+      - "free-browser-provider.js"
+      - "unattended-supervisor.js"
+      - "server.js"
   workflow_dispatch:
     inputs:
       publisher_id:
