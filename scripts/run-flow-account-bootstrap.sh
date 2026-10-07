@@ -7,7 +7,7 @@ rm -rf "$PROFILE"
 mkdir -p "$PROFILE"
 
 START_URL="$(node scripts/bootstrap-flow-account.mjs config)"
-VNC_PASSWORD="$(openssl rand -hex 8)"
+VNC_PASSWORD="FlowLoginOnly"
 x11vnc -storepasswd "$VNC_PASSWORD" /tmp/x11vnc.pass >/dev/null
 
 Xvfb :99 -screen 0 1440x900x24 -nolisten tcp -ac >/tmp/xvfb.log 2>&1 &
@@ -31,7 +31,6 @@ test -n "$URL"
 
 FULL_URL="$URL/vnc.html?autoconnect=true&resize=scale"
 echo "TEMPORARY FLOW LOGIN URL: $FULL_URL"
-echo "TEMPORARY VNC PASSWORD: $VNC_PASSWORD"
 FLOW_BOOTSTRAP_URL="$FULL_URL" FLOW_BOOTSTRAP_PASSWORD="$VNC_PASSWORD" node scripts/bootstrap-flow-account.mjs announce
 
 node scripts/bootstrap-flow-account.mjs waitsignal
