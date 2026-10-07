@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 const ORCH=String(process.env.FREE_RUNTIME_ORCHESTRATOR_URL||'https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-free-runtime').replace(/\/$/,'');
 const AUD='publisher-factory-free-runtime';
+const FREE_RUNTIME_VERSION='supabase-oidc-v1';
 const ROOT=path.join(process.env.RUNNER_TEMP||os.tmpdir(),'publisher-free-runtime');
 const DATA=path.join(ROOT,'data');
 const LOG=path.join(ROOT,'runtime.log');
@@ -128,7 +129,7 @@ function statusSnapshot(){
 fs.rmSync(ROOT,{recursive:true,force:true});fs.mkdirSync(DATA,{recursive:true});
 let child=null,job=null;
 try{
-  job=await claim();
+  console.log('Free Runtime',FREE_RUNTIME_VERSION);\n  job=await claim();
   if(!job){console.log('No durable obligation is due.');process.exit(0)}
   CURRENT=job;
   const p=job.publisher,o=job.obligation,claimId=job.claim_id;
