@@ -52,6 +52,31 @@ try{
   });
   console.log('FRUTTI_READONLY_PROJECT_TITLE',JSON.stringify(title));
   console.log('FRUTTI_READONLY_CHARACTERS',JSON.stringify(candidates));
+
+  async function collectVisible(label){
+    const nav=page.getByText(label,{exact:true}).first();
+    if(await nav.isVisible().catch(()=>false)){await nav.click();await sleep(3500);}
+    const vals=await page.evaluate(()=>{
+      const out=[];
+      const sels=['flow-grid-tile-container','flow-character-card','[role="option"]','[role="listitem"]'];
+      for(const sel of sels){
+        for(const el of document.querySelectorAll(sel)){
+          const r=el.getBoundingClientRect();
+          if(r.width<20||r.height<20||r.bottom<80)continue;
+          const aria=String(el.getAttribute('aria-label')||'').replace(/\s+/g,' ').trim();
+          const text=String(el.innerText||el.textContent||'').replace(/\s+/g,' ').trim();
+          const v=aria||text;
+          if(v&&v.length<220)out.push(v);
+        }
+      }
+      return [...new Set(out)];
+    });
+    return vals;
+  }
+  const videoTiles=await collectVisible('Videos');
+  console.log('FRUTTI_READONLY_VIDEOS',JSON.stringify(videoTiles));
+  const characterTiles=await collectVisible('Personajes');
+  console.log('FRUTTI_READONLY_PERSONAJES',JSON.stringify(characterTiles));
   await ctx.close();
 }finally{await browser.close().catch(()=>{})}
 // FRESH_FRUTTI_AUTH_AUDIT: 2026-10-07T22:55-03:00
