@@ -1,0 +1,25 @@
+name: Frutti State Repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/frutti-state-repair.yml"
+      - "scripts/repair-frutti-season3-state.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Reconstruct Frutti Season 3 durable state
+        run: node scripts/repair-frutti-season3-state.mjs
