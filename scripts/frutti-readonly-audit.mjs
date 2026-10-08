@@ -36,6 +36,8 @@ try{
   const body=String(await page.locator('body').innerText().catch(()=>'')).slice(0,12000);
   if(/email or phone|enter your password|sign in to continue/i.test(body))throw new Error('AUTH_REQUIRED');
   const title=String(await page.title().catch(()=>''));
+  console.log('FRUTTI_READONLY_URL',JSON.stringify(String(page.url()||'')));
+  console.log('FRUTTI_READONLY_BODY',JSON.stringify(body.slice(0,2500)));
   const chars=page.getByText('Characters',{exact:true}).first();
   if(await chars.isVisible().catch(()=>false)){await chars.click();await sleep(4500);}
   const candidates=await page.evaluate(()=>{
