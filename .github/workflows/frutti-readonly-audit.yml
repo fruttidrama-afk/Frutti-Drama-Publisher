@@ -1,0 +1,27 @@
+name: Frutti Readonly Flow Audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/frutti-readonly-audit.yml"
+      - "scripts/frutti-readonly-audit.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Install runtime dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Audit Frutti Flow without generation
+        run: node scripts/frutti-readonly-audit.mjs
