@@ -54,3 +54,4 @@ try{
   console.log('FRUTTI_READONLY_CHARACTERS',JSON.stringify(candidates));
   await ctx.close();
 }finally{await browser.close().catch(()=>{})}
+// FRESH_FRUTTI_AUTH_AUDIT: 2026-10-07T22:55-03:00
