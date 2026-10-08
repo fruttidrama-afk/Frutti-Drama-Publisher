@@ -1,0 +1,60 @@
+name: Free Runtime Golden
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/free-runtime-golden.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  dinnie:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      FREE_RUNTIME_ORCHESTRATOR_URL: https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-free-runtime-golden
+      MANUAL_PUBLISHER_ID: d4e02dfa-be8a-43f1-abf1-2113ec4b05d6
+      MANUAL_KIND: generation
+      CHROMIUM_PATH: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Preflight
+        run: |
+          set -euo pipefail
+          node --check scripts/free-runtime-runner-v2.mjs
+          command -v google-chrome
+      - name: Install runtime dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Run Dinnie generation Golden Test
+        run: node scripts/free-runtime-runner-v2.mjs
+
+  frutti:
+    needs: dinnie
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      FREE_RUNTIME_ORCHESTRATOR_URL: https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-free-runtime-golden
+      MANUAL_PUBLISHER_ID: 7c359bd5-76b8-43b9-9d5c-cc8ca38d06e7
+      MANUAL_KIND: generation
+      CHROMIUM_PATH: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Preflight
+        run: |
+          set -euo pipefail
+          node --check scripts/free-runtime-runner-v2.mjs
+          command -v google-chrome
+      - name: Install runtime dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Run Frutti generation Golden Test
+        run: node scripts/free-runtime-runner-v2.mjs
