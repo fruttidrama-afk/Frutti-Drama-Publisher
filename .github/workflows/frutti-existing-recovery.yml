@@ -1,0 +1,27 @@
+name: Frutti Existing Flow Recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/frutti-existing-recovery.yml"
+      - "scripts/recover-frutti-existing-flow.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Install runtime dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Recover T3E1-T3E6 from exact existing Flow edit assets
+        run: node scripts/recover-frutti-existing-flow.mjs
