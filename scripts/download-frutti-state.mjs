@@ -21,6 +21,7 @@ const ex=spawnSync('tar',['-xzf','/tmp/frutti-state.tgz','-C','/tmp/frutti-state
 if(ex.status!==0)throw new Error('TAR_FAILED');
 
 const db=new DatabaseSync('/tmp/frutti-state/publisher-runtime/factory.sqlite',{readOnly:true});
+try{console.log('STATE_META_KEYS',JSON.stringify(db.prepare('select key from factory_meta order by key').all().map(x=>x.key)))}catch{}
 for(const table of ['factory_items','factory_generations','publication_items']){
   try{
     const rows=db.prepare('select * from '+table+' order by rowid desc limit 40').all();
