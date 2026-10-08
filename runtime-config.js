@@ -88,6 +88,7 @@ export function loadConfig(){
       }
     },
     content:{
+      active_season:Math.max(1,Math.min(99,Number(content.active_season||1))),
       videos_per_day:Math.max(1,Math.min(20,Number(process.env.PUBLISHER_VIDEOS_PER_DAY||content.videos_per_day||1))),
       serialized:content.serialized!==false,
       dialogue:content.dialogue!==false,
@@ -176,6 +177,7 @@ export const OUTPUT_COUNT=CONFIG.generation.output_count;
 export const OUTPUT_LABEL='x'+String(OUTPUT_COUNT);
 export const MODEL_INTENT=CONFIG.generation.model_intent;
 export const RESOLUTION_INTENT=CONFIG.generation.resolution_intent;
+export const ACTIVE_SEASON=Math.max(1,Number(CONFIG.content.active_season||1));
 export const DAILY_LIMIT=CONFIG.content.videos_per_day;
 export const CREDIT_PER_GENERATION=CONFIG.generation.credits_per_generation==null?15:Number(CONFIG.generation.credits_per_generation);
 export const DAILY_CREDIT_BUDGET=CONFIG.generation.daily_credit_budget==null?DAILY_LIMIT*CREDIT_PER_GENERATION:Number(CONFIG.generation.daily_credit_budget);
@@ -218,7 +220,8 @@ export function resolveVisualCharacters(row){
 }
 export function previousContinuity(db,row){
   if(!CONFIG.content.serialized)return'Independent episode. Do not invent continuity unless explicitly present in the supplied story.';
-  const prev=db.prepare('SELECT hook,story,status FROM factory_items WHERE episode<? ORDER BY episode DESC LIMIT 1').get(Number(row.episode));
+  const season=Math.max(1,Number(row?.season||ACTIVE_SEASON));
+  const prev=db.prepare('SELECT hook,story,status FROM factory_items WHERE season=? AND episode<? ORDER BY episode DESC LIMIT 1').get(season,Number(row.episode));
   if(prev)return 'Previous canonical beat: '+prev.hook+' — '+prev.story;
   return CONFIG.content.canon?'Established canon: '+CONFIG.content.canon.slice(0,12000):'Begin from the configured show bible without inventing prior events.';
 }
@@ -234,7 +237,7 @@ export function buildPrompt(db,row,visual=[]){
     ? 'Dialogue is allowed. Voice language: '+CONFIG.content.voice_language+'. Explicitly assign speakers; one voice at a time unless the Creative Bible says otherwise.'
     : 'No spoken dialogue. Tell the beat visually with ambience and synchronized sound.';
   const lines=[
-    SHOW.toUpperCase()+' — EPISODE '+row.episode,
+    SHOW.toUpperCase()+(Number(row?.season||ACTIVE_SEASON)>1?(' T'+Number(row?.season||ACTIVE_SEASON)+'E'+row.episode):(' — EPISODE '+row.episode)),
     '',
     'GENERATION',
     'Generate exactly ONE complete '+DURATION_SECONDS+'-second video.',
@@ -611,15 +614,16 @@ export function ideaForEpisode(episode){
   return{hook:'NEXT CHAPTER',story:'Continue the configured Creative Bible and canon from the previous accepted beat. Introduce one new consequential development, resolve one immediate tension, and end with a fresh hook. Do not repeat the previous episode.'};
 }
 export function ensureBacklog(db,minReady=Math.max(9,DAILY_LIMIT*3)){
-  const max=Number(db.prepare('SELECT COALESCE(MAX(episode),0) ep FROM factory_items').get()?.ep||0);
-  const pending=Number(db.prepare("SELECT COUNT(*) n FROM factory_items WHERE status IN ('draft','regen_wait','generating')").get()?.n||0);
+  const season=ACTIVE_SEASON;
+  const max=Number(db.prepare('SELECT COALESCE(MAX(episode),0) ep FROM factory_items WHERE season=?').get(season)?.ep||0);
+  const pending=Number(db.prepare("SELECT COUNT(*) n FROM factory_items WHERE season=? AND status IN ('draft','regen_wait','generating')").get(season)?.n||0);
   const need=Math.max(0,minReady-pending),t=new Date().toISOString();
   for(let k=1;k<=need;k++){
     const ep=max+k,idea=ideaForEpisode(ep);
-    db.prepare("INSERT OR IGNORE INTO factory_items(id,season,episode,hook,story,status,createdAt,updatedAt) VALUES(lower(hex(randomblob(16))),1,?,?,?,?,?,?)")
-      .run(ep,idea.hook,idea.story,'draft',t,t);
+    db.prepare("INSERT OR IGNORE INTO factory_items(id,season,episode,hook,story,status,createdAt,updatedAt) VALUES(lower(hex(randomblob(16))),?,?,?,?,?,?,?)")
+      .run(season,ep,idea.hook,idea.story,'draft',t,t);
   }
-  const drafts=db.prepare("SELECT * FROM factory_items WHERE status='draft' ORDER BY episode").all();
+  const drafts=db.prepare("SELECT * FROM factory_items WHERE season=? AND status='draft' ORDER BY episode").all(season);
   const dinnieShow=/dinnie\s*(?:the\s*)?dinosaur|dinnie/i.test(String(SHOW||CONFIG.identity?.show_name||''));
   for(let row of drafts){
     if(dinnieShow&&Number(row.episode)>CONFIG.content.initial_episodes.length){
@@ -635,14 +639,15 @@ export function ensureBacklog(db,minReady=Math.max(9,DAILY_LIMIT*3)){
   }
 }
 export function seedInitial(db){
-  const count=Number(db.prepare('SELECT COUNT(*) n FROM factory_items').get()?.n||0);
+  const season=ACTIVE_SEASON;
+  const count=Number(db.prepare('SELECT COUNT(*) n FROM factory_items WHERE season=?').get(season)?.n||0);
   if(count)return;
   const t=new Date().toISOString(),initial=CONFIG.content.initial_episodes;
   if(initial.length){
     for(let i=0;i<initial.length;i++){
       const idea=ideaForEpisode(i+1);
-      db.prepare("INSERT INTO factory_items(id,season,episode,hook,story,status,createdAt,updatedAt) VALUES(lower(hex(randomblob(16))),1,?,?,?,?,?,?)")
-        .run(i+1,idea.hook,idea.story,'draft',t,t);
+      db.prepare("INSERT INTO factory_items(id,season,episode,hook,story,status,createdAt,updatedAt) VALUES(lower(hex(randomblob(16))),?,?,?,?,?,?,?)")
+        .run(season,i+1,idea.hook,idea.story,'draft',t,t);
     }
   }
   ensureBacklog(db);
