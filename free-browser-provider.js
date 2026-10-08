@@ -3600,7 +3600,7 @@ function serialReady(db,row){
   if(!CONFIG.content.serialized||Number(row.episode)<=1)return true;
   const gate=CONFIG.content.continuity_gate;
   if(gate==='none')return true;
-  const prev=db.prepare('SELECT status,videoPath,remoteUrl,reviewVideoId,flowResult FROM factory_items WHERE episode=? LIMIT 1').get(Number(row.episode)-1);
+  const prev=db.prepare('SELECT status,videoPath,remoteUrl,reviewVideoId,flowResult FROM factory_items WHERE season=? AND episode=? LIMIT 1').get(Number(row.season||1),Number(row.episode)-1);
   if(!prev)return false;
   // Same handoff used by FruttiDrama: recovery is the gate, human Review is not.
   // As soon as E(n) is safely recovered and can be shown in Review, E(n+1) may
