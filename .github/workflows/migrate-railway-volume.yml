@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/migrate-railway-volume.yml"
       - "scripts/railway-volume-inspect.mjs"
+      - "scripts/railway-config-import.mjs"
   workflow_dispatch:
 
 permissions:
@@ -34,3 +35,6 @@ jobs:
 
       - name: Inspect preserved volume
         run: node scripts/railway-volume-inspect.mjs
+
+      - name: Import canonical publisher config
+        run: node scripts/railway-config-import.mjs
