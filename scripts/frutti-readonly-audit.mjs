@@ -4,8 +4,8 @@ import {chromium} from 'playwright-core';
 
 const PUBLISHER_ID='7c359bd5-76b8-43b9-9d5c-cc8ca38d06e7';
 const PROJECT_URL='https://flow.google.com/project/705d7ac2-30fe-4481-aa4c-076c31a64214';
-const ORCH='https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-free-runtime-golden';
-const AUD='publisher-factory-free-runtime';
+const ORCH='https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-frutti-readonly-profile';
+const AUD='publisher-factory-frutti-readonly-audit';
 const root=path.join(process.env.RUNNER_TEMP||'/tmp','frutti-readonly-audit');
 const profileTar=path.join(root,'profile.tgz');
 const factory=path.join(root,'publisher-runtime');
@@ -21,7 +21,7 @@ async function oidc(){
 }
 const token=await oidc();
 fs.rmSync(root,{recursive:true,force:true});fs.mkdirSync(factory,{recursive:true});
-const res=await fetch(ORCH+'/blob/profile/'+encodeURIComponent(PUBLISHER_ID),{headers:{authorization:'Bearer '+token}});
+const res=await fetch(ORCH,{headers:{authorization:'Bearer '+token}});
 if(!res.ok)throw new Error('PROFILE_'+res.status);
 fs.writeFileSync(profileTar,Buffer.from(await res.arrayBuffer()));
 const {spawnSync}=await import('node:child_process');
