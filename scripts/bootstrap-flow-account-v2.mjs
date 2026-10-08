@@ -45,6 +45,16 @@ async function waitSignal(){
       console.log('CAPTURE_REQUESTED');
       return cfg;
     }
+    if(KEY==='frutti'){
+      try{
+        const targets=await fetch('http://127.0.0.1:9222/json').then(r=>r.json());
+        const expected=String(cfg.expected_project_id||'');
+        if(Array.isArray(targets)&&targets.some(t=>String(t?.url||'').includes('/project/'+expected))){
+          console.log('FRUTTI_PROJECT_VISIBLE');
+          return cfg;
+        }
+      }catch{}
+    }
     await sleep(3000);
   }
   throw new Error('CAPTURE_SIGNAL_TIMEOUT');
