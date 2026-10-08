@@ -117,7 +117,7 @@ async function seedProfileFromPortableState(projectUrl){
     await sleep(2500);
     const url=String(page.url()||'');
     const body=String(await page.locator('body').innerText().catch(()=>'')).slice(0,10000);
-    if(/accounts\.google\.com|ServiceLogin|signin\/v2/i.test(url)||/email or phone|enter your password|sign in to continue/i.test(body)){
+    if(/accounts\.google\.com|ServiceLogin|signin\/v2|\/about(?:$|[?#])/i.test(url)||/email or phone|enter your password|sign in to continue/i.test(body)){
       throw new Error('AUTH_REQUIRED_PORTABLE_STATE_REJECTED');
     }
   }finally{
