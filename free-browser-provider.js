@@ -868,7 +868,7 @@ async function waitFlowReady(page,timeout=60000){
   const deadline=Date.now()+timeout;
   while(Date.now()<deadline){
     const url=String(page.url()||'');
-    if(/accounts\.google\.com|signin|ServiceLogin/i.test(url))throw new Error('FLOW_AUTH_REQUIRED');
+    if(/accounts\.google\.com|signin|ServiceLogin|\/about(?:$|[?#])/i.test(url))throw new Error('FLOW_AUTH_REQUIRED');
     const text=(await getBody(page)).slice(0,12000);
     if(/verify it'?s you|verifica que eres t[uú]|captcha|security check|verificaci[oó]n de seguridad|email or phone|enter your password/i.test(text))throw new Error('FLOW_AUTH_CHALLENGE');
     if(url.includes(projectPath())){
