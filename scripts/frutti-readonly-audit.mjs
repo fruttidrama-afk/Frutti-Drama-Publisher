@@ -129,13 +129,24 @@ try{
     title:String(el.getAttribute('title')||'').slice(0,260)
   })));
   console.log('FRUTTI_READONLY_VIDEO_META',JSON.stringify(videoMeta));
-  const firstTile=page.locator('flow-grid-tile-container').first();
-  if(await firstTile.isVisible().catch(()=>false)){
-    await firstTile.click();
-    await sleep(2500);
-    const detail=String(await page.locator('body').innerText().catch(()=>'')).replace(/\s+/g,' ').slice(0,8000);
-    console.log('FRUTTI_READONLY_FIRST_VIDEO_DETAIL',JSON.stringify(detail));
+  const latestDetails=[];
+  for(let i=0;i<6;i++){
+    const tile=page.locator('flow-grid-tile-container').nth(i);
+    if(!(await tile.isVisible().catch(()=>false)))break;
+    const aria=String(await tile.getAttribute('aria-label').catch(()=>'')||'');
+    await tile.click();
+    await sleep(1800);
+    const detail=String(await page.locator('body').innerText().catch(()=>'')).replace(/\s+/g,' ').slice(0,12000);
+    latestDetails.push({index:i,aria,detail});
+    const back=page.getByText('arrow_back',{exact:true}).first();
+    if(await back.isVisible().catch(()=>false))await back.click();
+    else await page.keyboard.press('Escape').catch(()=>{});
+    await sleep(1000);
+    const videosNav=page.getByText('Videos',{exact:true}).first();
+    if(await videosNav.isVisible().catch(()=>false))await videosNav.click().catch(()=>{});
+    await sleep(600);
   }
+  console.log('FRUTTI_READONLY_T3_DETAILS',JSON.stringify(latestDetails));
   const characterTiles=await collectVisible('Personajes');
   console.log('FRUTTI_READONLY_PERSONAJES',JSON.stringify(characterTiles));
   await ctx.close();
