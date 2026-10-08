@@ -1,0 +1,30 @@
+name: Frutti State Audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/frutti-state-audit.yml"
+      - "scripts/download-frutti-state.mjs"
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Download state
+        run: node scripts/download-frutti-state.mjs
+      - name: Inspect archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/frutti-state
+          mkdir -p /tmp/frutti-state
+          tar -xzf /tmp/frutti-state.tgz -C /tmp/frutti-state
+          find /tmp/frutti-state -maxdepth 4 -type f -printf '%P %s bytes\n' | sort
