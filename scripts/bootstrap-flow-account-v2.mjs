@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { chromium } from 'playwright-core';
 
 const KEY=String(process.env.TARGET_KEY||'').trim().toLowerCase();
-if(!['earth','dinnie'].includes(KEY))throw new Error('TARGET_KEY_INVALID');
+if(!['earth','dinnie','frutti'].includes(KEY))throw new Error('TARGET_KEY_INVALID');
 const EDGE='https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-flow-account-bootstrap-v2';
 const AUD='publisher-factory-flow-account-bootstrap-v2';
 const STATE='/tmp/flow-auth-state.json';
@@ -64,7 +64,7 @@ async function capture(){
 
     const url=String(page.url()||'');
     const body=String(await page.locator('body').innerText().catch(()=>'')).slice(0,14000);
-    if(/accounts\.google\.com|ServiceLogin|signin\/v2/i.test(url)||/email or phone|enter your password|sign in to continue/i.test(body)){
+    if(/accounts\.google\.com|ServiceLogin|signin\/v2|\/about(?:$|[?#])/i.test(url)||/email or phone|enter your password|sign in to continue/i.test(body)){
       throw new Error('FLOW_SESSION_NOT_AUTHENTICATED');
     }
 
@@ -95,7 +95,7 @@ async function capture(){
       await sleep(2500);
     }
 
-    await ctx.storageState({path:STATE});
+    await ctx.storageState({path:STATE,indexedDB:true});
     if(!fs.existsSync(STATE)||fs.statSync(STATE).size<500)throw new Error('FLOW_STORAGE_STATE_INVALID');
 
     const pr=await api('/project/'+KEY,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({project_id:projectId,project_name:observedName||cfg.project_name})});
