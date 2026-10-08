@@ -96,6 +96,13 @@ try{
     title:String(el.getAttribute('title')||'').slice(0,260)
   })));
   console.log('FRUTTI_READONLY_VIDEO_META',JSON.stringify(videoMeta));
+  const firstTile=page.locator('flow-grid-tile-container').first();
+  if(await firstTile.isVisible().catch(()=>false)){
+    await firstTile.click();
+    await sleep(2500);
+    const detail=String(await page.locator('body').innerText().catch(()=>'')).replace(/\s+/g,' ').slice(0,8000);
+    console.log('FRUTTI_READONLY_FIRST_VIDEO_DETAIL',JSON.stringify(detail));
+  }
   const characterTiles=await collectVisible('Personajes');
   console.log('FRUTTI_READONLY_PERSONAJES',JSON.stringify(characterTiles));
   await ctx.close();
