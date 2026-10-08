@@ -1,1 +1,1 @@
-trigger 2026-10-07T21:55-03:00
+trigger 2026-10-07T22:02-03:00 isolated-frutti-relogin
