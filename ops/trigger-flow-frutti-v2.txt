@@ -1,1 +1,1 @@
-trigger 2026-10-07T22:02-03:00 isolated-frutti-relogin
+trigger 2026-10-08T01:39:48.069Z restart-after-expired-tunnel
