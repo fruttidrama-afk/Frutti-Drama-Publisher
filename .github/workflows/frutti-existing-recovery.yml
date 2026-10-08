@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/frutti-existing-recovery.yml"
-      - "scripts/recover-frutti-existing-flow.mjs"
+      - "scripts/recover-frutti-existing-flow-v2.mjs"
   workflow_dispatch:
 
 permissions:
@@ -24,4 +24,4 @@ jobs:
       - name: Install runtime dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
       - name: Recover T3E1-T3E6 from exact existing Flow edit assets
-        run: node scripts/recover-frutti-existing-flow.mjs
+        run: node scripts/recover-frutti-existing-flow-v2.mjs
