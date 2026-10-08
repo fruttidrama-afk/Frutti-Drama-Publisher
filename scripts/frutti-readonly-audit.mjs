@@ -122,6 +122,30 @@ try{
     if(await videosNav.isVisible().catch(()=>false)){await videosNav.click().catch(()=>{});await sleep(1800);}
   }
   console.log('FRUTTI_READONLY_RECENT_PROMPTS',JSON.stringify(recentPrompts));
+
+  const openedDetails=[];
+  await page.goto(PROJECT_URL,{waitUntil:'domcontentloaded',timeout:60000}).catch(()=>{});
+  await sleep(2400);
+  const videosNav2=page.getByText('Videos',{exact:true}).first();
+  if(await videosNav2.isVisible().catch(()=>false)){await videosNav2.click().catch(()=>{});await sleep(1800);}
+  for(let i=0;i<Math.min(await page.locator('flow-grid-tile-container').count().catch(()=>0),6);i++){
+    const card=page.locator('flow-grid-tile-container').nth(i);
+    const label=String(await card.getAttribute('aria-label').catch(()=>'')||'').trim();
+    await card.click().catch(()=>{});
+    await sleep(1600);
+    const detailBody=String(await page.locator('body').innerText().catch(()=>'')).replace(/\s+/g,' ').trim().slice(0,6000);
+    const detailUrl=String(page.url()||'');
+    openedDetails.push({label,url:detailUrl,body:detailBody});
+    await page.keyboard.press('Escape').catch(()=>{});
+    await sleep(500);
+    if(!/\/project\//.test(String(page.url()||''))){
+      await page.goto(PROJECT_URL,{waitUntil:'domcontentloaded',timeout:60000}).catch(()=>{});
+      await sleep(1800);
+      const vn=page.getByText('Videos',{exact:true}).first();
+      if(await vn.isVisible().catch(()=>false)){await vn.click().catch(()=>{});await sleep(1200);}
+    }
+  }
+  console.log('FRUTTI_READONLY_OPENED_VIDEO_DETAILS',JSON.stringify(openedDetails));
   const videoMeta=await page.evaluate(()=>[...document.querySelectorAll('flow-grid-tile-container')].slice(0,10).map((el,i)=>({
     i,
     text:String(el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,260),
@@ -154,3 +178,4 @@ try{
 // FRESH_FRUTTI_AUTH_AUDIT: 2026-10-07T22:55-03:00
 // FLOW_CARD_DETAIL_AUDIT: 2026-10-07T23:00-03:00
 // RECENT_PROMPT_AUDIT: 2026-10-07T23:05-03:00
+// OPEN_VIDEO_DETAIL_AUDIT: 2026-10-07T23:12-03:00
