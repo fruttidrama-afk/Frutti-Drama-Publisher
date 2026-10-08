@@ -75,6 +75,20 @@ try{
   }
   const videoTiles=await collectVisible('Videos');
   console.log('FRUTTI_READONLY_VIDEOS',JSON.stringify(videoTiles));
+  const videoDetails=await page.evaluate(()=>{
+    const out=[];
+    const els=[...document.querySelectorAll('flow-grid-tile-container')].slice(0,20);
+    for(const el of els){
+      const attrs={};
+      for(const a of el.attributes||[])attrs[a.name]=String(a.value||'').slice(0,300);
+      const links=[...el.querySelectorAll('a')].map(a=>({href:String(a.getAttribute('href')||'').slice(0,500),aria:String(a.getAttribute('aria-label')||'').slice(0,300)}));
+      const buttons=[...el.querySelectorAll('button')].map(b=>({aria:String(b.getAttribute('aria-label')||'').slice(0,300),title:String(b.getAttribute('title')||'').slice(0,300)}));
+      const text=String(el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,500);
+      out.push({text,attrs,links,buttons});
+    }
+    return out;
+  });
+  console.log('FRUTTI_READONLY_VIDEO_DETAILS',JSON.stringify(videoDetails));
   const videoMeta=await page.evaluate(()=>[...document.querySelectorAll('flow-grid-tile-container')].slice(0,10).map((el,i)=>({
     i,
     text:String(el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,260),
@@ -87,3 +101,4 @@ try{
   await ctx.close();
 }finally{await browser.close().catch(()=>{})}
 // FRESH_FRUTTI_AUTH_AUDIT: 2026-10-07T22:55-03:00
+// FLOW_CARD_DETAIL_AUDIT: 2026-10-07T23:00-03:00
