@@ -1,0 +1,13 @@
+import fs from 'node:fs';
+const EDGE='https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-frutti-state-audit';
+const AUD='publisher-factory-frutti-state-audit';
+const base=String(process.env.ACTIONS_ID_TOKEN_REQUEST_URL||'');
+const req=String(process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN||'');
+if(!base||!req)throw new Error('OIDC_UNAVAILABLE');
+const tok=await fetch(base+(base.includes('?')?'&':'?')+'audience='+encodeURIComponent(AUD),{headers:{authorization:'Bearer '+req}});
+if(!tok.ok)throw new Error('OIDC_'+tok.status);
+const oidc=String((await tok.json()).value||'');
+const r=await fetch(EDGE,{headers:{authorization:'Bearer '+oidc}});
+if(!r.ok)throw new Error('STATE_'+r.status+' '+(await r.text()).slice(0,300));
+fs.writeFileSync('/tmp/frutti-state.tgz',Buffer.from(await r.arrayBuffer()));
+console.log('STATE_BYTES',fs.statSync('/tmp/frutti-state.tgz').size);
