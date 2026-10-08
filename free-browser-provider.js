@@ -1824,27 +1824,53 @@ async function attachCharacter(page,name){
   const before=await ingredientCount(page);
   await composerAdd(page);
 
-  const tab=page.getByRole('tab',{name:/Characters/i}).last();
+  const tab=page.getByRole('tab',{name:/Characters|Personajes/i}).last();
   if(await tab.count().catch(()=>0)&&await tab.isVisible().catch(()=>false)){
     await clickInteractive(tab);
   }else{
-    const chars=await visibleExact(page,'Characters');
+    const chars=(await visibleExact(page,'Characters'))||(await visibleExact(page,'Personajes'));
     if(!chars)throw new Error('CHARACTERS_PICKER_NOT_FOUND');
     await clickInteractive(chars);
   }
-  await sleep(650);
 
-  let candidate=page.getByRole('option',{name,exact:true}).last();
-  if(!(await candidate.count().catch(()=>0))||!(await candidate.isVisible().catch(()=>false))){
-    const search=page.locator('input[aria-label="Search assets"]').last();
-    if(!(await search.count().catch(()=>0))||!(await search.isVisible().catch(()=>false)))throw new Error(`CHARACTER_SEARCH_INPUT_NOT_FOUND:${name}`);
-    await search.fill(name);await sleep(650);
-    candidate=page.getByRole('option',{name,exact:true}).last();
+  // Flow's asset drawer can lazy-load after the Characters tab is selected.
+  // Do not interpret an initially empty picker as "character missing".
+  const wanted=norm(name);
+  let candidate=null;
+  let searchFilled=false;
+  const deadline=Date.now()+12000;
+  while(Date.now()<deadline&&!candidate){
+    const exact=page.getByRole('option',{name,exact:true}).last();
+    if(await exact.count().catch(()=>0)&&await exact.isVisible().catch(()=>false)){
+      candidate=exact;break;
+    }
+
+    const options=page.locator('[role="option"]');
+    for(let i=0;i<Math.min(await options.count().catch(()=>0),120);i++){
+      const el=options.nth(i);
+      if(!(await el.isVisible().catch(()=>false)))continue;
+      const txt=compact((await el.innerText().catch(()=>''))||'',160);
+      const aria=compact((await el.getAttribute('aria-label').catch(()=>''))||'',160);
+      if(norm(txt)===wanted||norm(aria)===wanted){candidate=el;break;}
+    }
+    if(candidate)break;
+
+    const search=page.locator('input[aria-label="Search assets"],input[aria-label*="Search"],input[placeholder*="Search"],input[aria-label*="Buscar"],input[placeholder*="Buscar"]').last();
+    if(await search.count().catch(()=>0)&&await search.isVisible().catch(()=>false)){
+      if(!searchFilled){
+        await search.fill(name);
+        searchFilled=true;
+      }
+    }
+    await sleep(500);
   }
-  if(!(await candidate.count().catch(()=>0))||!(await candidate.isVisible().catch(()=>false)))throw new Error(`CHARACTER_NOT_FOUND:${name}`);
+  if(!candidate)throw new Error(`CHARACTER_NOT_FOUND_AFTER_WAIT:${name}`);
 
-  const selectedText=compact(await candidate.innerText().catch(()=>''),120);
-  if(norm(selectedText)!==norm(name))throw new Error(`CHARACTER_EXACT_MATCH_FAILED:${name}:${selectedText}`);
+  const selectedText=compact(
+    (await candidate.innerText().catch(()=>''))||
+    (await candidate.getAttribute('aria-label').catch(()=>''))
+  ,160);
+  if(selectedText&&norm(selectedText)!==wanted)throw new Error(`CHARACTER_EXACT_MATCH_FAILED:${name}:${selectedText}`);
   await clickInteractive(candidate);await sleep(700);
 
   const add=await visibleAddToPromptButton(page);
@@ -1852,9 +1878,9 @@ async function attachCharacter(page,name){
   await page.keyboard.press('Escape').catch(()=>{});
   await sleep(300);
 
-  const deadline=Date.now()+4000;
+  const confirmDeadline=Date.now()+6000;
   let after=await ingredientCount(page);
-  while(after<before+1&&Date.now()<deadline){await sleep(200);after=await ingredientCount(page);}
+  while(after<before+1&&Date.now()<confirmDeadline){await sleep(250);after=await ingredientCount(page);}
   if(after!==before+1)throw new Error(`CHARACTER_INGREDIENT_COUNT_FAILED:${name}:${before}->${after}`);
   return{name,before,after,exact_option:true,confirmation_clicked:Boolean(add)};
 }
