@@ -89,6 +89,39 @@ try{
     return out;
   });
   console.log('FRUTTI_READONLY_VIDEO_DETAILS',JSON.stringify(videoDetails));
+  const recentPrompts=[];
+  const cards=page.locator('flow-grid-tile-container');
+  const cardCount=Math.min(await cards.count().catch(()=>0),8);
+  for(let i=0;i<cardCount;i++){
+    const card=cards.nth(i);
+    const label=String(await card.getAttribute('aria-label').catch(()=>'')||'').trim();
+    const reuse=card.getByRole('button',{name:/Volver a usar la instrucción|Reuse prompt/i}).first();
+    if(!(await reuse.isVisible().catch(()=>false))){recentPrompts.push({label,prompt:''});continue;}
+    await reuse.click().catch(()=>{});
+    await sleep(1400);
+    const prompt=await page.evaluate(()=>{
+      const ta=[...document.querySelectorAll('textarea')].find(x=>x.offsetParent!==null);
+      if(ta&&String(ta.value||'').trim())return String(ta.value||'').trim();
+      const editors=[...document.querySelectorAll('[contenteditable="true"]')].filter(x=>x.offsetParent!==null);
+      for(const el of editors){
+        const v=String(el.innerText||el.textContent||'').trim();
+        if(v.length>20)return v;
+      }
+      const inputs=[...document.querySelectorAll('input')].filter(x=>x.offsetParent!==null);
+      for(const el of inputs){
+        const v=String(el.value||'').trim();
+        if(v.length>20)return v;
+      }
+      return '';
+    });
+    recentPrompts.push({label,prompt:String(prompt||'').slice(0,12000)});
+    await page.keyboard.press('Escape').catch(()=>{});
+    await page.goto(PROJECT_URL,{waitUntil:'domcontentloaded',timeout:60000}).catch(()=>{});
+    await sleep(2400);
+    const videosNav=page.getByText('Videos',{exact:true}).first();
+    if(await videosNav.isVisible().catch(()=>false)){await videosNav.click().catch(()=>{});await sleep(1800);}
+  }
+  console.log('FRUTTI_READONLY_RECENT_PROMPTS',JSON.stringify(recentPrompts));
   const videoMeta=await page.evaluate(()=>[...document.querySelectorAll('flow-grid-tile-container')].slice(0,10).map((el,i)=>({
     i,
     text:String(el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,260),
@@ -109,3 +142,4 @@ try{
 }finally{await browser.close().catch(()=>{})}
 // FRESH_FRUTTI_AUTH_AUDIT: 2026-10-07T22:55-03:00
 // FLOW_CARD_DETAIL_AUDIT: 2026-10-07T23:00-03:00
+// RECENT_PROMPT_AUDIT: 2026-10-07T23:05-03:00
