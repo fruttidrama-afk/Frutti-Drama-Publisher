@@ -233,14 +233,15 @@ try{
     process.exit(0);
   }
 
-  await seedProfileFromPortableState(String(p.config?.generation?.project_url||'https://flow.google.com/'));
-
+  // The FreeBrowserProvider consumes the proven portable storageState directly.
+  // Do not transcode Google auth into a synthetic persistent Chrome profile.
   const baseline=metrics();
   const fd=fs.openSync(LOG,'a');
   const env={
     ...process.env,
     DATA_DIR:DATA,
     PUBLISHER_FLOW_PROFILE_DIR:PROFILE,
+    PUBLISHER_FLOW_STORAGE_STATE:PORTABLE_STATE,
     CHROMIUM_PATH:chromiumPath(),
     PUBLISHER_ENABLED:'true',
     PUBLISHER_ONESHOT_KIND:kind,
@@ -270,7 +271,8 @@ try{
 
   killTree(child);
   await sleep(2500);
-  await capturePortableState().catch(e=>console.log('PORTABLE_STATE_REFRESH_WARNING',String(e?.message||e)));
+  if(!fs.existsSync(PORTABLE_STATE)||fs.statSync(PORTABLE_STATE).size<500)throw new Error('PORTABLE_FLOW_STATE_LOST');
+  console.log('Portable Flow state preserved',fs.statSync(PORTABLE_STATE).size);
   await uploadBlob('state',publisherId,packState());
   const portableTar=packPortableProfile();
   if(portableTar)await uploadBlob('profile',publisherId,portableTar);
