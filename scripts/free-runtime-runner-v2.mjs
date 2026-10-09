@@ -265,7 +265,7 @@ try{
     if(kind==='publication'&&last.publication>baseline.publication){success=true;break}
     const snap=statusSnapshot();
     const state=String(snap?.state||snap?.generation?.state||'');
-    if(kind==='generation'&&/DAILY_CREDIT_BATCH_COMPLETE|AUTOMATIC_BATCH_WAITING_FOR_DAILY_CREDITS|WAITING_DAILY_FLOW_CREDIT_REFRESH/i.test(state)){creditWait=true;break}
+    if(kind==='generation'&&/DAILY_CREDIT_BATCH_COMPLETE|AUTOMATIC_BATCH_WAITING_FOR_DAILY_CREDITS|WAITING_DAILY_FLOW_CREDIT_REFRESH|WAITING_FIRST_DAILY_FLOW_CREDIT_REFRESH/i.test(state)){creditWait=true;break}
     if(child.exitCode!==null&&Date.now()+30000<deadline){
       child=spawn('npm',['start'],{cwd:process.cwd(),env,stdio:['ignore',fd,fd],detached:true});
     }
