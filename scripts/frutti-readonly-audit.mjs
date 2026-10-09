@@ -183,7 +183,7 @@ try{
   for(const wantedName of ['Uva Reyes','Limón Duarte','Fresia','Don Melón']){
     await page.keyboard.press('Escape').catch(()=>{});
     await sleep(250);
-    const add=page.getByRole('button',{name:/Add ingredients to the prompt box/i}).last();
+    const add=page.getByRole('button',{name:/Add ingredients to the prompt box|Agregar ingredientes al cuadro de instrucción/i}).last();
     const addVisible=await add.isVisible().catch(()=>false);
     if(!addVisible){
       pickerChecks.push({name:wantedName,add_button:false,tab:false,search:false,exact_found:false,options:[]});
@@ -224,6 +224,26 @@ try{
     await sleep(300);
   }
   console.log('FRUTTI_READONLY_PICKER_CHECKS',JSON.stringify(pickerChecks));
+  const pickerDom=await page.evaluate(()=>{
+    const out={buttons:[],options:[],tabs:[],inputs:[]};
+    for(const el of document.querySelectorAll('button,[role="button"],[role="option"],[role="tab"],input')){
+      const r=el.getBoundingClientRect(); if(r.width<8||r.height<8)continue;
+      const row={
+        role:String(el.getAttribute('role')||''),
+        tag:el.tagName.toLowerCase(),
+        aria:String(el.getAttribute('aria-label')||'').replace(/\s+/g,' ').trim().slice(0,220),
+        placeholder:String(el.getAttribute('placeholder')||'').replace(/\s+/g,' ').trim().slice(0,220),
+        text:String(el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,220),
+        x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)
+      };
+      if(row.role==='option')out.options.push(row);
+      else if(row.role==='tab')out.tabs.push(row);
+      else if(row.tag==='input')out.inputs.push(row);
+      else out.buttons.push(row);
+    }
+    return out;
+  });
+  console.log('FRUTTI_READONLY_PICKER_DOM',JSON.stringify(pickerDom));
   const composerDom=await page.evaluate(()=>{
     const out={buttons:[],inputs:[],editables:[]};
     for(const el of document.querySelectorAll('button,[role="button"]')){
@@ -266,3 +286,4 @@ try{
 // OPEN_VIDEO_DETAIL_AUDIT: 2026-10-07T23:12-03:00
 // PICKER_PREFLIGHT: 2026-10-09T00:15Z
 // COMPOSER_DOM_AUDIT: 2026-10-09T00:16Z
+// PICKER_BILINGUAL_AUDIT: 2026-10-09T00:20Z
