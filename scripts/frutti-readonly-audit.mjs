@@ -224,6 +224,40 @@ try{
     await sleep(300);
   }
   console.log('FRUTTI_READONLY_PICKER_CHECKS',JSON.stringify(pickerChecks));
+  const composerDom=await page.evaluate(()=>{
+    const out={buttons:[],inputs:[],editables:[]};
+    for(const el of document.querySelectorAll('button,[role="button"]')){
+      const r=el.getBoundingClientRect(); if(r.width<10||r.height<10||r.bottom<500)continue;
+      out.buttons.push({
+        tag:el.tagName.toLowerCase(),
+        aria:String(el.getAttribute('aria-label')||'').replace(/\s+/g,' ').trim().slice(0,220),
+        title:String(el.getAttribute('title')||'').replace(/\s+/g,' ').trim().slice(0,220),
+        text:String(el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,220),
+        x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)
+      });
+    }
+    for(const el of document.querySelectorAll('input,textarea')){
+      const r=el.getBoundingClientRect(); if(r.width<10||r.height<10||r.bottom<500)continue;
+      out.inputs.push({
+        tag:el.tagName.toLowerCase(),
+        aria:String(el.getAttribute('aria-label')||'').replace(/\s+/g,' ').trim().slice(0,220),
+        placeholder:String(el.getAttribute('placeholder')||'').replace(/\s+/g,' ').trim().slice(0,220),
+        value:String(el.value||'').replace(/\s+/g,' ').trim().slice(0,220),
+        x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)
+      });
+    }
+    for(const el of document.querySelectorAll('[contenteditable="true"]')){
+      const r=el.getBoundingClientRect(); if(r.width<10||r.height<10||r.bottom<500)continue;
+      out.editables.push({
+        tag:el.tagName.toLowerCase(),
+        aria:String(el.getAttribute('aria-label')||'').replace(/\s+/g,' ').trim().slice(0,220),
+        text:String(el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,220),
+        x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)
+      });
+    }
+    return out;
+  });
+  console.log('FRUTTI_READONLY_COMPOSER_DOM',JSON.stringify(composerDom));
   await ctx.close();
 }finally{await browser.close().catch(()=>{})}
 // FRESH_FRUTTI_AUTH_AUDIT: 2026-10-07T22:55-03:00
@@ -231,3 +265,4 @@ try{
 // RECENT_PROMPT_AUDIT: 2026-10-07T23:05-03:00
 // OPEN_VIDEO_DETAIL_AUDIT: 2026-10-07T23:12-03:00
 // PICKER_PREFLIGHT: 2026-10-09T00:15Z
+// COMPOSER_DOM_AUDIT: 2026-10-09T00:16Z
