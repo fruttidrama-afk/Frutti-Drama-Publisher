@@ -27,6 +27,15 @@ fs.writeFileSync(profileTar,Buffer.from(await res.arrayBuffer()));
 const {spawnSync}=await import('node:child_process');
 if(spawnSync('tar',['-xzf',profileTar,'-C',factory]).status!==0)throw new Error('TAR_FAILED');
 const storage=JSON.parse(fs.readFileSync(stateFile,'utf8'));
+console.log('FRUTTI_AUTH_COOKIE_META',JSON.stringify((storage.cookies||[]).map(c=>({
+  name:String(c.name||''),
+  domain:String(c.domain||''),
+  expires:Number(c.expires||0),
+  session:Number(c.expires||0)<0,
+  httpOnly:Boolean(c.httpOnly),
+  secure:Boolean(c.secure),
+  sameSite:String(c.sameSite||'')
+})).sort((a,b)=>a.domain.localeCompare(b.domain)||a.name.localeCompare(b.name))));
 const browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
 try{
   const ctx=await browser.newContext({storageState:storage,locale:'en-US',timezoneId:'America/Argentina/Buenos_Aires',viewport:{width:1440,height:900}});
@@ -315,3 +324,4 @@ try{
 // PICKER_BILINGUAL_AUDIT: 2026-10-09T00:20Z
 // CONFIRM_BUTTON_AUDIT: 2026-10-09T00:22Z
 // GOLDEN_OBSERVER: 2026-10-09T00:29Z
+// COOKIE_META_AUDIT: 2026-10-09T00:34Z
