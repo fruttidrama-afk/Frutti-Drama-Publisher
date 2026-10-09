@@ -1,0 +1,21 @@
+name: Runtime State Audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/runtime-state-audit.yml"
+      - "scripts/runtime-state-audit.mjs"
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - run: node scripts/runtime-state-audit.mjs
