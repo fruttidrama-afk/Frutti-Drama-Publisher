@@ -173,9 +173,46 @@ try{
   console.log('FRUTTI_READONLY_T3_DETAILS',JSON.stringify(latestDetails));
   const characterTiles=await collectVisible('Personajes');
   console.log('FRUTTI_READONLY_PERSONAJES',JSON.stringify(characterTiles));
+
+  // Read-only preflight of the actual ingredient picker used by generation.
+  const allMedia=page.getByText(/^(Todos los elementos multimedia|All media)$/i).first();
+  if(await allMedia.isVisible().catch(()=>false)){await allMedia.click();await sleep(2500);}
+  const addButtons=page.getByRole('button');
+  let addClicked=false;
+  for(let i=0;i<Math.min(await addButtons.count().catch(()=>0),120);i++){
+    const b=addButtons.nth(i);
+    if(!(await b.isVisible().catch(()=>false)))continue;
+    const aria=String(await b.getAttribute('aria-label').catch(()=>'')||'');
+    const txt=String(await b.innerText().catch(()=>'')||'').trim();
+    if(/add media|agregar|add ingredient|añadir/i.test(aria+' '+txt)||txt==='add'){
+      await b.click().catch(()=>{});
+      await sleep(1200);
+      if(await page.getByText(/^(Characters|Personajes)$/i).last().isVisible().catch(()=>false)){addClicked=true;break;}
+    }
+  }
+  const charTab=page.getByText(/^(Characters|Personajes)$/i).last();
+  if(await charTab.isVisible().catch(()=>false)){await charTab.click().catch(()=>{});await sleep(1800);}
+  const pickerOptions=await page.evaluate(()=>{
+    const out=[];
+    const sels=['[role="option"]','flow-character-card','flow-grid-tile-container','[role="listitem"]'];
+    for(const sel of sels){
+      for(const el of document.querySelectorAll(sel)){
+        const r=el.getBoundingClientRect();
+        if(r.width<20||r.height<20)continue;
+        const aria=String(el.getAttribute('aria-label')||'').replace(/\s+/g,' ').trim();
+        const text=String(el.innerText||el.textContent||'').replace(/\s+/g,' ').trim();
+        const v=aria||text;
+        if(v&&v.length<240)out.push(v);
+      }
+    }
+    return [...new Set(out)];
+  });
+  console.log('FRUTTI_READONLY_PICKER_OPENED',JSON.stringify(addClicked));
+  console.log('FRUTTI_READONLY_PICKER_OPTIONS',JSON.stringify(pickerOptions));
   await ctx.close();
 }finally{await browser.close().catch(()=>{})}
 // FRESH_FRUTTI_AUTH_AUDIT: 2026-10-07T22:55-03:00
 // FLOW_CARD_DETAIL_AUDIT: 2026-10-07T23:00-03:00
 // RECENT_PROMPT_AUDIT: 2026-10-07T23:05-03:00
 // OPEN_VIDEO_DETAIL_AUDIT: 2026-10-07T23:12-03:00
+// PICKER_PREFLIGHT: 2026-10-09T00:10Z
