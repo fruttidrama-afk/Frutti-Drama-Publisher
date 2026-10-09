@@ -22,6 +22,7 @@ if(ex.status!==0)throw new Error('TAR_FAILED');
 
 const db=new DatabaseSync('/tmp/frutti-state/publisher-runtime/factory.sqlite',{readOnly:true});
 try{console.log('STATE_META_KEYS',JSON.stringify(db.prepare('select key from factory_meta order by key').all().map(x=>x.key)))}catch{}
+try{console.log('STATE_META_VALUES',JSON.stringify(db.prepare("select key,value from factory_meta where key in ('automation:factoryEnabled','automation:freeFactoryEnabled','flow:dailyCreditBatchOpen','flow:dailyCreditRefreshWaiting','flow:state','flow:currentStep','flow:message','automation:activeSeason') order by key").all()))}catch{}
 for(const table of ['factory_items','factory_generations','publication_items']){
   try{
     const rows=db.prepare('select * from '+table+' order by rowid desc limit 40').all();
@@ -32,3 +33,4 @@ for(const table of ['factory_items','factory_generations','publication_items']){
 }
 db.close();
 // RESUME_AUDIT_TRIGGER: 2026-10-09T16:35:31.670Z
+// RESUME_META_AUDIT: 2026-10-09T16:36:44.114Z
