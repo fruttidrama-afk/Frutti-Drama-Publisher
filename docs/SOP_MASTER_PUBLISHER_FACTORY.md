@@ -456,3 +456,20 @@ If the operator does not open a publisher for 10 days, then—assuming the platf
 - zero need to keep a browser/panel/chat open.
 
 A green heartbeat without those outcomes is not automation health.
+
+## Free runtime durability rules — 2026-10-09
+
+These rules are mandatory for every existing and future Publisher that uses the free Supabase + GitHub Actions runtime.
+
+1. **A refreshed Flow profile must never demote a runnable Publisher.** Browser/profile uploads are runtime-state refreshes, not migration resets. If an enabled Publisher is already `ready`, `auth_verified`, or `profile_uploaded`, a successful profile refresh must preserve/promote it to `ready`. The scheduler must accept verified uploaded profiles and self-promote them to `ready` before claiming work. Symptom to prevent: pending obligations plus repeated scheduler logs saying `No durable obligation is due.`
+
+2. **Daily free Flow-credit exhaustion is a cooldown, not a terminal daily failure.** `WAITING_DAILY_FLOW_CREDIT_REFRESH` must never permanently close the day's production merely because credits were absent at local midnight. Keep the batch protected from paid-credit use, but re-probe Flow at a bounded cadence (default: no more than once every 30 minutes). When the free daily credit grant becomes available, reopen the remaining blocked generation obligations and continue the normal daily target automatically.
+
+3. **Paid credits remain forbidden for unattended production.** Credit-refresh probes may inspect the current Flow state but may not authorize or consume paid/monthly credits. Automatic production only resumes when the daily free-credit gate is positively available.
+
+4. **Persistent media paths must be portable.** Any restored `state.tgz` may contain paths from a previous ephemeral runner. Before review/publication/generation metrics are evaluated, rebase persisted media paths by basename into the current restored runtime directories and persist the corrected paths back into durable state.
+
+5. **GitHub scheduled automation requires inactivity protection.** The public free-runtime repository must contain a low-frequency keepalive workflow that creates real repository activity at least weekly so scheduled workflows are not silently disabled after extended repository inactivity. The keepalive must not touch production state or trigger generation/publication itself.
+
+6. **Golden verification requires state evidence, not only a green workflow.** A successful scheduler run is insufficient if no obligation was claimed. Verify the tuple: Publisher `enabled=true`, migration state runnable, obligation transitions `pending -> claimed -> running -> completed/blocked-with-known-cause`, durable state re-uploaded, and no unintended paid-credit consumption.
+
