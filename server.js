@@ -1134,15 +1134,22 @@ function metaGet(k,f=''){return db.prepare('SELECT value FROM factory_meta WHERE
 function metaSet(k,v){db.prepare("INSERT INTO factory_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k,String(v))}
 function activateReadyAutomation(){
   try{
-    const lf=liveFlowConfig(),knowledgeReady=metaGet('knowledge:flowSopLoaded','false')==='true',ready=publicationConnected()&&Boolean(lf.project_id&&flowAuth()?.ok)&&Boolean(String(CONFIG.content.creative_bible||'').trim())&&knowledgeReady;
-    if(!ready)return false;
+    const lf=liveFlowConfig();
+    const knowledgeReady=metaGet('knowledge:flowSopLoaded','false')==='true';
+    const generationReady=Boolean(lf.project_id&&flowAuth()?.ok)&&Boolean(String(CONFIG.content.creative_bible||'').trim())&&knowledgeReady;
+    if(!generationReady)return false;
+
+    // Generation and publication are independent durable capabilities.
+    // A missing/expired YouTube or Facebook token must NEVER stop Google Flow
+    // from producing the daily review backlog. Publication will wait on its own
+    // connection gate until media is approved and the platform credential exists.
     const already=metaGet('automation:factoryEnabled','false')==='true';
     if(already)return true;
     metaSet('automation:factoryEnabled','true');
     const t=now();
     if(!metaGet('automation:readinessActivatedAt',''))metaSet('automation:readinessActivatedAt',t);
     try{db.prepare("UPDATE factory_items SET nextTry=0,error=NULL,updatedAt=? WHERE status IN ('draft','regen_wait') AND providerRunId IS NULL").run(t)}catch{}
-    console.log('[AUTOMATION READY] '+String(selectedPublicationProvider()||'publication platform')+' + exact Flow project + Creative Bible + canonical SOP verified. Starting autonomous production.');
+    console.log('[AUTOMATION READY] Exact Flow project + Creative Bible + canonical SOP verified. Generation enabled independently of publication auth. Publication connected='+String(publicationConnected())+'.');
     setTimeout(()=>{try{globalThis.__publisherRunProvider?.()}catch{}},450).unref?.();
     return true;
   }catch{return false}
