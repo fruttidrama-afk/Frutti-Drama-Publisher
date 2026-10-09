@@ -224,6 +224,32 @@ try{
     await sleep(300);
   }
   console.log('FRUTTI_READONLY_PICKER_CHECKS',JSON.stringify(pickerChecks));
+
+  // Inspect the post-selection confirmation controls without confirming or generating.
+  await page.keyboard.press('Escape').catch(()=>{});
+  await sleep(300);
+  const inspectAdd=page.getByRole('button',{name:/Add ingredients to the prompt box|Agregar ingredientes al cuadro de instrucción/i}).last();
+  if(await inspectAdd.isVisible().catch(()=>false)){
+    await inspectAdd.click().catch(()=>{});
+    await sleep(650);
+    let inspectTab=page.getByRole('tab',{name:/Characters|Personajes/i}).last();
+    if(!(await inspectTab.isVisible().catch(()=>false)))inspectTab=page.getByText(/^(Characters|Personajes)$/i).last();
+    if(await inspectTab.isVisible().catch(()=>false)){await inspectTab.click().catch(()=>{});await sleep(850);}
+    const inspectSearch=page.locator('input[aria-label="Search assets"],input[aria-label*="Search"],input[placeholder*="Search"],input[aria-label*="Buscar"],input[placeholder*="Buscar"]').last();
+    if(await inspectSearch.isVisible().catch(()=>false)){await inspectSearch.fill('Uva Reyes').catch(()=>{});await sleep(900);}
+    const exactUva=page.getByRole('option',{name:'Uva Reyes',exact:true}).last();
+    if(await exactUva.isVisible().catch(()=>false)){await exactUva.click().catch(()=>{});await sleep(700);}
+    const confirmButtons=await page.evaluate(()=>[...document.querySelectorAll('button,[role="button"]')].map(el=>{
+      const r=el.getBoundingClientRect(); if(r.width<10||r.height<10)return null;
+      return{
+        aria:String(el.getAttribute('aria-label')||'').replace(/\s+/g,' ').trim().slice(0,220),
+        text:String(el.innerText||el.textContent||'').replace(/\s+/g,' ').trim().slice(0,220),
+        x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)
+      };
+    }).filter(Boolean).filter(x=>x.y>500));
+    console.log('FRUTTI_READONLY_CHARACTER_CONFIRM_BUTTONS',JSON.stringify(confirmButtons));
+    await page.keyboard.press('Escape').catch(()=>{});
+  }
   const pickerDom=await page.evaluate(()=>{
     const out={buttons:[],options:[],tabs:[],inputs:[]};
     for(const el of document.querySelectorAll('button,[role="button"],[role="option"],[role="tab"],input')){
@@ -287,3 +313,4 @@ try{
 // PICKER_PREFLIGHT: 2026-10-09T00:15Z
 // COMPOSER_DOM_AUDIT: 2026-10-09T00:16Z
 // PICKER_BILINGUAL_AUDIT: 2026-10-09T00:20Z
+// CONFIRM_BUTTON_AUDIT: 2026-10-09T00:22Z
