@@ -1801,8 +1801,25 @@ async function clearComposer(page){
 }
 
 async function composerAdd(page) {
-  const named=page.getByRole('button',{name:/Add ingredients to the prompt box/i}).last();
-  if(!(await named.count().catch(()=>0))||!(await named.isVisible().catch(()=>false)))throw new Error('ADD_INGREDIENTS_BUTTON_NOT_FOUND');
+  // Flow localizes this control. Match the current English and Spanish
+  // accessibility names so a locale change cannot look like a missing picker.
+  let named=page.getByRole('button',{name:/Add ingredients to the prompt box|Agregar ingredientes al cuadro de instrucción/i}).last();
+  if(!(await named.count().catch(()=>0))||!(await named.isVisible().catch(()=>false))){
+    // Safe fallback: the composer add control is the visible 32px "add" button
+    // adjacent to the bottom prompt editor, not the top toolbar media button.
+    const buttons=page.locator('button');
+    let fallback=null;
+    for(let i=(await buttons.count().catch(()=>0))-1;i>=0;i--){
+      const b=buttons.nth(i);
+      if(!(await b.isVisible().catch(()=>false)))continue;
+      const txt=compact(await b.innerText().catch(()=>''),40);
+      if(txt!=='add')continue;
+      const box=await b.boundingBox().catch(()=>null);
+      if(box&&box.width<=48&&box.height<=48&&box.y>500){fallback=b;break;}
+    }
+    if(!fallback)throw new Error('ADD_INGREDIENTS_BUTTON_NOT_FOUND');
+    named=fallback;
+  }
   await clickInteractive(named);await sleep(550);
 }
 async function visibleAddToPromptButton(page){
