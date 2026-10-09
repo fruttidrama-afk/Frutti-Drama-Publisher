@@ -31,3 +31,4 @@ for(const table of ['factory_items','factory_generations','publication_items']){
   }
 }
 db.close();
+// RESUME_AUDIT_TRIGGER: 2026-10-09T16:35:31.670Z
