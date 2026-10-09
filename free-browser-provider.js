@@ -1340,10 +1340,11 @@ async function stopBrowserInfra(){
 }
 async function stopProfileChrome(){await stopBrowserInfra()}
 async function launchLocal() {
-  // Ephemeral GitHub runners use the portable Playwright storageState directly.
-  // This is the same auth representation proven by the read-only Flow audits
-  // and avoids converting Google cookies into a synthetic persistent profile.
-  if(PORTABLE_STORAGE_STATE&&fs.existsSync(PORTABLE_STORAGE_STATE)){
+  const persistentCookies=path.join(PROFILE_DIR,'Default','Cookies');
+  // Prefer a real Chrome profile when bootstrap captured one. Google/Flow can
+  // keep device/browser session material outside Playwright storageState.
+  // Portable storageState remains the fallback for already-migrated accounts.
+  if(!fs.existsSync(persistentCookies)&&PORTABLE_STORAGE_STATE&&fs.existsSync(PORTABLE_STORAGE_STATE)){
     const browser=await chromium.launch({
       executablePath:CHROMIUM_PATH,
       headless:true,
@@ -1364,7 +1365,7 @@ async function launchLocal() {
     };
     return{browser,context,page,close:cleanup,portable:true};
   }
-  if(!fs.existsSync(path.join(PROFILE_DIR,'Default','Cookies')))throw new Error('GFLOW_AUTH_PROFILE_MISSING');
+  if(!fs.existsSync(persistentCookies))throw new Error('GFLOW_AUTH_PROFILE_MISSING');
 
   // Exactly one browser/Xvfb pair may exist in this worker. Previous code could
   // leak Xvfb/Chrome when connectOverCDP timed out, eventually exhausting
@@ -1604,15 +1605,6 @@ async function purgeRemovedProviderMetadata(db){
   try{db.prepare("DELETE FROM factory_meta WHERE key LIKE 'automation:tinyfish%'").run();}catch{}
 }
 function migrateProfileOnce(db) {
-  if(PORTABLE_STORAGE_STATE&&fs.existsSync(PORTABLE_STORAGE_STATE)){
-    setMeta(db,'automation:provider',PROVIDER);
-    setMeta(db,'automation:paidDependencyDetected','false');
-    setMeta(db,'automation:tinyfishRequired','false');
-    setMeta(db,'automation:tinyfishMigrationComplete','true');
-    setMeta(db,'automation:tinyfishCallsAfterMigration','0');
-    setMeta(db,'automation:portableFlowAuth','true');
-    return true;
-  }
   const cookies=path.join(PROFILE_DIR,'Default','Cookies');
   if(fs.existsSync(cookies)){
     setMeta(db,'automation:provider',PROVIDER);
@@ -1620,6 +1612,16 @@ function migrateProfileOnce(db) {
     setMeta(db,'automation:tinyfishRequired','false');
     setMeta(db,'automation:tinyfishMigrationComplete','true');
     setMeta(db,'automation:tinyfishCallsAfterMigration','0');
+    setMeta(db,'automation:portableFlowAuth','false');
+    return true;
+  }
+  if(PORTABLE_STORAGE_STATE&&fs.existsSync(PORTABLE_STORAGE_STATE)){
+    setMeta(db,'automation:provider',PROVIDER);
+    setMeta(db,'automation:paidDependencyDetected','false');
+    setMeta(db,'automation:tinyfishRequired','false');
+    setMeta(db,'automation:tinyfishMigrationComplete','true');
+    setMeta(db,'automation:tinyfishCallsAfterMigration','0');
+    setMeta(db,'automation:portableFlowAuth','true');
     return true;
   }
   setMeta(db,'flow:state','REQUIERE REAUTENTICACIÓN');
