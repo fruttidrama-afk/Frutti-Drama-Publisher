@@ -36,6 +36,7 @@ const BOOTSTRAP_LOCK=path.join(FACTORY_DIR,'flow-auth-bootstrap.active.json');
 const STATUS_FILE=path.resolve(process.cwd(),'public','free-browser-status.json');
 const PROVIDER='FreeBrowserProvider';
 const ONESHOT_KIND=String(process.env.PUBLISHER_ONESHOT_KIND||'').trim().toLowerCase();
+const PORTABLE_STORAGE_STATE=String(process.env.PUBLISHER_FLOW_STORAGE_STATE||'').trim();
 const GEMINI_FEEDBACK_URL='https://gemini.google.com/app';
 async function saveReviewAsset(db,row,localPath,flowResult,stamp=now()){
   // HARD APPROVAL GATE: an unapproved review render must remain only on the
@@ -1339,6 +1340,30 @@ async function stopBrowserInfra(){
 }
 async function stopProfileChrome(){await stopBrowserInfra()}
 async function launchLocal() {
+  // Ephemeral GitHub runners use the portable Playwright storageState directly.
+  // This is the same auth representation proven by the read-only Flow audits
+  // and avoids converting Google cookies into a synthetic persistent profile.
+  if(PORTABLE_STORAGE_STATE&&fs.existsSync(PORTABLE_STORAGE_STATE)){
+    const browser=await chromium.launch({
+      executablePath:CHROMIUM_PATH,
+      headless:true,
+      args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--password-store=basic','--no-first-run','--no-default-browser-check']
+    });
+    const context=await browser.newContext({
+      storageState:PORTABLE_STORAGE_STATE,
+      acceptDownloads:true,
+      locale:'en-US',
+      timezoneId:TIMEZONE,
+      viewport:{width:1440,height:1000}
+    });
+    const page=await context.newPage();
+    const cleanup=async()=>{
+      try{await context.storageState({path:PORTABLE_STORAGE_STATE})}catch{}
+      try{await context.close()}catch{}
+      try{await browser.close()}catch{}
+    };
+    return{browser,context,page,close:cleanup,portable:true};
+  }
   if(!fs.existsSync(path.join(PROFILE_DIR,'Default','Cookies')))throw new Error('GFLOW_AUTH_PROFILE_MISSING');
 
   // Exactly one browser/Xvfb pair may exist in this worker. Previous code could
@@ -1579,6 +1604,15 @@ async function purgeRemovedProviderMetadata(db){
   try{db.prepare("DELETE FROM factory_meta WHERE key LIKE 'automation:tinyfish%'").run();}catch{}
 }
 function migrateProfileOnce(db) {
+  if(PORTABLE_STORAGE_STATE&&fs.existsSync(PORTABLE_STORAGE_STATE)){
+    setMeta(db,'automation:provider',PROVIDER);
+    setMeta(db,'automation:paidDependencyDetected','false');
+    setMeta(db,'automation:tinyfishRequired','false');
+    setMeta(db,'automation:tinyfishMigrationComplete','true');
+    setMeta(db,'automation:tinyfishCallsAfterMigration','0');
+    setMeta(db,'automation:portableFlowAuth','true');
+    return true;
+  }
   const cookies=path.join(PROFILE_DIR,'Default','Cookies');
   if(fs.existsSync(cookies)){
     setMeta(db,'automation:provider',PROVIDER);
