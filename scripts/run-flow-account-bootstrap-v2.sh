@@ -32,6 +32,26 @@ FLOW_BOOTSTRAP_URL="$FULL_URL" node scripts/bootstrap-flow-account-v2.mjs announ
 
 node scripts/bootstrap-flow-account-v2.mjs waitsignal
 node scripts/bootstrap-flow-account-v2.mjs capture
-tar -czf "$ARCHIVE" -C /tmp flow-auth-state.json
+
+# Persist both the portable Playwright auth state and the real Chrome profile.
+# The full profile preserves Google/Flow browser state that storageState alone
+# cannot represent. Caches are deliberately excluded.
+PACK="/tmp/flow-$TARGET_KEY-auth-pack"
+rm -rf "$PACK"
+mkdir -p "$PACK/flow-profile"
+cp /tmp/flow-auth-state.json "$PACK/flow-auth-state.json"
+cp -a "$PROFILE"/. "$PACK/flow-profile"/
+rm -rf \
+  "$PACK/flow-profile/Default/Cache" \
+  "$PACK/flow-profile/Default/Code Cache" \
+  "$PACK/flow-profile/Default/GPUCache" \
+  "$PACK/flow-profile/Default/Service Worker/CacheStorage" \
+  "$PACK/flow-profile/GrShaderCache" \
+  "$PACK/flow-profile/ShaderCache" \
+  "$PACK/flow-profile/DawnCache" \
+  "$PACK/flow-profile/Crashpad" \
+  "$PACK/flow-profile/component_crx_cache" \
+  "$PACK/flow-profile/BrowserMetrics" || true
+tar -czf "$ARCHIVE" -C "$PACK" flow-auth-state.json flow-profile
 FLOW_BOOTSTRAP_ARCHIVE="$ARCHIVE" node scripts/bootstrap-flow-account-v2.mjs upload
 node scripts/bootstrap-flow-account-v2.mjs complete
