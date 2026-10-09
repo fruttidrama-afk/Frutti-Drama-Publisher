@@ -1,0 +1,25 @@
+name: Frutti Autonomy Resume
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/frutti-autonomy-resume.yml"
+      - "scripts/resume-frutti-autonomy.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  resume:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Resume Frutti autonomous generation gate
+        run: node scripts/resume-frutti-autonomy.mjs
