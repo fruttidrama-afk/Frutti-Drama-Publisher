@@ -39,3 +39,4 @@ jobs:
         run: npm install --ignore-scripts --no-audit --no-fund
       - name: Run Frutti generation Golden Test
         run: node scripts/free-runtime-runner-v2.mjs
+# GOLDEN_RETRY: portable-auth-direct 2026-10-09T00:25Z
