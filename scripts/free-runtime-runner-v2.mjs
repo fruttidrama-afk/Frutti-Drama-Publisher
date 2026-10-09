@@ -196,7 +196,9 @@ function packPortableProfile(){
   if(!fs.existsSync(PORTABLE_STATE))return null;
   const profileTar=path.join(ROOT,'profile.tgz');
   fs.rmSync(profileTar,{force:true});
-  run('tar',['-czf',profileTar,'-C',FACTORY,'flow-auth-state.json']);
+  const entries=['flow-auth-state.json'];
+  if(fs.existsSync(PROFILE))entries.push('flow-profile');
+  run('tar',['-czf',profileTar,'-C',FACTORY,...entries]);
   return profileTar;
 }
 function statusSnapshot(){
@@ -271,8 +273,12 @@ try{
 
   killTree(child);
   await sleep(2500);
+  const hasPersistentProfile=fs.existsSync(path.join(PROFILE,'Default','Cookies'));
+  if(hasPersistentProfile){
+    await capturePortableState().catch(e=>console.log('PORTABLE_STATE_REFRESH_WARNING',String(e?.message||e)));
+  }
   if(!fs.existsSync(PORTABLE_STATE)||fs.statSync(PORTABLE_STATE).size<500)throw new Error('PORTABLE_FLOW_STATE_LOST');
-  console.log('Portable Flow state preserved',fs.statSync(PORTABLE_STATE).size);
+  console.log('Flow auth state preserved',{portable_bytes:fs.statSync(PORTABLE_STATE).size,persistent_profile:hasPersistentProfile});
   await uploadBlob('state',publisherId,packState());
   const portableTar=packPortableProfile();
   if(portableTar)await uploadBlob('profile',publisherId,portableTar);
