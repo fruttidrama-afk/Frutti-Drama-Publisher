@@ -65,6 +65,50 @@ function dbPath(){
   const candidates=[path.join(FACTORY,'factory.sqlite'),path.join(DATA,'frutti-factory','factory.sqlite')];
   return candidates.find(fs.existsSync)||candidates[0];
 }
+function rebasePersistedMediaPaths(){
+  const dbp=dbPath();
+  if(!fs.existsSync(dbp))return{factory:0,publication:0};
+  const db=new DatabaseSync(dbp,{timeout:5000});
+  let factory=0,publication=0;
+  try{
+    const resolveLocal=(value)=>{
+      const raw=String(value||'').trim();
+      if(!raw||raw.includes('://')||fs.existsSync(raw))return raw;
+      const base=path.basename(raw);
+      const candidates=[
+        path.join(FACTORY,'generated',base),
+        path.join(FACTORY,'stock',base),
+        path.join(FACTORY,'publication',base),
+        path.join(FACTORY,'manual-recovery',base)
+      ];
+      return candidates.find(fs.existsSync)||raw;
+    };
+    if(tableExists(db,'factory_items')){
+      const rows=db.prepare("SELECT id,videoPath FROM factory_items WHERE videoPath IS NOT NULL AND TRIM(videoPath)<>''").all();
+      const upd=db.prepare("UPDATE factory_items SET videoPath=?,updatedAt=? WHERE id=?");
+      for(const row of rows){
+        const next=resolveLocal(row.videoPath);
+        if(next&&next!==String(row.videoPath||'')&&fs.existsSync(next)){
+          upd.run(next,new Date().toISOString(),row.id);
+          factory++;
+        }
+      }
+    }
+    if(tableExists(db,'publication_items')){
+      const rows=db.prepare("SELECT id,filePath FROM publication_items WHERE filePath IS NOT NULL AND TRIM(filePath)<>''").all();
+      const upd=db.prepare("UPDATE publication_items SET filePath=?,updatedAt=? WHERE id=?");
+      for(const row of rows){
+        const next=resolveLocal(row.filePath);
+        if(next&&next!==String(row.filePath||'')&&fs.existsSync(next)){
+          upd.run(next,new Date().toISOString(),row.id);
+          publication++;
+        }
+      }
+    }
+  }finally{db.close()}
+  if(factory||publication)console.log('Rebased persisted media paths',{factory,publication});
+  return{factory,publication};
+}
 function metrics(){
   const dbp=dbPath();
   if(!fs.existsSync(dbp))return{generation:0,publication:0,stock:0,review:0};
@@ -176,6 +220,7 @@ try{
 
   const stateTar=path.join(ROOT,'state.restore.tgz');
   if(await downloadBlob('state',publisherId,stateTar))run('tar',['-xzf',stateTar,'-C',DATA]);
+  rebasePersistedMediaPaths();
 
   const profileTar=path.join(ROOT,'profile.restore.tgz');
   const hasProfile=await downloadBlob('profile',publisherId,profileTar);
