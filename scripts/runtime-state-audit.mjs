@@ -55,7 +55,7 @@ for(const [name,id] of targets){
    duplicate_assets:db.prepare("SELECT COUNT(*) n FROM (SELECT assetId FROM flow_recovered_assets GROUP BY assetId HAVING COUNT(*)>1)").get().n,
    latest:db.prepare("SELECT episode,substr(assetId,1,12) asset_prefix,recoveredAt FROM flow_recovered_assets ORDER BY recoveredAt DESC LIMIT 8").all()
  }),null):null;
- const credits=safe(()=>db.prepare("SELECT key,value FROM factory_meta WHERE key IN ('flow:lastCreditsVisible','flow:lastCreditsCheckedAt','flow:lastCreditsSource','flow:dailyCreditCycleUsed','flow:dailyCreditCycleOpenedAt','flow:dailyCreditRefreshWaiting') ORDER BY key").all(),[]);
+ const credits=safe(()=>db.prepare("SELECT key,value FROM factory_meta WHERE key IN ('flow:lastCreditsVisible','flow:lastCreditsCheckedAt','flow:lastCreditsSource','flow:lastCreditsCheckError','flow:dailyCreditInitialWatch','flow:dailyCreditCycleUsed','flow:dailyCreditCycleOpenedAt','flow:dailyCreditRefreshWaiting') ORDER BY key").all(),[]);
  db.close();
  console.log('RUNTIME_STATE_AUDIT',JSON.stringify({name,id,bytes:fs.statSync(tar).size,meta,counts,gens,credentials,candidateStatePaths,publication,episodes,recovery,credits}));
 }
