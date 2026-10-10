@@ -1,1 +1,4 @@
-trigger 2026-10-08T01:39:48.069Z restart-after-expired-tunnel
+FRUTTI_FLOW_LOGIN_RESCUE=2026-10-10
+PURPOSE=operator-auth-reconnect-only
+NO_GENERATION=true
+NO_PUBLICATION=true
