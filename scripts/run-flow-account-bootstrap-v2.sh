@@ -13,7 +13,9 @@ sleep 2
 
 google-chrome   --user-data-dir="$PROFILE"   --remote-debugging-address=127.0.0.1   --remote-debugging-port=9222   --remote-allow-origins='*'   --no-sandbox   --disable-dev-shm-usage   --disable-gpu   --password-store=basic   --no-first-run   --no-default-browser-check   --window-size=1440,900   "$START_URL" >/tmp/chrome.log 2>&1 &
 
-x11vnc -display :99 -rfbport 5900 -nopw -forever -shared -noxdamage >/tmp/x11vnc.log 2>&1 &
+VNC_PASSWORD="$(openssl rand -hex 12)"
+x11vnc -storepasswd "$VNC_PASSWORD" /tmp/x11vnc.pass >/dev/null
+x11vnc -display :99 -rfbport 5900 -rfbauth /tmp/x11vnc.pass -forever -shared -noxdamage >/tmp/x11vnc.log 2>&1 &
 websockify --web=/usr/share/novnc 6080 localhost:5900 >/tmp/novnc.log 2>&1 &
 cloudflared tunnel --no-autoupdate --url http://127.0.0.1:6080 >/tmp/cloudflared.log 2>&1 &
 
@@ -28,7 +30,7 @@ done
 test -n "$URL"
 
 FULL_URL="$URL/vnc.html?autoconnect=true&resize=scale"
-FLOW_BOOTSTRAP_URL="$FULL_URL" node scripts/bootstrap-flow-account-v2.mjs announce
+FLOW_BOOTSTRAP_URL="$FULL_URL" FLOW_BOOTSTRAP_PASSWORD="$VNC_PASSWORD" node scripts/bootstrap-flow-account-v2.mjs announce
 
 node scripts/bootstrap-flow-account-v2.mjs waitsignal
 node scripts/bootstrap-flow-account-v2.mjs capture
