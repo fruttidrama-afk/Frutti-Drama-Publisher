@@ -32,6 +32,16 @@ for(const [name,id] of targets){
 
  const table=name=>Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
  const safe=(fn,fallback)=>{try{return fn()}catch{return fallback}};
+ const candidateStatePaths=[];
+ function inspectStateDir(dir,depth=0){
+   if(depth>7||candidateStatePaths.length>=75)return;
+   for(const e of safe(()=>fs.readdirSync(dir,{withFileTypes:true}),[])){
+     const full=dir+'/'+e.name,relative=full.slice(root.length+1);
+     if(e.isDirectory()){inspectStateDir(full,depth+1);continue}
+     if(/token|secret|credential|oauth|facebook|auth|profile|sqlite|storage/i.test(e.name))candidateStatePaths.push(relative);
+   }
+ }
+ inspectStateDir(root);
  const credentials=['secrets.json','youtube-token.json','auth.json'].map(file=>{
    const f=root+'/publisher-runtime/'+file;
    if(!fs.existsSync(f))return{file,present:false};
@@ -47,5 +57,5 @@ for(const [name,id] of targets){
  }),null):null;
  const credits=safe(()=>db.prepare("SELECT key,value FROM factory_meta WHERE key IN ('flow:lastCreditsVisible','flow:lastCreditsCheckedAt','flow:lastCreditsSource','flow:dailyCreditCycleUsed','flow:dailyCreditCycleOpenedAt','flow:dailyCreditRefreshWaiting') ORDER BY key").all(),[]);
  db.close();
- console.log('RUNTIME_STATE_AUDIT',JSON.stringify({name,id,bytes:fs.statSync(tar).size,meta,counts,gens,credentials,publication,episodes,recovery,credits}));
+ console.log('RUNTIME_STATE_AUDIT',JSON.stringify({name,id,bytes:fs.statSync(tar).size,meta,counts,gens,credentials,candidateStatePaths,publication,episodes,recovery,credits}));
 }
