@@ -35,7 +35,7 @@ async function inspectFlowProfile(root,name,id){
   const state=JSON.parse(fs.readFileSync(statePath,'utf8'));
   summary.profile_found=true;
   summary.cookies=Array.isArray(state.cookies)?state.cookies.length:0;
-  summary.flow_cookie_count=(state.cookies||[]).filter(c=>/google\\.com|youtube\\.com/.test(String(c.domain||''))).length;
+  summary.flow_cookie_count=(state.cookies||[]).filter(c=>String(c.domain||'').includes('google.com')||String(c.domain||'').includes('youtube.com')).length;
   summary.origin_count=Array.isArray(state.origins)?state.origins.length:0;
   const browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
   try{
@@ -46,7 +46,7 @@ async function inspectFlowProfile(root,name,id){
    await page.waitForTimeout(3000);
    const url=String(page.url()||''),body=String(await page.locator('body').innerText().catch(()=>'')).slice(0,4500);
    summary.navigated=true;
-   summary.sign_in=/accounts\\.google\\.com|ServiceLogin|\\/signin|\\/about(?:$|[?#])/i.test(url)||/email or phone|enter your password|sign in to continue/i.test(body);
+   summary.sign_in=['accounts.google.com','/signin','/about'].some(x=>url.includes(x))||['email or phone','enter your password','sign in to continue'].some(x=>body.toLowerCase().includes(x));
    summary.exact_url=url.includes('/project/'+project.id);
    const head=page.locator('input[aria-label="Editable text"]');
    const title=String(await head.first().inputValue().catch(()=>'')).trim();
