@@ -29,6 +29,23 @@ for(const [name,id] of targets){
  const meta=db.prepare("select key,value from factory_meta where key in ('automation:factoryEnabled','automation:freeFactoryEnabled','flow:dailyCreditBatchOpen','flow:dailyCreditRefreshWaiting','flow:state','flow:currentStep','automation:activeSeason') order by key").all();
  let counts={};try{for(const x of db.prepare("select status,count(*) n from factory_items group by status").all())counts[x.status]=Number(x.n)}catch{}
  let gens=[];try{gens=db.prepare("select day,status,credits,count(*) n from factory_generations group by day,status,credits order by day desc limit 20").all()}catch{}
+
+ const table=name=>Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
+ const safe=(fn,fallback)=>{try{return fn()}catch{return fallback}};
+ const credentials=['secrets.json','youtube-token.json','auth.json'].map(file=>{
+   const f=root+'/publisher-runtime/'+file;
+   if(!fs.existsSync(f))return{file,present:false};
+   const info=safe(()=>JSON.parse(fs.readFileSync(f,'utf8')),{});
+   return{file,present:true,encrypted_envelope:Boolean(info&&info.v===1&&info.iv&&info.tag&&info.data)};
+ });
+ const publication=table('publication_items')?safe(()=>db.prepare("SELECT episode,status,COALESCE(provider,'youtube') provider,CASE WHEN videoId IS NOT NULL AND TRIM(videoId)<>'' THEN 1 ELSE 0 END remote_id,COALESCE(remotePrivacyStatus,'') remote_privacy,scheduledAt,uploadAt,filePath FROM publication_items ORDER BY scheduledAt DESC LIMIT 30").all().map(x=>({episode:x.episode,status:x.status,provider:x.provider,remote_id:Boolean(x.remote_id),remote_privacy:x.remote_privacy,scheduledAt:x.scheduledAt,uploadAt:x.uploadAt,media:x.filePath?(String(x.filePath).includes('://')?'cloud':fs.existsSync(x.filePath)?'local':'missing'):'none'})),[]):[];
+ const episodes=table('factory_items')?safe(()=>db.prepare("SELECT season,episode,status,hook,CASE WHEN videoPath IS NOT NULL AND TRIM(videoPath)<>'' THEN 1 ELSE 0 END has_media FROM factory_items ORDER BY season DESC,episode DESC LIMIT 16").all(),[]):[];
+ const recovery=table('flow_recovered_assets')?safe(()=>({
+   count:db.prepare("SELECT COUNT(*) n FROM flow_recovered_assets").get().n,
+   duplicate_assets:db.prepare("SELECT COUNT(*) n FROM (SELECT assetId FROM flow_recovered_assets GROUP BY assetId HAVING COUNT(*)>1)").get().n,
+   latest:db.prepare("SELECT episode,substr(assetId,1,12) asset_prefix,recoveredAt FROM flow_recovered_assets ORDER BY recoveredAt DESC LIMIT 8").all()
+ }),null):null;
+ const credits=safe(()=>db.prepare("SELECT key,value FROM factory_meta WHERE key IN ('flow:lastCreditsVisible','flow:lastCreditsCheckedAt','flow:lastCreditsSource','flow:dailyCreditCycleUsed','flow:dailyCreditCycleOpenedAt','flow:dailyCreditRefreshWaiting') ORDER BY key").all(),[]);
  db.close();
- console.log('RUNTIME_STATE_AUDIT',JSON.stringify({name,id,bytes:fs.statSync(tar).size,meta,counts,gens}));
+ console.log('RUNTIME_STATE_AUDIT',JSON.stringify({name,id,bytes:fs.statSync(tar).size,meta,counts,gens,credentials,publication,episodes,recovery,credits}));
 }
