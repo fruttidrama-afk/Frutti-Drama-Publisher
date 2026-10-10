@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {DatabaseSync} from 'node:sqlite';
+import {chromium} from 'playwright-core';
 
 const EDGE='https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-runtime-state-audit';
 const AUD='publisher-factory-runtime-state-audit';
@@ -16,6 +17,47 @@ async function oidc(){
  return String((await r.json()).value||'');
 }
 const token=await oidc();
+const expectedProjects={
+ frutti:{id:'705d7ac2-30fe-4481-aa4c-076c31a64214',name:'FruttiDrama'},
+ earth:{id:'800af820-b951-4035-ab20-f64df8883fb0',name:'EARTH IN 10'},
+ dinnie:{id:'67620e0a-7fcf-43c6-9770-eb235ce92a65',name:'Dinnie The Dinosaur'}
+};
+async function inspectFlowProfile(root,name,id){
+ const summary={name,profile_found:false,cookies:0,flow_cookie_count:0,origin_count:0,expected_project:expectedProjects[name]?.id||'',navigated:false,sign_in:false,exact_url:false,editor_visible:false,visible_title_match:false};
+ try{
+  const res=await fetch(EDGE+'?publisher_id='+encodeURIComponent(id)+'&type=profile',{headers:{authorization:'Bearer '+token}});
+  if(!res.ok){summary.error='PROFILE_DOWNLOAD_'+res.status;return summary}
+  const base=root+'/profile';fs.mkdirSync(base,{recursive:true});
+  const tar=base+'/profile.tgz';fs.writeFileSync(tar,Buffer.from(await res.arrayBuffer()));
+  if(spawnSync('tar',['-xzf',tar,'-C',base]).status!==0){summary.error='PROFILE_TAR_INVALID';return summary}
+  const statePath=base+'/flow-auth-state.json';
+  if(!fs.existsSync(statePath)){summary.error='PORTABLE_STATE_MISSING';return summary}
+  const state=JSON.parse(fs.readFileSync(statePath,'utf8'));
+  summary.profile_found=true;
+  summary.cookies=Array.isArray(state.cookies)?state.cookies.length:0;
+  summary.flow_cookie_count=(state.cookies||[]).filter(c=>/google\\.com|youtube\\.com/.test(String(c.domain||''))).length;
+  summary.origin_count=Array.isArray(state.origins)?state.origins.length:0;
+  const browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
+  try{
+   const ctx=await browser.newContext({storageState:state,locale:'en-US',timezoneId:'America/Argentina/Buenos_Aires',viewport:{width:1440,height:900}});
+   const page=await ctx.newPage();
+   const project=expectedProjects[name];
+   await page.goto('https://flow.google.com/project/'+project.id,{waitUntil:'domcontentloaded',timeout:45000});
+   await page.waitForTimeout(3000);
+   const url=String(page.url()||''),body=String(await page.locator('body').innerText().catch(()=>'')).slice(0,4500);
+   summary.navigated=true;
+   summary.sign_in=/accounts\\.google\\.com|ServiceLogin|\\/signin|\\/about(?:$|[?#])/i.test(url)||/email or phone|enter your password|sign in to continue/i.test(body);
+   summary.exact_url=url.includes('/project/'+project.id);
+   const head=page.locator('input[aria-label="Editable text"]');
+   const title=String(await head.first().inputValue().catch(()=>'')).trim();
+   summary.visible_title_match=title.toLowerCase()===project.name.toLowerCase();
+   summary.editor_visible=(await page.locator('textarea,[contenteditable="true"],flow-grid-tile-container').count().catch(()=>0))>0;
+   summary.classification=summary.sign_in?'AUTH_LOGIN_REQUIRED':summary.exact_url&&(summary.visible_title_match||summary.editor_visible)?'PROJECT_ACCESS_PROBABLE':summary.exact_url?'PROJECT_URL_LOADED_UNVERIFIED':'PROJECT_NOT_ACCESSIBLE';
+   await ctx.close().catch(()=>{});
+  }finally{await browser.close().catch(()=>{})}
+ }catch(err){summary.error=String(err?.message||err).slice(0,200)}
+ return summary;
+}
 for(const [name,id] of targets){
  const root='/tmp/runtime-audit-'+name;
  fs.rmSync(root,{recursive:true,force:true});fs.mkdirSync(root,{recursive:true});
@@ -58,4 +100,5 @@ for(const [name,id] of targets){
  const credits=safe(()=>db.prepare("SELECT key,value FROM factory_meta WHERE key IN ('flow:lastCreditsVisible','flow:lastCreditsCheckedAt','flow:lastCreditsSource','flow:lastCreditsCheckError','flow:dailyCreditInitialWatch','flow:dailyCreditCycleUsed','flow:dailyCreditCycleOpenedAt','flow:dailyCreditRefreshWaiting') ORDER BY key").all(),[]);
  db.close();
  console.log('RUNTIME_STATE_AUDIT',JSON.stringify({name,id,bytes:fs.statSync(tar).size,meta,counts,gens,credentials,candidateStatePaths,publication,episodes,recovery,credits}));
+ console.log('FLOW_READONLY_AUTH_AUDIT',JSON.stringify(await inspectFlowProfile(root,name,id)));
 }
