@@ -33,7 +33,7 @@ async function getConfig(){
 }
 async function announce(){
   const url=String(process.env.FLOW_BOOTSTRAP_URL||'').trim();
-  const r=await api('/session/'+KEY,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url})});
+  const r=await api('/session/'+KEY,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url,password:String(process.env.FLOW_BOOTSTRAP_PASSWORD||'')})});
   if(!r.ok)throw new Error('SESSION_ANNOUNCE_'+r.status+' '+(await r.text()).slice(0,500));
   console.log('SESSION_ANNOUNCED');
 }
