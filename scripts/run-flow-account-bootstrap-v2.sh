@@ -21,7 +21,7 @@ cloudflared tunnel --no-autoupdate --url http://127.0.0.1:6080 >/tmp/cloudflared
 
 URL=""
 for i in $(seq 1 75); do
-  URL="$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' /tmp/cloudflared.log | head -1 || true)"
+ URL="$(grep -Eo 'https://[a-z0-9-]{16,}\.trycloudflare\.com' /tmp/cloudflared.log | tail -1 || true)"
   if [ -n "$URL" ] && curl -fsS --max-time 1 http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
     break
   fi
