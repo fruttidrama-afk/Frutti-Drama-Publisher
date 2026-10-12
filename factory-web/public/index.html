@@ -227,7 +227,7 @@ async function list(){
     c.querySelector(".badge").textContent=p.status;c.querySelector("h3").textContent=p.name;c.querySelector(".muted").textContent=p.show_name+(p.last_error?" · "+p.last_error:"");
     const tb=c.querySelector(".toolbar"),d=document.createElement("button");d.className="btn primary";
     const managed=p.config?.infrastructure?.provider==="supabase-github"||p.status==="migrating_free_runtime";
-    d.textContent=managed?"ABRIR EN FACTORY":(p.status==="deploying"?"CHECK STATUS":(p.status==="deployed"&&p.railway_domain?"REDEPLOY":"DEPLOY");
+    d.textContent=managed?"ABRIR EN FACTORY":(p.status==="deploying"?"CHECK STATUS":(p.status==="deployed"&&p.railway_domain?"REDEPLOY":"DEPLOY"));
     d.onclick=()=>managed?udOpen(p.id):p.status==="deploying"?resumeDeploy(p.id,d):deploy(p.id,d);tb.append(d);
     if(p.status==="deploying"){hasDeploying=true;ensureProgressBox(c);setTimeout(()=>refreshDeployCard(p,c),0)}
     if(p.railway_domain&&p.status==="deployed"){
