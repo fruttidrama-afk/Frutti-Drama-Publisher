@@ -1,0 +1,41 @@
+name: Historical Video Forensics — Read Only Pilot
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ops/trigger-review-media-forensics.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publisher-readonly-forensic-media-pilot
+  cancel-in-progress: false
+
+jobs:
+  analyze-three-private-archive-videos:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.14.0"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install local open-source audio and video tools
+        env:
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python3 -m pip install "faster-whisper==1.2.1"
+      - name: Analyze three existing MP4s — no edits, renders, approvals or uploads to social media
+        env:
+          HF_HUB_DISABLE_PROGRESS_BARS: "1"
+          TOKENIZERS_PARALLELISM: "false"
+          OMP_NUM_THREADS: "4"
+        run: node scripts/review-media-forensic-pilot.mjs
