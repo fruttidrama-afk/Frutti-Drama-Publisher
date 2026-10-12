@@ -21,6 +21,9 @@ header{background:#fff;border-bottom:1px solid #ece9e1}.hi{max-width:1200px;marg
 footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:16px 24px;font-size:12px;display:flex;justify-content:space-between}
 .create-dialog{max-width:860px}.create-steps{display:flex;gap:7px;overflow:auto;margin:14px 0 22px;padding-bottom:2px}.create-step-pill{white-space:nowrap;border:1px solid #ded9cf;background:#f4f2ed;color:#6c675d;padding:8px 10px;font-size:11px;font-weight:800}.create-step-pill.active{background:var(--n);border-color:var(--n);color:#fff}.create-pane{display:none}.create-pane.active{display:block}.create-pane h3{font:400 32px Georgia,serif;margin:6px 0}.create-nav{display:flex;justify-content:space-between;gap:10px;margin-top:24px}.reference-box{border:1px dashed #b8ad98;background:#fbfaf7;padding:18px;margin-top:10px}.reference-box input[type=file]{width:100%}.reference-preview{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;margin-top:16px}.reference-preview img{width:100%;aspect-ratio:16/10;object-fit:cover;border:1px solid var(--line);background:#eee}.brand-preview{display:grid;grid-template-columns:82px 1fr;gap:13px;align-items:center;border:1px solid var(--line);background:#fff;padding:14px}.brand-preview img{width:82px;height:82px;object-fit:contain;background:#fff;border-radius:18px}.palette{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.swatch{width:34px;height:34px;border-radius:50%;border:1px solid rgba(0,0,0,.12);box-shadow:0 2px 8px rgba(0,0,0,.08)}.reference-status{font-size:12px;color:var(--muted);margin-top:9px}.summary-box{border:1px solid var(--line);background:#faf9f6;padding:18px;display:grid;gap:10px}.summary-row{display:flex;justify-content:space-between;gap:20px;border-bottom:1px solid #e8e3da;padding-bottom:9px}.summary-row:last-child{border-bottom:0;padding-bottom:0}.summary-row span:first-child{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#827969}.summary-row span:last-child{text-align:right}.logo-upload-preview{width:118px;height:118px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:22px;padding:9px;display:none}.logo-upload-preview.show{display:block}.modify-dialog{max-width:820px}.modify-hero{display:grid;grid-template-columns:84px 1fr;gap:14px;align-items:center;background:#faf9f6;border:1px solid var(--line);padding:14px;margin:14px 0}.modify-hero img{width:84px;height:84px;object-fit:contain;border-radius:18px;background:#fff}.modify-meta{font-size:12px;color:var(--muted);line-height:1.55}.mod-help{border-left:3px solid var(--g);background:#faf9f6;padding:12px 14px;font-size:13px;color:var(--muted);line-height:1.5;margin:12px 0}.mod-history{display:grid;gap:7px;margin-top:12px}.mod-history-item{border:1px solid var(--line);background:#fff;padding:10px 12px;font-size:12px;color:var(--muted)}.mod-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:15px}.mod-actions .btn{flex:1}.btn.danger{border-color:#b77970;color:#873d34;background:#fff}.btn.danger:hover{background:#fff3f1}.mini-label{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:#887d6b;font-weight:800}.rail-list{display:grid;gap:9px;margin:14px 0}.rail-account{border:1px solid var(--line);background:#fff;padding:13px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.rail-account.default{border-color:#a9bea4;background:#f4f8f3}.rail-account strong{color:var(--n)}.rail-account small{display:block;color:var(--muted);margin-top:3px;line-height:1.35}.rail-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}.rail-actions .btn{min-height:36px;padding:0 10px;font-size:11px}.rail-add{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}.connection-select-note{font-size:11px;color:var(--muted);margin-top:5px}
 @media(max-width:740px){.hi{min-height:84px;padding:10px 14px}.reference-preview{grid-template-columns:1fr}.brand-preview{grid-template-columns:70px 1fr}.brand-preview img{width:70px;height:70px}.rail-banner{margin:10px 12px 0;padding:12px;align-items:stretch;flex-direction:column}.rail-banner .btn{width:100%}.status{justify-content:center;padding:10px 12px}.rail-status-btn{min-height:42px;padding:0 14px}.hi nav{margin-left:auto}.hi .brand{min-width:0}.brand img{width:56px;height:56px}.words{font-size:24px}nav button#logout{display:none}nav{gap:12px}nav button{font-size:12px}.hs{display:block}.visual{height:220px}.copy{padding:42px 18px 48px;align-items:center;text-align:center}.copy h1{font-size:50px}.grid{grid-template-columns:1fr}.head2{align-items:flex-start;flex-direction:column}.inner{padding:0 15px}.auth{display:block}.auth>.visual{display:none}.authbox{min-height:100dvh}.fields{grid-template-columns:1fr}.full{grid-column:auto}.fi{flex-direction:column;gap:5px}}
+
+#unifiedDashboard{position:fixed;inset:0;overflow:auto;z-index:42;background:#f7f6f2;padding:clamp(14px,3vw,34px)}#unifiedDashboard .udwrap{max-width:1080px;margin:auto}#unifiedDashboard .udhead{display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:22px}#unifiedDashboard h2{font:400 clamp(34px,5vw,54px) Georgia,serif;color:#0d3152;margin:6px 0}#unifiedDashboard .udgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}#unifiedDashboard .udcard{border:1px solid #ded9cf;background:#fff;padding:15px;border-radius:9px;margin:10px 0}#unifiedDashboard .udcard strong{display:block;font-size:23px;margin-top:8px}#unifiedDashboard .udline{display:flex;gap:14px;justify-content:space-between;border-top:1px solid #eae5dc;padding:10px 0;font-size:12px;flex-wrap:wrap}#unifiedDashboard .udmuted{font-size:12px;color:#6e6a63;line-height:1.5}@media(max-width:680px){#unifiedDashboard .udgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
 </style>
 </head>
 <body>
@@ -30,6 +33,7 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 <section class="hero"><div class="hs"><div class="visual"><div class="stack"><div class="s1"><span>01</span><b>STRATEGY</b></div><div class="s2"><span>02</span><b>GENERATE</b></div><div class="s3"><span>03</span><b>REVIEW</b></div><div class="s4"><span>04</span><b>PUBLISH</b></div></div></div><div class="copy"><div class="eye">PUBLISHER FACTORY</div><h1>WHERE CONTENT<br>FINDS ITS SYSTEM</h1><p>From idea to generation, review and publishing. Build an autonomous content operation once, then let the system keep working.</p><div class="actions"><button class="btn" id="createHero">CREATE YOUR PUBLISHER</button><button class="btn rail-connected" id="railwayHero">FREE RUNTIME</button></div></div></div></section>
 <div class="status"><button class="pill rail-status-btn ok" id="railwayStatus" type="button">FREE RUNTIME · MIGRATING</button><span class="pill ok" id="accountStatus">Account</span><button class="btn" id="refresh">Actualizar</button></div>
 <section class="section"><div class="inner"><div class="head2"><div><div class="eye">MY PUBLISHERS</div><h2>Your autonomous channels</h2></div><p class="muted">Cada cuenta ve solamente sus Publishers. Railway quedó retirado del diseño: el runtime objetivo usa infraestructura gratuita sin trial expirante y estado externo portable.</p></div><div class="grid" id="cards"><div class="card empty">Cargando…</div></div></div></section>
+<section class="hidden" id="unifiedDashboard" aria-label="Publisher integrado"><div class="udwrap"><div class="udhead"><div><div class="udmuted">PUBLISHER FACTORY · PUBLISHER ACTIVO</div><h2 id="udName">Publisher</h2><div class="udmuted" id="udPlatform"></div></div><div class="toolbar"><button class="btn" id="udRefresh" type="button">ACTUALIZAR</button><button class="btn primary" id="udBack" type="button">VOLVER</button></div></div><div id="udStatus" class="udcard" role="status">Consultando Supabase…</div><div class="udgrid" id="udStats"></div><div class="udcard"><h3>Obligaciones de generación y publicación</h3><div id="udObligations"></div></div><div class="udcard"><h3>Incidentes del runtime</h3><div id="udIncidents"></div></div><p class="udmuted">Panel integrado en modo lectura. Aprobar, rehacer o publicar quedará disponible tras validar la autenticación y las acciones compartidas. Este panel no ejecuta ningún job.</p></div></section>
 <footer><div class="fi"><span>&copy; 2026 Publisher Factory</span><span>Supabase Free + GitHub Actions · no expiring trials</span></div></footer></div>
 
 <div class="modal" id="modal"><div class="dialog create-dialog">
@@ -126,6 +130,7 @@ async function boot(prefetchedUser=null){
   // must enter the app immediately; secondary startup work is best-effort.
   try{await resumePendingDeletes()}catch(e){console.warn("Pending deletes:",e?.message||e)}
   try{await list()}catch(e){console.warn("Publisher list:",e?.message||e)}
+  const id=new URL(location.href).searchParams.get("publisher_id");if(id)udOpen(id,false);
 }
 async function factoryPasskeys(){
   if(!sb.auth.passkey?.list)throw Error("La versión actual de Supabase no expone passkeys en este navegador.");
@@ -221,15 +226,16 @@ async function list(){
     c.innerHTML='<span class="badge"></span><h3></h3><div class="muted"></div><div class="toolbar"></div>';
     c.querySelector(".badge").textContent=p.status;c.querySelector("h3").textContent=p.name;c.querySelector(".muted").textContent=p.show_name+(p.last_error?" · "+p.last_error:"");
     const tb=c.querySelector(".toolbar"),d=document.createElement("button");d.className="btn primary";
-    d.textContent=p.status==="deploying"?"CHECK STATUS":(p.status==="deployed"&&p.railway_domain?"REDEPLOY":"DEPLOY");
-    d.onclick=()=>p.status==="deploying"?resumeDeploy(p.id,d):deploy(p.id,d);tb.append(d);
+    const managed=p.config?.infrastructure?.provider==="supabase-github"||p.status==="migrating_free_runtime";
+    d.textContent=managed?"ABRIR EN FACTORY":(p.status==="deploying"?"CHECK STATUS":(p.status==="deployed"&&p.railway_domain?"REDEPLOY":"DEPLOY");
+    d.onclick=()=>managed?udOpen(p.id):p.status==="deploying"?resumeDeploy(p.id,d):deploy(p.id,d);tb.append(d);
     if(p.status==="deploying"){hasDeploying=true;ensureProgressBox(c);setTimeout(()=>refreshDeployCard(p,c),0)}
     if(p.railway_domain&&p.status==="deployed"){
       const cfg=document.createElement("button");cfg.className="btn";cfg.textContent="CONFIGURE CONNECTIONS";cfg.onclick=()=>configurePublisher(p.id);tb.append(cfg);
       const a=document.createElement("button");a.className="btn";a.textContent="OPEN PUBLISHER";a.onclick=()=>configurePublisher(p.id);tb.append(a);
       const m=document.createElement("button");m.className="btn";m.textContent="MODIFY WITH AI · OPTIONAL";m.onclick=()=>openModify(p);tb.append(m)
     }
-    const del=document.createElement("button");del.className="btn danger";del.textContent="DELETE";del.onclick=()=>deletePublisher(p);tb.append(del);box.append(c)
+    if(!managed){const del=document.createElement("button");del.className="btn danger";del.textContent="DELETE";del.onclick=()=>deletePublisher(p);tb.append(del)}box.append(c)
   }
   scheduleDeployWatch(hasDeploying);
 }
@@ -455,5 +461,35 @@ async function railState(){
     paintRailway(false)
   }
 }
+
+let activeUnifiedPublisher=null;
+const unifiedEndpoint="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-unified-read";
+function udText(t,c,v){const n=document.createElement(t);if(c)n.className=c;n.textContent=String(v??"");return n}
+function udClose(changeUrl=true){activeUnifiedPublisher=null;$("#unifiedDashboard").classList.add("hidden");if(changeUrl){const u=new URL(location.href);u.searchParams.delete("publisher_id");history.pushState({},"",u)}}
+async function udOpen(id,changeUrl=true){
+ if(!/^[0-9a-f-]{36}$/i.test(String(id)))return;
+ activeUnifiedPublisher=id;$("#unifiedDashboard").classList.remove("hidden");$("#udName").textContent="Cargando…";$("#udStatus").textContent="Consultando estado persistente…";$("#udStats").replaceChildren();$("#udObligations").replaceChildren();$("#udIncidents").replaceChildren();
+ if(changeUrl){const u=new URL(location.href);u.searchParams.set("publisher_id",id);history.pushState({publisher_id:id},"",u)}
+ try{
+ const s=await session();if(!s?.access_token)throw Error("AUTH_REQUIRED");
+ const response=await fetch(unifiedEndpoint+"?publisher_id="+encodeURIComponent(id),{headers:{Authorization:"Bearer "+s.access_token},cache:"no-store"});
+ const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||"READ_ERROR");if(activeUnifiedPublisher!==id)return;
+ const p=result.publisher;$("#udName").textContent=p.name;$("#udPlatform").textContent=p.platform==="facebook"?"Facebook Reels":"YouTube Shorts";
+ $("#udStatus").textContent="Runtime: "+p.migration_state+" · Último error: "+(p.last_error||"ninguno")+" · Último runner: "+(p.last_runner_at?new Date(p.last_runner_at).toLocaleString("es-AR"):"sin registro");
+ for(const [label,value] of [["Generaciones/día",p.generation_target],["Publicaciones/día",p.publication_target],["Stock aprobado",p.approved_stock],["Última publicación",p.last_publication_at?new Date(p.last_publication_at).toLocaleDateString("es-AR"):"sin confirmar"]]){
+   const box=udText("div","udcard",label);box.append(udText("strong","",value??"—"));$("#udStats").append(box);
+ }
+ const ob=$("#udObligations");const rows=result.obligations||[];
+ if(!rows.length)ob.append(udText("p","udmuted","Sin obligaciones recientes."));
+ else for(const o of rows){const r=udText("div","udline",(o.kind==="generation"?"Generación":"Publicación")+" "+o.ordinal+" · "+o.local_day);r.append(udText("strong","",o.status));if(o.last_error)r.append(udText("small","",o.last_error));ob.append(r)}
+ const ix=$("#udIncidents");const incidents=result.incidents||[];
+ if(!incidents.length)ix.append(udText("p","udmuted","Sin incidentes registrados."));
+ else for(const i of incidents){const row=udText("div","udline",i.code);row.append(udText("strong","",i.resolved_at?"Resuelto":"Abierto"));ix.append(row)}
+ }catch(err){if(activeUnifiedPublisher===id)$("#udStatus").textContent="Error de consulta (sin cambios realizados): "+String(err.message||err)}
+}
+$("#udBack").onclick=()=>udClose();
+$("#udRefresh").onclick=()=>{if(activeUnifiedPublisher)udOpen(activeUnifiedPublisher,false)};
+window.addEventListener("popstate",()=>{const id=new URL(location.href).searchParams.get("publisher_id");if(id)udOpen(id,false);else udClose(false)});
+
 $("#refresh").onclick=()=>list();boot();
 </script></body></html>
