@@ -1,0 +1,35 @@
+name: Railway Forensic SQLite Export (Read Only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ops/trigger-railway-forensic-export.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: railway-forensic-export-immutable
+  cancel-in-progress: false
+
+jobs:
+  forensic-sqlite-exports:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 24
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [frutti, earth]
+    env:
+      FORENSIC_TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.14.0"
+      - name: Install Railway CLI for file reads only
+        run: npm install -g @railway/cli@5.63.1
+      - name: Download unchanged SQLite and WAL to private signed Supabase storage
+        run: node scripts/railway-forensic-export.mjs
