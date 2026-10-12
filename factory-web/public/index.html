@@ -36,6 +36,33 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 #unifiedDashboard .ud-forensic-speech{font-size:13px;line-height:1.5;color:#2b2b2b}
 #unifiedDashboard .ud-forensic-warning{border-top:1px solid #ede4d7;padding-top:7px;font-size:11px;color:#7a5a30}
 
+#unifiedDashboard .ud-recovery-heading{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px}
+#unifiedDashboard .ud-prompt-browser{border:1px solid #ded5c7;background:#fcfaf6;border-radius:12px;padding:14px;margin:18px 0}
+#unifiedDashboard .ud-prompt-browser summary{cursor:pointer;display:flex;justify-content:space-between;flex-wrap:wrap;gap:7px;align-items:center;font-size:13px}
+#unifiedDashboard .ud-prompt-browser summary::marker{color:#917443}
+#unifiedDashboard .ud-inline-field{min-width:175px;display:flex;align-items:center;gap:7px;font-size:13px}
+#unifiedDashboard .ud-prompt-list{display:grid;gap:8px;max-height:490px;overflow:auto;padding:2px}
+#unifiedDashboard .ud-prompt-choice{padding:11px 12px;border:1px solid #e1d9cc;border-radius:9px;background:white;display:grid;gap:7px}
+#unifiedDashboard .ud-prompt-choice strong{font-size:13px}#unifiedDashboard .ud-prompt-choice p{font-size:13px;line-height:1.48;margin:0}
+#unifiedDashboard .ud-prompt-buttons,#unifiedDashboard .ud-match-buttons{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#unifiedDashboard .ud-small-button{cursor:pointer;border:1px solid #baaa8e;background:#fffdf7;color:#413322;border-radius:8px;padding:10px 12px;font:700 12px/1.2 system-ui}
+#unifiedDashboard .ud-small-button:disabled{cursor:wait;opacity:.5}
+#unifiedDashboard .ud-match-form{margin-top:8px;border:1px solid #e6dccd;background:#fbfaf6;border-radius:10px;padding:11px;display:grid;gap:8px}
+#unifiedDashboard .ud-match-form label{font-size:12px;font-weight:700;color:#574b3b}
+#unifiedDashboard .ud-match-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#unifiedDashboard .ud-match-form select,#unifiedDashboard .ud-match-form input{width:100%;min-width:0;max-width:100%;margin-top:4px;padding:10px;border-radius:8px;border:1px solid #cfbfaa;color:#29231b;background:#fff;font:13px system-ui}
+#unifiedDashboard .ud-match-saved{font-size:12px;color:#316c4e;font-weight:700}
+#unifiedDashboard .ud-forensic-item video{width:100%;background:#161616;aspect-ratio:9/16;max-height:430px;border-radius:8px}
+#unifiedDashboard .ud-forensic-item .ud-video-pane{padding:0 12px 12px}
+.ud-prompt-modal{width:min(780px,calc(100vw - 24px));max-height:91dvh;padding:0;border:1px solid #d9ceb9;border-radius:15px;color:#25231d;background:#fdfbf6;box-shadow:0 25px 90px #0006}
+.ud-prompt-modal::backdrop{background:#050508ab}
+.ud-prompt-modal-header{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:16px 18px;border-bottom:1px solid #e6dfd4}
+.ud-prompt-modal-header h3{font-size:22px;margin:5px 0 0}
+.ud-prompt-modal #udPromptModalStory{padding:12px 18px 0;line-height:1.5}
+.ud-prompt-modal pre{white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;max-height:55dvh;padding:17px 18px;margin:0;font:13px/1.6 ui-monospace,Menlo,Consolas,monospace}
+.ud-prompt-modal-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-top:1px solid #e6dfd4}
+@media(max-width:640px){#unifiedDashboard .ud-match-fields{grid-template-columns:1fr}#unifiedDashboard .ud-prompt-browser{padding:10px}#unifiedDashboard .ud-forensic-toolbar{align-items:stretch;flex-direction:column}#unifiedDashboard .ud-prompt-browser summary{display:block}.ud-prompt-modal pre{max-height:59dvh;font-size:12px}.ud-prompt-modal-header h3{font-size:17px}}
+
 </style>
 </head>
 <body>
@@ -46,19 +73,32 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 <div class="status"><button class="pill rail-status-btn ok" id="railwayStatus" type="button">FREE RUNTIME · MIGRATING</button><span class="pill ok" id="accountStatus">Account</span><button class="btn" id="refresh">Actualizar</button></div>
 <section class="section"><div class="inner"><div class="head2"><div><div class="eye">MY PUBLISHERS</div><h2>Your autonomous channels</h2></div><p class="muted">Cada cuenta ve solamente sus Publishers. Railway quedó retirado del diseño: el runtime objetivo usa infraestructura gratuita sin trial expirante y estado externo portable.</p></div><div class="grid" id="cards"><div class="card empty">Cargando…</div></div></div></section>
 <section class="hidden" id="unifiedDashboard" aria-label="Publisher integrado"><div class="udwrap"><div class="udhead"><div><div class="udmuted">PUBLISHER FACTORY · PUBLISHER ACTIVO</div><h2 id="udName">Publisher</h2><div class="udmuted" id="udPlatform"></div></div><div class="toolbar"><button class="btn" id="udRefresh" type="button">ACTUALIZAR</button><button class="btn primary" id="udBack" type="button">VOLVER</button></div></div><div class="udcard" role="note"><strong>Inventario parcial · reconciliación histórica pendiente.</strong><div class="udmuted">Los conteos de esta vista describen SOLO el estado del runtime migrado. El material histórico de Supabase y de los volúmenes anteriores aún no está vinculado; un cero NO significa que el stock haya desaparecido. No autorizar publicaciones desde este inventario.</div></div><div id="udStatus" class="udcard" role="status">Consultando Supabase…</div><div class="udgrid" id="udStats"></div><div class="udcard"><h3>Review · episodios para revisar</h3><div class="udmuted" id="udInventoryAge"></div><div id="udReview">Consultando inventario…</div></div><div class="udcard"><h3>Stock indexado en el runtime nuevo</h3><div id="udStock">Consultando inventario…</div></div><div class="udcard"><h3>Archivos históricos preservados en Supabase</h3><div id="udHistoricalEvidence" class="udmuted">Consultando archivos archivados…</div></div><div class="udcard" id="udForensicSection">
- <h3>Recuperación histórica · Identificación audiovisual</h3>
- <p class="udmuted" id="udForensicSummary">Consultando los 31 videos originales…</p>
- <p class="udmuted"><strong>Importante:</strong> los planes de Prompt Studio no son necesariamente los prompts exactos usados en Google Flow. Algunas escenas también coinciden con la temporada 3 que ya está en Review. Ningún candidato se aprueba ni se publica automáticamente.</p>
+ <div class="ud-recovery-heading"><div><h3>Video Factory · Recuperación de episodios</h3><p class="udmuted" id="udForensicSummary">Consultando 31 videos originales…</p></div><span class="ud-forensic-tag">SIN APROBAR NI PUBLICAR</span></div>
+ <p class="udmuted">Compará los MP4 con los <strong>125 prompts completos de Prompt Studio</strong> (temporadas 2–6) y asigná manualmente un episodio debajo de cada video. La elección queda guardada en Supabase, pero no equivale a aprobar, publicar ni recuperar el stock automáticamente.</p>
+ <details class="ud-prompt-browser" id="udPromptBrowser">
+  <summary> <strong>CONSULTAR LOS 125 PROMPTS COMPLETOS</strong> <span class="udmuted">Temporadas 2 a 6 · argumentación, continuidad y cinematografía</span></summary>
+  <div class="ud-forensic-toolbar"><label class="ud-inline-field">Temporada <select id="udPromptSeason" aria-label="Temporada del archivo de prompts"><option value="2">Temporada 2</option><option value="3">Temporada 3</option><option value="4">Temporada 4</option><option value="5">Temporada 5</option><option value="6">Temporada 6</option></select></label><input type="search" id="udPromptSearch" placeholder="Buscar trama o personaje..." aria-label="Buscar en los prompts históricos"></div>
+  <p class="udmuted" id="udPromptArc">Cargando Prompt Studio histórico…</p>
+  <div id="udPromptList" class="ud-prompt-list"></div>
+ </details>
  <div class="ud-forensic-toolbar">
-  <input type="search" id="udForensicSearch" placeholder="Buscar diálogo o escena" aria-label="Buscar diálogos recuperados"/>
-  <select id="udForensicFilter" aria-label="Filtrar videos recuperados">
-   <option value="all">Todos los archivos</option>
-   <option value="candidate">Con episodio candidato</option>
-   <option value="unmatched">Sin identificar</option>
+  <input type="search" id="udForensicSearch" placeholder="Buscar escena o diálogo" aria-label="Buscar diálogos recuperados">
+  <select id="udForensicFilter" aria-label="Filtrar archivos recuperados">
+   <option value="all">Todos los videos</option>
+   <option value="pending">Sin asignación tuya</option>
+   <option value="assigned">Ya identificados por vos</option>
+   <option value="candidate">Con sugerencia automática</option>
   </select>
  </div>
+ <p class="udmuted" id="udForensicStatus" role="status" aria-live="polite">Las asignaciones no modifican los originales.</p>
  <div id="udForensicItems" class="ud-forensic-grid"></div>
 </div>
+<dialog id="udPromptModal" class="ud-prompt-modal" aria-labelledby="udPromptModalTitle">
+ <div class="ud-prompt-modal-header"><div><p class="udmuted">PROMPT COMPLETO · ARCHIVO HISTÓRICO</p><h3 id="udPromptModalTitle">Prompt Studio</h3></div><button type="button" id="udPromptClose" class="btn">CERRAR</button></div>
+ <p id="udPromptModalStory" class="udmuted"></p>
+ <pre id="udPromptText"></pre>
+ <div class="ud-prompt-modal-actions"><button type="button" id="udPromptCopy" class="btn">COPIAR PROMPT COMPLETO</button><small id="udPromptCopyStatus" role="status"></small></div>
+</dialog>
 <div class="udcard"><h3>Obligaciones de generación y publicación</h3><div id="udObligations"></div></div><div class="udcard"><h3>Incidentes del runtime</h3><div id="udIncidents"></div></div><p class="udmuted">Panel integrado en modo lectura. Aprobar, rehacer o publicar quedará disponible tras validar la autenticación y las acciones compartidas. Este panel no ejecuta ningún job.</p></div></section>
 <footer><div class="fi"><span>&copy; 2026 Publisher Factory</span><span>Supabase Free + GitHub Actions · no expiring trials</span></div></footer></div>
 
@@ -497,7 +537,7 @@ function udText(t,c,v){const n=document.createElement(t);if(c)n.className=c;n.te
 function udClose(changeUrl=true){activeUnifiedPublisher=null;$("#unifiedDashboard").classList.add("hidden");if(changeUrl){const u=new URL(location.href);u.searchParams.delete("publisher_id");history.pushState({},"",u)}}
 async function udOpen(id,changeUrl=true){
  if(!/^[0-9a-f-]{36}$/i.test(String(id)))return;
- activeUnifiedPublisher=id;$("#unifiedDashboard").classList.remove("hidden");$("#udName").textContent="Cargando…";$("#udStatus").textContent="Consultando estado persistente…";$("#udStats").replaceChildren();$("#udObligations").replaceChildren();$("#udIncidents").replaceChildren();$("#udReview").replaceChildren();$("#udStock").replaceChildren();$("#udHistoricalEvidence").replaceChildren();$("#udForensicItems").replaceChildren();$("#udForensicSummary").textContent="Cargando catálogo forense…";$("#udInventoryAge").textContent="";
+ activeUnifiedPublisher=id;$("#unifiedDashboard").classList.remove("hidden");$("#udName").textContent="Cargando…";$("#udStatus").textContent="Consultando estado persistente…";$("#udStats").replaceChildren();$("#udObligations").replaceChildren();$("#udIncidents").replaceChildren();$("#udReview").replaceChildren();$("#udStock").replaceChildren();$("#udHistoricalEvidence").replaceChildren();$("#udForensicItems").replaceChildren();$("#udForensicSummary").textContent="Cargando catálogo forense…";$("#udForensicStatus").textContent="Cargando asignaciones…";$("#udInventoryAge").textContent="";
  if(changeUrl){const u=new URL(location.href);u.searchParams.set("publisher_id",id);history.pushState({publisher_id:id},"",u)}
  try{
  const s=await session();if(!s?.access_token)throw Error("AUTH_REQUIRED");
@@ -542,9 +582,11 @@ async function udOpen(id,changeUrl=true){
  const catalog=result.forensicCatalog||{available:false,items:[]};
  udForensicItems=catalog.items||[];
  $("#udForensicSection").classList.toggle("hidden",p.name!=="FruttiDrama");
- $("#udForensicSummary").textContent=catalog.available?
-  catalog.total_count+" archivos preservados · "+catalog.candidate_count+" episodios candidatos · "+catalog.ready_to_publish_count+" autorizados para publicar.":
-  "El catálogo audiovisual todavía no está disponible. No interpretar esto como ausencia de archivos.";
+ udForensicSummary();
+ if(p.name==="FruttiDrama"){
+  try{await udLoadPromptCatalog();udRenderPromptBrowser();$("#udForensicStatus").textContent="125 prompts históricos disponibles · Elegí un episodio y guardá cada identificación."}
+  catch(e){$("#udForensicStatus").textContent="No se pudo cargar Prompt Studio ("+String(e.message||e)+"). Actualizá la página."}
+ }
  udRenderForensics();
  const ob=$("#udObligations");const rows=result.obligations||[];
  if(!rows.length)ob.append(udText("p","udmuted","Sin obligaciones recientes."));
@@ -555,37 +597,165 @@ async function udOpen(id,changeUrl=true){
  }catch(err){if(activeUnifiedPublisher===id)$("#udStatus").textContent="Error de consulta (sin cambios realizados): "+String(err.message||err)}
 }
 
-let udForensicItems=[];
-let udForensicHistory={};
+const udFruttiPublisher="7c359bd5-76b8-43b9-9d5c-cc8ca38d06e7";
+const udMatchEndpoint="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-forensic-match";
+let udForensicItems=[],udPromptCatalog=null,udPromptLoad=null,udPromptActive=null;
+function udPromptEntry(season,episode){
+ return udPromptCatalog?.prompts?.find(x=>x.season===Number(season)&&x.episode===Number(episode))||null;
+}
+function udCountAssigned(){return udForensicItems.filter(x=>x.manual_assignment?.season!=null).length}
+function udForensicSummary(){
+ $("#udForensicSummary").textContent=udForensicItems.length+" videos · "+udCountAssigned()+" asignados por vos · "+(udForensicItems.length-udCountAssigned())+" pendientes · 0 aprobados automáticamente.";
+}
+async function udLoadPromptCatalog(){
+ if(udPromptCatalog)return udPromptCatalog;
+ if(udPromptLoad)return udPromptLoad;
+ udPromptLoad=(async()=>{
+  const res=await fetch("data/frutti-prompt-studio-legacy.json",{cache:"no-store"});
+  if(!res.ok)throw Error("PROMPTS_NOT_FOUND_"+res.status);
+  const data=await res.json();
+  if(data.count!==125||!Array.isArray(data.prompts)||data.prompts.length!==125||!data.prompts.every(x=>x.full_prompt&&x.season>=2&&x.season<=6&&x.episode>=1&&x.episode<=25))throw Error("PROMPTS_INCOMPLETE");
+  udPromptCatalog=data;return data;
+ })();
+ try{return await udPromptLoad}finally{udPromptLoad=null}
+}
+function udShowPrompt(season,episode){
+ const entry=udPromptEntry(season,episode);
+ if(!entry){$("#udForensicStatus").textContent="Todavía no se cargó el Prompt Studio. Reintentá con Actualizar.";return}
+ udPromptActive=entry;
+ $("#udPromptModalTitle").textContent="Temporada "+entry.season+" · Episodio "+entry.episode+" · "+entry.hook;
+ $("#udPromptModalStory").textContent="TRAMA: "+entry.story+" · Fuente: Prompt Studio histórico. No confirma por sí sola la versión publicada.";
+ $("#udPromptText").textContent=entry.full_prompt;
+ $("#udPromptCopyStatus").textContent="";
+ $("#udPromptModal").showModal();
+}
+function udRenderPromptBrowser(){
+ const place=$("#udPromptList");
+ place.replaceChildren();
+ if(!udPromptCatalog){$("#udPromptArc").textContent="Los prompts aún no están disponibles.";return}
+ const season=Number($("#udPromptSeason").value||2);
+ const q=String($("#udPromptSearch").value||"").trim().toLowerCase();
+ const s=udPromptCatalog.seasons[season];
+ $("#udPromptArc").textContent=(s?.arc||"")+". 25 episodios · instrucciones completas originales de Prompt Studio.";
+ const entries=udPromptCatalog.prompts.filter(x=>x.season===season&&(!q||[x.hook,x.story,x.full_prompt].join(" ").toLowerCase().includes(q)));
+ for(const entry of entries){
+  const card=udText("div","ud-prompt-choice");
+  card.append(udText("strong","","Episodio "+entry.episode+" · "+entry.hook));
+  card.append(udText("p","",entry.story));
+  const controls=udText("div","ud-prompt-buttons");
+  const show=udText("button","ud-small-button","LEER PROMPT COMPLETO");show.type="button";
+  show.onclick=()=>udShowPrompt(entry.season,entry.episode);
+  controls.append(show);card.append(controls);place.append(card);
+ }
+ if(!entries.length)place.append(udText("p","udmuted","No hay prompts que coincidan."));
+}
+function udPopulateEpisode(select,season,value){
+ select.replaceChildren();
+ select.add(new Option("Elegí un episodio",""));
+ const ss=Number(season||0);
+ for(const x of udPromptCatalog?.prompts||[]){
+  if(x.season!==ss)continue;
+  select.add(new Option("E"+String(x.episode).padStart(2,"0")+" · "+x.hook,String(x.episode)));
+ }
+ select.value=value!=null?String(value):"";
+}
+async function udSaveMatch(x,seasonSelect,episodeSelect,noteInput,button){
+ if(!udPromptCatalog){$("#udForensicStatus").textContent="El catálogo de prompts aún no cargó.";return}
+ const season=seasonSelect.value===""?null:Number(seasonSelect.value);
+ const episode=season===null?null:Number(episodeSelect.value);
+ if(season!==null&&!udPromptEntry(season,episode)){
+  $("#udForensicStatus").textContent="Elegí una temporada y un episodio válido antes de guardar.";return;
+ }
+ if(season===null&&x.manual_assignment?.season!=null){
+  if(!confirm("¿Quitar la identificación manual del archivo "+(x.file_index+1)+"? El video original permanecerá intacto."))return;
+ }
+ button.disabled=true;button.textContent="GUARDANDO…";
+ try{
+  const s=await session();if(!s?.access_token)throw Error("Iniciá sesión nuevamente para guardar");
+  const res=await fetch(udMatchEndpoint,{method:"POST",headers:{"Authorization":"Bearer "+s.access_token,"Content-Type":"application/json"},body:JSON.stringify({
+   publisher_id:udFruttiPublisher,file_index:x.file_index,source_sha256:x.source_sha256,
+   season,episode,note:noteInput.value.slice(0,700)
+  })});
+  const response=await res.json().catch(()=>({}));
+  if(!res.ok||!response.saved)throw Error(response.error||"No se pudo guardar");
+  x.manual_assignment={season:response.record.assigned_season,episode:response.record.assigned_episode,note:response.record.note,updated_at:response.record.updated_at};
+  udForensicSummary();
+  $("#udForensicStatus").textContent="Guardado en Supabase: archivo "+String(x.file_index+1).padStart(2,"0")+(season===null?" sin identificación asignada.":" → Temporada "+season+" · Episodio "+episode+".")+" No se modificó el video ni su aprobación.";
+  udRenderForensics();
+ }catch(e){
+  $("#udForensicStatus").textContent="NO SE GUARDÓ el archivo "+(x.file_index+1)+": "+String(e.message||e);
+  button.disabled=false;button.textContent="GUARDAR IDENTIFICACIÓN";
+ }
+}
 function udRenderForensics(){
  const target=$("#udForensicItems"),query=String($("#udForensicSearch").value||"").trim().toLowerCase();
  const filter=String($("#udForensicFilter").value||"all");
  target.replaceChildren();
- const shown=udForensicItems.filter(item=>(filter==="all"||(filter==="candidate"&&item.episode_candidate)||(filter==="unmatched"&&!item.episode_candidate))&&(!query||[item.transcript_raw,item.episode_candidate,item.identity_evidence].join(" ").toLowerCase().includes(query)));
- if(!shown.length){target.append(udText("p","udmuted","No hay videos que coincidan con este filtro."));return}
+ const shown=udForensicItems.filter(x=>{
+  const assigned=x.manual_assignment?.season!=null;
+  const passes=filter==="all"||(filter==="assigned"&&assigned)||(filter==="pending"&&!assigned)||(filter==="candidate"&&x.episode_candidate);
+  return passes&&(!query||[x.transcript_raw,x.episode_candidate,x.identity_evidence,x.manual_assignment?.note].join(" ").toLowerCase().includes(query));
+ });
+ if(!shown.length){target.append(udText("p","udmuted","No hay archivos para este filtro."));return}
  for(const x of shown){
   const item=udText("article","ud-forensic-item");
   if(x.contact_image_url){
-   const img=document.createElement("img");
-   img.loading="lazy";img.alt="Fotogramas originales del archivo "+(x.file_index+1);
-   img.src=x.contact_image_url;item.append(img);
-  }else item.append(udText("p","udmuted","Vista previa privada no disponible; consultá más tarde."));
+   const img=document.createElement("img");img.loading="lazy";img.alt="Cuatro fotogramas del video recuperado "+(x.file_index+1);img.src=x.contact_image_url;item.append(img);
+  }else item.append(udText("p","udmuted","Fotogramas no disponibles; actualizá la galería."));
   const body=udText("div","ud-forensic-item-body");
-  const header=udText("div","","Archivo "+String(x.file_index+1).padStart(2,"0"));
-  header.append(udText("span","ud-forensic-tag",x.episode_candidate?"Candidato "+x.episode_candidate:"Episodio sin identificar"));
-  body.append(header,udText("div","ud-forensic-speech","“"+(x.transcript_raw||"Sin diálogo reconocido")+"”"));
-  if(x.identity_evidence)body.append(udText("div","udmuted","Evidencia: "+x.identity_evidence));
-  if(x.collision_note)body.append(udText("div","ud-forensic-warning","ATENCIÓN · "+x.collision_note));
-  if(x.match_basis&&x.match_basis!=="unknown_scene")body.append(udText("div","udmuted","Fuente de coincidencia: "+x.match_basis));
-  if(x.episode_candidate==="T2E7")body.append(udText("div","ud-forensic-warning","Precaución: ese episodio figura público en el registro de YouTube del 5/10. El archivo todavía no está cotejado."));
-  if(x.episode_candidate==="T2E9")body.append(udText("div","ud-forensic-warning","Precaución: el episodio ya tenía un ID remoto en el historial. No volver a subir sin verificar."));
-  body.append(udText("div","udmuted","10 segundos aprox. · SHA-256 "+x.sha256_short+"…"));
-  body.append(udText("div","ud-forensic-warning","Aprobación: NO VERIFICADA · Publicación: NO VERIFICADA"));
-  item.append(body);target.append(item);
+  const heading=udText("strong","","ARCHIVO "+String(x.file_index+1).padStart(2,"0"));
+  const badge=udText("span","ud-forensic-tag",x.manual_assignment?.season!=null?"TU IDENTIFICACIÓN T"+x.manual_assignment.season+"E"+x.manual_assignment.episode:x.episode_candidate?"SUGERENCIA IA "+x.episode_candidate:"SIN IDENTIFICAR");
+  body.append(heading,badge);
+  if(x.video_url){
+   const play=udText("button","ud-small-button","▶ REPRODUCIR VIDEO ORIGINAL");play.type="button";body.append(play);
+   play.onclick=()=>{
+    if(item.querySelector("video")){item.querySelector("video").remove();play.textContent="▶ REPRODUCIR VIDEO ORIGINAL";return}
+    for(const v of document.querySelectorAll("#udForensicItems video"))v.pause();
+    const video=document.createElement("video");video.controls=true;video.preload="none";video.playsInline=true;video.src=x.video_url;
+    video.setAttribute("aria-label","Video original archivo "+(x.file_index+1));
+    play.after(video);play.textContent="OCULTAR VIDEO";
+   };
+  }else body.append(udText("small","udmuted","El MP4 no está disponible para reproducción temporal. Actualizá la página."));
+  body.append(udText("div","ud-forensic-speech","DIÁLOGO: “"+(x.transcript_raw||"Sin texto reconocido")+"”"));
+  if(x.identity_evidence)body.append(udText("small","udmuted","Sugerencia automática: "+x.identity_evidence));
+  if(x.collision_note)body.append(udText("small","ud-forensic-warning","ATENCIÓN: "+x.collision_note));
+  body.append(udText("small","udmuted","SHA-256: "+x.sha256_short+"… · Aprobación/publicación no verificadas."));
+  const form=udText("div","ud-match-form");
+  form.append(udText("strong","","ASIGNAR EPISODIO A ESTE VIDEO"));
+  const fields=udText("div","ud-match-fields"),colS=udText("label","","Temporada"),colE=udText("label","","Episodio");
+  const seasonSelect=document.createElement("select");
+  seasonSelect.add(new Option("Sin asignar",""));
+  for(let s=2;s<=6;s++)seasonSelect.add(new Option("Temporada "+s,String(s)));
+  seasonSelect.value=x.manual_assignment?.season!=null?String(x.manual_assignment.season):"";
+  const episodeSelect=document.createElement("select");udPopulateEpisode(episodeSelect,seasonSelect.value,x.manual_assignment?.episode??null);
+  episodeSelect.disabled=!seasonSelect.value||!udPromptCatalog;
+  seasonSelect.disabled=!udPromptCatalog;
+  seasonSelect.onchange=()=>{udPopulateEpisode(episodeSelect,seasonSelect.value,null);episodeSelect.disabled=!seasonSelect.value};
+  colS.append(seasonSelect);colE.append(episodeSelect);fields.append(colS,colE);form.append(fields);
+  const noteLabel=udText("label","","Nota opcional (versión, detalles o dudas)");
+  const noteInput=document.createElement("input");noteInput.type="text";noteInput.maxLength=700;noteInput.placeholder="Por ejemplo: segunda versión de T2E13";noteInput.value=x.manual_assignment?.note||"";
+  noteLabel.append(noteInput);form.append(noteLabel);
+  const actions=udText("div","ud-match-buttons");
+  const preview=udText("button","ud-small-button","VER PROMPT SELECCIONADO");preview.type="button";
+  preview.disabled=!udPromptCatalog;
+  preview.onclick=()=>udShowPrompt(seasonSelect.value,episodeSelect.value);
+  const save=udText("button","ud-small-button","GUARDAR IDENTIFICACIÓN");save.type="button";save.disabled=!udPromptCatalog;
+  save.onclick=()=>udSaveMatch(x,seasonSelect,episodeSelect,noteInput,save);
+  actions.append(preview,save);form.append(actions);
+  if(x.manual_assignment?.season!=null)form.append(udText("small","ud-match-saved","✓ Guardado en Supabase · T"+x.manual_assignment.season+"E"+x.manual_assignment.episode));
+  form.append(udText("small","ud-forensic-warning","Asignar ≠ aprobar · Asignar ≠ publicar. Ningún video se moverá al stock."));
+  body.append(form);item.append(body);target.append(item);
  }
 }
 $("#udForensicFilter").onchange=udRenderForensics;
 $("#udForensicSearch").oninput=udRenderForensics;
+$("#udPromptSeason").onchange=udRenderPromptBrowser;
+$("#udPromptSearch").oninput=udRenderPromptBrowser;
+$("#udPromptClose").onclick=()=>$("#udPromptModal").close();
+$("#udPromptCopy").onclick=async()=>{
+ try{if(!udPromptActive)throw Error("Elegí un prompt");await navigator.clipboard.writeText(udPromptActive.full_prompt);$("#udPromptCopyStatus").textContent="Prompt completo copiado."}
+ catch(_){$("#udPromptCopyStatus").textContent="No se pudo copiar automáticamente."}
+};
 
 $("#udBack").onclick=()=>udClose();
 $("#udRefresh").onclick=()=>{if(activeUnifiedPublisher)udOpen(activeUnifiedPublisher,false)};
