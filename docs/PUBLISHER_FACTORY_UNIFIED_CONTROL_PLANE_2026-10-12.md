@@ -44,3 +44,15 @@ Opening an Active Publisher routes WITHIN the same Factory origin, e.g. /publish
 - No duplicate media binding, cross-account publication, YouTube private staging or publishAt. FruttiDrama is YouTube only, Earth YouTube only, Dinnie Facebook only.
 - FruttiDrama canon: Season 2 ends E35, Season 3 E1–E6 existing review media; never reconstruct this history as Season 1.
 - The unified migration is NOT complete merely because this decision is documented or the publisher cards render.
+
+## Verified implementation increment (2026-10-12 18:01 UTC)
+- All three existing runtime IDs are present under the SAME confirmed Factory owner. FruttiDrama runtime ownership linked after verifying Earth and Dinnie agree on owner; FruttiDrama registered into original `publishers` table with the same immutable id. No duplicate show, no resets.
+- Secure `publisher-unified-read` Supabase Edge function v2 verifies a real Supabase authenticated user, scopes all reads to `owner_id`, and exposes per-publisher health/obligation/incidents and a **read-only inventory snapshot**, not OAuth/session secrets.
+- Both `docs/index.html` (GitHub Pages) and `factory-web/public/index.html` add in-origin `ABRIR EN FACTORY` and integrated health, Review and Stock readonly views. Managed Free Runtime publishers no longer show a legacy Railway deployment/delete action.
+- `publisher_runtime_inventory` Postgres projection table is service-role-only with RLS enabled and no direct client policy. It is NOT the source of truth. No requests against this table may approve, redo, schedule or publish an episode.
+- `publisher-runtime-state-audit` v4 accepts GH OIDC from two whitelisted source workflows: the full diagnostic audit and new lightweight `runtime-inventory-sync.yml`, and restricts profile downloads to the full diagnostic workflow only. The new sync never starts Google Flow or any video/publication operation.
+- Recurring lightweight workflow `Publisher Inventory Sync` executes every two hours; script `scripts/runtime-inventory-sync.mjs` unpacks each persisted `state.tgz` to a temporary read-only SQLite DB and posts sanitized status-only Review and Stock projections. Secrets and media bytes are never included in the projection. It removes its temporary files.
+- First independent sync run `38287997990` completed SUCCESS: FruttiDrama 6 review / 9 draft / 0 scheduled stock; EARTH IN 10 0 review / 9 draft / 0 stock; Dinnie 0 review / 9 draft / 0 stock. All three synced, no media rendered/published.
+- Factory static UI smoke run `38287766723` SUCCESS and deployment completed. Browser-authenticated real user view and write actions are NOT yet validated.
+- FruttiDrama Flow bootstrap was STILL `waiting_for_google_login` during this implementation; no claim of persistent auth or live production recovery.
+- Next stages: durable Flow profile restoration and fresh runner verification; signed provider credentials; validated shared Review / Redo / Stock mutation API, with strict event idempotence; then shared public-only posting and full multi-show regression tests. No creative rebranding until canonical assets are supplied.
