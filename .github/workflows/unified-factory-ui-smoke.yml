@@ -1,0 +1,26 @@
+name: Unified Publisher Factory UI Smoke Test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/index.html"
+      - "factory-web/public/index.html"
+      - "scripts/check-unified-factory-ui.mjs"
+      - ".github/workflows/unified-factory-ui-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safe-readonly-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Check both Factory UIs without browser, Flow or publication
+        run: node scripts/check-unified-factory-ui.mjs
