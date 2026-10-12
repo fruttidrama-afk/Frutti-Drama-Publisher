@@ -30,7 +30,7 @@ if(!Array.isArray(catalog)||catalog.length!==3)throw Error('SAMPLE_LIST_UNEXPECT
 async function upload(index,type,file){
  const grant=await request('/result/'+index,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type})});
  const data=fs.readFileSync(file);
- const response=await fetch(grant.signedUrl,{method:'PUT',body:data,headers:{'content-type':type.endsWith('.jpg')?'image/jpeg':'application/json','x-upsert':'false'},signal:AbortSignal.timeout(120000)});
+ const response=await fetch(grant.signedUrl,{method:'PUT',body:data,headers:{'content-type':'application/octet-stream','x-upsert':'false'},signal:AbortSignal.timeout(120000)});
  if(!response.ok)throw Error('PRIVATE_RESULT_UPLOAD_'+index+'_'+type+'_'+response.status+':'+(await response.text()).slice(0,200));
  return{objectKey:grant.objectKey,bytes:data.length};
 }
