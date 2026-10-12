@@ -6,7 +6,7 @@ import {createHash} from "node:crypto";
 
 const target=String(process.env.FORENSIC_TARGET||"").toLowerCase();
 if(!["frutti","earth","dinnie"].includes(target))throw Error("INVALID_TARGET");
-const base="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-railway-volume-migration/forensic-export/";
+const base="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-railway-forensic-export/";
 const oidcUrl=process.env.ACTIONS_ID_TOKEN_REQUEST_URL,oidcReq=process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
 if(!oidcUrl||!oidcReq)throw Error("OIDC_MISSING");
 const res=await fetch(oidcUrl+(oidcUrl.includes("?")?"&":"?")+"audience=publisher-factory-railway-volume-migration",{headers:{authorization:"Bearer "+oidcReq},signal:AbortSignal.timeout(10000)});
