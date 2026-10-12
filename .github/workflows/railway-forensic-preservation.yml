@@ -1,0 +1,42 @@
+name: Preserve Historical Railway Volumes (Snapshots Only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/railway-forensic-preservation.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: railway-forensic-preservation-once
+  cancel-in-progress: false
+
+jobs:
+  create-missing-preservation-snapshots:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - name: One-time snapshot request for each original volume
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          const base=String(process.env.ACTIONS_ID_TOKEN_REQUEST_URL||""),requestToken=String(process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN||"");
+          if(!base||!requestToken)throw Error("NO_WORKFLOW_OIDC");
+          const request=base+(base.includes("?")?"&":"?")+"audience="+encodeURIComponent("publisher-factory-railway-volume-migration");
+          const response=await fetch(request,{headers:{authorization:"Bearer "+requestToken},signal:AbortSignal.timeout(12000)});
+          if(!response.ok)throw Error("OIDC_UNAVAILABLE");
+          const bearer=String((await response.json()).value||"");if(!bearer)throw Error("OIDC_VALUE_MISSING");
+          for(const key of ["frutti","earth","dinnie"]){
+            try{
+              const request=await fetch("https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-railway-volume-migration/preserve/"+key,{
+                method:"POST",headers:{authorization:"Bearer "+bearer},signal:AbortSignal.timeout(35000)
+              });
+              const payload=await request.json().catch(()=>({}));
+              const status={publisher:key,http:request.status,ok:payload.ok===true,created:payload.created===true,backup_pending_verification:payload.backup_pending_verification===true,existing_count:payload.existing_count??null,error:String(payload.error||"").slice(0,180)};
+              console.log("FORENSIC_SNAPSHOT_REQUEST",JSON.stringify(status));
+              if(request.status!==200||!payload.ok)process.exitCode=1;
+            }catch(e){console.log("FORENSIC_SNAPSHOT_REQUEST",JSON.stringify({publisher:key,error:String(e?.message||e).slice(0,180)}));process.exitCode=1}
+          }
+          JS
