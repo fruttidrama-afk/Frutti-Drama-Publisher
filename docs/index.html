@@ -48,7 +48,7 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 <section class="hidden" id="unifiedDashboard" aria-label="Publisher integrado"><div class="udwrap"><div class="udhead"><div><div class="udmuted">PUBLISHER FACTORY · PUBLISHER ACTIVO</div><h2 id="udName">Publisher</h2><div class="udmuted" id="udPlatform"></div></div><div class="toolbar"><button class="btn" id="udRefresh" type="button">ACTUALIZAR</button><button class="btn primary" id="udBack" type="button">VOLVER</button></div></div><div class="udcard" role="note"><strong>Inventario parcial · reconciliación histórica pendiente.</strong><div class="udmuted">Los conteos de esta vista describen SOLO el estado del runtime migrado. El material histórico de Supabase y de los volúmenes anteriores aún no está vinculado; un cero NO significa que el stock haya desaparecido. No autorizar publicaciones desde este inventario.</div></div><div id="udStatus" class="udcard" role="status">Consultando Supabase…</div><div class="udgrid" id="udStats"></div><div class="udcard"><h3>Review · episodios para revisar</h3><div class="udmuted" id="udInventoryAge"></div><div id="udReview">Consultando inventario…</div></div><div class="udcard"><h3>Stock indexado en el runtime nuevo</h3><div id="udStock">Consultando inventario…</div></div><div class="udcard"><h3>Archivos históricos preservados en Supabase</h3><div id="udHistoricalEvidence" class="udmuted">Consultando archivos archivados…</div></div><div class="udcard" id="udForensicSection">
  <h3>Recuperación histórica · Identificación audiovisual</h3>
  <p class="udmuted" id="udForensicSummary">Consultando los 31 videos originales…</p>
- <p class="udmuted"><strong>Importante:</strong> una coincidencia de diálogo NO confirma aprobación ni disponibilidad para publicar. Fotogramas privados con acceso temporal.</p>
+ <p class="udmuted"><strong>Importante:</strong> los planes de Prompt Studio no son necesariamente los prompts exactos usados en Google Flow. Algunas escenas también coinciden con la temporada 3 que ya está en Review. Ningún candidato se aprueba ni se publica automáticamente.</p>
  <div class="ud-forensic-toolbar">
   <input type="search" id="udForensicSearch" placeholder="Buscar diálogo o escena" aria-label="Buscar diálogos recuperados"/>
   <select id="udForensicFilter" aria-label="Filtrar videos recuperados">
@@ -572,6 +572,8 @@ function udRenderForensics(){
   header.append(udText("span","ud-forensic-tag",x.episode_candidate?"Candidato "+x.episode_candidate:"Episodio sin identificar"));
   body.append(header,udText("div","ud-forensic-speech","“"+(x.transcript_raw||"Sin diálogo reconocido")+"”"));
   if(x.identity_evidence)body.append(udText("div","udmuted","Evidencia: "+x.identity_evidence));
+  if(x.collision_note)body.append(udText("div","ud-forensic-warning","ATENCIÓN · "+x.collision_note));
+  if(x.match_basis&&x.match_basis!=="unknown_scene")body.append(udText("div","udmuted","Fuente de coincidencia: "+x.match_basis));
   if(x.episode_candidate==="T2E7")body.append(udText("div","ud-forensic-warning","Precaución: ese episodio figura público en el registro de YouTube del 5/10. El archivo todavía no está cotejado."));
   if(x.episode_candidate==="T2E9")body.append(udText("div","ud-forensic-warning","Precaución: el episodio ya tenía un ID remoto en el historial. No volver a subir sin verificar."));
   body.append(udText("div","udmuted","10 segundos aprox. · SHA-256 "+x.sha256_short+"…"));
