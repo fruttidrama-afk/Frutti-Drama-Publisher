@@ -24,6 +24,18 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 
 #unifiedDashboard{position:fixed;inset:0;overflow:auto;z-index:42;background:#f7f6f2;padding:clamp(14px,3vw,34px)}#unifiedDashboard .udwrap{max-width:1080px;margin:auto}#unifiedDashboard .udhead{display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:22px}#unifiedDashboard h2{font:400 clamp(34px,5vw,54px) Georgia,serif;color:#0d3152;margin:6px 0}#unifiedDashboard .udgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}#unifiedDashboard .udcard{border:1px solid #ded9cf;background:#fff;padding:15px;border-radius:9px;margin:10px 0}#unifiedDashboard .udcard strong{display:block;font-size:23px;margin-top:8px}#unifiedDashboard .udline{display:flex;gap:14px;justify-content:space-between;border-top:1px solid #eae5dc;padding:10px 0;font-size:12px;flex-wrap:wrap}#unifiedDashboard .udmuted{font-size:12px;color:#6e6a63;line-height:1.5}@media(max-width:680px){#unifiedDashboard .udgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
+
+/* Forensic evidence: read-only and owner-authenticated signed private contact sheets. */
+#unifiedDashboard .ud-forensic-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:13px 0}
+#unifiedDashboard .ud-forensic-toolbar input,#unifiedDashboard .ud-forensic-toolbar select{min-width:155px;flex:1;border:1px solid #d9d1c3;border-radius:8px;background:white;padding:10px;color:#1d1d1b;font:inherit;font-size:14px}
+#unifiedDashboard .ud-forensic-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px;margin:12px 0}
+#unifiedDashboard .ud-forensic-item{border:1px solid #e2dacd;border-radius:10px;background:#fff;overflow:hidden;display:flex;flex-direction:column}
+#unifiedDashboard .ud-forensic-item img{width:100%;height:auto;aspect-ratio:4/3;object-fit:contain;background:#181818}
+#unifiedDashboard .ud-forensic-item-body{padding:12px;display:flex;flex-direction:column;gap:8px}
+#unifiedDashboard .ud-forensic-tag{display:inline-block;padding:4px 8px;border-radius:20px;background:#efebe3;color:#5b5141;font-size:11px;font-weight:700}
+#unifiedDashboard .ud-forensic-speech{font-size:13px;line-height:1.5;color:#2b2b2b}
+#unifiedDashboard .ud-forensic-warning{border-top:1px solid #ede4d7;padding-top:7px;font-size:11px;color:#7a5a30}
+
 </style>
 </head>
 <body>
@@ -33,7 +45,21 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 <section class="hero"><div class="hs"><div class="visual"><div class="stack"><div class="s1"><span>01</span><b>STRATEGY</b></div><div class="s2"><span>02</span><b>GENERATE</b></div><div class="s3"><span>03</span><b>REVIEW</b></div><div class="s4"><span>04</span><b>PUBLISH</b></div></div></div><div class="copy"><div class="eye">PUBLISHER FACTORY</div><h1>WHERE CONTENT<br>FINDS ITS SYSTEM</h1><p>From idea to generation, review and publishing. Build an autonomous content operation once, then let the system keep working.</p><div class="actions"><button class="btn" id="createHero">CREATE YOUR PUBLISHER</button><button class="btn rail-connected" id="railwayHero">FREE RUNTIME</button></div></div></div></section>
 <div class="status"><button class="pill rail-status-btn ok" id="railwayStatus" type="button">FREE RUNTIME · MIGRATING</button><span class="pill ok" id="accountStatus">Account</span><button class="btn" id="refresh">Actualizar</button></div>
 <section class="section"><div class="inner"><div class="head2"><div><div class="eye">MY PUBLISHERS</div><h2>Your autonomous channels</h2></div><p class="muted">Cada cuenta ve solamente sus Publishers. Railway quedó retirado del diseño: el runtime objetivo usa infraestructura gratuita sin trial expirante y estado externo portable.</p></div><div class="grid" id="cards"><div class="card empty">Cargando…</div></div></div></section>
-<section class="hidden" id="unifiedDashboard" aria-label="Publisher integrado"><div class="udwrap"><div class="udhead"><div><div class="udmuted">PUBLISHER FACTORY · PUBLISHER ACTIVO</div><h2 id="udName">Publisher</h2><div class="udmuted" id="udPlatform"></div></div><div class="toolbar"><button class="btn" id="udRefresh" type="button">ACTUALIZAR</button><button class="btn primary" id="udBack" type="button">VOLVER</button></div></div><div class="udcard" role="note"><strong>Inventario parcial · reconciliación histórica pendiente.</strong><div class="udmuted">Los conteos de esta vista describen SOLO el estado del runtime migrado. El material histórico de Supabase y de los volúmenes anteriores aún no está vinculado; un cero NO significa que el stock haya desaparecido. No autorizar publicaciones desde este inventario.</div></div><div id="udStatus" class="udcard" role="status">Consultando Supabase…</div><div class="udgrid" id="udStats"></div><div class="udcard"><h3>Review · episodios para revisar</h3><div class="udmuted" id="udInventoryAge"></div><div id="udReview">Consultando inventario…</div></div><div class="udcard"><h3>Stock indexado en el runtime nuevo</h3><div id="udStock">Consultando inventario…</div></div><div class="udcard"><h3>Archivos históricos preservados en Supabase</h3><div id="udHistoricalEvidence" class="udmuted">Consultando archivos archivados…</div></div><div class="udcard"><h3>Obligaciones de generación y publicación</h3><div id="udObligations"></div></div><div class="udcard"><h3>Incidentes del runtime</h3><div id="udIncidents"></div></div><p class="udmuted">Panel integrado en modo lectura. Aprobar, rehacer o publicar quedará disponible tras validar la autenticación y las acciones compartidas. Este panel no ejecuta ningún job.</p></div></section>
+<section class="hidden" id="unifiedDashboard" aria-label="Publisher integrado"><div class="udwrap"><div class="udhead"><div><div class="udmuted">PUBLISHER FACTORY · PUBLISHER ACTIVO</div><h2 id="udName">Publisher</h2><div class="udmuted" id="udPlatform"></div></div><div class="toolbar"><button class="btn" id="udRefresh" type="button">ACTUALIZAR</button><button class="btn primary" id="udBack" type="button">VOLVER</button></div></div><div class="udcard" role="note"><strong>Inventario parcial · reconciliación histórica pendiente.</strong><div class="udmuted">Los conteos de esta vista describen SOLO el estado del runtime migrado. El material histórico de Supabase y de los volúmenes anteriores aún no está vinculado; un cero NO significa que el stock haya desaparecido. No autorizar publicaciones desde este inventario.</div></div><div id="udStatus" class="udcard" role="status">Consultando Supabase…</div><div class="udgrid" id="udStats"></div><div class="udcard"><h3>Review · episodios para revisar</h3><div class="udmuted" id="udInventoryAge"></div><div id="udReview">Consultando inventario…</div></div><div class="udcard"><h3>Stock indexado en el runtime nuevo</h3><div id="udStock">Consultando inventario…</div></div><div class="udcard"><h3>Archivos históricos preservados en Supabase</h3><div id="udHistoricalEvidence" class="udmuted">Consultando archivos archivados…</div></div><div class="udcard" id="udForensicSection">
+ <h3>Recuperación histórica · Identificación audiovisual</h3>
+ <p class="udmuted" id="udForensicSummary">Consultando los 31 videos originales…</p>
+ <p class="udmuted"><strong>Importante:</strong> una coincidencia de diálogo NO confirma aprobación ni disponibilidad para publicar. Fotogramas privados con acceso temporal.</p>
+ <div class="ud-forensic-toolbar">
+  <input type="search" id="udForensicSearch" placeholder="Buscar diálogo o escena" aria-label="Buscar diálogos recuperados"/>
+  <select id="udForensicFilter" aria-label="Filtrar videos recuperados">
+   <option value="all">Todos los archivos</option>
+   <option value="candidate">Con episodio candidato</option>
+   <option value="unmatched">Sin identificar</option>
+  </select>
+ </div>
+ <div id="udForensicItems" class="ud-forensic-grid"></div>
+</div>
+<div class="udcard"><h3>Obligaciones de generación y publicación</h3><div id="udObligations"></div></div><div class="udcard"><h3>Incidentes del runtime</h3><div id="udIncidents"></div></div><p class="udmuted">Panel integrado en modo lectura. Aprobar, rehacer o publicar quedará disponible tras validar la autenticación y las acciones compartidas. Este panel no ejecuta ningún job.</p></div></section>
 <footer><div class="fi"><span>&copy; 2026 Publisher Factory</span><span>Supabase Free + GitHub Actions · no expiring trials</span></div></footer></div>
 
 <div class="modal" id="modal"><div class="dialog create-dialog">
@@ -471,7 +497,7 @@ function udText(t,c,v){const n=document.createElement(t);if(c)n.className=c;n.te
 function udClose(changeUrl=true){activeUnifiedPublisher=null;$("#unifiedDashboard").classList.add("hidden");if(changeUrl){const u=new URL(location.href);u.searchParams.delete("publisher_id");history.pushState({},"",u)}}
 async function udOpen(id,changeUrl=true){
  if(!/^[0-9a-f-]{36}$/i.test(String(id)))return;
- activeUnifiedPublisher=id;$("#unifiedDashboard").classList.remove("hidden");$("#udName").textContent="Cargando…";$("#udStatus").textContent="Consultando estado persistente…";$("#udStats").replaceChildren();$("#udObligations").replaceChildren();$("#udIncidents").replaceChildren();$("#udReview").replaceChildren();$("#udStock").replaceChildren();$("#udHistoricalEvidence").replaceChildren();$("#udInventoryAge").textContent="";
+ activeUnifiedPublisher=id;$("#unifiedDashboard").classList.remove("hidden");$("#udName").textContent="Cargando…";$("#udStatus").textContent="Consultando estado persistente…";$("#udStats").replaceChildren();$("#udObligations").replaceChildren();$("#udIncidents").replaceChildren();$("#udReview").replaceChildren();$("#udStock").replaceChildren();$("#udHistoricalEvidence").replaceChildren();$("#udForensicItems").replaceChildren();$("#udForensicSummary").textContent="Cargando catálogo forense…";$("#udInventoryAge").textContent="";
  if(changeUrl){const u=new URL(location.href);u.searchParams.set("publisher_id",id);history.pushState({publisher_id:id},"",u)}
  try{
  const s=await session();if(!s?.access_token)throw Error("AUTH_REQUIRED");
@@ -513,6 +539,13 @@ async function udOpen(id,changeUrl=true){
   evidence.append(udText("div","udline","Nombres con etiqueta STOCK: "+h.stock_labeled_files+" · PUBLICATION: "+h.publication_labeled_files));
   evidence.append(udText("p","udmuted","Estos son archivos existentes en un almacenamiento privado. No indican cuántos están aprobados o programados. Los volúmenes históricos y posibles revisiones aún no están conciliados."));
  }else evidence.append(udText("p","udmuted","No se pudo confirmar el contenido histórico en este almacenamiento. No asumir stock cero ni videos perdidos; se investiga el índice anterior."));
+ const catalog=result.forensicCatalog||{available:false,items:[]};
+ udForensicItems=catalog.items||[];
+ $("#udForensicSection").classList.toggle("hidden",p.name!=="FruttiDrama");
+ $("#udForensicSummary").textContent=catalog.available?
+  catalog.total_count+" archivos preservados · "+catalog.candidate_count+" episodios candidatos · "+catalog.ready_to_publish_count+" autorizados para publicar.":
+  "El catálogo audiovisual todavía no está disponible. No interpretar esto como ausencia de archivos.";
+ udRenderForensics();
  const ob=$("#udObligations");const rows=result.obligations||[];
  if(!rows.length)ob.append(udText("p","udmuted","Sin obligaciones recientes."));
  else for(const o of rows){const r=udText("div","udline",(o.kind==="generation"?"Generación":"Publicación")+" "+o.ordinal+" · "+o.local_day);r.append(udText("strong","",o.status));if(o.last_error)r.append(udText("small","",o.last_error));ob.append(r)}
@@ -521,6 +554,37 @@ async function udOpen(id,changeUrl=true){
  else for(const i of incidents){const row=udText("div","udline",i.code);row.append(udText("strong","",i.resolved_at?"Resuelto":"Abierto"));ix.append(row)}
  }catch(err){if(activeUnifiedPublisher===id)$("#udStatus").textContent="Error de consulta (sin cambios realizados): "+String(err.message||err)}
 }
+
+let udForensicItems=[];
+let udForensicHistory={};
+function udRenderForensics(){
+ const target=$("#udForensicItems"),query=String($("#udForensicSearch").value||"").trim().toLowerCase();
+ const filter=String($("#udForensicFilter").value||"all");
+ target.replaceChildren();
+ const shown=udForensicItems.filter(item=>(filter==="all"||(filter==="candidate"&&item.episode_candidate)||(filter==="unmatched"&&!item.episode_candidate))&&(!query||[item.transcript_raw,item.episode_candidate,item.identity_evidence].join(" ").toLowerCase().includes(query)));
+ if(!shown.length){target.append(udText("p","udmuted","No hay videos que coincidan con este filtro."));return}
+ for(const x of shown){
+  const item=udText("article","ud-forensic-item");
+  if(x.contact_image_url){
+   const img=document.createElement("img");
+   img.loading="lazy";img.alt="Fotogramas originales del archivo "+(x.file_index+1);
+   img.src=x.contact_image_url;item.append(img);
+  }else item.append(udText("p","udmuted","Vista previa privada no disponible; consultá más tarde."));
+  const body=udText("div","ud-forensic-item-body");
+  const header=udText("div","","Archivo "+String(x.file_index+1).padStart(2,"0"));
+  header.append(udText("span","ud-forensic-tag",x.episode_candidate?"Candidato "+x.episode_candidate:"Episodio sin identificar"));
+  body.append(header,udText("div","ud-forensic-speech","“"+(x.transcript_raw||"Sin diálogo reconocido")+"”"));
+  if(x.identity_evidence)body.append(udText("div","udmuted","Evidencia: "+x.identity_evidence));
+  if(x.episode_candidate==="T2E7")body.append(udText("div","ud-forensic-warning","Precaución: ese episodio figura público en el registro de YouTube del 5/10. El archivo todavía no está cotejado."));
+  if(x.episode_candidate==="T2E9")body.append(udText("div","ud-forensic-warning","Precaución: el episodio ya tenía un ID remoto en el historial. No volver a subir sin verificar."));
+  body.append(udText("div","udmuted","10 segundos aprox. · SHA-256 "+x.sha256_short+"…"));
+  body.append(udText("div","ud-forensic-warning","Aprobación: NO VERIFICADA · Publicación: NO VERIFICADA"));
+  item.append(body);target.append(item);
+ }
+}
+$("#udForensicFilter").onchange=udRenderForensics;
+$("#udForensicSearch").oninput=udRenderForensics;
+
 $("#udBack").onclick=()=>udClose();
 $("#udRefresh").onclick=()=>{if(activeUnifiedPublisher)udOpen(activeUnifiedPublisher,false)};
 window.addEventListener("popstate",()=>{const id=new URL(location.href).searchParams.get("publisher_id");if(id)udOpen(id,false);else udClose(false)});
