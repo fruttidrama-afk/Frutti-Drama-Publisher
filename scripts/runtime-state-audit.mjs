@@ -98,7 +98,24 @@ for(const [name,id] of targets){
    latest:db.prepare("SELECT episode,substr(assetId,1,12) asset_prefix,recoveredAt FROM flow_recovered_assets ORDER BY recoveredAt DESC LIMIT 8").all()
  }),null):null;
  const credits=safe(()=>db.prepare("SELECT key,value FROM factory_meta WHERE key IN ('flow:lastCreditsVisible','flow:lastCreditsCheckedAt','flow:lastCreditsSource','flow:lastCreditsCheckError','flow:dailyCreditInitialWatch','flow:dailyCreditCycleUsed','flow:dailyCreditCycleOpenedAt','flow:dailyCreditRefreshWaiting') ORDER BY key").all(),[]);
+ const reviewItems=table('factory_items')?safe(()=>db.prepare("SELECT id,season,episode,status,hook,title,CASE WHEN videoPath IS NOT NULL AND TRIM(videoPath)<>'' THEN 1 ELSE 0 END has_media,CASE WHEN reviewVideoId IS NOT NULL AND TRIM(reviewVideoId)<>'' THEN 1 ELSE 0 END review_id,updatedAt FROM factory_items WHERE status IN ('review','regen_wait','review_pending') ORDER BY season DESC,episode DESC LIMIT 120").all().map(x=>({id:x.id,season:x.season,episode:x.episode,status:x.status,hook:String(x.hook||'').slice(0,200),title:String(x.title||'').slice(0,200),has_media:Boolean(x.has_media),review_video_id_present:Boolean(x.review_id),updated_at:x.updatedAt})),[]):[];
+ const stockItems=table('publication_items')?safe(()=>db.prepare("SELECT id,episode,status,title,scheduledAt,CASE WHEN filePath IS NOT NULL AND TRIM(filePath)<>'' THEN 1 ELSE 0 END has_media,CASE WHEN videoId IS NOT NULL AND TRIM(videoId)<>'' THEN 1 ELSE 0 END remote_id FROM publication_items WHERE status NOT IN ('published','cancelled','deleted') ORDER BY scheduledAt,episode LIMIT 120").all().map(x=>({id:x.id,episode:x.episode,status:x.status,title:String(x.title||'').slice(0,200),scheduled_at:x.scheduledAt,has_media:Boolean(x.has_media),remote_id_present:Boolean(x.remote_id)})),[]):[];
+ const countRow=(sql)=>safe(()=>Number(db.prepare(sql).get()?.n||0),0);
+ const totals={
+  review:countRow("SELECT COUNT(*) n FROM factory_items WHERE status='review'"),
+  draft:countRow("SELECT COUNT(*) n FROM factory_items WHERE status='draft'"),
+  stock:table('publication_items')?countRow("SELECT COUNT(*) n FROM publication_items WHERE status NOT IN ('published','cancelled','deleted')"):0,
+  published:table('publication_items')?countRow("SELECT COUNT(*) n FROM publication_items WHERE status='published'"):0,
+  generation:table('factory_generations')?countRow("SELECT COUNT(*) n FROM factory_generations WHERE status IN ('review','completed') AND COALESCE(credits,1)>0"):0
+ };
+ const activeSeason=Number(meta.find(x=>x.key==='automation:activeSeason')?.value||0)||null;
+ const inventory={source_updated_at:new Date(fs.statSync(tar).mtimeMs).toISOString(),source_bytes:fs.statSync(tar).size,review_items:reviewItems,stock_items:stockItems,counts:totals,active_season:activeSeason};
  db.close();
+ try{
+  const sync=await fetch(EDGE+'?publisher_id='+encodeURIComponent(id)+'&type=inventory',{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify(inventory)});
+  const response=await sync.json().catch(()=>({}));
+  console.log('UNIFIED_INVENTORY_SYNC',JSON.stringify({name,ok:sync.ok,review:reviewItems.length,stock:stockItems.length,reason:sync.ok?'':String(response.error||sync.status).slice(0,250)}));
+ }catch(e){console.log('UNIFIED_INVENTORY_ERROR',JSON.stringify({name,error:String(e?.message||e).slice(0,250)}))}
  console.log('RUNTIME_STATE_AUDIT',JSON.stringify({name,id,bytes:fs.statSync(tar).size,meta,counts,gens,credentials,candidateStatePaths,publication,episodes,recovery,credits}));
  console.log('FLOW_READONLY_AUTH_AUDIT',JSON.stringify(await inspectFlowProfile(root,name,id)));
 }
