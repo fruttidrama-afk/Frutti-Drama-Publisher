@@ -1,4 +1,4 @@
-# Diagnostic rerun: safe GraphQL validation message only
+# Diagnostic rerun: project-to-volume instance relation before querying backup metadata
 name: Historical Railway Backup Audit (Read Only)
 on:
   push:
