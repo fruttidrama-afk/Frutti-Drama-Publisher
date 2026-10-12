@@ -1,3 +1,4 @@
+# Diagnostic rerun: safe GraphQL validation message only
 name: Historical Railway Backup Audit (Read Only)
 on:
   push:
