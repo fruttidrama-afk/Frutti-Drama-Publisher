@@ -26,7 +26,11 @@ function run(program,args,{allowFailure=false,timeout=120000}={}){
  return result;
 }
 const catalog=(await request('/samples')).samples;
-if(!Array.isArray(catalog)||catalog.length!==3)throw Error('SAMPLE_LIST_UNEXPECTED');
+if(!Array.isArray(catalog)||catalog.length!==31)throw Error('EXPECTED_31_MP4_CATALOG');
+const start=Number(process.env.FORENSIC_BATCH_START||3),count=Number(process.env.FORENSIC_BATCH_COUNT||7);
+if(!Number.isInteger(start)||!Number.isInteger(count)||start<3||count<1||count>7||start+count>31)throw Error('BATCH_RANGE_INVALID');
+const selected=catalog.filter(s=>Number(s.index)>=start&&Number(s.index)<start+count);
+if(selected.length!==count)throw Error('BATCH_CATALOG_INCOMPLETE');
 async function upload(index,type,file){
  const grant=await request('/result/'+index,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type})});
  const data=fs.readFileSync(file);
@@ -35,9 +39,9 @@ async function upload(index,type,file){
  return{objectKey:grant.objectKey,bytes:data.length};
 }
 try {
- for(const sample of catalog){
+ for(const sample of selected){
   const index=Number(sample.index);
-  if(!Number.isInteger(index)||index<0||index>2)throw Error('SAMPLE_ID_UNEXPECTED');
+  if(!Number.isInteger(index)||index<start||index>=start+count)throw Error('SAMPLE_ID_UNEXPECTED');
   const signed=await request('/source/'+index);
   if(signed.key!==sample.key)throw Error('INPUT_KEY_MISMATCH');
   const media=await fetch(signed.signedUrl,{signal:AbortSignal.timeout(120000)});
@@ -68,15 +72,17 @@ try {
   console.log('FORENSIC_MEDIA_PREPARED',JSON.stringify({index,bytes:buffer.length,duration:technical.duration_seconds,audioReadable,contactAvailable,sha256_prefix:sha256.slice(0,12)}));
   // Never print dialogue or frame contents into public GitHub logs.
  }
- const transcription=run('python3',['scripts/whisper_legacy_media.py',root],{allowFailure:true,timeout:660000});
+ const transcription=run('python3',['scripts/whisper_legacy_media.py',root,String(start),String(count)],{allowFailure:true,timeout:660000});
  console.log('LOCAL_WHISPER_JOB',JSON.stringify({ok:transcription.status===0,exit:transcription.status}));
- for(const sample of catalog){
+ for(const sample of selected){
   const index=Number(sample.index);
   const report=path.join(root,'report-'+index+'.json'),sheet=path.join(root,'contact-'+index+'.jpg');
   const uploaded=await upload(index,'report.json',report);
   let photo=false;
   if(fs.existsSync(sheet)&&fs.statSync(sheet).size>1000){await upload(index,'contact.jpg',sheet);photo=true}
   const finalReport=JSON.parse(fs.readFileSync(report,'utf8'));
+  const indexed=await request('/metadata/'+index,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(finalReport)});
+  if(!indexed.registered)throw Error('FORENSIC_INDEX_NOT_CONFIRMED_'+index);
   console.log('FORENSIC_PRIVATE_OUTPUT',JSON.stringify({index,sha256_prefix:String(finalReport.sha256).slice(0,12),report:uploaded.objectKey,photo,has_transcript:Boolean(finalReport.transcript?.trim()),transcript_language:finalReport.transcript_language||null}));
  }
 }finally {
