@@ -71,3 +71,6 @@ All work to date has preserved MP4 objects and historical records, without regen
 
 ## Current Review-to-Archive identity comparison
 Read-only SQL on 2026-10-12: six FruttiDrama `review_items` records in the migrated runtime inventory have **zero exact item-ID filename matches** with the 31 MP4 objects in `fruttidrama/review/`. That means the archived 31 files are not simply the six newly indexed review-item IDs. It does **not** prove no video bytes are duplicates, nor establish approved status. Any future inventory must keep both sets and deduplicate by verified content hash / original event identity, not by assumptions.
+
+## 2026-10-12 19:00 UTC: Preservation gate
+Operator authorized a forensic extraction. Railway native backup creation via GraphQL was denied for all three volumes because manual snapshots require a Pro workspace (GitHub run 38294733385). No snapshot or runtime deployment was created. FruttiDrama and Earth original volumes were confirmed unchanged with no pending staged changes. Extraction paused before any volume mount, service start or file modification. The user must choose Pro-backed snapshot first or separately accept the elevated risk of working with no snapshot. Supabase incidents FORENSIC_BACKUP_UNAVAILABLE remain open for all three.
