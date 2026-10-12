@@ -54,3 +54,17 @@ Old repository `fruttidrama-afk/FruttiDrama-Publisher`, `ops-diagnostics/frutti-
 - The new Supabase bucket contains Frutti 31 MP4 files corresponding to 31 distinct filename keys, and Earth 16 MP4 files corresponding to 13 distinct filename keys (three additional revisions of an existing key). This is filename deduplication only, not byte-hash or canonical media deduplication. Supabase contains no Dinnie objects in that bucket at present.
 - Shared owner-scoped Edge `publisher-unified-read` v3 and Factory HTML now have **separate read-only historical MP4 archive evidence** alongside the partial migrated stock index. Archive counts are not approvals/scheduled stock. Two UI modules passed GitHub Actions smoke run `38290616744`. No live real-user browser verification yet.
 - Next: find a safe verified historical volume backup/archive or provider-supported offline read access WITHOUT activating an old publisher service, reconcile original `publication_items` and `factory_items` against these object keys and published remote IDs. Preserve a separate `source_system` and confidence for every event; do not merge/apply any stock until confirmed.
+
+## Railway native backup API — VERIFIED 2026-10-12 18:54 UTC
+GitHub Actions read-only run `38293980450` successfully called Railway GraphQL through scoped Supabase Edge `publisher-railway-volume-migration` version 5 with no Railway mutations or deployments. Query order: project volumes -> volume instance scoped to production environment -> volumeInstanceBackupList.
+
+Results:
+- FruttiDrama volume `089f6382-78ca-49ff-9898-68b13b1f0dca`, instance `ec05b836-8708-4dfa-9b6c-b86f634fd2f7`: `status=OK`, `backup_count=0`.
+- Earth volume `89fe08a3-5fad-40a1-b8cb-c4dad3b5e924`, instance `855c98dc-46a1-41e5-bdff-80a15f8adde6`: `status=OK`, `backup_count=0`.
+- Dinnie volume `49084bd0-520e-4590-88f5-97a46639ef27`, instance `8c4166e2-f459-4016-b149-0bfada1e8a70`: `status=OK`, `backup_count=0`.
+
+Inference limited to *zero Railway-native snapshots available for the three verified volume instances at query time*. Does not imply the live volume files are absent, and does not rule out separately exported archives elsewhere.
+
+CRITICAL NEXT GATE: No original Railway service restart/redeploy/reattachment or billable recovery container without operator's explicit approval of a scoped, read-only forensic extraction plan. No backup snapshot exists to roll back accidental damage; in particular Frutti's historical volume was at 100% capacity in the October 5 health snapshot. Prefer vendor-assisted storage-level export if available; otherwise a one-off isolated extractor would require its own approved change/rollback plan and verified source volume immutability. Railway CLI had previously blocked file reads when no service deployment is active; do not represent unsupported CLI reading as completed.
+
+All work to date has preserved MP4 objects and historical records, without regenerating, approving or publishing media.
