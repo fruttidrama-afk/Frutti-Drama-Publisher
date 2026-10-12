@@ -20,8 +20,8 @@ async function request(endpoint,options={}){
  if(!response.ok)throw Error('FORENSIC_BROKER_'+endpoint+'_'+response.status+':'+String(body.error||'').slice(0,100));
  return body;
 }
-function run(program,args,{allowFailure=false}={}){
- const result=spawnSync(program,args,{encoding:'utf8',timeout:120000,maxBuffer:2e6});
+function run(program,args,{allowFailure=false,timeout=120000}={}){
+ const result=spawnSync(program,args,{encoding:'utf8',timeout,maxBuffer:2e6});
  if(result.error||result.status!==0&&!allowFailure)throw Error(program+'_FAILED_'+(result.error?.message||result.status)+':'+String(result.stderr||'').slice(0,250));
  return result;
 }
@@ -65,14 +65,20 @@ try {
    transcription_pending:audioReadable
   };
   fs.writeFileSync(reportPath,JSON.stringify(technical,null,2));
-  const out=await upload(index,'report.json',reportPath);
-  if(contactAvailable)await upload(index,'contact.jpg',sheet);
-  console.log('FORENSIC_MEDIA_PREPARED',JSON.stringify({index,bytes:buffer.length,duration:technical.duration_seconds,audioReadable,contactAvailable,sha256_prefix:sha256.slice(0,12),private_report:out.objectKey}));
-  if(audioReadable){const metadata=path.join(root,'whisper-'+index+'.txt');fs.writeFileSync(metadata,wav+'\n'+reportPath+'\n');}
+  console.log('FORENSIC_MEDIA_PREPARED',JSON.stringify({index,bytes:buffer.length,duration:technical.duration_seconds,audioReadable,contactAvailable,sha256_prefix:sha256.slice(0,12)}));
   // Never print dialogue or frame contents into public GitHub logs.
  }
- const transcriptions=(await import('./review-media-local-whisper.mjs')).runTranscription;
- await transcriptions(root,catalog,upload);
+ const transcription=run('python3',['scripts/whisper_legacy_media.py',root],{allowFailure:true,timeout:660000});
+ console.log('LOCAL_WHISPER_JOB',JSON.stringify({ok:transcription.status===0,exit:transcription.status}));
+ for(const sample of catalog){
+  const index=Number(sample.index);
+  const report=path.join(root,'report-'+index+'.json'),sheet=path.join(root,'contact-'+index+'.jpg');
+  const uploaded=await upload(index,'report.json',report);
+  let photo=false;
+  if(fs.existsSync(sheet)&&fs.statSync(sheet).size>1000){await upload(index,'contact.jpg',sheet);photo=true}
+  const finalReport=JSON.parse(fs.readFileSync(report,'utf8'));
+  console.log('FORENSIC_PRIVATE_OUTPUT',JSON.stringify({index,sha256_prefix:String(finalReport.sha256).slice(0,12),report:uploaded.objectKey,photo,has_transcript:Boolean(finalReport.transcript?.trim()),transcript_language:finalReport.transcript_language||null}));
+ }
 }finally {
  fs.rmSync(root,{force:true,recursive:true});
 }
