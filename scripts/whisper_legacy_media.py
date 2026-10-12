@@ -6,14 +6,19 @@ import sys
 from pathlib import Path
 
 ROOT = Path(sys.argv[1])
+start = int(sys.argv[2])
+count = int(sys.argv[3])
+if start < 3 or count < 1 or count > 7 or start + count > 31:
+    raise ValueError("FORBIDDEN_FORENSIC_RANGE")
 from faster_whisper import WhisperModel
 
 model = WhisperModel("base", device="cpu", compute_type="int8")
-for index in range(3):
+for index in range(start, start + count):
     report = ROOT / f"report-{index}.json"
     audio = ROOT / f"audio-{index}.wav"
     data = json.loads(report.read_text(encoding="utf-8"))
     data["transcription_engine"] = "faster-whisper/base/es/cpu/int8"
+    data["transcription_pending"] = False
     data["transcript"] = ""
     data["transcript_language"] = None
     data["dialogue_segments"] = []
