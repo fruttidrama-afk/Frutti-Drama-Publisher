@@ -1,7 +1,6 @@
-FRUTTI_FLOW_LOGIN_RESCUE=2026-10-12-RESTART-AFTER-TUNNEL-FIX
-PURPOSE=restore-Flow-auth-only
+FRUTTI_FLOW_LOGIN_RESCUE=2026-10-12-PROFILE-SIZE-FIX
+PURPOSE=restore-auth-session-after-archive-cache-exclusions
 EXPECTED_ACCOUNT=fruttidrama@gmail.com
 EXPECTED_FLOW_PROJECT_ID=705d7ac2-30fe-4481-aa4c-076c31a64214
 NO_GENERATION=true
 NO_PUBLICATION=true
-RESTART_REASON=verified-cloudflare-tunnel-host-filter-fix
