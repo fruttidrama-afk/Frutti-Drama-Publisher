@@ -54,6 +54,7 @@ rm -rf \
   "$PACK/flow-profile/Crashpad" \
   "$PACK/flow-profile/component_crx_cache" \
   "$PACK/flow-profile/BrowserMetrics" || true
-tar -czf "$ARCHIVE" -C "$PACK" flow-auth-state.json flow-profile
+tar -czf "$ARCHIVE" --exclude='flow-profile/Default/Media Cache' --exclude='flow-profile/Default/Blob Storage' --exclude='flow-profile/Default/Service Worker/ScriptCache' --exclude='flow-profile/Default/Shared Dictionary' --exclude='flow-profile/OptimizationGuidePredictionModels' --exclude='flow-profile/Default/OptimizationGuidePredictionModels' --exclude='flow-profile/Safe Browsing' --exclude='flow-profile/WidevineCdm' -C "$PACK" flow-auth-state.json flow-profile
+echo "PROFILE_ARCHIVE_BYTES=$(stat -c %s "$ARCHIVE")"
 FLOW_BOOTSTRAP_ARCHIVE="$ARCHIVE" node scripts/bootstrap-flow-account-v2.mjs upload
 node scripts/bootstrap-flow-account-v2.mjs complete
