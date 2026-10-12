@@ -1,0 +1,30 @@
+name: Publisher Inventory Sync
+on:
+  schedule:
+    - cron: "19 */2 * * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/runtime-inventory-sync.yml"
+      - "scripts/runtime-inventory-sync.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publisher-readonly-inventory-sync
+  cancel-in-progress: false
+
+jobs:
+  project-read-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.14.0"
+      - name: Safely synchronize per-publisher Review and Stock read model
+        run: node scripts/runtime-inventory-sync.mjs
