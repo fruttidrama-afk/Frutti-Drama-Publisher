@@ -1,0 +1,56 @@
+name: Historical Railway Backup Audit (Read Only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/railway-volume-backups-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: railway-historical-backup-readonly
+  cancel-in-progress: false
+
+jobs:
+  list-backups-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Query volume backup metadata only (no Railway deployment)
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          const base=String(process.env.ACTIONS_ID_TOKEN_REQUEST_URL||"");
+          const auth=String(process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN||"");
+          if(!base||!auth)throw Error("OIDC_UNAVAILABLE");
+          const audience="publisher-factory-railway-volume-migration";
+          const request=base+(base.includes("?")?"&":"?")+"audience="+encodeURIComponent(audience);
+          const response=await fetch(request,{headers:{authorization:"Bearer "+auth}});
+          if(!response.ok)throw Error("OIDC_REQUEST_FAILED_"+response.status);
+          const token=String((await response.json()).value||"");
+          if(!token)throw Error("OIDC_EMPTY");
+          const targetNames=["frutti","earth","dinnie"];
+          for(const target of targetNames){
+            try {
+              const url="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-railway-volume-migration/backup-list/"+target;
+              const result=await fetch(url,{headers:{authorization:"Bearer "+token},signal:AbortSignal.timeout(22000)});
+              const data=await result.json().catch(()=>({}));
+              const safe={
+                target,
+                http_status:result.status,
+                status:String(data.status||data.error||"NO_RESPONSE").slice(0,120),
+                volume_id:String(data.volume_id||"").slice(0,80),
+                volume_instance_id:String(data.volume_instance_id||"").slice(0,80),
+                backup_count:Number.isInteger(data.backup_count)?data.backup_count:null,
+                backups:Array.isArray(data.backups)?data.backups.map(b=>({id:b.id,name:b.name,created_at:b.created_at,expires_at:b.expires_at,used_mb:b.used_mb,referenced_mb:b.referenced_mb})):[],
+                reason:String(data.graphql_hint||"").slice(0,140)
+              };
+              console.log("READ_ONLY_VOLUME_BACKUP_AUDIT",JSON.stringify(safe));
+            } catch(e){
+              console.log("READ_ONLY_VOLUME_BACKUP_AUDIT",JSON.stringify({target,status:"REQUEST_FAILED",message:String(e?.message||e).slice(0,140)}));
+            }
+          }
+          JS
