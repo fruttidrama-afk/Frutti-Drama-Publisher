@@ -127,6 +127,7 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 #unifiedDashboard .ud-recap-ai-result[data-status="success"]{border-color:#9ec9b3;background:#ecf8f1;color:#1c5b39}
 #unifiedDashboard .ud-recap-ai-result[hidden]{display:none!important}
 #unifiedDashboard #udRecapFreeAiSetup{display:inline-block;font-weight:700;font-size:12px;color:#16537e;text-decoration:underline;padding:2px 0 6px}#unifiedDashboard #udRecapFreeAiSetup[hidden]{display:none!important}
+#udRecapStoryFallback[hidden]{display:none!important}
 </style>
 </head>
 <body>
@@ -179,7 +180,7 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
   
   <div class="ud-recap-actions"><button type="button" id="udRecapSuggest">GENERAR PROPUESTA DESDE PROMPT</button></div>
   <p id="udRecapAiResult" class="ud-recap-ai-result" role="alert" aria-live="assertive" hidden></p>
-  <p id="udRecapEvidence" class="ud-recap-notice" aria-live="polite">La interpretación de la trama aparecerá aquí cuando se genere la propuesta.</p>
+  <p id="udRecapEvidence" class="ud-recap-notice" aria-live="polite">La interpretación de la trama aparecerá aquí cuando se genere la propuesta.</p><div id="udRecapStoryFallback" hidden><label>Historia del episodio (solo si falta en el prompt)<textarea id="udRecapOperatorStory" maxlength="900" rows="3" placeholder="Qué personaje hace qué en esta escena"></textarea></label><p class="udmuted">Una frase alcanza; el prompt original no cambia.</p></div>
   <label>Título · dos primeras palabras en MAYÚSCULAS
    <textarea id="udRecapTitle" maxlength="100" rows="2" placeholder="PRUEBA POSITIVA: Uva descubre un embarazo que cambia todo #Shorts #FruttiDrama"></textarea>
   </label>
@@ -293,7 +294,7 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 
 <script type="module">
 import{createClient}from"https://esm.sh/@supabase/supabase-js@2.105.0";
-import{initFruttiRecap}from"./frutti-recap.js?v=20261013-editorial-original-v1";
+import{initFruttiRecap}from"./frutti-recap.js?v=20261013-editorial-recap-v2";
 import JSZip from"https://esm.sh/jszip@3.10.1";
 const sb=createClient("https://wrflttnmlrsuzuukdhtf.supabase.co","sb_publishable_xa4-lNIcfBku4CtgKKI97w_r-VmFcaV",{auth:{persistSession:true,autoRefreshToken:true,experimental:{passkey:true}}});
 const API="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory-railway",$=s=>document.querySelector(s);let user=null,signup=false,createStep=0,referenceFile=null,logoFile=null,brandDraft=null,modPublisher=null,modScreenshot=null,railwayConnections=[],selectedRailwayConnectionId=null,deployWatchTimer=null;
