@@ -8,7 +8,7 @@ export function initFruttiRecap({session,udText}){
  async function request(method,body){
   const s=await session();if(!s?.access_token)throw Error("Volvé a ingresar: sesión no disponible.");
   const r=await fetch(endpoint,{method,headers:{"authorization":"Bearer "+s.access_token,"content-type":"application/json"},body:body?JSON.stringify(body):undefined,cache:"no-store"});
-  const data=await r.json().catch(()=>({}));if(!r.ok)throw Error((data.error||"HTTP "+r.status)+(data.hint?" · "+data.hint:""));return data;
+  const data=await r.json().catch(()=>({}));if(!r.ok)throw Error((data.detail||data.hint||data.error||"HTTP "+r.status)+(data.error&&data.detail?" ["+data.error+"]":""));return data;
  }
  function summary(){
   $("#udForensicSummary").textContent=files.length+" archivos originales · "+records.size+" fichas en el stock reconstruido · "+Math.max(0,files.length-records.size)+" pendientes.";
@@ -82,14 +82,14 @@ export function initFruttiRecap({session,udText}){
   if(selected===null){$("#udRecapStatus").textContent="Elegí un archivo primero.";return}
   const prompt=$("#udRecapPrompt").value.trim();
   if(prompt.length<20){$("#udRecapStatus").textContent="Pegá el prompt original antes de generar la propuesta.";return}
-  const btn=$("#udRecapSuggest");btn.disabled=true;btn.textContent="ANALIZANDO…";
+  const btn=$("#udRecapSuggest");btn.disabled=true;btn.textContent="GENERANDO CON IA…";$("#udRecapStatus").textContent="Consultando modelo de lenguaje: interpretando la historia y redactando título y descripción…";
   try{
    const data=await request("POST",{action:"suggest",generation_prompt:prompt});
    if(data.error){$("#udRecapEvidence").textContent="Acción no confirmada"+(data.episode_excerpt?": "+data.episode_excerpt:" · no se reutilizan instrucciones técnicas.");$("#udRecapStatus").textContent=data.detail||data.error;return}
    $("#udRecapEvidence").textContent="Acción encontrada en EPISODE/TRAMA (revisala contra el video): "+String(data.episode_excerpt||"sin detalle");
    $("#udRecapTitle").value=data.title;$("#udRecapDescription").value=data.description;remember();
    $("#udRecapStatus").textContent=data.warning||"Borrador listo. Comprobá y editá el título y la descripción antes de guardar.";
-  }catch(e){$("#udRecapStatus").textContent="No se generó: "+String(e.message||e)}
+  }catch(e){$("#udRecapStatus").textContent="La IA no pudo generar el paquete: "+String(e.message||e);$("#udRecapEvidence").textContent="No se generaron metadatos: no se usarán borradores automáticos ni plantillas como sustituto."}
   finally{btn.disabled=false;btn.textContent="GENERAR PROPUESTA DESDE PROMPT"}
  }
  async function save(){
