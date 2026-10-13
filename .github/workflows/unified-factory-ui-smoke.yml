@@ -9,6 +9,7 @@ on:
       - "scripts/check-unified-factory-ui.mjs"
       - "scripts/test-frutti-copy.mjs"
       - "supabase/functions/publisher-frutti-recap/index.ts"
+      - "supabase/functions/publisher-frutti-recap/frutti-recap-copy.js"
       - ".github/workflows/unified-factory-ui-smoke.yml"
   workflow_dispatch:
 
