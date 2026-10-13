@@ -13,13 +13,13 @@ export function initFruttiRecap({session,udText}){
  const showAIState=()=>{
   const el=$("#udRecapAiState");
   if(!el)return;
-  const link=$("#udRecapFreeAiSetup");if(link)link.hidden=aiStatus.connected!==false;
+  const link=$("#udRecapFreeAiSetup");if(link)link.hidden=true;
   if(aiStatus.connected===true){
    el.dataset.status="connected";
-   el.textContent="✓ Conexión detectada: "+(aiStatus.provider||"IA china gratuita")+". Solo modelos :free con precio de entrada/salida $0 verificado antes de cada solicitud. Sin fallback pago ni compras automáticas.";
+   el.textContent="✓ Generador editorial original de FruttiDrama activo. Título y descripción basados en la trama del episodio, sin claves, sin cuentas externas y sin costo.";
   }else if(aiStatus.connected===false){
    el.dataset.status="missing";
-   el.textContent="IA CHINA GRATIS SIN CONECTAR: configurá OPENROUTER_API_KEY (clave gratuita de openrouter.ai/keys) en Supabase → Edge Functions → Secrets. No necesitás cargar tarjeta ni activar pagos. Solo se permiten modelos DeepSeek/Qwen :free, con precio $0 verificado.";
+   el.textContent="No pude comprobar el estado del generador editorial. Actualizá la página; no necesitás claves ni cuentas externas.";
   }else{
    el.dataset.status="unknown";
    el.textContent="No se pudo comprobar la disponibilidad de IA. Verificá la sesión o la conexión.";
@@ -113,25 +113,22 @@ export function initFruttiRecap({session,udText}){
    showAIResult("Pegá el prompt REAL y completo de Google Flow antes de generar la propuesta.");
    return;
   }
-  if(aiStatus.connected===false){
-   showAIResult("Falta una clave gratuita de OpenRouter. Creala en https://openrouter.ai/keys y guardala como OPENROUTER_API_KEY en Supabase → Edge Functions → Secrets. No actives facturación. Esta herramienta nunca elegirá una IA paga.");
-   return;
-  }
+  // The local historical creative package needs no API credentials.
   const btn=$("#udRecapSuggest");
-  btn.disabled=true;btn.textContent="GENERANDO CON IA…";
-  showAIResult("Consultando el modelo de IA: identificando el conflicto del episodio y redactando los metadatos…","progress");
+  btn.disabled=true;btn.textContent="REDACTANDO PROPUESTA…";
+  showAIResult("Identificando la trama del episodio y preparando el título y la descripción con las plantillas narrativas originales…","progress");
   try{
    const data=await request("POST",{action:"suggest",generation_prompt:prompt});
    if(data.error)throw Error(data.detail||data.error);
-   if(!data.title||!data.description)throw Error("El proveedor de IA no devolvió metadatos completos.");
+   if(!data.title||!data.description)throw Error("No se pudieron crear metadatos narrativos completos.");
    $("#udRecapTitle").value=data.title;
    $("#udRecapDescription").value=data.description;
    $("#udRecapEvidence").textContent="Acontecimiento identificado (verificá que suceda en el video): "+String(data.episode_excerpt||"sin detalle");
    remember();
-   showAIResult("✓ Propuesta generada mediante "+String(data.model_provider||aiStatus.provider||"IA")+". Leé el título y la descripción y confirmá que reflejen el video original antes de guardar.","success");
+   showAIResult("✓ Propuesta generada con el formato editorial original de FruttiDrama. Revisá que el título y la descripción narren exactamente lo que ocurre en el video.","success");
   }catch(e){
    const detail=String(e?.message||e||"Error desconocido");
-   showAIResult("No se generaron el título ni la descripción. Motivo: "+detail,"error");
+   showAIResult("No se pudo identificar suficientemente la trama. Motivo: "+detail+" Podés editar el título y la descripción manualmente sin perder el prompt.","error");
    $("#udRecapEvidence").textContent="No se modificaron los metadatos ni el stock. El prompt original permanece en el formulario.";
   }finally{
    btn.disabled=false;
