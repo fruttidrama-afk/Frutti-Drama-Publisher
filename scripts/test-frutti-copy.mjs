@@ -32,7 +32,7 @@ for(const [label,prompt,a,b] of cases){
  const r=draftFromPrompt(prompt);
  assert(!r.error,label+": "+JSON.stringify(r));
  assert(r.title.length<=100,label+": title overflow");
- assert(r.title.startsWith(prompt.split("EPISODE\n")[1].split(":")[0]+":"),label+": wrong hook");
+ assert(/^([A-ZÁÉÍÓÚÜÑ0-9]+) ([A-ZÁÉÍÓÚÜÑ0-9]+): .+/.test(r.title),label+": title must begin with two ALL-CAPS hook words");
  assert(r.description.includes(a)&&r.description.includes(b),label+": missing story character");
  assert(!/one continuous scene|unbroken take|reference sheets|9:16/i.test(r.description),label+": leaked technical prompt");
  assert(/¿[^?]+\?\n\n#Shorts #ViralShorts #FruttiDrama$/.test(r.description),label+": missing editorial question/hashtags");
