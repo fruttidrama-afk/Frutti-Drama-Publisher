@@ -1,0 +1,30 @@
+name: FruttiDrama AI Connectivity Probe
+on:
+  push:
+    paths:
+      - ".github/workflows/frutti-ai-connectivity-probe.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+  models: read
+jobs:
+  ai-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check real GitHub Models inference without any user content
+        env:
+          GH_MODEL_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request,urllib.error
+          data=json.dumps({"model":"openai/gpt-4.1-mini","messages":[{"role":"user","content":"Respond with only the word LISTO."}],"max_tokens":24}).encode()
+          req=urllib.request.Request("https://models.github.ai/inference/chat/completions",data=data,headers={"Authorization":"Bearer "+os.environ["GH_MODEL_TOKEN"],"Content-Type":"application/json","Accept":"application/vnd.github+json"})
+          try:
+            with urllib.request.urlopen(req,timeout=30) as r:
+              result=json.loads(r.read().decode())
+            print("GITHUB_MODELS_RESPONSE",json.dumps({"model":result.get("model"),"text":result["choices"][0]["message"]["content"]},ensure_ascii=False))
+          except urllib.error.HTTPError as e:
+            print("GITHUB_MODELS_HTTP_ERROR",e.code,e.read().decode()[:500])
+            raise
+          PY
