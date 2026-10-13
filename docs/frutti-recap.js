@@ -159,6 +159,7 @@ export function initFruttiRecap({session,udText}){
   finally{btn.disabled=false;btn.textContent="GUARDAR EN STOCK RECONSTRUIDO"}
  }
  for(const id of ["udRecapSeason","udRecapEpisode","udRecapPrompt","udRecapTitle","udRecapDescription","udRecapNote","udRecapOperatorStory"])$("#"+id).addEventListener("input",remember);
+ $("#udRecapPrompt").addEventListener("input",()=>{$("#udRecapOperatorStory").value="";$("#udRecapStoryFallback").hidden=true;remember()});
  $("#udRecapSuggest").onclick=suggest;$("#udRecapSave").onclick=save;
  return {load,render};
 }
