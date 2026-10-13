@@ -127,7 +127,8 @@ function sceneConversation(story,actor){
  const explicitPair=/\b(?:entre|between|with|con)\b/i;
  const candidates=[];
  for(const part of parts){
-  const involved=names(part).filter(n=>n!==actor);
+  const absent=(name)=>new RegExp("(?:\\b(?:sin|without)\\s+|\\b(?:no est[aá]|is absent)\\s+(?:[\\wáéíóú]+\\s+){0,2})"+name.replace(/[.*+?^$()|[\]{}]/g,"\\const involved=names(part).filter(n=>n!==actor);")+"\\b","i").test(part);
+  const involved=names(part).filter(n=>n!==actor&&!absent(n));
   if(involved.length>=2&&(talking.test(part)||romance.test(part)||explicitPair.test(part))){
    candidates.push({pair:involved.slice(0,2),romantic:romance.test(part),text:part,score:(romance.test(part)?8:0)+(talking.test(part)?4:0)});
   }
@@ -147,7 +148,7 @@ function interruptionArrival(story){
   const scene=sceneConversation(story,actor);
   if(!scene)continue;
   return {rule:{key:"interrupcion_con_contexto",hook:scene.romantic?"ROMANCE INTERRUMPIDO":"ENCUENTRO INTERRUMPIDO"},
-   priority:-1,line:part,actor,target:scene.pair[0],pair:scene.pair,romantic:scene.romantic,interrupted:/interrumpe|irrumpe|interrupt|walks? in|steps? in|entra/i.test(match[0])};
+   priority:-1,line:part,actor,target:scene.pair[0],pair:scene.pair,romantic:scene.romantic,interrupted:/interrumpe|irrumpe|interrupt|walks? in|steps? in|entra|enters?/i.test(part)};
  }
  return null;
 }
