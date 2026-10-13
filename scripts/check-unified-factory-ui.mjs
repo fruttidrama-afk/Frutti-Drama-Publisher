@@ -14,5 +14,8 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
  const checked=spawnSync(process.execPath,["--check",temp],{encoding:"utf8"});
  fs.rmSync(temp,{force:true});
  if(checked.status!==0)throw Error(name+" JavaScript syntax invalid: "+checked.stderr);
+ for(const marker of ["id=\"udModeRecovery\"","id=\"udRecoveryVideos\"","id=\"udRecoveryPrompts\"","id=\"udShowPrompts\"","frutti-prompt-studio-active.json","udSetPublisherPane(","async function udSaveMatch(","publisher-forensic-match"]){
+  if(!html.includes(marker))throw Error(name+" missing recovery workstation "+marker);
+ }
  console.log("PASS",name,"module syntax + unified publisher anchors + legacy action guard");
 }
