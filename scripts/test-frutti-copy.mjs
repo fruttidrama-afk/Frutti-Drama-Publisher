@@ -53,6 +53,32 @@ for(const [id,titlePart,descriptionPart] of expectedSubjects){
 }
 const kiss=generate(cases.find(x=>x[0]==="kiss")[1]);
 assert(kiss.description.includes("¿Cómo reaccionará Fresia"),"question must respect witness already present, no false suspense");
+
+// The operator's real Flow prompts can be prose, not the factory's original
+// HOOK/STORY records. The old parser wrongly rejected technical prose mixed
+// with action and missed scenes lacking an EPISODE header.
+const proseWithoutEpisodeHeader=[
+ "FruttiDrama, hiperrealista 3D, telenovela, one continuous unbroken take.",
+ "The Melón family hacienda salon at night. Fresia confronts Uva Reyes while Limón Duarte watches quietly.",
+ "Fresia accuses Uva of taking Limón away from her. Uva refuses to compete with her.",
+ "Only Fresia speaks: the conversation ends as she leaves.",
+ "Idioma: Spanish neutral Latin American. Constraints: exactly 1 Limón Duarte, exactly 1 Uva Reyes, exactly 1 Fresia in frame."
+].join("\n");
+const noHeader=generate(proseWithoutEpisodeHeader);
+assert(!noHeader.error,"Flow prose without labeled EPISODE must be parsed: "+JSON.stringify(noHeader));
+assert(noHeader.title.includes("Fresia")&&noHeader.title.includes("Uva"),"title must describe the actual conflict");
+assert(!/lighting|one continuous|frame/i.test(noHeader.description),"technical directions leaked");
+
+const mixedScene=[
+ "Scene 1 (0–3s): Cinematic lighting, one continuous take.",
+ "0–3s: Uva Reyes and Limón Duarte are together in the garden.",
+ "3–7s: Fresia confronts Uva Reyes about her relationship with Limón Duarte.",
+ "7–10s: Uva Reyes refuses to compete. Fresia walks away furious.",
+ "Constraints: exact one character each, no duplicates."
+].join("\n");
+const beatResult=generate(mixedScene);
+assert(!beatResult.error,"timed scenes with no EPISODE header must work: "+JSON.stringify(beatResult));
+
 const irrelevant=generate(technical);
 assert(irrelevant.error,"technical-only prompt must be rejected");
 const canonOnly=generate("CANON\nMango envenena a Banana.\nCREATIVE BIBLE\nDrama for 10 seconds. Camera close-ups. Character identity fixed.");
