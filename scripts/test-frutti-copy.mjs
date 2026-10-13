@@ -79,6 +79,14 @@ const mixedScene=[
 const beatResult=generate(mixedScene);
 assert(!beatResult.error,"timed scenes with no EPISODE header must work: "+JSON.stringify(beatResult));
 
+const inlineScene=generate([
+ "SCENE 1: Fresia confronts Uva Reyes in front of Limón Duarte.",
+ "SCENE 2: Uva refuses to compete for Limón and defends their relationship.",
+ "Constraints: exact 3 fruit humanoids, camera close-up, only Fresia speaks."
+].join("\n"));
+assert(!inlineScene.error,"inline SCENE 1: dialogue/action must be parsed, not misclassified as empty heading: "+JSON.stringify(inlineScene));
+assert(/Fresia.*Uva/.test(inlineScene.title),"inline scene core action must identify both participants");
+
 const irrelevant=generate(technical);
 assert(irrelevant.error,"technical-only prompt must be rejected");
 const canonOnly=generate("CANON\nMango envenena a Banana.\nCREATIVE BIBLE\nDrama for 10 seconds. Camera close-ups. Character identity fixed.");
