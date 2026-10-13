@@ -21,6 +21,7 @@ export function initFruttiRecap({session,udText}){
   const fields=[["udRecapSeason","season"],["udRecapEpisode","episode"],["udRecapPrompt","generation_prompt"],["udRecapTitle","title"],["udRecapDescription","description"],["udRecapNote","note"]];
   for(const [id,key] of fields)$("#"+id).value=data[key]??"";
   $("#udRecapStatus").textContent=previous?"Esta ficha ya existe: podés corregirla sin tocar YouTube.":"Pegá el prompt real y prepará la ficha de este video.";
+  $("#udRecapEvidence").textContent="Acción narrativa extraída: pendiente de analizar el prompt.";
   render();
   if(switchPane&&window.matchMedia("(max-width:900px)").matches){
    $("#udRecoveryPanels").classList.add("ud-show-prompts");
@@ -84,7 +85,8 @@ export function initFruttiRecap({session,udText}){
   const btn=$("#udRecapSuggest");btn.disabled=true;btn.textContent="ANALIZANDO…";
   try{
    const data=await request("POST",{action:"suggest",generation_prompt:prompt});
-   if(data.error){$("#udRecapStatus").textContent=data.detail||data.error;return}
+   if(data.error){$("#udRecapEvidence").textContent="Acción no confirmada"+(data.episode_excerpt?": "+data.episode_excerpt:" · no se reutilizan instrucciones técnicas.");$("#udRecapStatus").textContent=data.detail||data.error;return}
+   $("#udRecapEvidence").textContent="Acción encontrada en EPISODE/TRAMA (revisala contra el video): "+String(data.episode_excerpt||"sin detalle");
    $("#udRecapTitle").value=data.title;$("#udRecapDescription").value=data.description;remember();
    $("#udRecapStatus").textContent=data.warning||"Borrador listo. Comprobá y editá el título y la descripción antes de guardar.";
   }catch(e){$("#udRecapStatus").textContent="No se generó: "+String(e.message||e)}
