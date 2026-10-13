@@ -26,7 +26,15 @@ const cases=[
  ["Limón rejects reunion", canonical("LÍMITE FINAL","Limón establece un límite con Fresia: juntos criarán a su hijo, pero nunca volverán a ser pareja."),"Limón","Fresia"],
  ["Uva and Limón kiss", canonical("BESO SORPRESA","Uva y Limón se besan a solas en la hacienda; Fresia observa el gesto."),"Uva","Limón"],
  ["Banana death beats past diagnosis",canonical("DOLOR SIN FIN","Banana muere en el hospital tras el diagnóstico de bananismo múltiple; Uva despide a su marido."),"Banana","muerte"],
- ["Mango poisoning",canonical("TRAICIÓN FINAL","Mango envenena a Banana para apartarlo de la familia."),"Mango","Banana"]
+ ["Mango poisoning",canonical("TRAICIÓN FINAL","Mango envenena a Banana para apartarlo de la familia."),"Mango","Banana"],
+ ["Fresia states parental bond",canonical("FRESIA CONTRAATACA","Fresia le dice a Uva Reyes que Limón siempre estará unido a ella por su hijo. Uva se niega a competir y le responde que la confianza se demuestra con hechos."),"Fresia","Uva"],
+ ["Fresia confronts Limón",canonical("CELOS DE FRESIA","Fresia enfrenta a Limón Duarte a solas y le recuerda que tienen un hijo en común. Limón deja claro que será un padre presente, pero que su relación sentimental con Fresia terminó."),"Fresia","Limón"],
+ ["Uva overhears and doubts",canonical("DUDA DE UVA","Uva Reyes escucha una parte de la conversación entre Fresia y Limón Duarte y teme volver a quedar atrapada en un triángulo amoroso. Limón intenta explicarle que eligió estar con ella."),"Uva","Limón"],
+ ["Limón promise to Uva",canonical("PROMESA DE LIMÓN","Limón Duarte busca a Uva Reyes y le promete que no repetirá las mentiras del pasado. Uva acepta seguir con la relación, pero le exige transparencia absoluta."),"Limón","Uva"],
+ ["Don Melón overhears",canonical("SECRETO ESCUCHADO","Don Melón escucha a Fresia admitir que todavía siente algo por Limón Duarte. Sin intervenir todavía, comprende que el nuevo equilibrio de la hacienda puede romperse."),"Don Melón","Fresia"],
+ ["Don Melón warns Fresia",canonical("ADVERTENCIA DE MELÓN","Don Melón confronta a Fresia y le exige que no destruya la relación entre Uva Reyes y Limón Duarte. Fresia asegura que no hará nada, pero su expresión revela conflicto."),"Don Melón","Fresia"],
+ ["Fresia admits feelings",canonical("CONFESIÓN DE FRESIA","Fresia admite frente a Uva Reyes que todavía tiene sentimientos por Limón Duarte. Uva no retrocede y le exige que respete la relación que Limón eligió."),"Fresia","Uva"],
+ ["Limón confirms choice",canonical("ELECCIÓN DEFINITIVA","Limón Duarte reafirma delante de Uva Reyes y Fresia que quiere construir su futuro con Uva. Fresia se queda sola con una decisión que puede cambiar la temporada."),"Limón","Uva"]
 ];
 for(const [label,prompt,a,b] of cases){
  const r=draftFromPrompt(prompt);
