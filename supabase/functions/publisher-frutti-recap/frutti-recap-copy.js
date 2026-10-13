@@ -41,7 +41,7 @@ function extract(raw){
    const hasAction=ACT.test(piece);
    const dialogue=/[«“"][^»”"]{12,}[»”"]/.test(piece)||/\b(?:dialogue|line spoken|says|tells|retorts|responds|whispers|shouts|asks|afirma|responde|pregunta)\b/i.test(piece);
    const technical=(TECH.test(piece)&&!hasAction)||/^(?:only|exactly)\s+(?:Fresia|Lim[oó]n|Uva|Banana|Mango|Don Mel[oó]n)\s+(?:speaks?|is present|appears?|talks?)(?:\W|$)/i.test(piece)||/\b(?:say nothing|says nothing|remain silent|no overlap|character designs match|never duplicated)\b/i.test(piece);
-   if((hasAction&&hasNames||dialogue&&hasNames)&&!technical)
+   if((hasAction&&hasNames||dialogue&&hasNames||names(piece).length>=2&&/\b(?:romantic|romance|intimate|intimately|flirt(?:ing)?|tender|talk(?:ing)?|convers(?:a|an|ando)|habla(?:n|ndo)?|rom[aá]ntic[oa]|[ií]ntim[oa]|coquetea(?:n|ndo)?|juntos|together)\b/i.test(piece))&&!technical)
     blocks.push({text:piece,weight:weight+(hasNames?3:0)+(hasAction?3:0)+(dialogue?1:0),index:lineNo});
   }
  };
@@ -78,12 +78,18 @@ function extract(raw){
  }
  blocks.sort((x,y)=>y.weight-x.weight||x.index-y.index);
  if(!blocks.length)return {error:"STORY_NOT_FOUND",detail:"No se pudo extraer un acontecimiento ni diálogo suficiente del prompt. El sistema anterior tenía un resumen 'story' aparte; para este caso podés escribir una sola frase sobre lo que sucede en el video, sin volver a copiar el prompt."};
- let chosen=blocks[0];
- let story=chosen.text;
- // Keep neighboring beat only when it has shared character and no technical
- // contamination, so narrative covers both confrontation and consequence.
- const next=blocks.filter(x=>x!==chosen&&x.index>=chosen.index&&x.index-chosen.index<=3&&!TECH.test(x.text)&&(/\b(?:watches?|sees?|observa|presencia|entra|interrumpe|interrupts?|reacts?|reacciona)\b/i.test(x.text)||names(x.text).some(n=>names(story).includes(n)))).slice(0,1);
- if(next.length)story=clean(story+" "+next[0].text);
+ const chosen=blocks[0];
+ // Assemble a CURRENT-EPISODE mini-story, never just a single detected verb.
+ // Preserve all close dramatic beats in source order: a romantic conversation,
+ // the arrival that interrupts it, and the final character reaction.
+ const coherent=blocks.filter(x=>x===chosen||(
+  Math.abs(x.index-chosen.index)<=8&&x.weight>=13&&!TECH.test(x.text)&&
+  (names(x.text).some(n=>names(chosen.text).includes(n))||
+   /\b(?:romantic|romance|flirt|conversaci[oó]n|talking|conversation|juntos|together|interrumpe|interrupts?|enters?|irrumpe|appears?)\b/i.test(x.text))
+ )).sort((a,b)=>a.index-b.index);
+ const texts=[...new Set(coherent.map(x=>x.text))].slice(0,7);
+ let story=clean(texts.join(" "));
+ if(story.length>1800)story=story.slice(0,1800);
  const embedded=story.match(/^([A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+)\s*[:：]\s*(.{20,})$/);
  if(embedded){hook=hook||embedded[1];story=embedded[2]}
  if(!ACT.test(story)&&!/le dice:/.test(story))return {error:"STORY_NOT_FOUND",detail:"El prompt contiene indicaciones de producción, pero no identifiqué una acción narrativa."};
@@ -112,7 +118,42 @@ const RULES=[
  {key:"observar",re:/observa|watches?|presencia|sees?/i,hook:"TESTIGO INESPERADO",verb:"observa a",intro:"presencia una escena que involucra a"},
  {key:"hablar",re:/le dice|tells?|says? to|announc(?:es|ed)|speaks? to|replies?|retorts?|responds? to|asks?|insists?|taunts?|declares?|afirma|responde a|pregunta a|asegura/i,hook:"PALABRAS DECISIVAS",verb:"habla con",intro:"habla directamente con"}
 ];
+// An interruption may have THREE roles: the person arriving, and the two
+// people in a romantic conversation. A single-verb parser loses one of them.
+function sceneConversation(story,actor){
+ const parts=String(story).split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÜÑ])|;\s*/).filter(Boolean);
+ const romance=/\b(?:romantic|romance|intimate|intimately|affectionate|flirt(?:ing)?|sweet moment|love|rom[aá]ntic[oa]s?|[ií]ntim[oa]s?|coquetea(?:n|ndo)?|enamorad[oa]s?)\b/i;
+ const talking=/\b(?:conversation|talk(?:ing)?|chat(?:ting)?|speak(?:ing)?|discuss(?:ing)?|conversaci[oó]n|charla(?:n|ndo)?|convers(?:an|ando)?|habla(?:n|ndo)?|encuentro|moment|momento)\b/i;
+ const explicitPair=/\b(?:entre|between|with|con)\b/i;
+ const candidates=[];
+ for(const part of parts){
+  const involved=names(part).filter(n=>n!==actor);
+  if(involved.length>=2&&(talking.test(part)||romance.test(part)||explicitPair.test(part))){
+   candidates.push({pair:involved.slice(0,2),romantic:romance.test(part),text:part,score:(romance.test(part)?8:0)+(talking.test(part)?4:0)});
+  }
+ }
+ candidates.sort((a,b)=>b.score-a.score);
+ return candidates[0]||null;
+}
+function interruptionArrival(story){
+ const parts=String(story).split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑ])|;\s*/).filter(Boolean);
+ const interruption=/\b(?:irrumpe|interrumpe|interrumpe a|interrupts?|interrupt(?:ed|ing)?|walks? in|enters?|steps? in|arrives?|appears?|finds? (?:them|both)|catches? (?:them|the two)|sorprende|aparece|se presenta|entra|descubre a|encuentra a)\b/i;
+ for(const part of parts){
+  const match=part.match(interruption);if(!match)continue;
+  const prior=names(part.slice(0,match.index));
+  const cast=names(part);
+  const actor=prior.length?prior[prior.length-1]:cast[0];
+  if(!actor)continue;
+  const scene=sceneConversation(story,actor);
+  if(!scene)continue;
+  return {rule:{key:"interrupcion_con_contexto",hook:scene.romantic?"ROMANCE INTERRUMPIDO":"ENCUENTRO INTERRUMPIDO"},
+   priority:-1,line:part,actor,target:scene.pair[0],pair:scene.pair,romantic:scene.romantic,interrupted:/interrumpe|irrumpe|interrupt|walks? in|steps? in|entra/i.test(match[0])};
+ }
+ return null;
+}
 function episodeEvent(story){
+ const contextual=interruptionArrival(story);
+ if(contextual)return contextual;
  const clauses=story.split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑ])|;\s*/).filter(Boolean);
  const scored=[];
  for(const line of clauses){
@@ -132,6 +173,15 @@ function episodeEvent(story){
 }
 function narrative(ev,story){
  const rule=ev.rule,a=ev.actor,b=ev.target;
+ if(rule.key==="interrupcion_con_contexto"){
+  const [first,second]=ev.pair;
+  const hook=ev.romantic?"ROMANCE INTERRUMPIDO":"ENCUENTRO INESPERADO";
+  const core=a+(ev.interrupted?" interrumpe a ":" sorprende a ")+first+" y "+second;
+  const type=ev.romantic?"una conversación romántica":"una conversación";
+  const description=a+" irrumpe en medio de "+type+" entre "+first+" y "+second+". Su aparición cambia por completo el tono del encuentro."+
+   "\n\n¿Hasta dónde llegará la tensión después de esta interrupción?\n\n"+TAGS;
+  return {hook,core,description};
+ }
  const secondary=names(story).find(n=>n!==a&&n!==b)||"";
  const other=b||secondary;
  if(!other&&!["muerte","parto"].includes(rule.key))return null;
