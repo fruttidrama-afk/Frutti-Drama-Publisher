@@ -127,7 +127,7 @@ function sceneConversation(story,actor){
  const explicitPair=/\b(?:entre|between|with|con)\b/i;
  const candidates=[];
  for(const part of parts){
-  const absent=(name)=>new RegExp("(?:\\b(?:sin|without)\\s+|\\b(?:no est[aá]|is absent)\\s+(?:[\\wáéíóú]+\\s+){0,2})"+name.replace(/[.*+?^$()|[\]{}]/g,"\\const involved=names(part).filter(n=>n!==actor);")+"\\b","i").test(part);
+  const absent=(name)=>{const p=part.toLocaleLowerCase("es"),n=name.toLocaleLowerCase("es");return p.includes("sin "+n)||p.includes("without "+n)||p.includes(n+" no está")||p.includes(n+" is absent")||p.includes(n+" no aparece");};
   const involved=names(part).filter(n=>n!==actor&&!absent(n));
   if(involved.length>=2&&(talking.test(part)||romance.test(part)||explicitPair.test(part))){
    candidates.push({pair:involved.slice(0,2),romantic:romance.test(part),text:part,score:(romance.test(part)?8:0)+(talking.test(part)?4:0)});
