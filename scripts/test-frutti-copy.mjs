@@ -3,50 +3,65 @@ import fs from "node:fs";
 import vm from "node:vm";
 import {stripTypeScriptTypes} from "node:module";
 
-const src=fs.readFileSync("supabase/functions/publisher-frutti-recap/index.ts","utf8");
-assert(src.includes("const answer=await realAICopy(prompt)"),"suggest route must invoke real model inference");
-assert(!src.includes("return json(draftFromPrompt(prompt))"),"rules engine must NOT serve suggestions");
-const start=src.indexOf("async function realAICopy("),end=src.indexOf("\nDeno.serve(",start);
-assert(start>0&&end>start,"real model implementation must exist");
-const fn=stripTypeScriptTypes(src.slice(start,end))+"\n({realAICopy})";
-const modelResult={
+const source=fs.readFileSync("supabase/functions/publisher-frutti-recap/index.ts","utf8");
+assert(source.includes("const answer=await realAICopy(prompt)"),"generation must use model endpoint");
+assert(!source.includes("GEMINI_API_KEY")&&!source.includes("OPENAI_API_KEY")&&!source.includes("api.openai.com"),"no billed AI routes");
+assert(source.includes("OPENROUTER_API_KEY")&&source.includes("isZeroPrice"),"free-only guardrails missing");
+const start=source.indexOf("const FREE_MODEL_IDS="),end=source.indexOf("\nDeno.serve(",start);
+assert(start>=0&&end>start,"source section missing");
+const executable=stripTypeScriptTypes(source.slice(start,end))+"\n({realAICopy})";
+const story={
  identified:true,
  title:"FRESIA CONTRAATACA: Fresia enfrenta a Uva por Limón",
- description:"Fresia le recuerda a Uva que Limón seguirá unido a ella por su hijo. Uva responde que no competirá por su amor. ¿Podrá Fresia sembrar nuevas dudas entre los dos?",
- specific_event:"Fresia enfrenta a Uva por el vínculo de Limón con su hijo.",
+ description:"Fresia enfrenta a Uva y le recuerda que Limón seguirá unido a ella por su hijo. Uva rechaza competir por su amor y exige sinceridad. ¿Conseguirá Fresia dividir a la pareja?",
+ specific_event:"Fresia enfrenta a Uva por los sentimientos hacia Limón.",
  uncertainty:""
 };
-let calls=0;
-const state={key:"fixture-secret",response:modelResult,fail:false};
+let attempts=[];
+const state={key:"free-test-key",price:"0",catalogHTTP:200,completionHTTP:200,payload:story};
+const catalog=(price)=>({data:[{id:"deepseek/deepseek-v4-flash-0731:free",pricing:{prompt:price,completion:price,request:"0"}}]});
 const ctx={
- Deno:{env:{get:(k)=>k==="GEMINI_API_KEY"?state.key:""}},
+ Deno:{env:{get:(k)=>k==="OPENROUTER_API_KEY"?state.key:""}},
  AbortSignal,
- fetch:async(url,req)=>{
-  calls++;
-  assert(url.includes("generativelanguage.googleapis.com"),"must hit genuine model provider");
-  const parsed=JSON.parse(req.body);
-  assert(parsed.contents[0].parts[0].text.includes("Fresia confronta a Uva"),"model must see episode prompt");
-  if(state.fail)return {ok:false,status:429};
-  return {ok:true,json:async()=>({candidates:[{content:{parts:[{text:JSON.stringify(state.response)}]}}]})};
+ fetch:async(url,opts={})=>{
+  attempts.push(String(url));
+  if(String(url).endsWith("/models")){
+   return {ok:state.catalogHTTP===200,status:state.catalogHTTP,json:async()=>catalog(state.price)};
+  }
+  assert(String(url).endsWith("/chat/completions"),"must call only free verified model API");
+  const request=JSON.parse(opts.body);
+  assert(request.model.endsWith(":free"),"must only call explicitly free variant");
+  assert.equal(request.provider.allow_fallbacks,false,"no fallback to potentially billed models");
+  assert(request.messages[1].content.includes("Fresia confronta a Uva"),"full prompt missing");
+  return {ok:state.completionHTTP===200,status:state.completionHTTP,json:async()=>({choices:[{message:{content:JSON.stringify(state.payload)}}]})};
  }
 };
-const {realAICopy}=vm.runInNewContext(fn,ctx);
-const prompt="EPISODE\nFRESIA CONTRAATACA: Fresia confronta a Uva. Uva tells her she refuses to compete for Limón.";
-let out=await realAICopy(prompt);
-assert.equal(out.method,"generative_ai");
-assert(out.title.includes("Fresia enfrenta a Uva"));
-assert(out.title.length<=100);
-assert(out.description.includes("Uva responde"));
-assert(out.description.includes("#FruttiDrama"));
-assert.equal(calls,1);
-state.key="";
-out=await realAICopy(prompt);
-assert.equal(out.error,"AI_NOT_CONFIGURED","no silent generic fallback when AI key missing");
-assert.equal(calls,1);
-state.key="fixture-secret";state.fail=true;
-out=await realAICopy(prompt);
-assert.equal(out.error,"AI_HTTP_429","rate limits must not be confused with story analysis");
-state.fail=false;state.response={identified:false,title:"",description:"",specific_event:"",uncertainty:"No hay trama del episodio"};
-out=await realAICopy(prompt);
-assert.equal(out.error,"AI_STORY_UNKNOWN","unclear story must fail closed");
-console.log("PASS FruttiDrama: genuine AI HTTP request, story grounded copy, no-key error, rate limit and low-confidence gates");
+const {realAICopy}=vm.runInNewContext(executable,ctx);
+const prompt="EPISODE\nFRESIA CONTRAATACA: Fresia confronta a Uva about her relationship with Limón.";
+let result=await realAICopy(prompt);
+assert.equal(result.method,"free_chinese_llm");
+assert(result.title.startsWith("FRESIA CONTRAATACA:"));
+assert(result.description.includes("Fresia enfrenta a Uva"));
+assert(result.description.includes("#FruttiDrama"));
+assert.deepEqual(attempts.length,2,"must verify live prices before generating");
+
+state.key="";attempts=[];
+result=await realAICopy(prompt);
+assert.equal(result.error,"FREE_AI_NOT_CONFIGURED");
+assert.equal(attempts.length,0,"unconfigured provider should not call external API");
+
+state.key="free-test-key";state.price="0.0001";attempts=[];
+result=await realAICopy(prompt);
+assert.equal(result.error,"NO_VERIFIED_FREE_MODEL");
+assert.equal(attempts.length,1,"nonzero pricing must forbid completion calls");
+
+state.price="0";state.completionHTTP=429;attempts=[];
+result=await realAICopy(prompt);
+assert.equal(result.error,"FREE_AI_HTTP_429");
+assert.equal(attempts.length,2,"rate limit must never trigger paid fallback");
+
+state.completionHTTP=200;state.payload={identified:false,uncertainty:"No hay trama del episodio."};attempts=[];
+result=await realAICopy(prompt);
+assert.equal(result.error,"FREE_AI_STORY_UNKNOWN");
+
+console.log("PASS free model only, live price verification, no key, no charge, 429 no fallback, narrative validity");
