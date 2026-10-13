@@ -4,7 +4,7 @@
 const TAGS="#Shorts #ViralShorts #FruttiDrama";
 const PEOPLE=/\b(?:Don Mel[oó]n|Lim[oó]n(?: Duarte)?|Uva(?: Reyes)?|Mango(?: Del Rio)?|Fresia|Banana|Bananita|Naranja)\b/gi;
 const TECH=/\b(?:9:16|720p|1080p|one continuous|unbroken take|lighting|camera|cinematography|cinematic|framing|shot change|lens|character reference|reference sheet|glitch|subtitles|no duplicates|assets?|lip.?sync|audio ambience|foreground|background|portrait orientation|voice assignment|frame rate|negative prompt|idioma:|constraints:|model intent|exactly one|render this exact|visual style|soft lighting|color grading|plano|iluminaci[oó]n|c[aá]mara|encuadre|sin duplicados)\b/i;
-const ACT=/(?:enfrenta|confronta|encara|confronts?|faces?|discute|argues?|advierte|warns?|amenaza|threatens?|besa|besan|kiss(?:es|ed)?|tries to kiss|intenta besar|embaraz\w*|pregnan\w*|le cuenta|hace creer|envenena|poisons?|muere|dies|fallece|da a luz|gives birth|nace|humilla|insulta|humiliates?|insults?|revela|reveals?|confiesa|confesses?|admite|admits?|descubre|discovers?|encuentra|finds?|escucha|overhears?|rechaza|rejects?|refuses?|se niega|promete|promises?|miente|lies?|deceives?|enga[ñn]a|observa|watches?|ve a|sees?|irrumpe|interrumpe|interrupts?|aparece|arrives?|enters?|abandona|leaves?|walks away|expulsa|throws out|le dice|tells?|says?|anuncia|announces?|muestra|shows?|entrega|hands?|llora|cries|acusa|accuses?|celos|jealous)\b/i;
+const ACT=/(?:enfrenta|confronta|encara|confronts?|faces?|discute|argues?|advierte|warns?|amenaza|threatens?|besa|besan|kiss(?:es|ed)?|tries to kiss|intenta besar|embaraz\w*|pregnan\w*|le cuenta|hace creer|envenena|poisons?|muere|dies|fallece|da a luz|gives birth|nace|humilla|insulta|humiliates?|insults?|revela|reveals?|confiesa|confesses?|admite|admits?|descubre|discovers?|encuentra|finds?|escucha|overhears?|rechaza|rejects?|refuses?|se niega|promete|promises?|miente|lies?|deceives?|enga[ñn]a|observa|watches?|ve a|sees?|irrumpe|interrumpe|interrupts?|aparece|arrives?|enters?|abandona|leaves?|walks away|expulsa|throws out|le dice|tells?|says?|anuncia|announces?|muestra|shows?|entrega|hands?|llora|cries|acusa|accuses?|celos|jealous|speaks?|speaking|speak to|asks?|asking|replies?|replying|responds?|retorts?|whispers?|shouts?|taunts?|accus(?:es|ing|ation)|reassures?|demands?|insists?|interrupt(?:s|ed)?|returns?|steps? in|steps? between|steps? away|walks? (?:out|away|into)|storms? (?:out|in)|pleads?|begs?|blames?|confirms?|announc(?:es|ed)|refutes?|disputes?|provok(?:es|ed)|provoca|responde|pregunta|asegura|insiste|le exige|increpa|confirma|responde a|retira|se aleja|se interpone)\b/i;
 const STOP=/^(?:CREATIVE BIBLE|SHOW BIBLE|CANON|CONTINUITY|REFERENCE|REFERENCES|VISUAL|CHARACTER|AUDIO|VOICE|CAMERA|LIGHTING|NEGATIVE|ANTI.GLITCH|DIALOGUE RULES|NARRATIVE NOVELTY|RESTRICTIONS|CONSTRAINTS|IDIOMA|LANGUAGE|GENERATION|TECHNICAL|SOUND DESIGN|RULES|ASSET LOCK|EMOTION|CINEMATOGRAPHY|END STATE|BEATS\s*\/\s*TIMING)\b/i;
 const HEADING=/^(?:EPISODE|EPISODIO(?: ACTUAL)?|STORY|TRAMA(?: DEL EPISODIO)?|PLOT|SINOPSIS|EPISODE STORY|HISTORIA DEL EPISODIO|DRAMATIC ACTION|ESCENA PRINCIPAL)\s*[:：]?\s*$/i;
 const clean=s=>String(s||"").replace(/\s+/g," ").trim();
@@ -17,50 +17,79 @@ function names(line){
  }
  return seen;
 }
+// This is an interpreter of actual Flow generation prose, NOT a search for a
+// compulsory 'EPISODE' header. Google Flow prompts often tell the drama inside
+// shot/beat timing and character dialogue. Previous versions wrongly discarded
+// complete paragraphs whenever they contained one technical word.
 function extract(raw){
- const lines=String(raw||"").replace(/\r/g,"").split("\n").map(x=>x.trim());
- let hook="",blocks=[];
- for(let i=0;i<lines.length;i++){
-  const line=lines[i];
-  if(/^HOOK\s*:/i.test(line))hook=clean(line.slice(line.indexOf(":")+1));
-  const inline=line.match(/^(?:EPISODE INTENT|TRAMA|SINOPSIS|STORY|PLOT|EPISODIO ACTUAL|DRAMATIC ACTION)\s*:\s*(.{25,})/i);
-  if(inline&&!TECH.test(inline[1]))blocks.push({text:inline[1],weight:10});
-  if(!HEADING.test(line))continue;
-  const parts=[];
-  for(let j=i+1;j<Math.min(lines.length,i+18);j++){
-   const s=lines[j];
-   if(!s){if(parts.length)break;continue}
-   if(STOP.test(s)||HEADING.test(s)||/^[A-Z][A-Z /_-]{9,}$/.test(s)&&parts.length)break;
-   if(/^HOOK\s*:/i.test(s)){hook=clean(s.slice(s.indexOf(":")+1));continue}
-   const t=s.replace(/^EPISODE INTENT:\s*/i,"");
-   if(!TECH.test(t))parts.push(t);
-   if(parts.join(" ").length>1600)break;
+ const original=String(raw||"").replace(/\r/g,"");
+ if(original.length<20)return {error:"STORY_NOT_FOUND",detail:"Falta el prompt completo de generación."};
+ const lines=original.split("\n").map(x=>x.trim()).filter(Boolean);
+ const blocks=[];
+ let hook="",section="neutral",lineNo=0;
+ const sceneHead=/^(?:SCENE|ESCENA|SHOT|PLANO|BEAT|STORY BEAT|STORY ACTION|ON SCREEN|ACTING|ACTION|ACCI[OÓ]N|DIALOGUE|DI[AÁ]LOGO|SCRIPT|GUI[OÓ]N|TIMELINE|SEQUENCE|SECUENCIA|CHARACTER INTERACTION|DRAMATIC EVENT|DRAMATIC ACTION|CONFLICT|CONFLICTO|ESCENAS?|WHAT HAPPENS|QU[EÉ] SUCEDE|NARRATIVE)\b/i;
+ const contextHead=/^(?:CANON|SHOW BIBLE|CREATIVE BIBLE|PREVIOUS EPISODE|PREVIOUSLY|BACKSTORY|ESTABLISHED|REFERENCES?|CHARACTER SHEETS?|HISTORY|CONTINUITY|BACKGROUND CANON|ANTECEDENTES)\b/i;
+ const technicalHead=/^(?:CAMERA|LIGHTING|VISUALS?|AUDIO|SOUND|SFX|NEGATIVE|CONSTRAINTS|ANTI.GLITCH|RULES|ASSET|VOICE RULES|REFERENCE|LENS|FRAMING|RENDER|GENERATION|COLOR GRADING|SAFETY|IDIOMA|LANGUAGE)\b/i;
+ const splitSentences=(t)=>String(t).split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÜÑ0-9“"'¿])|;\s*|\s*[•●]\s*/).map(clean).filter(Boolean);
+ const push=(text,weight)=>{
+  const c=clean(text).replace(/^[-–•*]+\s*/,"");
+  if(c.length<20||c.length>1350)return;
+  // Technical directions can coexist on a line with the actual action: split
+  // sentences/clauses, do NOT reject the entire script or mark as malformed.
+  for(const piece of splitSentences(c)){
+   const hasNames=names(piece).length>0;
+   const hasAction=ACT.test(piece);
+   const dialogue=/[«“"][^»”"]{12,}[»”"]/.test(piece)||/\b(?:dialogue|line spoken|says|tells|retorts|responds|whispers|shouts|asks|afirma|responde|pregunta)\b/i.test(piece);
+   const technical=TECH.test(piece)&&!hasAction;
+   if((hasAction&&hasNames||dialogue&&hasNames)&&!technical)
+    blocks.push({text:piece,weight:weight+(hasNames?3:0)+(hasAction?3:0)+(dialogue?1:0),index:lineNo});
   }
-  if(parts.length)blocks.push({text:parts.join(" "),weight:9});
- }
- const beat=[];
+ };
  for(const line of lines){
-  const b=line.match(/^(?:SCENE\s*\d+|ESCENA\s*\d+|BEAT\s*\d+|0?[0-9](?::[0-5][0-9])?\s*[-–]\s*0?[0-9](?::[0-5][0-9])?\s*(?:s|sec)?|ACTION|ACCI[OÓ]N)\s*[:–-]?\s*(.+)$/i);
-  if(b&&ACT.test(b[1])&&!TECH.test(b[1]))beat.push(b[1]);
- }
- if(beat.length)blocks.push({text:beat.join(". "),weight:7});
- if(!blocks.length){
-  let ignoring=false;const found=[];
-  for(const line of lines){
-   if(STOP.test(line)){ignoring=true;continue}
-   if(HEADING.test(line)){ignoring=false;continue}
-   if(!ignoring&&ACT.test(line)&&!TECH.test(line)&&names(line).length)found.push(line);
+  lineNo++;
+  const h=line.match(/^HOOK\s*[:：]\s*(.{3,90})$/i);
+  if(h){hook=h[1].trim();continue}
+  const inline=line.match(/^(?:EPISODE INTENT|EPISODE STORY|CURRENT EPISODE|EPISODIO ACTUAL|TRAMA(?: DEL EPISODIO)?|SINOPSIS|PLOT|STORY|CONFLICTO|DRAMATIC ACTION|ACTION BEAT)\s*[:：-]\s*(.{20,})$/i);
+  if(inline){section="episode";push(inline[1],35);continue}
+  if(HEADING.test(line)){section="episode";continue}
+  if(contextHead.test(line)&&line.length<150){section="canon";continue}
+  if(technicalHead.test(line)&&line.length<150){section="technical";continue}
+  if(sceneHead.test(line)&&line.length<95&&/[:：]?\s*$/.test(line)){section="scene";continue}
+  if(/^[-=]{3,}$/.test(line))continue;
+  if(section==="canon")continue;
+  if(section==="technical"){
+   // A new timed scene terminates a run of production directions.
+   if(/^(?:\d{1,2}\s*(?:s|sec)|\d{1,2}(?::\d{2})?\s*[-–]\s*\d|scene\s*\d+|escena\s*\d+|beat\s*\d+)\b/i.test(line)){
+    section="scene";
+   }else if(!(ACT.test(line)&&names(line).length&&line.length>45))continue;
   }
-  if(found.length)blocks.push({text:found.slice(0,4).join(". "),weight:2});
+  const beat=line.match(/^(?:SCENE|ESCENA|BEAT|SHOT|PLANO)\s*\d+\s*[:：–-]\s*(.{16,})$/i)||
+     line.match(/^\s*(?:\d+(?::\d{2})?)\s*[-–]\s*(?:\d+(?::\d{2})?)\s*(?:s|sec)?\s*[:：-]?\s*(.{16,})$/i);
+  if(beat){section="scene";push(beat[1],27);continue}
+  const speaker=line.match(/^(?:DIALOGUE\s*[:：]\s*)?((?:Fresia|Uva(?: Reyes)?|Lim[oó]n(?: Duarte)?|Banana|Mango(?: Del Rio)?|Don Mel[oó]n|Naranja|Bananita))(?:\s*\([^)]{1,70}\))?\s*[:：-]\s*(.{8,})$/i);
+  if(speaker){
+   // Preserve the *actual speech* as the dramatic event. Never describe an
+   // unrelated illness mentioned in a prior CANON section as today's action.
+   const speech=clean(speaker[2]);
+   if(speech.length>15&&!TECH.test(speech))push(speaker[1]+" le dice: "+speech,29);
+   continue;
+  }
+  push(line,section==="episode"?27:section==="scene"?21:section==="technical"?9:10);
  }
- blocks=blocks.map(x=>({text:clean(x.text),weight:x.weight})).filter(x=>x.text.length>23&&ACT.test(x.text)&&!TECH.test(x.text));
- blocks.sort((a,b)=>b.weight-a.weight||a.text.length-b.text.length);
- if(!blocks.length)return {error:"STORY_NOT_FOUND",detail:"No encontré una acción narrativa clara en este prompt. No voy a inventar la trama ni copiar instrucciones técnicas."};
- let story=blocks[0].text;
- const formatted=story.match(/^([A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+)\s*[:：]\s*(.{24,})$/);
- if(formatted){hook=hook||formatted[1];story=formatted[2]}
- return {story:clean(story.slice(0,1450)),hook};
+ blocks.sort((x,y)=>y.weight-x.weight||x.index-y.index);
+ if(!blocks.length)return {error:"STORY_NOT_FOUND",detail:"No se pudo extraer un acontecimiento ni diálogo suficiente del prompt. El sistema anterior tenía un resumen 'story' aparte; para este caso podés escribir una sola frase sobre lo que sucede en el video, sin volver a copiar el prompt."};
+ let chosen=blocks[0];
+ let story=chosen.text;
+ // Keep neighboring beat only when it has shared character and no technical
+ // contamination, so narrative covers both confrontation and consequence.
+ const next=blocks.filter(x=>x!==chosen&&Math.abs(x.index-chosen.index)<=6&&names(x.text).some(n=>names(story).includes(n))&&!TECH.test(x.text)).slice(0,1);
+ if(next.length)story=clean(story+" "+next[0].text);
+ const embedded=story.match(/^([A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+)\s*[:：]\s*(.{20,})$/);
+ if(embedded){hook=hook||embedded[1];story=embedded[2]}
+ if(!ACT.test(story)&&!/le dice:/.test(story))return {error:"STORY_NOT_FOUND",detail:"El prompt contiene indicaciones de producción, pero no identifiqué una acción narrativa."};
+ return {story:story.slice(0,1800),hook,extract_method:chosen.weight>=27?"episode_or_dialogue":"scene_action"};
 }
+
 const RULES=[
  {key:"veneno",re:/envenena|poisons?/i,hook:"VENENO MORTAL",verb:"envenena",intro:"cruza un límite irreversible al envenenar"},
  {key:"muerte",re:/\bmuere\b|\bdies\b|fallece/i,hook:"MUERTE DEVASTADORA",verb:"muere",intro:"muere y deja a sus seres queridos enfrentando una pérdida devastadora"},
