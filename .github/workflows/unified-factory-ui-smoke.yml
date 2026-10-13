@@ -7,6 +7,8 @@ on:
       - "docs/index.html"
       - "factory-web/public/index.html"
       - "scripts/check-unified-factory-ui.mjs"
+      - "scripts/test-frutti-copy.mjs"
+      - "supabase/functions/publisher-frutti-recap/index.ts"
       - ".github/workflows/unified-factory-ui-smoke.yml"
   workflow_dispatch:
 
@@ -24,3 +26,5 @@ jobs:
           node-version: "24"
       - name: Check both Factory UIs without browser, Flow or publication
         run: node scripts/check-unified-factory-ui.mjs
+      - name: Validate FruttiDrama narrative metadata without production writes
+        run: node scripts/test-frutti-copy.mjs
