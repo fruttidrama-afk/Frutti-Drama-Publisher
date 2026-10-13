@@ -14,8 +14,13 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
  const checked=spawnSync(process.execPath,["--check",temp],{encoding:"utf8"});
  fs.rmSync(temp,{force:true});
  if(checked.status!==0)throw Error(name+" JavaScript syntax invalid: "+checked.stderr);
- for(const marker of ["id=\"udModeRecovery\"","id=\"udRecoveryVideos\"","id=\"udRecoveryPrompts\"","id=\"udShowPrompts\"","frutti-prompt-studio-active.json","udSetPublisherPane(","async function udSaveMatch(","publisher-forensic-match"]){
+ for(const marker of ["id=\"udModeRecovery\"","id=\"udRecoveryVideos\"","id=\"udRecoveryPrompts\"","id=\"udShowPrompts\"","id=\"udRecapPrompt\"","id=\"udRecapSeason\"","id=\"udRecapEpisode\"","id=\"udRecapTitle\"","id=\"udRecapDescription\"","id=\"udRecapSave\"","publisher-frutti-recap","udFruttiRecap.load(","udSetPublisherPane("]){
   if(!html.includes(marker))throw Error(name+" missing recovery workstation "+marker);
  }
- console.log("PASS",name,"module syntax + unified publisher anchors + legacy action guard");
+ const pathToRecap=path.join(path.dirname(name),"frutti-recap.js");
+ if(!fs.existsSync(pathToRecap))throw Error(name+" missing isolated Frutti recap module");
+ const r=spawnSync(process.execPath,["--check",pathToRecap],{encoding:"utf8"});
+ if(r.status!==0)throw Error(name+" recap module syntax invalid: "+r.stderr);
+ if(!html.includes("#udPromptBrowser{display:none!important}"))throw Error(name+" still exposes unverified Prompt Studio plans");
+ console.log("PASS",name,"module syntax + private recap controls + no automatic publication");
 }
