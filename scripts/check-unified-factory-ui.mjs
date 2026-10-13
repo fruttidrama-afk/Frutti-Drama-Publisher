@@ -25,8 +25,8 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
   if(!html.includes(id))throw Error(name+" missing visible AI diagnostic "+id);
  }
  if(!(html.indexOf('id="udRecapAiState"')<html.indexOf('id="udRecapSuggest"')&&html.indexOf('id="udRecapSuggest"')<html.indexOf('id="udRecapAiResult"')))throw Error(name+" AI error is not beside button");
- for(const phrase of ['response.ai_status','showAIResult("No se generaron','aiStatus.connected===false']){
-  if(!recapJs.includes(phrase))throw Error(name+" missing clear missing-AI handling: "+phrase);
+ for(const phrase of ['response.ai_status','showAIResult("No se pudo identificar','Generador editorial original']){
+  if(!recapJs.includes(phrase))throw Error(name+" missing historical editorial recap handling: "+phrase);
  }
 
  const r=spawnSync(process.execPath,["--check",pathToRecap],{encoding:"utf8"});
