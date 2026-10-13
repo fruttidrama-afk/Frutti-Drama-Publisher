@@ -87,6 +87,41 @@ const inlineScene=generate([
 assert(!inlineScene.error,"inline SCENE 1: dialogue/action must be parsed, not misclassified as empty heading: "+JSON.stringify(inlineScene));
 assert(/Fresia.*Uva/.test(inlineScene.title),"inline scene core action must identify both participants");
 
+
+const userActualScene=generate([
+ "FruttiDrama 10s vertical one continuous scene, hyperrealistic 3D hacienda.",
+ "SCENE 1: Uva Reyes and Limón Duarte share a romantic conversation in the garden.",
+ "SCENE 2: Fresia enters abruptly and interrupts their romantic moment while Uva and Limón look at her.",
+ "Only Fresia speaks. Limón Duarte and Uva Reyes say nothing. No duplicate characters."
+].join("\n"));
+assert(!userActualScene.error,"three-actor romance scene must generate: "+JSON.stringify(userActualScene));
+assert(/Fresia.*Uva y Limón/.test(userActualScene.title),"title must identify BOTH interrupted people: "+userActualScene.title);
+assert(/conversación romántica entre Uva y Limón/.test(userActualScene.description),"description must narrate the ROMANTIC relation between both: "+userActualScene.description);
+assert(!/conversación de Uva\b/.test(userActualScene.description),"one-sided conversation not allowed");
+assert(userActualScene.title.length<=100,"title must respect 100-char YouTube limit");
+assert(userActualScene.description.endsWith("#Shorts #ViralShorts #FruttiDrama"),"description hashtags missing");
+
+const singleSentence=generate("ESCENA: Fresia irrumpe en medio de una conversación romántica entre Uva Reyes y Limón Duarte en el jardín de la hacienda.");
+assert(!singleSentence.error,"single sentence interruption must generate: "+JSON.stringify(singleSentence));
+assert(/Fresia.*Uva y Limón/.test(singleSentence.title),"single sentence must mention both partners");
+assert(singleSentence.description.includes("conversación romántica entre Uva y Limón"),"single sentence must narrate both");
+
+const businessConversation=generate([
+ "Uva Reyes and Limón Duarte are discussing the finances of the hacienda.",
+ "Fresia suddenly enters and interrupts their conversation."
+].join("\n"));
+assert(!businessConversation.error,"non-romantic conversation should generate");
+assert(/Fresia.*Uva y Limón/.test(businessConversation.title),"non-romantic interruption needs both interlocutors");
+assert(!/romántica/.test(businessConversation.description),"do not invent romance in non-romantic business scene");
+
+const canonLeak=generate([
+ "CANON",
+ "Limón Duarte once confessed romantic feelings for Uva Reyes.",
+ "STORY",
+ "Fresia interrumpe a Uva Reyes durante una conversación sin Limón presente."
+].join("\n"));
+assert(!/interrumpe a Uva y Limón/.test(canonLeak.title||""),"must not invent a third person from historical CANON");
+console.log("PASS three-person interrupt, romantic specifics, one sentence, grounded non-romance, canon isolation");
 const irrelevant=generate(technical);
 assert(irrelevant.error,"technical-only prompt must be rejected");
 const canonOnly=generate("CANON\nMango envenena a Banana.\nCREATIVE BIBLE\nDrama for 10 seconds. Camera close-ups. Character identity fixed.");
