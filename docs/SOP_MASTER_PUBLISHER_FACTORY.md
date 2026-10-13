@@ -473,3 +473,16 @@ These rules are mandatory for every existing and future Publisher that uses the 
 
 6. **Golden verification requires state evidence, not only a green workflow.** A successful scheduler run is insufficient if no obligation was claimed. Verify the tuple: Publisher `enabled=true`, migration state runnable, obligation transitions `pending -> claimed -> running -> completed/blocked-with-known-cause`, durable state re-uploaded, and no unintended paid-credit consumption.
 
+
+
+## FruttiDrama · titulado y descripción basados en trama real (2026-10-13)
+
+Este procedimiento se aplica a la **recapitulación temporal de FruttiDrama** y a cualquier futura implementación que reutilice la generación de metadatos de FruttiDrama. No modificar los estilos de Dinnie ni de Earth.
+
+1. Para una generación reconstruida, el prompt confirmado que pega la operadora es la fuente documental. **No usar** los prompts históricos compilados de Prompt Studio ni su mapeo hipotético.
+2. Del prompt completo, **extraer el bloque argumental del episodio** (`EPISODE`, `EPISODIO`, `TRAMA`, `PLOT`, `EPISODE INTENT`, escenas o beats expresos). Excluir canon previo, instrucciones de cámara, audio, referencias visuales, continuidad genérica, restricciones técnicas y reglas antiglitch.
+3. La estructura del título se conserva: **DOS PRIMERAS PALABRAS EN MAYÚSCULAS: [suceso concreto de ese video]**. El suceso debe nombrar personajes y/o acciones reconocibles. Prohibido usar como resultado final “DRAMA FAMILIAR: una nueva crisis golpea a la familia”, “GIRO IMPACTANTE: lo cambia todo” u otros metadatos vacíos.
+4. La **descripción no es el prompt**. Es un párrafo original, melodramático y específico: qué personaje actuó, contra quién, qué reveló o decidió y qué conflicto se abrió. Cerrar con una pregunta conectada a **ese** acontecimiento, luego `#Shorts #ViralShorts #FruttiDrama`. No incluir instrucciones de estilo, “one continuous scene”, “unbroken take”, 9:16 ni otras órdenes de producción.
+5. Si la narrativa no puede extraerse con suficiente confianza, **fallar sin contenido** y dejar edición manual, no inventar personajes, diagnósticos, relaciones o giros. Una mención en `CANON` sobre Banana o Mango no prueba que ese sea el suceso del video nuevo.
+6. La propuesta del motor editorial actual es por reglas con casos narrativos específicos, **no IA generativa conectada**; no presentarla como una interpretación semántica garantizada. El video real manda, y la operadora debe validar el texto antes del guardado en el stock **reconstruido, no publicable**.
+7. Mantener el set de pruebas `scripts/test-frutti-copy.mjs` ejecutado por el smoke workflow. Los casos cubren aislamiento de CANON y de texto técnico, dos primeras palabras en mayúsculas, longitud del título, narración específica, pregunta final y hashtags. Nuevo incidente de metadata exige agregar fixture de regresión representativa antes de cerrar.
