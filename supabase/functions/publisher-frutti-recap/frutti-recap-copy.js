@@ -40,7 +40,7 @@ function extract(raw){
    const hasNames=names(piece).length>0;
    const hasAction=ACT.test(piece);
    const dialogue=/[«“"][^»”"]{12,}[»”"]/.test(piece)||/\b(?:dialogue|line spoken|says|tells|retorts|responds|whispers|shouts|asks|afirma|responde|pregunta)\b/i.test(piece);
-   const technical=TECH.test(piece)&&!hasAction;
+   const technical=(TECH.test(piece)&&!hasAction)||/^(?:only|exactly)\s+(?:Fresia|Lim[oó]n|Uva|Banana|Mango|Don Mel[oó]n)\s+(?:speaks?|is present|appears?|talks?)(?:\W|$)/i.test(piece)||/\b(?:say nothing|says nothing|remain silent|no overlap|character designs match|never duplicated)\b/i.test(piece);
    if((hasAction&&hasNames||dialogue&&hasNames)&&!technical)
     blocks.push({text:piece,weight:weight+(hasNames?3:0)+(hasAction?3:0)+(dialogue?1:0),index:lineNo});
   }
@@ -82,7 +82,7 @@ function extract(raw){
  let story=chosen.text;
  // Keep neighboring beat only when it has shared character and no technical
  // contamination, so narrative covers both confrontation and consequence.
- const next=blocks.filter(x=>x!==chosen&&x.index>=chosen.index&&x.index-chosen.index<=3&&/\b(?:watches?|sees?|observa|presencia|entra|interrumpe|interrupts?|reacts?|reacciona)\b/i.test(x.text)&&!TECH.test(x.text)).slice(0,1);
+ const next=blocks.filter(x=>x!==chosen&&x.index>=chosen.index&&x.index-chosen.index<=3&&!TECH.test(x.text)&&(/\b(?:watches?|sees?|observa|presencia|entra|interrumpe|interrupts?|reacts?|reacciona)\b/i.test(x.text)||names(x.text).some(n=>names(story).includes(n)))).slice(0,1);
  if(next.length)story=clean(story+" "+next[0].text);
  const embedded=story.match(/^([A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+)\s*[:：]\s*(.{20,})$/);
  if(embedded){hook=hook||embedded[1];story=embedded[2]}
@@ -110,7 +110,7 @@ const RULES=[
  {key:"embarazo",re:/embarazad[ao]|pregnan[tc]|espera un beb[eé]/i,hook:"EMBARAZO REVELADO",verb:"revela un embarazo ante",intro:"comunica una noticia sobre un embarazo a"},
  {key:"prueba",re:/muestra|entrega|shows?|hands? over/i,hook:"PRUEBA REVELADA",verb:"le muestra una prueba a",intro:"pone una evidencia ante"},
  {key:"observar",re:/observa|watches?|presencia|sees?/i,hook:"TESTIGO INESPERADO",verb:"observa a",intro:"presencia una escena que involucra a"},
- {key:"hablar",re:/le dice|tells?|says? to|anuncia|announces?/i,hook:"PALABRAS DECISIVAS",verb:"habla con",intro:"habla directamente con"}
+ {key:"hablar",re:/le dice|tells?|says? to|announc(?:es|ed)|speaks? to|replies?|retorts?|responds? to|asks?|insists?|taunts?|declares?|afirma|responde a|pregunta a|asegura/i,hook:"PALABRAS DECISIVAS",verb:"habla con",intro:"habla directamente con"}
 ];
 function episodeEvent(story){
  const clauses=story.split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑ])|;\s*/).filter(Boolean);
