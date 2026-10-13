@@ -13,6 +13,7 @@ export function initFruttiRecap({session,udText}){
  const showAIState=()=>{
   const el=$("#udRecapAiState");
   if(!el)return;
+  const link=$("#udRecapFreeAiSetup");if(link)link.hidden=aiStatus.connected!==false;
   if(aiStatus.connected===true){
    el.dataset.status="connected";
    el.textContent="✓ Conexión detectada: "+(aiStatus.provider||"IA china gratuita")+". Solo modelos :free con precio de entrada/salida $0 verificado antes de cada solicitud. Sin fallback pago ni compras automáticas.";
