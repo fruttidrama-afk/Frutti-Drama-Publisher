@@ -74,6 +74,7 @@ export function initFruttiRecap({session,udText}){
   files=input||[];
   const response=await request("GET");records=new Map((response.items||[]).map(v=>[v.file_index,v]));
   summary();render();renderStock();
+  $("#udRecapStatus").textContent=response.ai_status?.connected?"IA conectada: "+response.ai_status.provider+". Pegá el prompt y presioná Generar.":"IA generativa sin conectar: se necesita una credencial privada GEMINI_API_KEY u OPENAI_API_KEY en Supabase. El botón mostrará un error preciso hasta completar la conexión.";
   $("#udForensicStatus").textContent="Listo. Los prompts de planificación fueron retirados de esta sección. Seleccioná un archivo y pegá el verdadero prompt.";
   if(selected!==null)selectFile(selected,false);
   $("#udForensicFilter").onchange=render;$("#udForensicSearch").oninput=render;
