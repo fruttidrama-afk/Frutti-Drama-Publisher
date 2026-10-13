@@ -15,10 +15,10 @@ export function initFruttiRecap({session,udText}){
   if(!el)return;
   if(aiStatus.connected===true){
    el.dataset.status="connected";
-   el.textContent="Credencial de "+(aiStatus.provider||"IA")+" detectada en el servidor. Podés generar una propuesta (la validez se comprueba al usarla).";
+   el.textContent="✓ Conexión detectada: "+(aiStatus.provider||"IA china gratuita")+". Solo modelos :free con precio de entrada/salida $0 verificado antes de cada solicitud. Sin fallback pago ni compras automáticas.";
   }else if(aiStatus.connected===false){
    el.dataset.status="missing";
-   el.textContent="IA NO CONFIGURADA: este proyecto de Supabase no tiene una credencial GEMINI_API_KEY u OPENAI_API_KEY. Sin ella no se puede generar una propuesta con IA. El prompt y el video siguen intactos.";
+   el.textContent="IA CHINA GRATIS SIN CONECTAR: configurá OPENROUTER_API_KEY (clave gratuita de openrouter.ai/keys) en Supabase → Edge Functions → Secrets. No necesitás cargar tarjeta ni activar pagos. Solo se permiten modelos DeepSeek/Qwen :free, con precio $0 verificado.";
   }else{
    el.dataset.status="unknown";
    el.textContent="No se pudo comprobar la disponibilidad de IA. Verificá la sesión o la conexión.";
@@ -113,7 +113,7 @@ export function initFruttiRecap({session,udText}){
    return;
   }
   if(aiStatus.connected===false){
-   showAIResult("Generación bloqueada: falta conectar una credencial de IA en Supabase. Configurá GEMINI_API_KEY u OPENAI_API_KEY en Edge Functions → Secrets, actualizá esta página y volvé a intentar. No necesitás pegar la clave en este chat.");
+   showAIResult("Falta una clave gratuita de OpenRouter. Creala en https://openrouter.ai/keys y guardala como OPENROUTER_API_KEY en Supabase → Edge Functions → Secrets. No actives facturación. Esta herramienta nunca elegirá una IA paga.");
    return;
   }
   const btn=$("#udRecapSuggest");
