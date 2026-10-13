@@ -119,6 +119,12 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 #unifiedDashboard .ud-recap-warning{border:1px solid #dccfae;background:#fbf7ed;border-radius:10px;padding:12px;line-height:1.5;color:#3b3427;font-size:12px}
 @media(max-width:900px){#unifiedDashboard .ud-recap-actions button{flex:1 1 160px}}
 
+#unifiedDashboard .ud-recap-ai-state{border:1px solid #d8e2e8;background:#f7fafc;padding:10px 12px;border-radius:9px;color:#20374a;font:600 12px/1.55 system-ui}
+#unifiedDashboard .ud-recap-ai-state[data-status="missing"]{border-color:#d4b793;background:#fff8ef;color:#71471c}
+#unifiedDashboard .ud-recap-ai-state[data-status="connected"]{border-color:#aacdbc;background:#f1f9f3;color:#1f593b}
+#unifiedDashboard .ud-recap-ai-result{border:1px solid #dba7a7;background:#fff3f2;border-radius:10px;padding:12px;color:#792c26;font:700 13px/1.55 system-ui;white-space:pre-wrap}
+#unifiedDashboard .ud-recap-ai-result[data-status="success"]{border-color:#9ec9b3;background:#ecf8f1;color:#1c5b39}
+#unifiedDashboard .ud-recap-ai-result[hidden]{display:none!important}
 </style>
 </head>
 <body>
@@ -166,9 +172,11 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
  </label>
  <div class="ud-recap-copy">
   <strong>Metadatos de YouTube Shorts</strong>
-  <p class="udmuted">El sistema analiza el conflicto del episodio, no las indicaciones de cámara ni el canon previo. El título debe decir qué sucede; la descripción debe narrar hechos concretos y sus consecuencias. Si el prompt no aporta trama suficiente, no se inventará una.</p>
+  <p class="udmuted">Con IA generativa conectada, el sistema identifica el acontecimiento de este episodio y redacta un título concreto y una descripción original. Si la IA no está disponible, mostrará la causa y no inventará contenido.</p>
+  <div id="udRecapAiState" class="ud-recap-ai-state" role="status" aria-live="polite">Comprobando conexión con el proveedor de IA…</div>
   <div class="ud-recap-actions"><button type="button" id="udRecapSuggest">GENERAR PROPUESTA DESDE PROMPT</button></div>
-  <p id="udRecapEvidence" class="ud-recap-notice" aria-live="polite">Acción narrativa extraída: pendiente de analizar el prompt.</p>
+  <p id="udRecapAiResult" class="ud-recap-ai-result" role="alert" aria-live="assertive" hidden></p>
+  <p id="udRecapEvidence" class="ud-recap-notice" aria-live="polite">La interpretación de la trama aparecerá aquí cuando se genere la propuesta.</p>
   <label>Título · dos primeras palabras en MAYÚSCULAS
    <textarea id="udRecapTitle" maxlength="100" rows="2" placeholder="PRUEBA POSITIVA: Uva descubre un embarazo que cambia todo #Shorts #FruttiDrama"></textarea>
   </label>
