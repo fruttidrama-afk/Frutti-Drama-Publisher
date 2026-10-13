@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 const edge=fs.readFileSync("supabase/functions/publisher-frutti-recap/index.ts","utf8");
 const script=fs.readFileSync("supabase/functions/publisher-frutti-recap/frutti-recap-copy.js","utf8");
-assert(edge.includes('generateFruttiRecapCopy(prompt)'),"recap must use local narrative package");
+assert(edge.includes('generateFruttiRecapCopy(source)'),"recap must use local narrative package");
 assert(!/OPENROUTER_API_KEY|GEMINI_API_KEY|OPENAI_API_KEY|realAICopy/.test(edge+script),"recap must never need external AI keys");
 const mod=await import("data:text/javascript;base64,"+Buffer.from(script).toString("base64"));
 const generate=mod.generateFruttiRecapCopy;
