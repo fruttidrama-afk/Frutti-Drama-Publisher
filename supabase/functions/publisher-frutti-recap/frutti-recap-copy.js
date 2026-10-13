@@ -45,7 +45,12 @@ function extract(raw){
  }
  if(beat.length)blocks.push({text:beat.join(". "),weight:7});
  if(!blocks.length){
-  const found=lines.filter(l=>ACT.test(l)&&!TECH.test(l)&&names(l).length);
+  let ignoring=false;const found=[];
+  for(const line of lines){
+   if(STOP.test(line)){ignoring=true;continue}
+   if(HEADING.test(line)){ignoring=false;continue}
+   if(!ignoring&&ACT.test(line)&&!TECH.test(line)&&names(line).length)found.push(line);
+  }
   if(found.length)blocks.push({text:found.slice(0,4).join(". "),weight:2});
  }
  blocks=blocks.map(x=>({text:clean(x.text),weight:x.weight})).filter(x=>x.text.length>23&&ACT.test(x.text)&&!TECH.test(x.text));
@@ -57,7 +62,7 @@ function extract(raw){
  return {story:clean(story.slice(0,1450)),hook};
 }
 const RULES=[
- {key:"veneno",re:/envenena|poisons?|poisoned/i,hook:"VENENO MORTAL",verb:"envenena",intro:"cruza un límite irreversible al envenenar"},
+ {key:"veneno",re:/envenena|poisons?/i,hook:"VENENO MORTAL",verb:"envenena",intro:"cruza un límite irreversible al envenenar"},
  {key:"muerte",re:/\bmuere\b|\bdies\b|fallece/i,hook:"MUERTE DEVASTADORA",verb:"muere",intro:"muere y deja a sus seres queridos enfrentando una pérdida devastadora"},
  {key:"parto",re:/da a luz|gives birth|beb[eé] nace/i,hook:"NACIMIENTO IMPACTANTE",verb:"da a luz",intro:"da a luz y sacude el equilibrio familiar"},
  {key:"beso",re:/intenta besar|tries to kiss|attempts? to kiss|\bbesa\b|\bbesan\b|\bkisses?\b/i,hook:"BESO PROHIBIDO",verb:"besa",intro:"cruza una frontera sentimental al acercarse para besar"},
@@ -105,7 +110,7 @@ function narrative(ev,story){
  let hook=rule.hook,core="",desc="",question="";
  if(rule.key==="muerte"){
   core=a+" muere y deja a la familia de luto";
-  desc="La muerte de "+a+" golpea a quienes lo rodean. La familia queda obligada a afrontar una despedida que cambia sus vidas.";
+  desc="La muerte de "+a+" golpea a quienes lo rodean. "+(b&&/acompa[ñn]ad|accompani/i.test(story)?b+" lo acompaña en sus últimos momentos, mientras la familia enfrenta una despedida dolorosa.":"La familia queda obligada a afrontar una despedida que cambia sus vidas.");
   question="¿Cómo podrán continuar después de esta pérdida?";
  }else if(rule.key==="parto"){
   core=a+" da a luz y cambia el destino de su familia";
@@ -113,7 +118,7 @@ function narrative(ev,story){
   question="¿Qué ocurrirá cuando todos afronten esta nueva realidad?";
  }else{
   core=a+" "+rule.verb+" "+nameAfter;
-  desc=a+" "+rule.intro+" "+nameAfter+".";
+  desc=a+" "+rule.intro+" "+(["beso","veneno","revela","prueba"].includes(rule.key)?"a ":"")+nameAfter+".";
   if(rule.key==="enfrenta"&&secondary){
    hook="CELOS EXPUESTOS";core=a+" enfrenta a "+nameAfter+" por "+secondary;
    desc=a+" encara a "+nameAfter+" por su vínculo con "+secondary+".";
@@ -123,14 +128,21 @@ function narrative(ev,story){
   }else if(rule.key==="revela"&&/\b(embarazo|pregnan|beb[eé]|hijo)\b/i.test(story)){
    core=a+" confiesa un secreto sobre el bebé a "+nameAfter;
    desc=a+" decide revelar a "+nameAfter+" una verdad relacionada con el bebé.";
+  }else if(rule.key==="embarazo"&&/le hace creer|makes? .{0,55}believe|false father|no es el padre/i.test(story)){
+   hook="MENTIRA PATERNAL";core=a+" engaña a "+nameAfter+" sobre la paternidad del bebé";
+   desc=a+" le anuncia a "+nameAfter+" que espera un bebé, pero le hace creer que él es el padre. La mentira amenaza con desatar un conflicto cuando salga a la luz.";
   }else if(rule.key==="veneno"){
    desc+=" La traición pone en riesgo el futuro de la familia.";
   }else if(rule.key==="beso"){
-   desc+=" Ese acercamiento amenaza con desatar un nuevo conflicto.";
+   const witness=names(story).find(n=>n!==a&&n!==nameAfter);
+   if(witness&&/ve el beso|sees? the kiss|watches? them kiss|observa el beso|presencia el beso/i.test(story))desc+=" "+witness+" presencia el beso, lo que desata una nueva tensión.";
+   else desc+=" Ese acercamiento amenaza con desatar un nuevo conflicto.";
   }else if(rule.key==="engaño"){
    desc+=" La mentira sostiene una verdad que tarde o temprano puede salir a la luz.";
   }else if(rule.key==="humilla"){
-   desc+=" La humillación transforma la tensión entre ambos en un enfrentamiento abierto.";
+   const witness=names(story).find(n=>n!==a&&n!==nameAfter);
+   if(witness&&/delante de|frente a|in front of/i.test(story))desc+=" La agresión ocurre delante de "+witness+" y provoca un enfrentamiento abierto.";
+   else desc+=" La humillación transforma la tensión entre ambos en un enfrentamiento abierto.";
   }else if(rule.key==="amenaza"){
    desc+=" Sus palabras convierten la discusión en un ultimátum.";
   }else if(rule.key==="interrumpe"){
