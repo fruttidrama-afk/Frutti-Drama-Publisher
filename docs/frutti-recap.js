@@ -25,7 +25,7 @@ export function initFruttiRecap({session,udText}){
    el.textContent="No se pudo comprobar la disponibilidad de IA. Verificá la sesión o la conexión.";
   }
  };
- const values=()=>({season:$("#udRecapSeason").value,episode:$("#udRecapEpisode").value,generation_prompt:$("#udRecapPrompt").value,title:$("#udRecapTitle").value,description:$("#udRecapDescription").value,note:$("#udRecapNote").value});
+ const values=()=>({season:$("#udRecapSeason").value,episode:$("#udRecapEpisode").value,generation_prompt:$("#udRecapPrompt").value,title:$("#udRecapTitle").value,description:$("#udRecapDescription").value,note:$("#udRecapNote").value,operator_story:$("#udRecapOperatorStory").value});
  const remember=()=>{if(selected!==null)drafts.set(selected,values())};
  async function request(method,body){
   const s=await session();if(!s?.access_token)throw Error("Volvé a ingresar: sesión no disponible.");
@@ -40,10 +40,11 @@ export function initFruttiRecap({session,udText}){
   const f=files.find(x=>x.file_index===index);if(!f)return;
   selected=index;const previous=records.get(index),data=drafts.get(index)||previous||{};
   $("#udRecapSelected").textContent="ARCHIVO "+String(index+1).padStart(2,"0")+" · SHA-256 "+f.sha256_short+"…"+(previous?" · guardado (revisión "+previous.revision+")":" · pendiente");
-  const fields=[["udRecapSeason","season"],["udRecapEpisode","episode"],["udRecapPrompt","generation_prompt"],["udRecapTitle","title"],["udRecapDescription","description"],["udRecapNote","note"]];
+  const fields=[["udRecapSeason","season"],["udRecapEpisode","episode"],["udRecapPrompt","generation_prompt"],["udRecapTitle","title"],["udRecapDescription","description"],["udRecapNote","note"],["udRecapOperatorStory","operator_story"]];
   for(const [id,key] of fields)$("#"+id).value=data[key]??"";
   $("#udRecapStatus").textContent=previous?"Esta ficha ya existe: podés corregirla sin tocar YouTube.":"Pegá el prompt real y prepará la ficha de este video.";
   $("#udRecapEvidence").textContent="Acción narrativa extraída: pendiente de analizar el prompt.";
+  $("#udRecapStoryFallback").hidden=!data.operator_story;
   render();
   if(switchPane&&window.matchMedia("(max-width:900px)").matches){
    $("#udRecoveryPanels").classList.add("ud-show-prompts");
@@ -118,16 +119,19 @@ export function initFruttiRecap({session,udText}){
   btn.disabled=true;btn.textContent="REDACTANDO PROPUESTA…";
   showAIResult("Identificando la trama del episodio y preparando el título y la descripción con las plantillas narrativas originales…","progress");
   try{
-   const data=await request("POST",{action:"suggest",generation_prompt:prompt});
+   const summary=$("#udRecapOperatorStory").value.trim();
+   const data=await request("POST",{action:"suggest",generation_prompt:prompt,operator_story:summary});
    if(data.error)throw Error(data.detail||data.error);
    if(!data.title||!data.description)throw Error("No se pudieron crear metadatos narrativos completos.");
    $("#udRecapTitle").value=data.title;
    $("#udRecapDescription").value=data.description;
    $("#udRecapEvidence").textContent="Acontecimiento identificado (verificá que suceda en el video): "+String(data.episode_excerpt||"sin detalle");
+   $("#udRecapStoryFallback").hidden=true;
    remember();
    showAIResult("✓ Propuesta generada con el formato editorial original de FruttiDrama. Revisá que el título y la descripción narren exactamente lo que ocurre en el video.","success");
   }catch(e){
    const detail=String(e?.message||e||"Error desconocido");
+   $("#udRecapStoryFallback").hidden=false;
    showAIResult("No se pudo identificar suficientemente la trama. Motivo: "+detail+" Podés editar el título y la descripción manualmente sin perder el prompt.","error");
    $("#udRecapEvidence").textContent="No se modificaron los metadatos ni el stock. El prompt original permanece en el formulario.";
   }finally{
@@ -154,7 +158,7 @@ export function initFruttiRecap({session,udText}){
   }catch(e){$("#udRecapStatus").textContent="NO SE GUARDÓ: "+String(e.message||e)}
   finally{btn.disabled=false;btn.textContent="GUARDAR EN STOCK RECONSTRUIDO"}
  }
- for(const id of ["udRecapSeason","udRecapEpisode","udRecapPrompt","udRecapTitle","udRecapDescription","udRecapNote"])$("#"+id).addEventListener("input",remember);
+ for(const id of ["udRecapSeason","udRecapEpisode","udRecapPrompt","udRecapTitle","udRecapDescription","udRecapNote","udRecapOperatorStory"])$("#"+id).addEventListener("input",remember);
  $("#udRecapSuggest").onclick=suggest;$("#udRecapSave").onclick=save;
  return {load,render};
 }
