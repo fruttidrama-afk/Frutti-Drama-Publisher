@@ -215,7 +215,7 @@ Deno.serve(async(req:Request)=>{
   if(pubError||!pub)return json({error:"FORBIDDEN"},403);
   if(req.method==="GET"){
    const {data,error}=await admin.from(TABLE).select("file_index,source_sha256,season,episode,generation_prompt,prompt_provenance,title,description,metadata_method,note,record_status,publication_status,revision,updated_at,created_at").eq("publisher_id",PID).order("season").order("episode");
-   return error?json({error:"READ_FAILED"},503):json({items:data||[],publication_boundary:{season:2,episode:8},publication_queue_unchanged:true});
+   return error?json({error:"READ_FAILED"},503):json({items:data||[],publication_boundary:{season:2,episode:8},publication_queue_unchanged:true,ai_status:{connected:Boolean(Deno.env.get("GEMINI_API_KEY")||Deno.env.get("GOOGLE_GENERATIVE_AI_API_KEY")||Deno.env.get("OPENAI_API_KEY")),provider:Deno.env.get("GEMINI_API_KEY")||Deno.env.get("GOOGLE_GENERATIVE_AI_API_KEY")?"Gemini":Deno.env.get("OPENAI_API_KEY")?"OpenAI":null}});
   }
   const b=await req.json().catch(()=>null);
   if(!b||typeof b!=="object")return json({error:"INVALID_BODY"},400);
