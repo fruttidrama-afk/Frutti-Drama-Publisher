@@ -2,7 +2,28 @@
 export function initFruttiRecap({session,udText}){
  const $=s=>document.querySelector(s);
  const endpoint="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-frutti-recap";
- let files=[],records=new Map(),drafts=new Map(),selected=null;
+ let files=[],records=new Map(),drafts=new Map(),selected=null,aiStatus={connected:null,provider:null};
+ const showAIResult=(message,type="error")=>{
+  const area=$("#udRecapAiResult");
+  if(!area)return;
+  area.hidden=!message;
+  area.textContent=message||"";
+  area.dataset.status=type;
+ };
+ const showAIState=()=>{
+  const el=$("#udRecapAiState");
+  if(!el)return;
+  if(aiStatus.connected===true){
+   el.dataset.status="connected";
+   el.textContent="Credencial de "+(aiStatus.provider||"IA")+" detectada en el servidor. Podés generar una propuesta (la validez se comprueba al usarla).";
+  }else if(aiStatus.connected===false){
+   el.dataset.status="missing";
+   el.textContent="IA NO CONFIGURADA: este proyecto de Supabase no tiene una credencial GEMINI_API_KEY u OPENAI_API_KEY. Sin ella no se puede generar una propuesta con IA. El prompt y el video siguen intactos.";
+  }else{
+   el.dataset.status="unknown";
+   el.textContent="No se pudo comprobar la disponibilidad de IA. Verificá la sesión o la conexión.";
+  }
+ };
  const values=()=>({season:$("#udRecapSeason").value,episode:$("#udRecapEpisode").value,generation_prompt:$("#udRecapPrompt").value,title:$("#udRecapTitle").value,description:$("#udRecapDescription").value,note:$("#udRecapNote").value});
  const remember=()=>{if(selected!==null)drafts.set(selected,values())};
  async function request(method,body){
@@ -74,24 +95,47 @@ export function initFruttiRecap({session,udText}){
   files=input||[];
   const response=await request("GET");records=new Map((response.items||[]).map(v=>[v.file_index,v]));
   summary();render();renderStock();
-  $("#udRecapStatus").textContent=response.ai_status?.connected?"IA conectada: "+response.ai_status.provider+". Pegá el prompt y presioná Generar.":"IA generativa sin conectar: se necesita una credencial privada GEMINI_API_KEY u OPENAI_API_KEY en Supabase. El botón mostrará un error preciso hasta completar la conexión.";
+  aiStatus=response.ai_status||{connected:null,provider:null};
+  showAIState();
+  $("#udRecapStatus").textContent="El guardado en stock reconstruido no publica ni modifica videos en YouTube.";
   $("#udForensicStatus").textContent="Listo. Los prompts de planificación fueron retirados de esta sección. Seleccioná un archivo y pegá el verdadero prompt.";
   if(selected!==null)selectFile(selected,false);
   $("#udForensicFilter").onchange=render;$("#udForensicSearch").oninput=render;
  }
  async function suggest(){
-  if(selected===null){$("#udRecapStatus").textContent="Elegí un archivo primero.";return}
+  if(selected===null){
+   showAIResult("Primero seleccioná uno de los videos originales de la izquierda.");
+   return;
+  }
   const prompt=$("#udRecapPrompt").value.trim();
-  if(prompt.length<20){$("#udRecapStatus").textContent="Pegá el prompt original antes de generar la propuesta.";return}
-  const btn=$("#udRecapSuggest");btn.disabled=true;btn.textContent="GENERANDO CON IA…";$("#udRecapStatus").textContent="Consultando modelo de lenguaje: interpretando la historia y redactando título y descripción…";
+  if(prompt.length<20){
+   showAIResult("Pegá el prompt REAL y completo de Google Flow antes de generar la propuesta.");
+   return;
+  }
+  if(aiStatus.connected===false){
+   showAIResult("Generación bloqueada: falta conectar una credencial de IA en Supabase. Configurá GEMINI_API_KEY u OPENAI_API_KEY en Edge Functions → Secrets, actualizá esta página y volvé a intentar. No necesitás pegar la clave en este chat.");
+   return;
+  }
+  const btn=$("#udRecapSuggest");
+  btn.disabled=true;btn.textContent="GENERANDO CON IA…";
+  showAIResult("Consultando el modelo de IA: identificando el conflicto del episodio y redactando los metadatos…","progress");
   try{
    const data=await request("POST",{action:"suggest",generation_prompt:prompt});
-   if(data.error){$("#udRecapEvidence").textContent="Acción no confirmada"+(data.episode_excerpt?": "+data.episode_excerpt:" · no se reutilizan instrucciones técnicas.");$("#udRecapStatus").textContent=data.detail||data.error;return}
-   $("#udRecapEvidence").textContent="Acción encontrada en EPISODE/TRAMA (revisala contra el video): "+String(data.episode_excerpt||"sin detalle");
-   $("#udRecapTitle").value=data.title;$("#udRecapDescription").value=data.description;remember();
-   $("#udRecapStatus").textContent=data.warning||"Borrador listo. Comprobá y editá el título y la descripción antes de guardar.";
-  }catch(e){$("#udRecapStatus").textContent="La IA no pudo generar el paquete: "+String(e.message||e);$("#udRecapEvidence").textContent="No se generaron metadatos: no se usarán borradores automáticos ni plantillas como sustituto."}
-  finally{btn.disabled=false;btn.textContent="GENERAR PROPUESTA DESDE PROMPT"}
+   if(data.error)throw Error(data.detail||data.error);
+   if(!data.title||!data.description)throw Error("El proveedor de IA no devolvió metadatos completos.");
+   $("#udRecapTitle").value=data.title;
+   $("#udRecapDescription").value=data.description;
+   $("#udRecapEvidence").textContent="Acontecimiento identificado (verificá que suceda en el video): "+String(data.episode_excerpt||"sin detalle");
+   remember();
+   showAIResult("✓ Propuesta generada mediante "+String(data.model_provider||aiStatus.provider||"IA")+". Leé el título y la descripción y confirmá que reflejen el video original antes de guardar.","success");
+  }catch(e){
+   const detail=String(e?.message||e||"Error desconocido");
+   showAIResult("No se generaron el título ni la descripción. Motivo: "+detail,"error");
+   $("#udRecapEvidence").textContent="No se modificaron los metadatos ni el stock. El prompt original permanece en el formulario.";
+  }finally{
+   btn.disabled=false;
+   btn.textContent="GENERAR PROPUESTA DESDE PROMPT";
+  }
  }
  async function save(){
   const f=files.find(x=>x.file_index===selected);if(!f){$("#udRecapStatus").textContent="Seleccioná un video.";return}
