@@ -172,7 +172,7 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
  </label>
  <div class="ud-recap-copy">
   <strong>Metadatos de YouTube Shorts</strong>
-  <p class="udmuted">Con IA generativa conectada, el sistema identifica el acontecimiento de este episodio y redacta un título concreto y una descripción original. Si la IA no está disponible, mostrará la causa y no inventará contenido.</p>
+  <p class="udmuted">IA gratuita DeepSeek/Qwen para narrar el episodio real. Antes de cada generación, el servidor comprueba que el modelo cueste $0; nunca utiliza modelos de pago. Los cupos gratuitos tienen límites diarios.</p>
   <div id="udRecapAiState" class="ud-recap-ai-state" role="status" aria-live="polite">Comprobando conexión con el proveedor de IA…</div>
   <div class="ud-recap-actions"><button type="button" id="udRecapSuggest">GENERAR PROPUESTA DESDE PROMPT</button></div>
   <p id="udRecapAiResult" class="ud-recap-ai-result" role="alert" aria-live="assertive" hidden></p>
@@ -290,7 +290,7 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 
 <script type="module">
 import{createClient}from"https://esm.sh/@supabase/supabase-js@2.105.0";
-import{initFruttiRecap}from"./frutti-recap.js?v=20261013-ai-diagnostics-1";
+import{initFruttiRecap}from"./frutti-recap.js?v=20261013-free-llm-1";
 import JSZip from"https://esm.sh/jszip@3.10.1";
 const sb=createClient("https://wrflttnmlrsuzuukdhtf.supabase.co","sb_publishable_xa4-lNIcfBku4CtgKKI97w_r-VmFcaV",{auth:{persistSession:true,autoRefreshToken:true,experimental:{passkey:true}}});
 const API="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory-railway",$=s=>document.querySelector(s);let user=null,signup=false,createStep=0,referenceFile=null,logoFile=null,brandDraft=null,modPublisher=null,modScreenshot=null,railwayConnections=[],selectedRailwayConnectionId=null,deployWatchTimer=null;
