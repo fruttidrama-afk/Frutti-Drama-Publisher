@@ -39,6 +39,20 @@ for(const [id,prompt,name,others] of cases){
  assert(!/one continuous|unbroken take|no duplicates|reference sheets|camera/i.test(out.description),id+" leaked production prompt");
  console.log("PASS",id,"TITLE",out.title,"DESC",out.description.slice(0,280).replace(/\n/g," | "));
 }
+const expectedSubjects=[
+ ["pregnancy","MENTIRA PATERNAL: Fresia engaña a Mango","Fresia le anuncia a Mango"],
+ ["kiss","BESO REVELADOR: Limón besa a Uva","Fresia presencia el beso"],
+ ["humiliation","HUMILLACIÓN CRUEL: Fresia humilla a Uva","Fresia humilla a Uva"],
+ ["poison","VENENO MORTAL: Mango envenena a Banana","Mango cruza un límite"]
+];
+for(const [id,titlePart,descriptionPart] of expectedSubjects){
+ const sample=cases.find(x=>x[0]===id);
+ const meta=generate(sample[1]);
+ assert(meta.title.startsWith(titlePart),id+": incorrect actor, recipient or grammar: "+meta.title);
+ assert(meta.description.includes(descriptionPart),id+": narrative reverses characters: "+meta.description);
+}
+const kiss=generate(cases.find(x=>x[0]==="kiss")[1]);
+assert(kiss.description.includes("¿Cómo reaccionará Fresia"),"question must respect witness already present, no false suspense");
 const irrelevant=generate(technical);
 assert(irrelevant.error,"technical-only prompt must be rejected");
 const canonOnly=generate("CANON\nMango envenena a Banana.\nCREATIVE BIBLE\nDrama for 10 seconds. Camera close-ups. Character identity fixed.");
