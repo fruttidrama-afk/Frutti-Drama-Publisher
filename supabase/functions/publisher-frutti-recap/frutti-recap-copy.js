@@ -54,7 +54,7 @@ function extract(raw){
   if(HEADING.test(line)){section="episode";continue}
   if(contextHead.test(line)&&line.length<150){section="canon";continue}
   if(technicalHead.test(line)&&line.length<150){section="technical";continue}
-  if(sceneHead.test(line)&&line.length<95&&/[:：]?\s*$/.test(line)){section="scene";continue}
+  if(sceneHead.test(line)&&line.length<95&&(/[:：]\s*$/.test(line)||/^(?:SCENE|ESCENA|SHOT|PLANO|BEAT|ACTION|ACCI[OÓ]N|DIALOGUE|DI[AÁ]LOGO|NARRATIVE|STORY BEAT)\s*\d*$/i.test(line))){section="scene";continue}
   if(/^[-=]{3,}$/.test(line))continue;
   if(section==="canon")continue;
   if(section==="technical"){
