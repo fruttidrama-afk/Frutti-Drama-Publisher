@@ -20,6 +20,15 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
  const pathToRecap=path.join(path.dirname(name),"frutti-recap.js");
  if(!fs.existsSync(pathToRecap))throw Error(name+" missing isolated Frutti recap module");
  if(!fs.readFileSync(pathToRecap,"utf8").includes("publisher-frutti-recap"))throw Error(name+" missing recap backend binding");
+ const recapJs=fs.readFileSync(pathToRecap,"utf8");
+ for(const id of ['id="udRecapAiState"','id="udRecapAiResult"','id="udRecapSuggest"']){
+  if(!html.includes(id))throw Error(name+" missing visible AI diagnostic "+id);
+ }
+ if(!(html.indexOf('id="udRecapAiState"')<html.indexOf('id="udRecapSuggest"')&&html.indexOf('id="udRecapSuggest"')<html.indexOf('id="udRecapAiResult"')))throw Error(name+" AI error is not beside button");
+ for(const phrase of ['response.ai_status','showAIResult("No se generaron','aiStatus.connected===false']){
+  if(!recapJs.includes(phrase))throw Error(name+" missing clear missing-AI handling: "+phrase);
+ }
+
  const r=spawnSync(process.execPath,["--check",pathToRecap],{encoding:"utf8"});
  if(r.status!==0)throw Error(name+" recap module syntax invalid: "+r.stderr);
  if(!html.includes("#udPromptBrowser{display:none!important}"))throw Error(name+" still exposes unverified Prompt Studio plans");
