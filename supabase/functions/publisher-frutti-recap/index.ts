@@ -65,8 +65,29 @@ function makeNarrativeCopy(s:string,desiredHook:string):Copy|null{
  const name=(n:string)=>hasName(s,n);
  const duo=(a:string,b:string)=>name(a)&&name(b);
  const relation=/\b(hijo|beb[eé]|padre|madre|co.?parent|parentalidad)\b/i.test(s);
+ const specific:Array<[RegExp,Copy]>=[
+  [/don mel[oó]n.*(?:escucha|oye|escuch[oó]).*fresia.*(?:siente|sentimientos|ama|amor).*(?:lim[oó]n)/i,
+   {hook:"SECRETO ESCUCHADO",core:"Don Melón descubre los sentimientos de Fresia",description:"Don Melón oye a Fresia admitir que todavía siente algo por Limón. Aunque no interviene, comprende que ese secreto podría alterar la tranquilidad de la familia.",question:"¿Intervendrá Don Melón antes de que el conflicto estalle?"}],
+  [/don mel[oó]n.*(?:confronta|enfrenta|advierte|exige|proh[ií]be).{0,100}fresia.*(?:uva|lim[oó]n|relaci[oó]n)/i,
+   {hook:"ADVERTENCIA FAMILIAR",core:"Don Melón exige que Fresia respete a Uva",description:"Don Melón confronta a Fresia y le advierte que no interfiera en la relación entre Uva y Limón. Fresia asegura que no hará nada, pero la tensión deja abiertas nuevas dudas.",question:"¿Podrá Fresia cumplir lo que prometió?"}],
+  [/uva.*(?:escucha|oye|o[ií]do).{0,120}(?:fresia|lim[oó]n).*?(?:tri[aá]ngulo|teme|duda|elig[ií]|explica)/i,
+   {hook:"DUDA AMOROSA",core:"Uva escucha algo que la hace dudar de Limón",description:"Uva oye parte de una conversación entre Fresia y Limón y teme volver a un triángulo amoroso. Limón intenta aclararle que su elección es estar con ella.",question:"¿Podrá Uva confiar en la palabra de Limón?"}],
+  [/lim[oó]n.*(?:reafirma|declara|anuncia|elige).{0,120}uva.*?(?:fresia|delante|frente|futuro)/i,
+   {hook:"ELECCIÓN DEFINITIVA",core:"Limón elige a Uva frente a Fresia",description:"Limón deja clara su decisión delante de Uva y Fresia: quiere construir un futuro junto a Uva. Fresia queda frente a una elección que ya no puede ignorar.",question:"¿Cómo reaccionará Fresia al escuchar la decisión de Limón?"}],
+  [/fresia.*(?:admite|confiesa|reconoce).{0,120}uva.*(?:siente|sentimientos|ama|amor).{0,90}lim[oó]n/i,
+   {hook:"CONFESIÓN INCÓMODA",core:"Fresia admite ante Uva que todavía ama a Limón",description:"Fresia reconoce ante Uva que aún siente algo por Limón. Lejos de retroceder, Uva le exige que respete la relación que él eligió.",question:"¿Conseguirá Fresia dejar atrás sus sentimientos?"}],
+  [/lim[oó]n.*(?:busca|promete|jura|asegura).{0,100}uva.*(?:mentiras|transparencia|confianza|verdad)/i,
+   {hook:"PROMESA DIFÍCIL",core:"Limón promete sinceridad a Uva",description:"Limón busca a Uva para prometerle que no repetirá los engaños del pasado. Ella acepta seguir adelante, pero deja una condición: transparencia absoluta.",question:"¿Podrá Limón demostrar que esta vez es distinto?"}],
+  [/uva.*lim[oó]n.*bananita.*(?:familia|jard[ií]n|tarde|juntos)/i,
+   {hook:"NUEVA FAMILIA",core:"Uva, Limón y Bananita comparten un nuevo comienzo",description:"Uva, Limón y Bananita disfrutan juntos un momento que refleja la familia que están formando. Sin embargo, la mirada de Fresia deja entrever que la calma podría durar poco.",question:"¿Podrán proteger esta nueva etapa de los celos?"}],
+  [/uva.*lim[oó]n.*(?:besan|beso).*fresia.*(?:ve|aparece|observa|descubre|sorprende)/i,
+   {hook:"BESO INTERRUMPIDO",core:"Fresia sorprende el beso de Uva y Limón",description:"Uva y Limón se besan en el jardín de la hacienda, pero Fresia aparece y presencia el momento. Lo que debía ser íntimo despierta una reacción que puede complicar su futuro.",question:"¿Qué hará Fresia después de descubrirlos?"}],
+  [/fresia.*(?:enfrenta|confronta|reclama).{0,110}lim[oó]n.*(?:hijo|beb[eé]|padre).*(?:termin[oó]|terminada|acab[oó]|separad)/i,
+   {hook:"RELACIÓN TERMINADA",core:"Limón aclara a Fresia que solo serán padres",description:"Fresia reclama a Limón por el vínculo que aún los une como padres. Él le asegura que estará presente para su hijo, pero deja claro que su relación sentimental ya terminó.",question:"¿Aceptará Fresia esta nueva realidad?"}]
+ ];
+ for(const [re,v] of specific)if(re.test(s))return v;
  const patterns:Array<[RegExp,Copy]>=[
-  [/fresia.*(?:confronta|enfrenta|advierte|encara).{0,150}uva|uva.*(?:confronta|enfrenta|advierte).{0,150}fresia/i,
+  [/fresia.*(?:confronta|enfrenta|advierte|encara|le dice|le recuerda|le asegura).{0,150}uva|uva.*(?:confronta|enfrenta|advierte).{0,150}fresia/i,
    {hook:"CELOS DECLARADOS",core:"Fresia enfrenta a Uva por su vínculo con Limón",description:"Fresia encara a Uva y le recuerda que Limón seguirá ligado a ella por su hijo. Uva se niega a competir por él y defiende una relación basada en hechos, no en promesas.",question:"¿Conseguirá Fresia sembrar dudas entre Uva y Limón?"}],
   [/fresia.*(?:lim[oó]n).*(?:hijo|beb[eé]|padre).*(?:nunca|jam[aá]s|no volver|no ser[aá]n|l[ií]mite)|lim[oó]n.*(?:fresia).*(?:hijo|beb[eé]|padre).*(?:nunca|jam[aá]s|no volver|no ser[aá]n|l[ií]mite)/i,
    {hook:"LÍMITE DEFINITIVO",core:"Limón rechaza volver con Fresia",description:"Limón deja claro que seguirá presente en la vida de su hijo, pero que eso no significa retomar su relación con Fresia. Ella debe enfrentar un rechazo que altera el equilibrio en la hacienda.",question:"¿Aceptará Fresia que Limón eligió otro camino?"}],
@@ -107,6 +128,7 @@ function makeNarrativeCopy(s:string,desiredHook:string):Copy|null{
  const photo=patterns.find(([_,v])=>v.hook==="FOTO COMPROMETEDORA");
  if(photo&&photo[0].test(s))return photo[1];
  for(const [re,v] of patterns){
+  if(v.hook==="CELOS DECLARADOS"&&!name("Limón"))continue;
   if(re.test(s))return v;
  }
  // Narrow, evidence-based cases only. No meaningless "new crisis" fallback.
