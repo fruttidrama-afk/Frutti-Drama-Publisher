@@ -98,6 +98,27 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 }
 @media(max-width:600px){#unifiedDashboard .ud-modebar{display:grid;grid-template-columns:1fr 1fr}#unifiedDashboard .ud-modebar button{padding:12px 8px;font-size:10px}}
 
+
+/* Manual FruttiDrama recap, replacing the unreliable Prompt Studio comparison. */
+#unifiedDashboard #udPromptBrowser{display:none!important}
+#unifiedDashboard .ud-recap-edit{display:grid;gap:12px;padding-top:10px}
+#unifiedDashboard .ud-recap-edit label{display:grid;gap:6px;color:#334455;font:700 12px system-ui}
+#unifiedDashboard .ud-recap-edit input,#unifiedDashboard .ud-recap-edit select,#unifiedDashboard .ud-recap-edit textarea{display:block;width:100%;min-width:0;padding:11px;border:1px solid #c5cfd7;border-radius:9px;background:#fff;color:#172d40;font:13px/1.55 system-ui}
+#unifiedDashboard .ud-recap-edit textarea{resize:vertical}
+#unifiedDashboard #udRecapPrompt{min-height:270px;font:12px/1.6 ui-monospace,Menlo,Consolas,monospace}
+#unifiedDashboard .ud-recap-copy{border:1px solid #d7e3ed;background:#eef4f7;padding:12px;border-radius:11px;display:grid;gap:12px}
+#unifiedDashboard .ud-recap-actions{display:flex;gap:9px;flex-wrap:wrap}
+#unifiedDashboard .ud-recap-actions button{border:1px solid #2d668a;border-radius:9px;background:#fff;color:#174a6a;padding:11px 14px;font:700 12px system-ui;cursor:pointer}
+#unifiedDashboard .ud-recap-actions button.primary{background:#164b6e;color:#fff}
+#unifiedDashboard .ud-recap-actions button:disabled{opacity:.55;cursor:wait}
+#unifiedDashboard .ud-recap-record{width:100%;margin:5px 0;padding:12px;border:1px solid #d0d9de;border-radius:10px;background:#fff;color:#1c3647;cursor:pointer;text-align:left}
+#unifiedDashboard .ud-recap-record small{display:block;color:#647582;font-size:11px;margin-top:5px}
+#unifiedDashboard .ud-recap-select{display:block;width:100%;text-align:center;background:#fff;border:1px solid #235a80;border-radius:9px;padding:12px;color:#174a6b;font:700 12px system-ui;cursor:pointer;margin:10px 0 0}
+#unifiedDashboard .ud-recap-select.ud-active{background:#174b6d;color:#fff}
+#unifiedDashboard .ud-recap-notice{font-size:12px;line-height:1.5;color:#174a68;font-weight:700}
+#unifiedDashboard .ud-recap-warning{border:1px solid #dccfae;background:#fbf7ed;border-radius:10px;padding:12px;line-height:1.5;color:#3b3427;font-size:12px}
+@media(max-width:900px){#unifiedDashboard .ud-recap-actions button{flex:1 1 160px}}
+
 </style>
 </head>
 <body>
@@ -109,15 +130,15 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 <section class="section"><div class="inner"><div class="head2"><div><div class="eye">MY PUBLISHERS</div><h2>Your autonomous channels</h2></div><p class="muted">Cada cuenta ve solamente sus Publishers. Railway quedó retirado del diseño: el runtime objetivo usa infraestructura gratuita sin trial expirante y estado externo portable.</p></div><div class="grid" id="cards"><div class="card empty">Cargando…</div></div></div></section>
 <section class="hidden" id="unifiedDashboard" aria-label="Publisher integrado"><div class="udwrap"><div class="udhead"><div><div class="udmuted">PUBLISHER FACTORY · PUBLISHER ACTIVO</div><h2 id="udName">Publisher</h2><div class="udmuted" id="udPlatform"></div></div><div class="toolbar"><button class="btn" id="udRefresh" type="button">ACTUALIZAR</button><button class="btn primary" id="udBack" type="button">VOLVER</button></div></div><nav class="ud-modebar" id="udModeTabs" aria-label="Secciones del publisher">
  <button id="udModeOverview" type="button" class="ud-selected" aria-pressed="true">RESUMEN GENERAL</button>
- <button id="udModeRecovery" type="button" aria-pressed="false">CONCILIACIÓN TEMPORAL · FRUTTIDRAMA</button>
+ <button id="udModeRecovery" type="button" aria-pressed="false">RECAPITULACIÓN TEMPORAL · FRUTTIDRAMA</button>
  </nav><div id="udOverviewPane"><div class="udcard" role="note"><strong>Inventario parcial · reconciliación histórica pendiente.</strong><div class="udmuted">Los conteos de esta vista describen SOLO el estado del runtime migrado. El material histórico de Supabase y de los volúmenes anteriores aún no está vinculado; un cero NO significa que el stock haya desaparecido. No autorizar publicaciones desde este inventario.</div></div><div id="udStatus" class="udcard" role="status">Consultando Supabase…</div><div class="udgrid" id="udStats"></div><div class="udcard"><h3>Review · episodios para revisar</h3><div class="udmuted" id="udInventoryAge"></div><div id="udReview">Consultando inventario…</div></div><div class="udcard"><h3>Stock indexado en el runtime nuevo</h3><div id="udStock">Consultando inventario…</div></div><div class="udcard"><h3>Archivos históricos preservados en Supabase</h3><div id="udHistoricalEvidence" class="udmuted">Consultando archivos archivados…</div></div><div class="udcard"><h3>Obligaciones de generación y publicación</h3><div id="udObligations"></div></div><div class="udcard"><h3>Incidentes del runtime</h3><div id="udIncidents"></div></div><p class="udmuted">Panel integrado en modo lectura. Aprobar, rehacer o publicar quedará disponible tras validar la autenticación y las acciones compartidas. Este panel no ejecuta ningún job.</p></div><div id="udRecoveryPane" class="hidden" aria-label="Conciliación manual FruttiDrama">
  <div class="udcard" id="udForensicSection">
  <div class="ud-recovery-heading"><div><h3>Conciliación de episodios · Mesa de trabajo</h3><p class="udmuted" id="udForensicSummary">Consultando 31 videos originales…</p></div><span class="ud-forensic-tag">SIN APROBAR NI PUBLICAR</span></div>
- <p class="udmuted">A la izquierda, los 31 videos originales. A la derecha, los <strong>50 prompts completos de temporadas 2 y 3</strong>. Buscá libremente y elegí vos la identificación de cada video. La elección queda guardada en Supabase, pero no equivale a aprobar, publicar ni recuperar el stock automáticamente.</p>
+ <p class="udmuted">A la izquierda, los videos originales. A la derecha, la ficha para escribir la temporada, el episodio y el prompt VERDADERO de Google Flow, generar metadatos y guardarlos en el nuevo stock reconstruido, sin publicar.</p>
  
  <div class="ud-recovery-mobile-switch" role="group" aria-label="Elegir panel de identificación">
   <button type="button" id="udShowVideos" class="ud-active">01 · VIDEOS</button>
-  <button type="button" id="udShowPrompts">02 · PROMPTS</button>
+  <button type="button" id="udShowPrompts">02 · FICHA / STOCK</button>
  </div>
  <div class="ud-recovery-panels" id="udRecoveryPanels">
  <section class="ud-recovery-pane ud-recovery-videos" id="udRecoveryVideos"><h4>01 · VIDEOS RECUPERADOS</h4><p class="udmuted">Reproducí, elegí temporada y episodio y guardá tu decisión.</p> <div class="ud-forensic-toolbar">
@@ -133,8 +154,40 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
  <div id="udForensicItems" class="ud-forensic-grid"></div>
  </section>
  <section class="ud-recovery-pane ud-recovery-prompts" id="udRecoveryPrompts">
+<div id="udRecapEditor" class="ud-recap-edit">
+ <p class="ud-recap-warning"><strong>ÚLTIMO EPISODIO PUBLICADO CONFIRMADO: TEMPORADA 2, EPISODIO 8.</strong> Los prompts de planificación anteriores NO son los utilizados en Google Flow. Pegá el prompt exacto de cada generación; no se reasignará nada automáticamente. Este stock de reconstrucción no cambia Review, YouTube ni la cola de publicación.</p>
+ <p class="ud-recap-notice" id="udRecapSelected">Elegí un video de la izquierda para empezar.</p>
+ <div class="ud-match-fields">
+  <label>Temporada<select id="udRecapSeason"><option value="">Elegí una temporada</option><option value="2">Temporada 2</option><option value="3">Temporada 3</option></select></label>
+  <label>Número de episodio<input id="udRecapEpisode" type="number" min="1" max="25" step="1" placeholder="Ej. 9"></label>
+ </div>
+ <label>Prompt ORIGINAL de generación · Google Flow
+  <textarea id="udRecapPrompt" maxlength="50000" spellcheck="false" placeholder="Pegá el prompt completo y exacto usado para generar este video."></textarea>
+ </label>
+ <div class="ud-recap-copy">
+  <strong>Metadatos de YouTube Shorts</strong>
+  <p class="udmuted">La sugerencia es un borrador automático orientativo, no una interpretación confirmada por IA. Compará con el video real y editá antes de guardar.</p>
+  <div class="ud-recap-actions"><button type="button" id="udRecapSuggest">GENERAR PROPUESTA DESDE PROMPT</button></div>
+  <label>Título · dos primeras palabras en MAYÚSCULAS
+   <textarea id="udRecapTitle" maxlength="100" rows="2" placeholder="PRUEBA POSITIVA: Uva recibe la noticia… #Shorts #ViralShorts #FruttiDrama"></textarea>
+  </label>
+  <label>Descripción del episodio
+   <textarea id="udRecapDescription" maxlength="4000" rows="5" placeholder="Sinopsis melodramática real + hashtags del canal."></textarea>
+  </label>
+ </div>
+ <label>Nota opcional sobre la versión
+  <input type="text" id="udRecapNote" maxlength="700" placeholder="Ej. Este es el render definitivo, no la versión alternativa">
+ </label>
+ <div class="ud-recap-actions"><button type="button" class="primary" id="udRecapSave">GUARDAR EN STOCK RECONSTRUIDO</button></div>
+ <p id="udRecapStatus" class="ud-recap-notice" role="status" aria-live="polite">No se publicará ningún video desde esta herramienta.</p>
+ <hr>
+ <strong>Nuevo stock · fichas reconstruidas</strong>
+ <p class="udmuted">Una ficha por episodio y video definitivo. Podés reabrirlas para corregir el prompt o los metadatos.</p>
+ <div id="udRecapStockList"></div>
+</div>
+
  <section class="ud-prompt-browser" id="udPromptBrowser">
-  <h4>02 · PROMPTS DE LA HISTORIA</h4><p class="udmuted">50 prompts de Prompt Studio: temporadas 2 y 3. Elegí vos cuál corresponde; ninguno viene asignado automáticamente.</p>
+  <h4>02 · PROMPTS DE PLANIFICACIÓN RETIRADOS</h4><p class="udmuted">50 prompts de Prompt Studio: temporadas 2 y 3. Elegí vos cuál corresponde; ninguno viene asignado automáticamente.</p>
   <div class="ud-forensic-toolbar"><label class="ud-inline-field">Temporada <select id="udPromptSeason" aria-label="Temporada del archivo de prompts"><option value="all">T2 + T3 (todos los cargados)</option><option value="2">Solo temporada 2</option><option value="3">Solo temporada 3</option></select></label><input type="search" id="udPromptSearch" placeholder="Buscar trama o personaje..." aria-label="Buscar en los prompts históricos"></div>
   <p class="udmuted" id="udPromptArc">Cargando Prompt Studio histórico…</p>
   <div id="udPromptList" class="ud-prompt-list"></div>
@@ -228,6 +281,7 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 
 <script type="module">
 import{createClient}from"https://esm.sh/@supabase/supabase-js@2.105.0";
+import{initFruttiRecap}from"./frutti-recap.js";
 import JSZip from"https://esm.sh/jszip@3.10.1";
 const sb=createClient("https://wrflttnmlrsuzuukdhtf.supabase.co","sb_publishable_xa4-lNIcfBku4CtgKKI97w_r-VmFcaV",{auth:{persistSession:true,autoRefreshToken:true,experimental:{passkey:true}}});
 const API="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory-railway",$=s=>document.querySelector(s);let user=null,signup=false,createStep=0,referenceFile=null,logoFile=null,brandDraft=null,modPublisher=null,modScreenshot=null,railwayConnections=[],selectedRailwayConnectionId=null,deployWatchTimer=null;
@@ -635,10 +689,10 @@ async function udOpen(id,changeUrl=true){
  $("#udForensicSection").classList.toggle("hidden",p.name!=="FruttiDrama");
  udForensicSummary();
  if(p.name==="FruttiDrama"){
-  try{await udLoadPromptCatalog();udRenderPromptBrowser();$("#udForensicStatus").textContent="50 prompts históricos T2 y T3 · Elegí vos la historia y guardá cada identificación."}
-  catch(e){$("#udForensicStatus").textContent="No se pudo cargar Prompt Studio ("+String(e.message||e)+"). Actualizá la página."}
+   try{await udFruttiRecap.load(udForensicItems)}
+   catch(e){$("#udForensicStatus").textContent="No se pudo cargar el stock reconstruido: "+String(e.message||e)}
  }
- udRenderForensics();
+ udFruttiRecap.render();
  const ob=$("#udObligations");const rows=result.obligations||[];
  if(!rows.length)ob.append(udText("p","udmuted","Sin obligaciones recientes."));
  else for(const o of rows){const r=udText("div","udline",(o.kind==="generation"?"Generación":"Publicación")+" "+o.ordinal+" · "+o.local_day);r.append(udText("strong","",o.status));if(o.last_error)r.append(udText("small","",o.last_error));ob.append(r)}
@@ -651,6 +705,7 @@ async function udOpen(id,changeUrl=true){
 const udFruttiPublisher="7c359bd5-76b8-43b9-9d5c-cc8ca38d06e7";
 const udMatchEndpoint="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-forensic-match";
 let udForensicItems=[],udPromptCatalog=null,udPromptLoad=null,udPromptActive=null;
+const udFruttiRecap=initFruttiRecap({session,udText});
 function udPromptEntry(season,episode){
  return udPromptCatalog?.prompts?.find(x=>x.season===Number(season)&&x.episode===Number(episode))||null;
 }
