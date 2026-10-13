@@ -685,7 +685,7 @@ function udRenderPromptBrowser(){
  if(!udPromptCatalog){$("#udPromptArc").textContent="Los prompts todavía no están disponibles.";return}
  const season=$("#udPromptSeason").value;
  const q=String($("#udPromptSearch").value||"").trim().toLowerCase();
- const entries=udPromptCatalog.prompts.filter(x=>(season==="all"||x.season===Number(season))&&(!q||[x.hook,x.story,x.full_prompt,String(x.season),String(x.episode)].join(" ").toLowerCase().includes(q)));
+ const entries=udPromptCatalog.prompts.filter(x=>(season==="all"||x.season===Number(season))&&(!q||[x.hook,x.story,x.arc,"t"+x.season+"e"+x.episode].join(" ").toLowerCase().includes(q)));
  $("#udPromptArc").textContent=entries.length+" prompts visibles · "+(season==="all"?"Temporadas 2 y 3": "Temporada "+season)+" · sin asignación automática.";
  for(const entry of entries){
   const card=udText("article","ud-prompt-choice");
