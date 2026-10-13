@@ -85,7 +85,7 @@ function extract(raw){
  const coherent=blocks.filter(x=>x===chosen||(
   Math.abs(x.index-chosen.index)<=8&&x.weight>=13&&!TECH.test(x.text)&&
   (names(x.text).some(n=>names(chosen.text).includes(n))||
-   /\b(?:romantic|romance|flirt|conversaci[oó]n|talking|conversation|juntos|together|interrumpe|interrupts?|enters?|irrumpe|appears?)\b/i.test(x.text))
+   /\b(?:romantic|romance|flirt|conversaci[oó]n|talking|conversation|juntos|together|interrumpe|interrupts?|enters?|irrumpe|appears?|watches?|sees?|observa|presencia|reacciona|reacts?)\b/i.test(x.text))
  )).sort((a,b)=>a.index-b.index);
  const texts=[...new Set(coherent.map(x=>x.text))].slice(0,7);
  let story=clean(texts.join(" "));
@@ -174,12 +174,13 @@ function episodeEvent(story){
 function narrative(ev,story){
  const rule=ev.rule,a=ev.actor,b=ev.target;
  if(rule.key==="interrupcion_con_contexto"){
-  const [first,second]=ev.pair;
+  const [first,second]=ev.pair.includes("Uva")&&ev.pair.includes("Limón")?["Uva","Limón"]:ev.pair;
   const hook=ev.romantic?"ROMANCE INTERRUMPIDO":"ENCUENTRO INESPERADO";
   const core=a+(ev.interrupted?" interrumpe a ":" sorprende a ")+first+" y "+second;
   const type=ev.romantic?"una conversación romántica":"una conversación";
-  const description=a+" irrumpe en medio de "+type+" entre "+first+" y "+second+". Su aparición cambia por completo el tono del encuentro."+
-   "\n\n¿Hasta dónde llegará la tensión después de esta interrupción?\n\n"+TAGS;
+  const description=(ev.interrupted?a+" irrumpe en medio de "+type+" entre "+first+" y "+second+".":a+" encuentra a "+first+" y "+second+" durante "+type+".")+
+   " La inesperada aparición de "+a+" interrumpe el momento y deja a los tres en una situación incómoda."+
+   "\n\n¿Cómo reaccionarán "+first+" y "+second+" ante la llegada de "+a+"?\n\n"+TAGS;
   return {hook,core,description};
  }
  const secondary=names(story).find(n=>n!==a&&n!==b)||"";
@@ -285,7 +286,7 @@ export function generateFruttiRecapCopy(fullPrompt){
  if(!copy)return {error:"EPISODE_ACTION_UNCLEAR",detail:"No pude identificar con certeza quién actúa y a quién afecta. Podés completar el título y la descripción manualmente."};
  const originalHook=clean(input.hook).toUpperCase();
  const usable=/^[A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+$/.test(originalHook)&&!/(DRAMA FAMILIAR|NUEVA CRISIS|GIRO IMPACTANTE)/.test(originalHook);
- const title=makeTitle(usable?originalHook:copy.hook,copy.core)||makeTitle(copy.hook,copy.core);
+ const title=makeTitle(usable&&ev.rule.key!=="interrupcion_con_contexto"?originalHook:copy.hook,copy.core)||makeTitle(copy.hook,copy.core);
  if(!title)return {error:"TITLE_LENGTH_INVALID",detail:"No hay espacio suficiente para un título completo de hasta 100 caracteres."};
  return {title,description:copy.description,episode_excerpt:clean(ev.line).slice(0,300),method:"historical_editorial_hook_story_templates",warning:"Texto generado mediante la estructura histórica de FruttiDrama, sin proveedores externos. Contrastalo con el video antes de guardar."};
 }
