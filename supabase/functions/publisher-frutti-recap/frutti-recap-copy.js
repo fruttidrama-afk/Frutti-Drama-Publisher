@@ -82,7 +82,7 @@ function extract(raw){
  let story=chosen.text;
  // Keep neighboring beat only when it has shared character and no technical
  // contamination, so narrative covers both confrontation and consequence.
- const next=blocks.filter(x=>x!==chosen&&x.index>chosen.index&&x.index-chosen.index<=3&&/\b(?:watches?|sees?|observa|presencia|entra|interrumpe|interrupts?|reacts?|reacciona)\b/i.test(x.text)&&!TECH.test(x.text)).slice(0,1);
+ const next=blocks.filter(x=>x!==chosen&&x.index>=chosen.index&&x.index-chosen.index<=3&&/\b(?:watches?|sees?|observa|presencia|entra|interrumpe|interrupts?|reacts?|reacciona)\b/i.test(x.text)&&!TECH.test(x.text)).slice(0,1);
  if(next.length)story=clean(story+" "+next[0].text);
  const embedded=story.match(/^([A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+)\s*[:：]\s*(.{20,})$/);
  if(embedded){hook=hook||embedded[1];story=embedded[2]}
