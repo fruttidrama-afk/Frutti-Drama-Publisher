@@ -62,3 +62,13 @@ The user corrected the UX: the episode matching process must be a **dedicated te
 - Crucial: do **not automatically select or display candidate prompt IDs inferred by the model** on any video card. Only a manual saved assignment has a season/episode label. Operator judges the content herself, not the matching algorithm.
 - Saved choices go through previously deployed protected owner-authenticated Supabase `publisher-forensic-match` v1, keyed by immutable SHA-256 and file index, to table `publisher_forensic_episode_assignments`; existing read model `publisher-unified-read` v7 loads their saved values. No effect on generated stock, approved Review, publication, schedules or original MP4s.
 - GitHub Pages and both-host UI smoke runs were completed, but the very first **operator-authenticated production save+reload test is pending**. Never claim saving was end-to-end proven until that check.
+
+## 2026-10-13 — TEMPORARY HUMAN MATCHING WORKSPACE (current UI contract)
+
+By explicit operator direction, manual recovery is now a **separate temporary tab in FruttiDrama Publisher**, labelled `CONCILIACIÓN TEMPORAL · FRUTTIDRAMA`, rather than controls scattered through general status/review pages. Root URL deep-link `?publisher_id=7c359bd5-76b8-43b9-9d5c-cc8ca38d06e7&mode=recovery`.
+
+Desktop shows **two independent windows side by side**: `01 · VIDEOS RECUPERADOS` lists all 31 Supabase-backed originals with per-file signed MP4 playback, original contact sheet, speech transcript, selectors for manual season/episode, optional note, and save; `02 · PROMPTS DE LA HISTORIA` shows individually browsable, searchable historic Prompt Studio prompts with all text visible on expansion / modal. Narrow-screen layout switches between VIDEO and PROMPTS with two buttons.
+
+**Scope is strictly active seasons 2 and 3**: 50 numbered Prompt Studio texts, 25 for each, mirrored at `docs/data/frutti-prompt-studio-active.json` and `factory-web/public/data/frutti-prompt-studio-active.json`. The source-complete 125-prompt archive is preserved separately and NOT exposed by the temporary workspace. Never silently select a prompt for a video using model conjecture. Provisional AI candidates remain archived forensic evidence only, not user assignments. Each user save is subject to owner token validation, original file SHA-256 evidence match and Supabase `publisher_forensic_episode_assignments` persistence; it does not change review/stock/approval/publication records.
+
+UI release: GitHub Pages run `38326393243` successful; unified UI smoke run `38326393486` successful. A manual save from the operator's authenticated browser **remains unverified** as of this documentation.
