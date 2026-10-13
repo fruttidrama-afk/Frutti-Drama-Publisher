@@ -117,9 +117,10 @@ function narrative(ev,story){
   desc=a+" da a luz y la llegada del bebé transforma la situación familiar. El nacimiento abre preguntas que ya no pueden evitarse.";
   question="¿Qué ocurrirá cuando todos afronten esta nueva realidad?";
  }else{
-  core=a+" "+rule.verb+(["veneno","beso","humilla","amenaza"].includes(rule.key)?" a ":" ")+nameAfter;
+  core=a+" "+rule.verb+(["veneno","beso","humilla","enfrenta","amenaza","acusa","expulsa"].includes(rule.key)?" a ":" ")+nameAfter;
   desc=a+" "+rule.intro+" "+(["beso","veneno","revela","prueba"].includes(rule.key)?"a ":"")+nameAfter+".";
   if(rule.key==="humilla")desc=a+" humilla a "+nameAfter+". El ataque verbal rompe cualquier apariencia de cordialidad.";
+  if(rule.key==="enfrenta")desc=a+" encara a "+nameAfter+". La discusión deja al descubierto un conflicto que ya no pueden evitar.";
   if(rule.key==="beso")desc=a+" besa a "+nameAfter+". Ese acercamiento marca un giro en su relación.";
   if(rule.key==="enfrenta"&&secondary){
    hook="CELOS EXPUESTOS";core=a+" enfrenta a "+nameAfter+" por "+secondary;
