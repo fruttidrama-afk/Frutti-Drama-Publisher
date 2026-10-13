@@ -581,7 +581,7 @@ async function railState(){
 let activeUnifiedPublisher=null;
 const unifiedEndpoint="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-unified-read";
 function udText(t,c,v){const n=document.createElement(t);if(c)n.className=c;n.textContent=String(v??"");return n}
-function udClose(changeUrl=true){activeUnifiedPublisher=null;$("#unifiedDashboard").classList.add("hidden");if(changeUrl){const u=new URL(location.href);u.searchParams.delete("publisher_id");history.pushState({},"",u)}}
+function udClose(changeUrl=true){activeUnifiedPublisher=null;$("#unifiedDashboard").classList.add("hidden");if(changeUrl){const u=new URL(location.href);u.searchParams.delete("publisher_id");u.searchParams.delete("mode");history.pushState({},"",u)}}
 async function udOpen(id,changeUrl=true){
  if(!/^[0-9a-f-]{36}$/i.test(String(id)))return;
  activeUnifiedPublisher=id;$("#unifiedDashboard").classList.remove("hidden");$("#udName").textContent="Cargando…";$("#udStatus").textContent="Consultando estado persistente…";$("#udStats").replaceChildren();$("#udObligations").replaceChildren();$("#udIncidents").replaceChildren();$("#udReview").replaceChildren();$("#udStock").replaceChildren();$("#udHistoricalEvidence").replaceChildren();$("#udForensicItems").replaceChildren();$("#udForensicSummary").textContent="Cargando catálogo forense…";$("#udForensicStatus").textContent="Cargando asignaciones…";$("#udInventoryAge").textContent="";
