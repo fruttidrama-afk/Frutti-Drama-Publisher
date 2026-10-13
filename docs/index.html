@@ -167,10 +167,11 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
  </label>
  <div class="ud-recap-copy">
   <strong>Metadatos de YouTube Shorts</strong>
-  <p class="udmuted">La sugerencia es un borrador automático orientativo, no una interpretación confirmada por IA. Compará con el video real y editá antes de guardar.</p>
+  <p class="udmuted">El sistema analiza el conflicto del episodio, no las indicaciones de cámara ni el canon previo. El título debe decir qué sucede; la descripción debe narrar hechos concretos y sus consecuencias. Si el prompt no aporta trama suficiente, no se inventará una.</p>
   <div class="ud-recap-actions"><button type="button" id="udRecapSuggest">GENERAR PROPUESTA DESDE PROMPT</button></div>
+  <p id="udRecapEvidence" class="ud-recap-notice" aria-live="polite">Acción narrativa extraída: pendiente de analizar el prompt.</p>
   <label>Título · dos primeras palabras en MAYÚSCULAS
-   <textarea id="udRecapTitle" maxlength="100" rows="2" placeholder="PRUEBA POSITIVA: Uva recibe la noticia… #Shorts #ViralShorts #FruttiDrama"></textarea>
+   <textarea id="udRecapTitle" maxlength="100" rows="2" placeholder="PRUEBA POSITIVA: Uva descubre un embarazo que cambia todo #Shorts #FruttiDrama"></textarea>
   </label>
   <label>Descripción del episodio
    <textarea id="udRecapDescription" maxlength="4000" rows="5" placeholder="Sinopsis melodramática real + hashtags del canal."></textarea>
