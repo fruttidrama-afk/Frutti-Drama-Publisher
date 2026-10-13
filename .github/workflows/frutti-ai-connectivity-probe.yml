@@ -22,7 +22,9 @@ jobs:
           req=urllib.request.Request("https://models.github.ai/inference/chat/completions",data=data,headers={"Authorization":"Bearer "+os.environ["GH_MODEL_TOKEN"],"Content-Type":"application/json","Accept":"application/vnd.github+json"})
           try:
             with urllib.request.urlopen(req,timeout=30) as r:
-              result=json.loads(r.read().decode())
+              raw=r.read(20000).decode("utf-8","replace")
+              print("INFERENCE_HTTP",r.status,"CONTENT_TYPE",r.headers.get("content-type"),"RAW_SIZE",len(raw),"RAW_HEAD",repr(raw[:500]))
+              result=json.loads(raw)
             print("GITHUB_MODELS_RESPONSE",json.dumps({"model":result.get("model"),"text":result["choices"][0]["message"]["content"]},ensure_ascii=False))
           except urllib.error.HTTPError as e:
             print("GITHUB_MODELS_HTTP_ERROR",e.code,e.read().decode()[:500])
