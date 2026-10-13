@@ -126,6 +126,7 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 #unifiedDashboard .ud-recap-ai-result{border:1px solid #dba7a7;background:#fff3f2;border-radius:10px;padding:12px;color:#792c26;font:700 13px/1.55 system-ui;white-space:pre-wrap}
 #unifiedDashboard .ud-recap-ai-result[data-status="success"]{border-color:#9ec9b3;background:#ecf8f1;color:#1c5b39}
 #unifiedDashboard .ud-recap-ai-result[hidden]{display:none!important}
+#unifiedDashboard #udRecapFreeAiSetup{display:inline-block;font-weight:700;font-size:12px;color:#16537e;text-decoration:underline;padding:2px 0 6px}#unifiedDashboard #udRecapFreeAiSetup[hidden]{display:none!important}
 </style>
 </head>
 <body>
@@ -175,6 +176,7 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
   <strong>Metadatos de YouTube Shorts</strong>
   <p class="udmuted">IA gratuita DeepSeek/Qwen para narrar el episodio real. Antes de cada generación, el servidor comprueba que el modelo cueste $0; nunca utiliza modelos de pago. Los cupos gratuitos tienen límites diarios.</p>
   <div id="udRecapAiState" class="ud-recap-ai-state" role="status" aria-live="polite">Comprobando conexión con el proveedor de IA…</div>
+  <a id="udRecapFreeAiSetup" href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" hidden>Crear clave GRATIS de OpenRouter <span aria-hidden="true">↗</span></a>
   <div class="ud-recap-actions"><button type="button" id="udRecapSuggest">GENERAR PROPUESTA DESDE PROMPT</button></div>
   <p id="udRecapAiResult" class="ud-recap-ai-result" role="alert" aria-live="assertive" hidden></p>
   <p id="udRecapEvidence" class="ud-recap-notice" aria-live="polite">La interpretación de la trama aparecerá aquí cuando se genere la propuesta.</p>
