@@ -73,26 +73,39 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 <section class="hero"><div class="hs"><div class="visual"><div class="stack"><div class="s1"><span>01</span><b>STRATEGY</b></div><div class="s2"><span>02</span><b>GENERATE</b></div><div class="s3"><span>03</span><b>REVIEW</b></div><div class="s4"><span>04</span><b>PUBLISH</b></div></div></div><div class="copy"><div class="eye">PUBLISHER FACTORY</div><h1>WHERE CONTENT<br>FINDS ITS SYSTEM</h1><p>From idea to generation, review and publishing. Build an autonomous content operation once, then let the system keep working.</p><div class="actions"><button class="btn" id="createHero">CREATE YOUR PUBLISHER</button><button class="btn rail-connected" id="railwayHero">FREE RUNTIME</button></div></div></div></section>
 <div class="status"><button class="pill rail-status-btn ok" id="railwayStatus" type="button">FREE RUNTIME · MIGRATING</button><span class="pill ok" id="accountStatus">Account</span><button class="btn" id="refresh">Actualizar</button></div>
 <section class="section"><div class="inner"><div class="head2"><div><div class="eye">MY PUBLISHERS</div><h2>Your autonomous channels</h2></div><p class="muted">Cada cuenta ve solamente sus Publishers. Railway quedó retirado del diseño: el runtime objetivo usa infraestructura gratuita sin trial expirante y estado externo portable.</p></div><div class="grid" id="cards"><div class="card empty">Cargando…</div></div></div></section>
-<section class="hidden" id="unifiedDashboard" aria-label="Publisher integrado"><div class="udwrap"><div class="udhead"><div><div class="udmuted">PUBLISHER FACTORY · PUBLISHER ACTIVO</div><h2 id="udName">Publisher</h2><div class="udmuted" id="udPlatform"></div></div><div class="toolbar"><button class="btn" id="udRefresh" type="button">ACTUALIZAR</button><button class="btn primary" id="udBack" type="button">VOLVER</button></div></div><div class="udcard" role="note"><strong>Inventario parcial · reconciliación histórica pendiente.</strong><div class="udmuted">Los conteos de esta vista describen SOLO el estado del runtime migrado. El material histórico de Supabase y de los volúmenes anteriores aún no está vinculado; un cero NO significa que el stock haya desaparecido. No autorizar publicaciones desde este inventario.</div></div><div id="udStatus" class="udcard" role="status">Consultando Supabase…</div><div class="udgrid" id="udStats"></div><div class="udcard"><h3>Review · episodios para revisar</h3><div class="udmuted" id="udInventoryAge"></div><div id="udReview">Consultando inventario…</div></div><div class="udcard"><h3>Stock indexado en el runtime nuevo</h3><div id="udStock">Consultando inventario…</div></div><div class="udcard"><h3>Archivos históricos preservados en Supabase</h3><div id="udHistoricalEvidence" class="udmuted">Consultando archivos archivados…</div></div><div class="udcard" id="udForensicSection">
- <div class="ud-recovery-heading"><div><h3>Video Factory · Recuperación de episodios</h3><p class="udmuted" id="udForensicSummary">Consultando 31 videos originales…</p></div><span class="ud-forensic-tag">SIN APROBAR NI PUBLICAR</span></div>
- <p class="udmuted">Compará los MP4 con los <strong>125 prompts completos de Prompt Studio</strong> (temporadas 2–6) y asigná manualmente un episodio debajo de cada video. La elección queda guardada en Supabase, pero no equivale a aprobar, publicar ni recuperar el stock automáticamente.</p>
- <details class="ud-prompt-browser" id="udPromptBrowser">
-  <summary> <strong>CONSULTAR LOS 125 PROMPTS COMPLETOS</strong> <span class="udmuted">Temporadas 2 a 6 · argumentación, continuidad y cinematografía</span></summary>
-  <div class="ud-forensic-toolbar"><label class="ud-inline-field">Temporada <select id="udPromptSeason" aria-label="Temporada del archivo de prompts"><option value="2">Temporada 2</option><option value="3">Temporada 3</option><option value="4">Temporada 4</option><option value="5">Temporada 5</option><option value="6">Temporada 6</option></select></label><input type="search" id="udPromptSearch" placeholder="Buscar trama o personaje..." aria-label="Buscar en los prompts históricos"></div>
-  <p class="udmuted" id="udPromptArc">Cargando Prompt Studio histórico…</p>
-  <div id="udPromptList" class="ud-prompt-list"></div>
- </details>
- <div class="ud-forensic-toolbar">
+<section class="hidden" id="unifiedDashboard" aria-label="Publisher integrado"><div class="udwrap"><div class="udhead"><div><div class="udmuted">PUBLISHER FACTORY · PUBLISHER ACTIVO</div><h2 id="udName">Publisher</h2><div class="udmuted" id="udPlatform"></div></div><div class="toolbar"><button class="btn" id="udRefresh" type="button">ACTUALIZAR</button><button class="btn primary" id="udBack" type="button">VOLVER</button></div></div><nav class="ud-modebar" id="udModeTabs" aria-label="Secciones del publisher">
+ <button id="udModeOverview" type="button" class="ud-selected" aria-pressed="true">RESUMEN GENERAL</button>
+ <button id="udModeRecovery" type="button" aria-pressed="false">CONCILIACIÓN TEMPORAL · FRUTTIDRAMA</button>
+ </nav><div id="udOverviewPane"><div class="udcard" role="note"><strong>Inventario parcial · reconciliación histórica pendiente.</strong><div class="udmuted">Los conteos de esta vista describen SOLO el estado del runtime migrado. El material histórico de Supabase y de los volúmenes anteriores aún no está vinculado; un cero NO significa que el stock haya desaparecido. No autorizar publicaciones desde este inventario.</div></div><div id="udStatus" class="udcard" role="status">Consultando Supabase…</div><div class="udgrid" id="udStats"></div><div class="udcard"><h3>Review · episodios para revisar</h3><div class="udmuted" id="udInventoryAge"></div><div id="udReview">Consultando inventario…</div></div><div class="udcard"><h3>Stock indexado en el runtime nuevo</h3><div id="udStock">Consultando inventario…</div></div><div class="udcard"><h3>Archivos históricos preservados en Supabase</h3><div id="udHistoricalEvidence" class="udmuted">Consultando archivos archivados…</div></div><div class="udcard"><h3>Obligaciones de generación y publicación</h3><div id="udObligations"></div></div><div class="udcard"><h3>Incidentes del runtime</h3><div id="udIncidents"></div></div><p class="udmuted">Panel integrado en modo lectura. Aprobar, rehacer o publicar quedará disponible tras validar la autenticación y las acciones compartidas. Este panel no ejecuta ningún job.</p></div><div id="udRecoveryPane" class="hidden" aria-label="Conciliación manual FruttiDrama">
+ <div class="udcard" id="udForensicSection">
+ <div class="ud-recovery-heading"><div><h3>Conciliación de episodios · Mesa de trabajo</h3><p class="udmuted" id="udForensicSummary">Consultando 31 videos originales…</p></div><span class="ud-forensic-tag">SIN APROBAR NI PUBLICAR</span></div>
+ <p class="udmuted">A la izquierda, los 31 videos originales. A la derecha, los <strong>50 prompts completos de temporadas 2 y 3</strong>. Buscá libremente y elegí vos la identificación de cada video. La elección queda guardada en Supabase, pero no equivale a aprobar, publicar ni recuperar el stock automáticamente.</p>
+ 
+ <div class="ud-recovery-mobile-switch" role="group" aria-label="Elegir panel de identificación">
+  <button type="button" id="udShowVideos" class="ud-active">01 · VIDEOS</button>
+  <button type="button" id="udShowPrompts">02 · PROMPTS</button>
+ </div>
+ <div class="ud-recovery-panels" id="udRecoveryPanels">
+ <section class="ud-recovery-pane ud-recovery-videos" id="udRecoveryVideos"><h4>01 · VIDEOS RECUPERADOS</h4><p class="udmuted">Reproducí, elegí temporada y episodio y guardá tu decisión.</p> <div class="ud-forensic-toolbar">
   <input type="search" id="udForensicSearch" placeholder="Buscar escena o diálogo" aria-label="Buscar diálogos recuperados">
   <select id="udForensicFilter" aria-label="Filtrar archivos recuperados">
    <option value="all">Todos los videos</option>
    <option value="pending">Sin asignación tuya</option>
    <option value="assigned">Ya identificados por vos</option>
-   <option value="candidate">Con sugerencia automática</option>
+   
   </select>
  </div>
  <p class="udmuted" id="udForensicStatus" role="status" aria-live="polite">Las asignaciones no modifican los originales.</p>
  <div id="udForensicItems" class="ud-forensic-grid"></div>
+ </section>
+ <section class="ud-recovery-pane ud-recovery-prompts" id="udRecoveryPrompts">
+ <section class="ud-prompt-browser" id="udPromptBrowser">
+  <h4>02 · PROMPTS DE LA HISTORIA</h4><p class="udmuted">50 prompts de Prompt Studio: temporadas 2 y 3. Elegí vos cuál corresponde; ninguno viene asignado automáticamente.</p>
+  <div class="ud-forensic-toolbar"><label class="ud-inline-field">Temporada <select id="udPromptSeason" aria-label="Temporada del archivo de prompts"><option value="2">Temporada 2</option><option value="3">Temporada 3</option></select></label><input type="search" id="udPromptSearch" placeholder="Buscar trama o personaje..." aria-label="Buscar en los prompts históricos"></div>
+  <p class="udmuted" id="udPromptArc">Cargando Prompt Studio histórico…</p>
+  <div id="udPromptList" class="ud-prompt-list"></div>
+ </section>
+ </section></div>
 </div>
 <dialog id="udPromptModal" class="ud-prompt-modal" aria-labelledby="udPromptModalTitle">
  <div class="ud-prompt-modal-header"><div><p class="udmuted">PROMPT COMPLETO · ARCHIVO HISTÓRICO</p><h3 id="udPromptModalTitle">Prompt Studio</h3></div><button type="button" id="udPromptClose" class="btn">CERRAR</button></div>
@@ -100,7 +113,8 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
  <pre id="udPromptText"></pre>
  <div class="ud-prompt-modal-actions"><button type="button" id="udPromptCopy" class="btn">COPIAR PROMPT COMPLETO</button><small id="udPromptCopyStatus" role="status"></small></div>
 </dialog>
-<div class="udcard"><h3>Obligaciones de generación y publicación</h3><div id="udObligations"></div></div><div class="udcard"><h3>Incidentes del runtime</h3><div id="udIncidents"></div></div><p class="udmuted">Panel integrado en modo lectura. Aprobar, rehacer o publicar quedará disponible tras validar la autenticación y las acciones compartidas. Este panel no ejecuta ningún job.</p></div></section>
+
+ </div></div></section>
 <footer><div class="fi"><span>&copy; 2026 Publisher Factory</span><span>Supabase Free + GitHub Actions · no expiring trials</span></div></footer></div>
 
 <div class="modal" id="modal"><div class="dialog create-dialog">
