@@ -93,7 +93,7 @@ function episodeEvent(story){
    const rule=RULES[priority],hit=line.match(rule.re);
    if(!hit)continue;
    const pre=names(line.slice(0,hit.index)),post=names(line.slice(hit.index+hit[0].length));
-   const actor=pre.length?pre[pre.length-1]:people[0];
+   const actor=rule.key==="embarazo"&&/le cuenta|tells?|informs?|le anuncia/i.test(line)?people[0]:(pre.length?pre[pre.length-1]:people[0]);
    const target=post.find(x=>x!==actor)||people.find(x=>x!==actor)||"";
    scored.push({rule,priority,line,actor,target});
   }
@@ -117,8 +117,10 @@ function narrative(ev,story){
   desc=a+" da a luz y la llegada del bebé transforma la situación familiar. El nacimiento abre preguntas que ya no pueden evitarse.";
   question="¿Qué ocurrirá cuando todos afronten esta nueva realidad?";
  }else{
-  core=a+" "+rule.verb+" "+nameAfter;
+  core=a+" "+rule.verb+(["veneno","beso","humilla","amenaza"].includes(rule.key)?" a ":" ")+nameAfter;
   desc=a+" "+rule.intro+" "+(["beso","veneno","revela","prueba"].includes(rule.key)?"a ":"")+nameAfter+".";
+  if(rule.key==="humilla")desc=a+" humilla a "+nameAfter+". El ataque verbal rompe cualquier apariencia de cordialidad.";
+  if(rule.key==="beso")desc=a+" besa a "+nameAfter+". Ese acercamiento marca un giro en su relación.";
   if(rule.key==="enfrenta"&&secondary){
    hook="CELOS EXPUESTOS";core=a+" enfrenta a "+nameAfter+" por "+secondary;
    desc=a+" encara a "+nameAfter+" por su vínculo con "+secondary+".";
@@ -181,6 +183,10 @@ function narrative(ev,story){
    hablar:"¿Qué consecuencias tendrán estas palabras?"
   };
   question=questions[rule.key]||"¿Cómo continuará esta historia?";
+  if(rule.key==="beso"){
+   const witness=names(story).find(n=>n!==a&&n!==nameAfter);
+   if(witness&&/ve el beso|sees? the kiss|watches? them kiss|observa el beso|presencia el beso/i.test(story))question="¿Cómo reaccionará "+witness+" después de presenciar el beso?";
+  }
  }
  return {hook,core,description:desc+"\n\n"+question+"\n\n"+TAGS};
 }
