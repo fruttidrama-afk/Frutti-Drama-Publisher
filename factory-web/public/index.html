@@ -592,7 +592,9 @@ async function udOpen(id,changeUrl=true){
  const s=await session();if(!s?.access_token)throw Error("AUTH_REQUIRED");
  const response=await fetch(unifiedEndpoint+"?publisher_id="+encodeURIComponent(id),{headers:{Authorization:"Bearer "+s.access_token},cache:"no-store"});
  const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||"READ_ERROR");if(activeUnifiedPublisher!==id)return;
- const p=result.publisher;$("#udName").textContent=p.name;$("#udPlatform").textContent=p.platform==="facebook"?"Facebook Reels":"YouTube Shorts";
+ const p=result.publisher;
+ udSetPublisherPane(new URL(location.href).searchParams.get("mode")==="recovery"?"recovery":"overview",false);
+ $("#udName").textContent=p.name;$("#udPlatform").textContent=p.platform==="facebook"?"Facebook Reels":"YouTube Shorts";
  $("#udStatus").textContent="Runtime: "+p.migration_state+" · Último error: "+(p.last_error||"ninguno")+" · Último runner: "+(p.last_runner_at?new Date(p.last_runner_at).toLocaleString("es-AR"):"sin registro");
  for(const [label,value] of [["Generaciones/día",p.generation_target],["Publicaciones/día",p.publication_target],["Stock indexado (parcial)",p.approved_stock],["Última publicación",p.last_publication_at?new Date(p.last_publication_at).toLocaleDateString("es-AR"):"sin confirmar"]]){
    const box=udText("div","udcard",label);box.append(udText("strong","",value??"—"));$("#udStats").append(box);
@@ -633,7 +635,7 @@ async function udOpen(id,changeUrl=true){
  $("#udForensicSection").classList.toggle("hidden",p.name!=="FruttiDrama");
  udForensicSummary();
  if(p.name==="FruttiDrama"){
-  try{await udLoadPromptCatalog();udRenderPromptBrowser();$("#udForensicStatus").textContent="125 prompts históricos disponibles · Elegí un episodio y guardá cada identificación."}
+  try{await udLoadPromptCatalog();udRenderPromptBrowser();$("#udForensicStatus").textContent="50 prompts históricos T2 y T3 · Elegí vos la historia y guardá cada identificación."}
   catch(e){$("#udForensicStatus").textContent="No se pudo cargar Prompt Studio ("+String(e.message||e)+"). Actualizá la página."}
  }
  udRenderForensics();
@@ -660,10 +662,10 @@ async function udLoadPromptCatalog(){
  if(udPromptCatalog)return udPromptCatalog;
  if(udPromptLoad)return udPromptLoad;
  udPromptLoad=(async()=>{
-  const res=await fetch("data/frutti-prompt-studio-legacy.json",{cache:"no-store"});
+  const res=await fetch("data/frutti-prompt-studio-active.json",{cache:"no-store"});
   if(!res.ok)throw Error("PROMPTS_NOT_FOUND_"+res.status);
   const data=await res.json();
-  if(data.count!==125||!Array.isArray(data.prompts)||data.prompts.length!==125||!data.prompts.every(x=>x.full_prompt&&x.season>=2&&x.season<=6&&x.episode>=1&&x.episode<=25))throw Error("PROMPTS_INCOMPLETE");
+  if(data.count!==50||!Array.isArray(data.prompts)||data.prompts.length!==50||!data.prompts.every(x=>x.full_prompt&&(x.season===2||x.season===3)&&x.episode>=1&&x.episode<=25))throw Error("PROMPTS_INCOMPLETE");
   udPromptCatalog=data;return data;
  })();
  try{return await udPromptLoad}finally{udPromptLoad=null}
@@ -679,24 +681,26 @@ function udShowPrompt(season,episode){
  $("#udPromptModal").showModal();
 }
 function udRenderPromptBrowser(){
- const place=$("#udPromptList");
- place.replaceChildren();
- if(!udPromptCatalog){$("#udPromptArc").textContent="Los prompts aún no están disponibles.";return}
- const season=Number($("#udPromptSeason").value||2);
+ const place=$("#udPromptList");place.replaceChildren();
+ if(!udPromptCatalog){$("#udPromptArc").textContent="Los prompts todavía no están disponibles.";return}
+ const season=$("#udPromptSeason").value;
  const q=String($("#udPromptSearch").value||"").trim().toLowerCase();
- const s=udPromptCatalog.seasons[season];
- $("#udPromptArc").textContent=(s?.arc||"")+". 25 episodios · instrucciones completas originales de Prompt Studio.";
- const entries=udPromptCatalog.prompts.filter(x=>x.season===season&&(!q||[x.hook,x.story,x.full_prompt].join(" ").toLowerCase().includes(q)));
+ const entries=udPromptCatalog.prompts.filter(x=>(season==="all"||x.season===Number(season))&&(!q||[x.hook,x.story,x.full_prompt,String(x.season),String(x.episode)].join(" ").toLowerCase().includes(q)));
+ $("#udPromptArc").textContent=entries.length+" prompts visibles · "+(season==="all"?"Temporadas 2 y 3": "Temporada "+season)+" · sin asignación automática.";
  for(const entry of entries){
-  const card=udText("div","ud-prompt-choice");
-  card.append(udText("strong","","Episodio "+entry.episode+" · "+entry.hook));
+  const card=udText("article","ud-prompt-choice");
+  card.append(udText("strong","","T"+entry.season+" · Episodio "+String(entry.episode).padStart(2,"0")+" · "+entry.hook));
   card.append(udText("p","",entry.story));
-  const controls=udText("div","ud-prompt-buttons");
-  const show=udText("button","ud-small-button","LEER PROMPT COMPLETO");show.type="button";
-  show.onclick=()=>udShowPrompt(entry.season,entry.episode);
-  controls.append(show);card.append(controls);place.append(card);
+  const details=document.createElement("details");
+  const summary=udText("summary","","LEER PROMPT COMPLETO AQUÍ");
+  const pre=udText("pre","",entry.full_prompt);
+  details.append(summary,pre);card.append(details);
+  const actions=udText("div","ud-prompt-buttons");
+  const large=udText("button","ud-small-button","VER EN GRANDE");large.type="button";
+  large.onclick=()=>udShowPrompt(entry.season,entry.episode);
+  actions.append(large);card.append(actions);place.append(card);
  }
- if(!entries.length)place.append(udText("p","udmuted","No hay prompts que coincidan."));
+ if(!entries.length)place.append(udText("p","udmuted","No hay prompts que coincidan con tu búsqueda."));
 }
 function udPopulateEpisode(select,season,value){
  select.replaceChildren();
@@ -753,7 +757,7 @@ function udRenderForensics(){
   }else item.append(udText("p","udmuted","Fotogramas no disponibles; actualizá la galería."));
   const body=udText("div","ud-forensic-item-body");
   const heading=udText("strong","","ARCHIVO "+String(x.file_index+1).padStart(2,"0"));
-  const badge=udText("span","ud-forensic-tag",x.manual_assignment?.season!=null?"TU IDENTIFICACIÓN T"+x.manual_assignment.season+"E"+x.manual_assignment.episode:x.episode_candidate?"SUGERENCIA IA "+x.episode_candidate:"SIN IDENTIFICAR");
+  const badge=udText("span","ud-forensic-tag",x.manual_assignment?.season!=null?"ASIGNADO POR VOS · T"+x.manual_assignment.season+"E"+x.manual_assignment.episode:"SIN IDENTIFICAR");
   body.append(heading,badge);
   if(x.video_url){
    const play=udText("button","ud-small-button","▶ REPRODUCIR VIDEO ORIGINAL");play.type="button";body.append(play);
@@ -766,15 +770,13 @@ function udRenderForensics(){
    };
   }else body.append(udText("small","udmuted","El MP4 no está disponible para reproducción temporal. Actualizá la página."));
   body.append(udText("div","ud-forensic-speech","DIÁLOGO: “"+(x.transcript_raw||"Sin texto reconocido")+"”"));
-  if(x.identity_evidence)body.append(udText("small","udmuted","Sugerencia automática: "+x.identity_evidence));
-  if(x.collision_note)body.append(udText("small","ud-forensic-warning","ATENCIÓN: "+x.collision_note));
   body.append(udText("small","udmuted","SHA-256: "+x.sha256_short+"… · Aprobación/publicación no verificadas."));
   const form=udText("div","ud-match-form");
   form.append(udText("strong","","ASIGNAR EPISODIO A ESTE VIDEO"));
   const fields=udText("div","ud-match-fields"),colS=udText("label","","Temporada"),colE=udText("label","","Episodio");
   const seasonSelect=document.createElement("select");
   seasonSelect.add(new Option("Sin asignar",""));
-  for(let s=2;s<=6;s++)seasonSelect.add(new Option("Temporada "+s,String(s)));
+  for(let s=2;s<=3;s++)seasonSelect.add(new Option("Temporada "+s,String(s)));
   seasonSelect.value=x.manual_assignment?.season!=null?String(x.manual_assignment.season):"";
   const episodeSelect=document.createElement("select");udPopulateEpisode(episodeSelect,seasonSelect.value,x.manual_assignment?.episode??null);
   episodeSelect.disabled=!seasonSelect.value||!udPromptCatalog;
@@ -805,6 +807,36 @@ $("#udPromptCopy").onclick=async()=>{
  try{if(!udPromptActive)throw Error("Elegí un prompt");await navigator.clipboard.writeText(udPromptActive.full_prompt);$("#udPromptCopyStatus").textContent="Prompt completo copiado."}
  catch(_){$("#udPromptCopyStatus").textContent="No se pudo copiar automáticamente."}
 };
+
+
+let udActivePublisherPane="overview";
+function udSetPublisherPane(mode,updateUrl=true){
+ const recovery=mode==="recovery"&&activeUnifiedPublisher===udFruttiPublisher;
+ udActivePublisherPane=recovery?"recovery":"overview";
+ $("#udOverviewPane").classList.toggle("hidden",recovery);
+ $("#udRecoveryPane").classList.toggle("hidden",!recovery);
+ $("#udModeOverview").classList.toggle("ud-selected",!recovery);
+ $("#udModeRecovery").classList.toggle("ud-selected",recovery);
+ $("#udModeOverview").setAttribute("aria-pressed",String(!recovery));
+ $("#udModeRecovery").setAttribute("aria-pressed",String(recovery));
+ $("#udModeTabs").classList.toggle("hidden",activeUnifiedPublisher!==udFruttiPublisher);
+ if(updateUrl&&activeUnifiedPublisher){
+  const url=new URL(location.href);
+  if(recovery)url.searchParams.set("mode","recovery");
+  else url.searchParams.delete("mode");
+  history.replaceState({publisher_id:activeUnifiedPublisher}, "", url);
+ }
+}
+$("#udModeOverview").onclick=()=>udSetPublisherPane("overview");
+$("#udModeRecovery").onclick=()=>udSetPublisherPane("recovery");
+function udSetRecoveryMobilePane(promptMode){
+ const pane=$("#udRecoveryPanels");pane.classList.toggle("ud-show-prompts",Boolean(promptMode));
+ $("#udShowVideos").classList.toggle("ud-active",!promptMode);
+ $("#udShowPrompts").classList.toggle("ud-active",Boolean(promptMode));
+ if(window.matchMedia("(max-width:900px)").matches)$("#udRecoveryPane").scrollIntoView({block:"start",behavior:"smooth"});
+}
+$("#udShowVideos").onclick=()=>udSetRecoveryMobilePane(false);
+$("#udShowPrompts").onclick=()=>udSetRecoveryMobilePane(true);
 
 $("#udBack").onclick=()=>udClose();
 $("#udRefresh").onclick=()=>{if(activeUnifiedPublisher)udOpen(activeUnifiedPublisher,false)};
