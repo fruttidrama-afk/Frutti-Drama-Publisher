@@ -399,7 +399,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 1440,
-          "description": "Provider-specific lead time. YouTube uploads directly PUBLIC at the scheduled runtime moment, so its lead time is 0."
+          "description": "YouTube uses a 390-minute lead: PRIVATE upload at 12:30 and explicit PUBLIC privacy change at 19:00 on the same local publication day. Never use YouTube publishAt."
         }
       }
     },
@@ -462,7 +462,7 @@
                     "const": "youtube"
                   },
                   "privacy_before_publish": {
-                    "const": "not_uploaded"
+                    "const": "private"
                   },
                   "playlist_strategy": {
                     "type": "string"
@@ -483,7 +483,7 @@
                     "const": true
                   },
                   "release_mode": {
-                    "const": "direct_public_at_posting_time"
+                    "const": "same_day_private_to_public_api_update"
                   },
                   "use_publish_at": {
                     "const": false
@@ -492,10 +492,10 @@
                     "const": true
                   },
                   "preserve_private_lead_window": {
-                    "const": false
+                    "const": true
                   },
                   "upload_lead_minutes": {
-                    "const": 0
+                    "const": 390
                   }
                 }
               },
