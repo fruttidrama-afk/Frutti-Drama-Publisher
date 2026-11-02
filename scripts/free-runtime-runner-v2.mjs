@@ -296,8 +296,8 @@ try{
   }
 
   await callback({obligation_id:o.id,claim_id:claimId,status:'running',error:'EPHEMERAL_RUNNER_TIMEOUT_RECONCILE_ONLY',approved_stock:last.stock});
-  console.log('Timed out safely; persisted state for reconciliation.');
-  process.exit(0);
+  console.log('Timed out safely; persisted state for reconciliation. GitHub job must fail visibly.');
+  process.exit(1);
 }catch(err){
   killTree(child);
   const message=String(err?.stack||err).slice(0,1800);
@@ -312,6 +312,6 @@ try{
       approved_stock:metrics().stock
     }).catch(()=>{});
   }
-  process.exit(CURRENT?1:0);
+  process.exit(1);
 }
 // EARTH_GOLDEN_TRIGGER: 2026-10-07T20:46-03:00
