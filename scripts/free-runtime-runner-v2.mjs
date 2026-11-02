@@ -257,7 +257,7 @@ try{
 
   const timeout=Number(process.env.FREE_RUNTIME_JOB_TIMEOUT_MS||(kind==='generation'?22*60*1000:12*60*1000));
   const deadline=Date.now()+timeout;
-  let success=false,last=baseline,creditWait=false;
+  let success=false,last=baseline,creditWait=false,creditProbeFailure=null;
   while(Date.now()<deadline){
     await sleep(5000);
     last=metrics();
@@ -265,6 +265,12 @@ try{
     if(kind==='publication'&&last.publication>baseline.publication){success=true;break}
     const snap=statusSnapshot();
     const state=String(snap?.state||snap?.generation?.state||'');
+    // An unreadable credit balance is NOT evidence that the 50 free daily credits are exhausted.
+    // This status is emitted by ensureDailyCreditCycle for project/login/credit-reading errors too.
+    if(kind==='generation'&&state==='AUTOMATIC_BATCH_WAITING_FOR_DAILY_CREDITS'&&/^(credit-balance-unavailable|credit-refresh-read-failed)$/.test(String(snap?.reason||''))){
+      creditProbeFailure='FLOW_CREDIT_PROBE_UNAVAILABLE:'+String(snap.reason);
+      break;
+    }
     if(kind==='generation'&&/DAILY_CREDIT_BATCH_COMPLETE|AUTOMATIC_BATCH_WAITING_FOR_DAILY_CREDITS|WAITING_DAILY_FLOW_CREDIT_REFRESH|WAITING_FIRST_DAILY_FLOW_CREDIT_REFRESH/i.test(state)){creditWait=true;break}
     if(child.exitCode!==null&&Date.now()+30000<deadline){
       child=spawn('npm',['start'],{cwd:process.cwd(),env,stdio:['ignore',fd,fd],detached:true});
@@ -288,6 +294,13 @@ try{
     await callback({obligation_id:o.id,claim_id:claimId,status:'completed',approved_stock:last.stock});
     console.log('Completed',kind,o.id,last);
     process.exit(0);
+  }
+  if(creditProbeFailure){
+    // The provider has not submitted anything: keep this obligation reconcile-only
+    // until its lease expires, then safely retry the pre-submit credit reading.
+    await callback({obligation_id:o.id,claim_id:claimId,status:'running',error:creditProbeFailure,approved_stock:last.stock});
+    console.error(creditProbeFailure+'; no video submitted or paid credits authorized.');
+    process.exit(1);
   }
   if(creditWait){
     await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',error:'WAITING_DAILY_FLOW_CREDIT_REFRESH',approved_stock:last.stock});
