@@ -111,7 +111,7 @@ function rebasePersistedMediaPaths(){
 }
 function metrics(){
   const dbp=dbPath();
-  if(!fs.existsSync(dbp))return{generation:0,publication:0,stock:0,review:0};
+  if(!fs.existsSync(dbp))return{generation:0,publication:0,stock:0,review:0,privateStaged:0};
   const db=new DatabaseSync(dbp,{timeout:5000});
   try{
     const generation=tableExists(db,'factory_generations')
@@ -122,7 +122,14 @@ function metrics(){
       ?Number(db.prepare("SELECT COUNT(*) n FROM publication_items WHERE status NOT IN ('published','cancelled','deleted')").get()?.n||0):0;
     const review=tableExists(db,'factory_items')
       ?Number(db.prepare("SELECT COUNT(*) n FROM factory_items WHERE status='review'").get()?.n||0):0;
-    return{generation,publication,stock,review};
+    // Only a persisted PRIVATE YouTube video for TODAY's publication is staged;
+    // this is NOT a publication and must not complete the release obligation.
+    const localParts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Argentina/Buenos_Aires',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+    const dayTokens=Object.fromEntries(localParts.filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
+    const today=dayTokens.year+'-'+dayTokens.month+'-'+dayTokens.day;
+    const privateStaged=tableExists(db,'publication_items')
+      ?Number(db.prepare("SELECT COUNT(*) n FROM publication_items WHERE COALESCE(provider,'youtube')='youtube' AND videoId IS NOT NULL AND remotePrivacyStatus='private' AND substr(scheduledAt,1,10)=? AND status NOT IN ('published','cancelled','deleted')").get(today)?.n||0):0;
+    return{generation,publication,stock,review,privateStaged};
   }finally{db.close()}
 }
 function killTree(child){
@@ -257,12 +264,16 @@ try{
 
   const timeout=Number(process.env.FREE_RUNTIME_JOB_TIMEOUT_MS||(kind==='generation'?22*60*1000:12*60*1000));
   const deadline=Date.now()+timeout;
-  let success=false,last=baseline,creditWait=false,creditProbeFailure=null;
+  let success=false,last=baseline,creditWait=false,creditProbeFailure=null,privateStagedWait=false;
   while(Date.now()<deadline){
     await sleep(5000);
     last=metrics();
     if(kind==='generation'&&(last.generation>baseline.generation||last.review>baseline.review)){success=true;break}
     if(kind==='publication'&&last.publication>baseline.publication){success=true;break}
+    if(kind==='publication'&&String(p.platform||'')==='youtube'&&last.privateStaged>0){
+      const h=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Argentina/Buenos_Aires',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
+      if(h<'19:00'){privateStagedWait=true;break}
+    }
     const snap=statusSnapshot();
     const state=String(snap?.state||snap?.generation?.state||'');
     // An unreadable credit balance is NOT evidence that the 50 free daily credits are exhausted.
@@ -293,6 +304,11 @@ try{
   if(success){
     await callback({obligation_id:o.id,claim_id:claimId,status:'completed',approved_stock:last.stock});
     console.log('Completed',kind,o.id,last);
+    process.exit(0);
+  }
+  if(privateStagedWait){
+    await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',error:'YOUTUBE_PRIVATE_STAGED_WAITING_19',approved_stock:last.stock});
+    console.log('YouTube private staging verified. Will explicitly change privacy at 19:00 ART; no new upload permitted.');
     process.exit(0);
   }
   if(creditProbeFailure){
