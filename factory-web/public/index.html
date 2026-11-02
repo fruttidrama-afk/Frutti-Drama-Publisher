@@ -661,8 +661,11 @@ async function udOpen(id,changeUrl=true){
  const p=result.publisher;
  udSetPublisherPane(new URL(location.href).searchParams.get("mode")==="recovery"?"recovery":"overview",false);
  $("#udName").textContent=p.name;$("#udPlatform").textContent=p.platform==="facebook"?"Facebook Reels":"YouTube Shorts";
- $("#udStatus").textContent="Runtime: "+p.migration_state+" · Último error: "+(p.last_error||"ninguno")+" · Último runner: "+(p.last_runner_at?new Date(p.last_runner_at).toLocaleString("es-AR"):"sin registro");
- for(const [label,value] of [["Generaciones/día",p.generation_target],["Publicaciones/día",p.publication_target],["Stock indexado (parcial)",p.approved_stock],["Última publicación",p.last_publication_at?new Date(p.last_publication_at).toLocaleDateString("es-AR"):"sin confirmar"]]){
+ const lastGenerationMs=p.last_generation_at?Date.parse(p.last_generation_at):NaN;
+ const generationCurrent=Number.isFinite(lastGenerationMs)&&lastGenerationMs<=Date.now()&&(Date.now()-lastGenerationMs)<36*3600000;
+ const operationalLabel=p.migration_state!=="ready"?"MIGRACIÓN INCOMPLETA":generationCurrent?"GENERACIÓN CONFIRMADA EN 36 H":"SIN GENERACIÓN CONFIRMADA · AUTOMATIZACIÓN NO VERIFICADA";
+ $("#udStatus").textContent=operationalLabel+" · Runtime: "+p.migration_state+" · Último error: "+(p.last_error||"ninguno")+" · Último runner: "+(p.last_runner_at?new Date(p.last_runner_at).toLocaleString("es-AR"):"sin registro");
+ for(const [label,value] of [["Generaciones/día",p.generation_target],["Publicaciones/día",p.publication_target],["Stock indexado (parcial)",p.approved_stock],["Última generación",p.last_generation_at?new Date(p.last_generation_at).toLocaleString("es-AR"):"sin confirmar"],["Última publicación",p.last_publication_at?new Date(p.last_publication_at).toLocaleDateString("es-AR"):"sin confirmar"]]){
    const box=udText("div","udcard",label);box.append(udText("strong","",value??"—"));$("#udStats").append(box);
  }
  const inv=result.inventory;
