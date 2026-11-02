@@ -41,7 +41,7 @@
 
 **P3: Publication credentials / stock / human gate**
 - Read-only API identity check for exact YouTube channel or Facebook Page with refreshable per-publisher tokens; do not infer connection from DB flags. Reconnect only if necessary and only by approved platform OAuth. Never copy tokens across shows.
-- Restore existing approved stock with hashes, due-slot and duplicate checks. YouTube: direct public upload at release time, no private staging or `publishAt`; remote platform video ID must be saved. Dinnie: verified Facebook Reels state and AI disclosure.
+- Restore existing approved stock with hashes, due-slot and duplicate checks. YouTube (operator correction 2026-11-02): PRIVATE upload at 12:30 ART on its assigned publication day, then explicit API privacy transition to PUBLIC at 19:00 ART that SAME day; never `publishAt`, never direct-public upload or bulk backlog catch-up; remote video ID and one-shot boundaries must be persisted. Dinnie: verified Facebook Reels state and AI disclosure.
 - The merged app's shared Approve / interpret REDO / Stock / Publication API requires tenant-enforced authorization and idempotency. Test synthetic events and existing media BEFORE changing historical production.
 
 **P4: Real unified Factory**
@@ -67,3 +67,11 @@
 - Shared UI source: `docs/index.html` and `factory-web/public/index.html`
 - Historical rescue: `docs/FORENSIC_EXPORT_EXECUTION_2026_10_12.md`
 - Next operator-needed step after technical checks: reconnect individual Google Flow authorization through authenticated UI for the specific accounts where auth is invalid, never via pasted password.
+
+
+## Operator correction — 2026-11-02 (publication antispam)
+- Supersedes all older Publisher Factory instructions saying never stage private on the publication date. YouTube requires same-day 12:30 private upload, explicit 19:00 public privacy update. No YouTube publishAt, no direct public initial upload. FruttiDrama/Earth only; Dinnie remains Facebook Reels.
+- Runtime now uses daily SQLite external-action fences (YouTube private-init/public-release, Facebook start/finish), prevents bulk missed-date catch-up and limits Flow Generate to ten-minute minimum spacing and at most four submit boundaries in a rolling 24-hour window. The generation fence is durable in the per-publisher state but a hard runner crash before remote snapshot upload still requires Supabase reconciliation; no false exactly-once claims.
+- Supabase orchestrator `publisher-free-runtime` v7: prioritizes due publication windows; after successful private staging it retains the same publication obligation blocked until 19:00 for its final release claim. The runner explicitly distinguishes `privateStaged` from actual PUBLIC publication.
+- The unified panel now shows today's plan and labels `attempts` as runner claims, NOT external submit/upload counts. Historical obligations are kept as audit data but hidden in the main list. No historical videos were intentionally submitted or published as a test during these corrections.
+- Validation: source/contract smoke succeeded in GH Actions run 41531064705; full Docker runtime image build including comprehensive selftests is pending and must be checked before claiming deployment.
