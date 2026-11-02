@@ -89,6 +89,35 @@ const PRODUCTION_START_EPISODE=1;
 const DAILY_FLOW_GRANT_CREDITS=Math.max(1,Number(CONFIG.generation?.daily_credit_grant||50));
 const DAILY_BATCH_CREDIT_COST=Math.max(1,Number(BASE_DAILY_PRODUCTION_LIMIT||1)*Number(CREDITS_PER_GENERATION||15));
 const CREDIT_REFRESH_POLL_MS=Math.max(60000,Number(CONFIG.generation?.credit_refresh_poll_minutes||5)*60*1000);
+// Cross-episode / REDO anti-spam fence. A crashed or ambiguous submit still counts.
+// The record is written BEFORE any Generate click and survives the portable state archive.
+// The Supabase scheduler separately caps per-publisher claims across runner restarts.
+const FLOW_MIN_SUBMIT_SPACING_MS=10*60*1000;
+const FLOW_MAX_SUBMIT_BOUNDARIES_24H=4;
+function submitSafetyWindow(db){
+  let entries=[];
+  try{
+    const v=JSON.parse(String(meta(db,'flow:antiSpam:submitBoundaries','[]')));
+    if(Array.isArray(v))entries=v.filter(x=>Number.isFinite(Number(x?.at))&&Number(x.at)>Date.now()-24*60*60*1000&&Number(x.at)<=Date.now()+60*1000);
+  }catch{
+    return{allowed:false,nextAt:Date.now()+24*60*60*1000,reason:'SUBMIT_AUDIT_CORRUPT_REVIEW_REQUIRED',entries:[]};
+  }
+  const latest=entries.length?Math.max(...entries.map(x=>Number(x.at))):0;
+  if(entries.length>=FLOW_MAX_SUBMIT_BOUNDARIES_24H){
+    const oldest=Math.min(...entries.map(x=>Number(x.at)));
+    return{allowed:false,nextAt:oldest+24*60*60*1000,reason:'MAX_4_GENERATE_BOUNDARIES_IN_24H',entries};
+  }
+  if(latest&&Date.now()-latest<FLOW_MIN_SUBMIT_SPACING_MS)
+    return{allowed:false,nextAt:latest+FLOW_MIN_SUBMIT_SPACING_MS,reason:'MIN_10_MINUTES_BETWEEN_GENERATE_CLICKS',entries};
+  return{allowed:true,nextAt:Date.now(),reason:'',entries};
+}
+function reserveGenerateBoundary(db,row,genId){
+  const check=submitSafetyWindow(db);
+  if(!check.allowed)return check;
+  setMeta(db,'flow:antiSpam:submitBoundaries',JSON.stringify([...check.entries,{at:Date.now(),itemId:String(row.id),genId:String(genId)}]));
+  return{...check,reserved:true};
+}
+
 const CREDIT_REFRESH_GUARD_MS=Math.max(6*60*60*1000,Math.min(20,Number(CONFIG.generation?.credit_refresh_guard_hours||20))*60*60*1000);
 // Unattended publishers must never wait beyond one full day merely because
 // non-rollover daily credits were not spent and therefore produced no visible
@@ -3610,6 +3639,17 @@ async function processRow(db,row){
     setLifecycle(db,row,'PREFLIGHT_PASSED',{preflight_at:now(),settings:pf.settings,characters:cp.visual,prompt_hash:cp.hash,prepared_state_verified:Boolean(pf.prepared_state_verified)});
     if(!submitAuthorized){const used=effectiveDailyCount(db);setMeta(db,'flow:state',used>=dailyProductionLimit(db)?'ESPERANDO CRÉDITOS':'CONECTADO');setMeta(db,'flow:currentStep',used>=dailyProductionLimit(db)?'daily-limit':'preflight:passed-no-submit');publish(used>=dailyProductionLimit(db)?'DAILY_LIMIT':'PREFLIGHT_READY_NO_SUBMIT',{episode:'E'+row.episode,job_id:row.id,characters:cp.visual,settings:pf.settings});return false}
     if(manualSubmit)setMeta(db,'automation:allowSubmit','0');
+    // All submit modes share the same durable fence. No draft, REDO or manual
+    // override can click Generate repeatedly, even after ambiguous errors.
+    const safety=submitSafetyWindow(db);
+    if(!safety.allowed){
+      db.prepare("UPDATE factory_items SET nextTry=?,error=?,updatedAt=? WHERE id=?").run(safety.nextAt,safety.reason,now(),row.id);
+      setMeta(db,'flow:state','ANTISPAM_COOLDOWN');
+      setMeta(db,'flow:currentStep','generate-submit-throttled');
+      setMeta(db,'flow:message','Protección anti-spam: '+safety.reason+'; próximo intento permitido '+new Date(safety.nextAt).toISOString());
+      publish('GENERATE_SUBMIT_THROTTLED',{episode:'E'+row.episode,job_id:row.id,reason:safety.reason,next_at:new Date(safety.nextAt).toISOString()});
+      return false;
+    }
     // Match FruttiDrama exactly here: preflight already verified the prompt bytes,
     // target composer and project identity. Re-querying the editor after Flow
     // commits the prompt can fail because Flow swaps the contenteditable node.
@@ -3620,6 +3660,10 @@ async function processRow(db,row){
       if(Number(claimed.changes||0)!==1)throw new Error('REVIEW_RETRY_ALREADY_SUBMITTED');
     }else db.prepare("UPDATE factory_items SET status='generating',providerRunId=?,error=NULL,updatedAt=? WHERE id=?").run(genId,now(),row.id);
     setLifecycle(db,row,'SUBMIT_BOUNDARY_ENTERED',{generation_id:genId,submit_boundary_at:now(),generation_session_instance:INSTANCE_ID,baseline,baseline_inventory:baselineInventory,reviewer_retry:reviewerRetry,retry_token:reviewerRetry?String(row.reviewRetryToken||''):null});
+    // Reserve BEFORE touching the external Generate button; fail closed if any
+    // other row/process has consumed the window since preflight.
+    const boundary=reserveGenerateBoundary(db,row,genId);
+    if(!boundary.allowed)throw new Error('GENERATE_SUBMIT_BOUNDARY_THROTTLED:'+boundary.reason);
     const submit=await clickSubmitExactlyOnce(page,baselineInventory,baseline,baselineBusy);
     const submitMode=String(submit?.mode||'start-generation-direct');
     const priorConsent=meta(db,'flow:consentMode','UNKNOWN');
