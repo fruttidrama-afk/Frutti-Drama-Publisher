@@ -1306,17 +1306,19 @@ function scheduleLocalDate(day,time,tz){
 function reschedulePendingPublications(){
   const time=String(CONFIG.schedule?.posting_times?.[0]||'19:00');
   const tz=String(CONFIG.schedule?.timezone||CONFIG.identity?.timezone||'UTC');
-  const rows=db.prepare("SELECT id,provider,videoId,status FROM publication_items WHERE status NOT IN ('published','cancelled','deleted') AND videoId IS NULL ORDER BY episode,createdAt").all();
+  // Never silently move an ambiguous or already-started upload to a new date.
+  // Only pristine queued items or quota-wait items with no session can be moved.
+  const rows=db.prepare("SELECT id,provider,videoId,status FROM publication_items WHERE status IN ('queued','quota_wait') AND videoId IS NULL AND resumableSession IS NULL ORDER BY episode,createdAt").all();
   let day=scheduleDayKey(new Date(),tz),cursor=null,changed=0;
   for(const row of rows){
+    const provider=String(row.provider||CONFIG.publication?.selected_provider||'youtube');
+    const lead=provider==='facebook'?0:390*60000;
     let next;
     while(true){
       const d=scheduleLocalDate(day,time,tz);
-      if(d.getTime()>Date.now()+5*60*1000 && (!cursor||d.getTime()>cursor.getTime())){next=d;break}
+      if(d.getTime()-lead>Date.now()+5*60*1000 && (!cursor||d.getTime()>cursor.getTime())){next=d;break}
       day=scheduleAddDay(day,1);
     }
-    const provider=String(row.provider||CONFIG.publication?.selected_provider||'youtube');
-    const lead=provider==='facebook'?0:Math.max(0,Number(CONFIG.schedule?.upload_lead_minutes||0))*60000;
     db.prepare("UPDATE publication_items SET scheduledAt=?,uploadAt=?,updatedAt=? WHERE id=?")
       .run(next.toISOString(),new Date(next.getTime()-lead).toISOString(),now(),row.id);
     cursor=next;day=scheduleAddDay(day,1);changed++;
