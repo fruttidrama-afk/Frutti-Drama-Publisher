@@ -19,7 +19,9 @@
 1. `scripts/publisher-productivity-watchdog.mjs`: read-only, per-show freshness check on confirmed generation and migration state; requires all three shows and fails after 36 hours of missing confirmations. It does not touch credentials, browser, storage, generation, or platform posting.
 2. `.github/workflows/publisher-productivity-watchdog.yml`: independent six-hour scheduled GitHub Actions failure signal. First run `41524906868` expectedly failed, explicitly identifying all three non-producing publishers, so the test verified the detector.
 3. `scripts/free-runtime-runner-v2.mjs`: after preserving state and leaving the obligation in reconcile-only mode, a 22min timeout now exits non-zero; claim and preflight errors likewise exit non-zero. No automatic re-submit added. Workflows can no longer paint these failures green.
-4. Existing scheduler and Review/Stock logic remain untouched. No video was intentionally generated/uploaded as a test. No channels declared online.
+4. The runner now explicitly checks the status reason on `AUTOMATIC_BATCH_WAITING_FOR_DAILY_CREDITS`: `credit-balance-unavailable` and `credit-refresh-read-failed` trigger `FLOW_CREDIT_PROBE_UNAVAILABLE`, a failing workflow and safe pre-submit retry after lease expiry, **NOT** a false confirmed free-credit wait. It does not authorize a video submit or paid credits.
+5. Both shared Factory HTML views now show last confirmed generation and a warning when the 36-hour production freshness gate fails or when migration is incomplete. The read-only UI smoke workflow succeeded (run `41525923594`).
+6. Existing Review/Stock and publication logic remain untouched. No video was intentionally generated/uploaded as a test. No channels declared online.
 
 ## Priority repair plan and gates
 **P0: Preserve evidence before production writes**
