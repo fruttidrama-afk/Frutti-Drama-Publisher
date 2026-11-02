@@ -1,1 +1,2 @@
 trigger 2026-10-07T20:55-03:00 retry
+RECOVERY-2026-11-02: owner-only login portal active; isolated Flow account; zero paid credits.
