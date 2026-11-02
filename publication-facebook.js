@@ -106,6 +106,16 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     "ALTER TABLE publication_items ADD COLUMN remoteStatusCheckedAt TEXT",
     "ALTER TABLE publication_items ADD COLUMN aiDisclosureSyncedAt TEXT"
   ]){try{db.exec(sql)}catch{}}
+  // Exactly-once remote Graph mutation boundaries, persisted in publisher state.
+  db.exec("CREATE TABLE IF NOT EXISTS publication_safety_fences (day TEXT NOT NULL,kind TEXT NOT NULL,itemId TEXT NOT NULL,createdAt TEXT NOT NULL,PRIMARY KEY(day,kind))");
+  function reserveExternalAction(kind,item){
+    const tz=config.schedule?.timezone||config.identity?.timezone||'America/Argentina/Buenos_Aires';
+    const day=dayKey(new Date(),tz);
+    const releaseDay=dayKey(new Date(item.scheduledAt),tz);
+    if(day!==releaseDay)throw new Error('FACEBOOK_MISSED_DAY_NO_CATCHUP');
+    const x=db.prepare("INSERT OR IGNORE INTO publication_safety_fences(day,kind,itemId,createdAt) VALUES(?,?,?,?)").run(day,kind,item.id,now());
+    if(Number(x.changes||0)!==1)throw new Error('FACEBOOK_ACTION_ALREADY_RESERVED:'+kind);
+  }
   let running=false,lastHeartbeat=null,lastError=null;
 
   function save(row){
@@ -167,6 +177,9 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
   }
   async function createOrResume(item,c){
     if(item.videoId&&item.resumableSession)return;
+    reserveExternalAction('facebook-reel-start',item);
+    hist(item,'publishing','Facebook start phase reserved BEFORE external Graph request. Ambiguous outcome blocks repeated starts.');
+    save(item);
     const start=await graph('me/video_reels',{method:'POST',params:{upload_phase:'start'},token:c.page_access_token});
     if(!start.video_id||!start.upload_url)throw new Error('Facebook did not return video_id/upload_url.');
     item.videoId=String(start.video_id);item.resumableSession=String(start.upload_url);item.remotePrivacyStatus='session-created';hist(item,'publishing','Facebook Reel upload session created and persisted for restart-safe delivery.');save(item);
@@ -206,6 +219,10 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     if(provider.contains_synthetic_media!==true||config.publication?.ai_disclosure_required!==true){
       throw new Error('AI_DISCLOSURE_CONTRACT_REQUIRED: Facebook publication is blocked unless native AI disclosure is mandatory.');
     }
+    reserveExternalAction('facebook-reel-finish',item);
+    item.remotePrivacyStatus='finish-attempted';
+    hist(item,'publishing','Facebook finish phase reserved before external mutation; remote verification only if ambiguous.');
+    save(item);
     const j=await graph('me/video_reels',{
       method:'POST',
       params:{
@@ -230,7 +247,9 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
       // Restart-safe phase machine:
       // session-created -> uploaded -> processing -> published.
       // Never repeat a completed phase merely because the process restarted.
-      if(item.videoId&&item.remotePrivacyStatus==='processing'){
+      if(item.videoId&&['processing','finish-attempted'].includes(String(item.remotePrivacyStatus||''))){
+        // A finish response might be lost; NEVER repeat it. Query the same
+        // remote video ID and hold for reconciliation if Meta is uncertain.
         try{await remoteStatus(item)}catch(e){if(isAuthError(e))throw e}
         return;
       }
@@ -291,8 +310,13 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
           if(item.videoId&&!item.aiDisclosureSyncedAt){
             await ensureAiDisclosure(item);
           }
-          if(String(item.status||'')==='published')continue;
+          if(String(item.status||'')==='published'||String(item.status||'')==='attention')continue;
           if(Date.now()<Date.parse(item.scheduledAt))continue;
+          const tz=config.schedule?.timezone||config.identity?.timezone||'America/Argentina/Buenos_Aires';
+          if(dayKey(new Date(item.scheduledAt),tz)!==dayKey(new Date(),tz)){
+            item.error='FACEBOOK_MISSED_DAY_NO_CATCHUP';
+            hist(item,'attention',item.error);save(item);continue;
+          }
           await publish(item);
           item.attempts=0;item.retryAt=0;item.error=null;save(item);
         }catch(e){
@@ -309,6 +333,7 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
           }
           item.error=raw;
           if(raw==='FACEBOOK_AUTH_REQUIRED'||auth){item.status='auth_wait';item.retryAt=0}
+          else if(/FACEBOOK_ACTION_ALREADY_RESERVED|FACEBOOK_MISSED_DAY_NO_CATCHUP/.test(raw)){item.status='attention';item.retryAt=0}
           else{item.status='error';item.retryAt=Date.now()+(rate?30*60*1000:Math.min(60*60*1000,60000*Math.pow(2,Math.min(item.attempts,6))))}
           hist(item,item.status,raw);save(item);
         }
