@@ -146,26 +146,27 @@ A REDO is explicit operator authorization for another generation of that episode
 
 ---
 
-# 5. Publication SOP — YouTube
+# 5. Publication SOP — YouTube (operator-corrected 2026-11-02)
 
-For the established YouTube workflow:
-- approval moves the video into Publisher-controlled Stock only;
-- **do not upload to YouTube before the actual publication time**;
-- do not create future/private YouTube staging as a substitute for Stock;
-- do not use YouTube `publishAt` for future scheduling;
-- at the configured publication time, upload the approved Stock video directly as **public** with final title, description and native AI disclosure;
-- legacy private videos that already exist on YouTube may be reconciled/released in place, but new videos must never use that retired path;
-- publication state in the Publisher must reflect the real remote YouTube state.
+**Mandatory for FruttiDrama and EARTH IN 10 and inherited by future YouTube publishers:**
+
+1. Explicit human APPROVE is required. The video remains in private Publisher-controlled Stock before its publication day.
+2. **12:30 PM America/Argentina/Buenos_Aires on the assigned publication date:** upload exactly one approved video as **PRIVATE** via YouTube `videos.insert`, with its final title, description and native AI disclosure. Persist the remote video ID.
+3. **7:00 PM on that very same assigned date:** return to the SAME YouTube video ID, verify the connected channel and observed PRIVATE status, then explicitly change its privacy to **PUBLIC** using YouTube `videos.update`. Verify the remote PUBLIC state.
+4. **NEVER** upload directly PUBLIC at 19:00; **NEVER** use YouTube `publishAt` or native scheduling; **NEVER** upload any video to YouTube on earlier days as advance PRIVATE staging.
+5. There is at most one publication per publisher per local day. Do not compensate for missed days by bulk uploads or rapid consecutive releases.
+6. A 12:30 upload and a 19:00 release are **distinct remote mutation boundaries**. Reserve each durably before making the request; at timeouts, network failures or unknown responses, inspect YouTube's real state before considering any retry. Never initialize a fresh upload for the same item/day following an ambiguous result.
+7. Keep all original video assets and identifiers. Repair or reconcile a legacy PRIVATE video in place; never create a duplicate.
+8. The operator can change publication times in the Publisher UI; the runtime must adjust the lead window consistently rather than silently violating the two-stage workflow. The default for these two publishers remains 12:30 and 19:00 ART.
 
 Required invariants:
-- `privacy_before_publish = not_uploaded`;
-- `upload_lead_minutes = 0`;
-- `release_mode = direct_public_at_posting_time`;
+- `privacy_before_publish = private`;
+- `upload_lead_minutes = 390` (12:30 → 19:00);
+- `release_mode = same_day_private_to_public_api_update`;
 - `use_publish_at = false`;
-- `preserve_private_lead_window = false`.
+- `preserve_private_lead_window = true`.
 
-Publication time must be configurable from the Publisher UI and persisted.
-
+**Antispam rule shared with generation:** a scheduled obligation, runner claim or health probe is NOT a real external action. Never make the system mistake a retryable worker/credit-read error for permission to click Generate or send another upload. A submitted or ambiguous action is treated as potentially accepted until positively reconciled.
 ---
 
 # 6. Publication SOP — Facebook
