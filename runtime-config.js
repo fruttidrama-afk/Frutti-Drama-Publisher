@@ -144,7 +144,7 @@ export function loadConfig(){
           ?[...new Set(schedule.posting_times.map(v=>clean(v,5)).filter(v=>/^\d{2}:\d{2}$/.test(v)))].slice(0,20)
           :['19:00'];
       })(),
-      upload_lead_minutes:youtubePublicationConfigured?0:Math.max(0,Math.min(1440,Number(schedule.upload_lead_minutes??0)))
+      upload_lead_minutes:youtubePublicationConfigured?390:Math.max(0,Math.min(1440,Number(schedule.upload_lead_minutes??0)))
     },
     publication:(()=>{
       const p=c.publication||{allowed_providers:['youtube','facebook'],selected_provider:null,providers:[]};
@@ -153,7 +153,7 @@ export function loadConfig(){
         ai_disclosure_required:true,
         providers:(Array.isArray(p.providers)?p.providers:[]).map(x=>{
           const type=String(x?.type||'').toLowerCase();
-          if(type==='youtube')return{...x,contains_synthetic_media:true,privacy_before_publish:'not_uploaded',upload_policy:'publisher-stock-until-19:00-then-direct-public',stock_storage:'private-cloud-storage',upload_lead_minutes:0,native_publish_at:false,release_mode:'direct_public_at_posting_time',use_publish_at:false,metadata_final_before_upload:true,preserve_private_lead_window:false};
+          if(type==='youtube')return{...x,contains_synthetic_media:true,privacy_before_publish:'private',upload_policy:'same-day-12:30-private-upload-then-19:00-privacy-change',stock_storage:'private-cloud-storage',upload_lead_minutes:390,native_publish_at:false,release_mode:'same_day_private_to_public_api_update',use_publish_at:false,metadata_final_before_upload:true,preserve_private_lead_window:true};
           if(type==='facebook')return{...x,contains_synthetic_media:true};
           return{...x,contains_synthetic_media:true};
         })
