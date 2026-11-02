@@ -8,6 +8,12 @@ on:
       - "factory-web/public/index.html"
       - "scripts/check-unified-factory-ui.mjs"
       - "scripts/test-frutti-copy.mjs"
+      - "scripts/check-publication-safety.mjs"
+      - "publication.js"
+      - "publication-facebook.js"
+      - "free-browser-provider.js"
+      - "runtime-config.js"
+      - "scripts/free-runtime-runner-v2.mjs"
       - "supabase/functions/publisher-frutti-recap/index.ts"
       - "supabase/functions/publisher-frutti-recap/frutti-recap-copy.js"
       - ".github/workflows/unified-factory-ui-smoke.yml"
@@ -29,3 +35,11 @@ jobs:
         run: node scripts/check-unified-factory-ui.mjs
       - name: Validate FruttiDrama narrative metadata without production writes
         run: node scripts/test-frutti-copy.mjs
+      - name: Validate syntax and anti-spam two-stage publication contract
+        run: |
+          node --check publication.js
+          node --check publication-facebook.js
+          node --check runtime-config.js
+          node --check free-browser-provider.js
+          node --check scripts/free-runtime-runner-v2.mjs
+          node scripts/check-publication-safety.mjs
