@@ -1,0 +1,30 @@
+name: Publisher Productivity Watchdog
+
+on:
+  schedule:
+    - cron: "7 */6 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publisher-productivity-watchdog.yml"
+      - "scripts/publisher-productivity-watchdog.mjs"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publisher-productivity-watchdog
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.14.0"
+      - name: Verify real output rather than scheduled workflow status
+        run: node scripts/publisher-productivity-watchdog.mjs
