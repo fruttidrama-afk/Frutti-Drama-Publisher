@@ -4,3 +4,4 @@ EXPECTED_ACCOUNT=fruttidrama@gmail.com
 EXPECTED_FLOW_PROJECT_ID=705d7ac2-30fe-4481-aa4c-076c31a64214
 NO_GENERATION=true
 NO_PUBLICATION=true
+RECOVERY-2026-11-02: owner-only login portal active; isolated Flow account; zero paid credits.
