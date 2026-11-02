@@ -57,7 +57,15 @@ rm -rf \
 tar -czf "$ARCHIVE" --exclude='flow-profile/Default/Media Cache' --exclude='flow-profile/Default/Blob Storage' --exclude='flow-profile/Default/Service Worker/ScriptCache' --exclude='flow-profile/Default/Shared Dictionary' --exclude='flow-profile/OptimizationGuidePredictionModels' --exclude='flow-profile/Default/OptimizationGuidePredictionModels' --exclude='flow-profile/Safe Browsing' --exclude='flow-profile/WidevineCdm' -C "$PACK" flow-auth-state.json flow-profile
 echo "PROFILE_ARCHIVE_BYTES=$(stat -c %s "$ARCHIVE")"
 if [ "$(stat -c %s "$ARCHIVE")" -ge 41943040 ]; then
-  echo "PROFILE_ARCHIVE_OVER_LIMIT: no upload attempted; remove more disposable caches before retry" >&2
+  # Keep the already validated indexedDB-inclusive Playwright storageState.
+  # It is accepted by the FreeBrowserProvider independently of a Chromium profile.
+  # A full profile may exceed the private bucket/edge upload limit and must never
+  # stall the entire publisher indefinitely or be committed to public artifacts.
+  echo "PROFILE_ARCHIVE_LARGE: using portable authenticated state only (no public auth artifacts)"
+  tar -czf "$ARCHIVE" -C "$PACK" flow-auth-state.json
+fi
+if [ "$(stat -c %s "$ARCHIVE")" -ge 41943040 ]; then
+  echo "PORTABLE_AUTH_ARCHIVE_OVER_LIMIT: blocking safely" >&2
   exit 1
 fi
 FLOW_BOOTSTRAP_ARCHIVE="$ARCHIVE" node scripts/bootstrap-flow-account-v2.mjs upload
