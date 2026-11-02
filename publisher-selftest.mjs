@@ -158,11 +158,11 @@ has(server,'catalog_wide_creative_uniqueness:true','catalog-wide creative unique
 has(server,'no_landscape_repeat_cycle:true','no landscape repeat cycle invariant');
 has(server,'youtube_preapproval_private_staging_disabled:true','no YouTube staging immediately after approval');
 has(server,'cloud_stock_until_upload_window:true','cloud stock until upload window');
-has(server,'private_upload_at_1230:false','pre-publication private upload disabled');
-has(server,'direct_private_to_public_at_1900:false','new videos do not use private-to-public staging');
-has(server,'direct_public_upload_at_1900:true','direct public upload at 19:00');
+has(server,'private_upload_at_1230:true','YouTube PRIVATE upload only on publication day at 12:30');
+has(server,'direct_private_to_public_at_1900:true','YouTube 19:00 separate PRIVATE to PUBLIC privacy mutation');
+has(server,'direct_public_upload_at_1900:false','direct PUBLIC upload is forbidden');
 has(server,'native_publish_at_disabled:true','native publishAt disabled');
-has(server,'youtube_upload_lead_minutes_390:false','legacy 390-minute YouTube lead disabled');
+has(server,'youtube_upload_lead_minutes_390:true','same-day 390-minute private lead required');
 has(server,'zero_use_credit_rollover_self_heal:true','zero-use credit rollover self-heal');
 has(server,'quarantined_submit_recovery_self_heal:true','quarantined submit recovery self-heal');
 has(server,'manual_stock_recovery_upload:true','manual Stock recovery upload invariant');
@@ -183,9 +183,9 @@ has(server,'prompts_rematerialized:true','Show Bible edits rematerialize drafts'
 const publication=read('publication.js');
 const facebookPublication=read('publication-facebook.js');
 has(publication,'containsSyntheticMedia:true','YouTube synthetic-media disclosure');
-has(publication,"scheduledAt=nextSlot(db,config),uploadAt=scheduledAt",'new approved videos stay in Publisher stock until release time');
-has(publication,"async function upload(item,privacyStatus='public')",'YouTube upload defaults to PUBLIC at release time');
-has(publication,"privacyStatus:String(privacyStatus||'public')",'videos.insert honors direct-public release policy');
+has(publication,"uploadAt=zonedLocal(dayKey(new Date(scheduledAt),config.schedule.timezone),'12:30',config.schedule.timezone)",'new approved videos stage privately at 12:30');
+has(publication,"async function upload(item,privacyStatus='private')",'YouTube upload defaults to PRIVATE');
+has(publication,"privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true",'YouTube videos.insert always uses PRIVATE with synthetic media declaration');
 must(!publication.includes("uploadAt=new Date(Date.parse(scheduledAt)-390*60000)"),'YouTube publication must not retain the retired 390-minute lead-time expression');
 has(publication,'containsSyntheticMedia:true','publication synthetic-media disclosure');
 has(publication,'buildPublicationCopy','publication copy builder');
@@ -218,14 +218,14 @@ has(server,"/publication/:id/recover-video",'per-video recovery endpoint');
 has(server,"uploadReviewFile(tmp,{itemId:'stock-recovery-'",'manual recovery saves to private cloud');
 has(server,"String(item.status||'')!=='backup_hold'",'manual recovery only for rescue-required videos');
 has(publication,'publishNowLikeManual','explicit PRIVATE to PUBLIC release path');
-has(publication,"status:{privacyStatus:String(privacyStatus||'public'),selfDeclaredMadeForKids:false,containsSyntheticMedia:true}",'YouTube videos.insert honors direct-public release while preserving synthetic-media disclosure');
+has(publication,"status:{privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}",'YouTube videos.insert must use PRIVATE with native AI disclosure');
 has(facebookPublication,'is_ai_generated:true','Facebook Reels publish with native AI-generated disclosure');
 has(facebookPublication,'ensureAiDisclosure','Facebook published-Reel AI disclosure repair');
 has(facebookPublication,"params:{is_ai_generated:true}",'Facebook legacy Reel in-place AI disclosure retrofit');
 has(publication,"zonedLocal(localDay,'19:00',tz)",'YouTube release is normalized to 19:00');
-has(publication,'const uploadAt=scheduledAt;','YouTube upload clock equals release clock');
-has(publication,"await upload(item,'public')",'YouTube uploads directly PUBLIC at release time');
-has(publication,'Pre-publication YouTube uploads are forbidden.','no-early-YouTube audit message');
+has(publication,"zonedLocal(localDay,'12:30',tz)",'YouTube upload clock is 12:30 local same-day');
+has(publication,"await upload(item,'private')",'YouTube uploads PRIVATE at 12:30');
+has(publication,"reserveExternalAction('youtube-public-release'",'19:00 privacy switch is independently fenced');
 if(publication.includes("privacyStatus:'private',publishAt:item.scheduledAt"))throw new Error('Native YouTube publishAt scheduling must stay disabled');
 
 const schema=JSON.parse(read('publisher.config.schema.json'));
@@ -248,11 +248,11 @@ const ytSchema=providerSchemas.find(x=>x?.properties?.type?.const==='youtube');
 const fbSchema=providerSchemas.find(x=>x?.properties?.type?.const==='facebook');
 must(ytSchema?.properties?.contains_synthetic_media?.const===true,'YouTube synthetic-media disclosure invariant');
 must(fbSchema?.properties?.contains_synthetic_media?.const===true,'Facebook AI disclosure invariant');
-must(ytSchema?.properties?.privacy_before_publish?.const==='not_uploaded','YouTube schema off-platform-before-release policy');
-must(ytSchema?.properties?.release_mode?.const==='direct_public_at_posting_time','YouTube schema direct-public release');
+must(ytSchema?.properties?.privacy_before_publish?.const==='private','YouTube schema off-platform-before-release policy');
+must(ytSchema?.properties?.release_mode?.const==='same_day_private_to_public_api_update','YouTube schema direct-public release');
 must(ytSchema?.properties?.use_publish_at?.const===false,'YouTube schema forbids publishAt');
-must(ytSchema?.properties?.preserve_private_lead_window?.const===false,'YouTube schema forbids private lead window');
-must(ytSchema?.properties?.upload_lead_minutes?.const===0,'YouTube schema zero-minute lead');
+must(ytSchema?.properties?.preserve_private_lead_window?.const===true,'YouTube schema forbids private lead window');
+must(ytSchema?.properties?.upload_lead_minutes?.const===390,'YouTube schema zero-minute lead');
 
 console.log(JSON.stringify({
   ok:true,
