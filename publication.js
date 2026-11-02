@@ -28,7 +28,7 @@ function postingTimes(config){
 function nextSlot(db,config){
   const tz=config.schedule.timezone,times=postingTimes(config),used=new Set(db.prepare("SELECT scheduledAt FROM publication_items WHERE status NOT IN ('cancelled','deleted')").all().map(x=>String(x.scheduledAt)));
   let day=dayKey(new Date(),tz);
-  for(let di=0;di<730;di++){for(const t of times){const d=zonedLocal(day,t,tz);if(d.getTime()<=Date.now()+5*60*1000)continue;const iso=d.toISOString();if(!used.has(iso))return iso}day=addDay(day)}
+  for(let di=0;di<730;di++){for(const t of times){const d=zonedLocal(day,t,tz);if(zonedLocal(day,'12:30',tz).getTime()<=Date.now()+5*60*1000)continue;const iso=d.toISOString();if(!used.has(iso))return iso}day=addDay(day)}
   throw new Error('No se encontró un slot de publicación futuro.');
 }
 function isEarthIn10(config){return /earth\s*in\s*10/i.test(String(config?.identity?.show_name||''))}
@@ -538,7 +538,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     for(let di=0;di<730;di++){
       for(const t of times){
         const d=zonedLocal(day,t,tz),iso=d.toISOString();
-        if(d.getTime()<=afterMs+5*60*1000||used.has(iso))continue;
+        if(zonedLocal(day,'12:30',tz).getTime()<=afterMs+5*60*1000||used.has(iso))continue;
         return iso;
       }
       day=addDay(day);
@@ -555,7 +555,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     for(const item of pending){
       const scheduledAt=nextFreeSlotAfter(cursor,used);
       used.add(scheduledAt);cursor=Date.parse(scheduledAt);
-      const uploadAt=scheduledAt;
+      const uploadAt=zonedLocal(dayKey(new Date(scheduledAt),tz),'12:30',tz).toISOString();
       if(item.scheduledAt!==scheduledAt||item.uploadAt!==uploadAt){
         item.scheduledAt=scheduledAt;item.uploadAt=uploadAt;
         hist(item,item.status,'Publication slot moved forward automatically because YouTube API quota resets after the previous slot.');
