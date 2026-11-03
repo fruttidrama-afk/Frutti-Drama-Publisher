@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/bootstrap-flow-earth-v2.yml"
+      - "ops/trigger-flow-earth-v2.txt"
   workflow_dispatch:
 
 permissions:
