@@ -594,3 +594,20 @@ Cambios 2026-11-09: `free-browser-provider.js` preserva IndexedDB y actualiza sn
 - No inventar que el proveedor gratis garantice uptime, IP de salida fija, términos fijos, cuotas fijas o sesiones de duración indefinida. Google puede requerir un nuevo paso de seguridad legítimo en cualquier momento. Ninguna automatización debe intentar evadirlo.
 
 **Implementación comprobada por tests sin efectos remotos:** `scripts/flow-security-signals.mjs`, `scripts/check-google-security-guard.mjs`, `free-browser-provider.js`, `scripts/free-runtime-runner-v2.mjs`, `scripts/verify-flow-auth-cold-restore.mjs`, `.github/workflows/flow-auth-cold-restore.yml`; Supabase `publisher-flow-account-bootstrap-v2` v11 distingue `security_challenge` y `unusual_activity`. La reanudación de una cuenta que requiera verificaciones debe hacerse solamente por medios legítimos autorizados.
+
+
+---
+
+## Actualización canónica — respuesta automática a Flow «Unusual Activity + no charge» (2026-11-09)
+
+**Esta sección supersede las instrucciones anteriores que equiparaban todas las alertas de 'Unusual Activity' a desafíos de identidad de Google.** El contrato previamente acordado el 23–25 de septiembre de 2026, y documentado en el postmortem de 128 intentos, es:
+
+- Solo si Google Flow muestra de forma inequívoca **actividad inusual** y **no se cobró/no se generó nada**, el productor conserva el episodio detonante y programa un cooldown GLOBAL para la cuenta: 1.ª alerta **30 min**, 2.ª **1 h**, 3.ª **2 h**, 4.ª **4 h**, 5.ª **8 h**, 6.ª y posteriores **24 h** cada una. Es política nuestra, no un límite divulgado por Google. No hacer el reintento hasta la hora exacta.
+- Al vencer una espera, retomar automáticamente **el MISMO episodio**, nunca adelantar E5/E6/E11 ni un REDO ni generar contenido extra en la misma cuenta. Si vuelve la alerta sin cobro, aumentar un escalón; después de 24 h volver a esperar 24 h. El primer `FLOW_RENDER_CONFIRMED` legítimo reinicia la racha. La publicación de stock ya aprobado y autorizado es un flujo separado.
+- Nunca realizar 128 clics Generate por un fallo de interfaz: la autorización remota tiene un solo Submit por intención con fence duradero; cualquier timeout, cobro no claro, tile ambiguo o error que no incluya confirmación explícita de 'no charge' va a revisión solo lectura sin un nuevo Generate.
+- La alerta **de cuenta Google** (MFA/2FA, CAPTCHA, passkey, verificación de identidad o actividad sospechosa de acceso) requiere revisión humana legítima; **no** es parte del mecanismo automático de backoff de Flow y no habilita intentos automáticos para evadir seguridad.
+- El reloj de pausa está persistido en Supabase `publisher_runtime_flow_cooldowns` por publisher y la copia SQLite. El panel muestra el contador, fecha próxima y una **notificación destacada al llegar a 24 h**. Sin automatismos para borrar cookies/caches o rotar VPN/proxies.
+
+**Implementación verificada por contrato:** `scripts/flow-unusual-cooldown.mjs`, `free-browser-provider.js`, `scripts/free-runtime-runner-v2.mjs`, Supabase Edge `publisher-free-runtime` v10, `publisher-unified-read` v10, y las dos versiones de UI Factory. `scripts/check-flow-unusual-cooldown.mjs` y `scripts/check-google-security-guard.mjs` prueban las reglas sin pedir una alerta real ni consumir créditos. Documento específico: `docs/FLOW_COOLDOWN_EDGE_CONTRACT_2026-11-09.md`.
+
+**Fuentes externas:** Google Flow Help Center [FAQ oficial](https://support.google.com/flow/answer/16353333) reconoce el mensaje 'We noticed some unusual activity' y aconseja reintentar después de unos minutos; no presenta una escala oficial de 30 min–24 h. Para cuentas personales, [Google Account Help](https://support.google.com/accounts/answer/140921?hl=es) trata las alertas de actividad sospechosa de login de manera diferente.
