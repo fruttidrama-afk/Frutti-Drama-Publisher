@@ -29,7 +29,11 @@ const checks=[
  ['Provider cannot auto retry after unusual activity',provider.includes("setProviderSecurityHold(db,fresh,'FLOW_UNUSUAL_ACTIVITY_MANUAL_REVIEW_REQUIRED')")],
  ['No cache reset during no-charge rejection',!provider.slice(provider.indexOf('function scheduleNoChargeRetry('),provider.indexOf('function resetNoChargeBackoff(')).includes('resetFlowTransientCaches(')],
  ['Security challenge remains distinct from expired login in read-only cold verifier',cold.includes("result='security_challenge'")&&cold.includes("result='unusual_activity'")],
- ['Cold restore runs only after owner login or explicit audit',yml.includes('workflow_run:')&&yml.includes('workflow_dispatch:')&&!yml.includes('schedule:')],
+ ['Cold restore only explicit post-login or authorized audit',yml.includes('workflow_dispatch:')&&!yml.includes('workflow_run:')&&!yml.includes('schedule:')&&!yml.includes('  push:')],
+ ['Post-login bootstrap dispatches exactly one check via ephemeral GitHub token',['frutti','earth','dinnie'].every(k=>{
+   const wf=file('.github/workflows/bootstrap-flow-'+k+'-v2.yml');
+   return wf.includes('GH_COLD_RESTORE_DISPATCH_TOKEN:')&&wf.includes('node scripts/dispatch-one-flow-cold-check.mjs')&&wf.includes('actions: write');
+ })],
  ['Existing Flow submit boundaries still present',provider.includes("FLOW_MIN_SUBMIT_SPACING_MS=10*60*1000")&&provider.includes("reserveGenerateBoundary(db,row,genId)")],
 ];
 for(const [label,ok] of checks){assert.ok(ok,'FAILED '+label);console.log('PASS',label)}
