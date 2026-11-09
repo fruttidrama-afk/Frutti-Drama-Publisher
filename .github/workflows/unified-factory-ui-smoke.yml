@@ -10,6 +10,10 @@ on:
       - "scripts/test-frutti-copy.mjs"
       - "scripts/check-publication-safety.mjs"
       - "scripts/check-flow-auth-persistence.mjs"
+      - "scripts/flow-security-signals.mjs"
+      - "scripts/check-google-security-guard.mjs"
+      - "scripts/verify-flow-auth-cold-restore.mjs"
+      - ".github/workflows/flow-auth-cold-restore.yml"
       - "scripts/novnc-ipad-touch.mjs"
       - "scripts/install-novnc-ipad-touch.mjs"
       - "scripts/check-novnc-ipad-touch.mjs"
@@ -56,6 +60,9 @@ jobs:
           node --check scripts/free-runtime-runner-v2.mjs
           node scripts/check-publication-safety.mjs
           node scripts/check-flow-auth-persistence.mjs
+          node --check scripts/flow-security-signals.mjs
+          node --check scripts/verify-flow-auth-cold-restore.mjs
+          node scripts/check-google-security-guard.mjs
           node scripts/check-novnc-ipad-touch.mjs
           node --check scripts/bootstrap-flow-account-v2.mjs
           bash -n scripts/run-flow-account-bootstrap-v2.sh
