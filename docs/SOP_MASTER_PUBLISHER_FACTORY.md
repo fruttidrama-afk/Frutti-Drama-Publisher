@@ -576,3 +576,21 @@ Cambios 2026-11-09: `free-browser-provider.js` preserva IndexedDB y actualiza sn
 **Verification:** GitHub UI smoke runs `42714410753`, `42714417206`, and `42714564417` all succeeded on the respective changes, with no generation/upload invoked. Pages deployment must also complete for live UI promotion. This is a **contract-only** correction; it does NOT provision new publishers, connect OAuth, reconcile historical stock, or prove real publication.
 
 **Recovery:** Revert only the relevant UI/contract commits if an unexpected regression appears; preserve all existing publisher configs, original media, sessions and remote video IDs. Keep creation/production unverified until real owner-scoped provisioning and end-to-end acceptance are demonstrated.
+
+
+---
+
+## Investigación verificada de Google: verificación de identidad y actividad inusual (2026-11-09)
+
+**Documento primario:** [GOOGLE_FLOW_SECURITY_VERIFICATION_RESEARCH_2026-11-09.md](GOOGLE_FLOW_SECURITY_VERIFICATION_RESEARCH_2026-11-09.md). Forma parte de la autoridad SOP para **todos** los publishers presentes y futuros. Basado en la ayuda oficial de Google Accounts y Google Flow vigente el 9 nov 2026. Google no publica el scoring, la frecuencia ni el conjunto exhaustivo de criterios que disparan verificaciones.
+
+**Reglas que reemplazan prácticas antiguas:**
+
+- No hacer inicios de sesión automatizados ni probar contraseñas/códigos, ni eludir CAPTCHA/MFA/controles de automatización o rate-limits. En Safari del iPad, la persona gestiona el Chrome remoto únicamente al iniciar/revalidar; noVNC no transforma un cloud VM efímero en un dispositivo de confianza.
+- Conservar perfiles, cookies e IndexedDB de manera privada por publisher; sin renovaciones que sustituyan el último estado validado por uno deslogueado, sin borrar cookies/cachés para superar alertas ni rotar VPN/proxies.
+- Un **nuevo dispositivo/ubicación**, un navegador bajo control automatizado, un inicio de sesión desde tercero, cambios sensibles en cuenta, o altos ritmos de Flow pueden originar distintos controles. Google documenta las categorías, pero no umbrales ni garantías. No confundir **GOOGLE_SECURITY_CHALLENGE**, **FLOW_UNUSUAL_ACTIVITY**, **login_required**, **insufficient_credits** ni **timeout**.
+- Ante primer aviso de desafío de seguridad o 'actividad inusual': **PONER EN PAUSA GLOBAL**, conservar la identidad del episodio y la sesión, no hacer Generate ni reintentos programados, no cambiar red ni borrar caches, exigir revisión humana normal desde el iPad cuando sea indispensable. **Supersede cualquier SOP antiguo de 'Unusual Activity → retry automático 30m/1h/2h/4h/8h/24h'.** La excepción de 'no charge' no significa permiso para volver a enviar.
+- Cold restore de autenticación desde una VM limpia: únicamente **una vez después de una captura humana autenticada**, o por auditoría explícita. Se eliminó cron diario 11:23 UTC y pushes que disparaban consultas de login innecesarias. El preflight que precede a una generación autorizada sigue siendo de solo lectura; no repetirlo tras fallo, aviso de seguridad, crédito ilegible o resultado ambiguo.
+- No inventar que el proveedor gratis garantice uptime, IP de salida fija, términos fijos, cuotas fijas o sesiones de duración indefinida. Google puede requerir un nuevo paso de seguridad legítimo en cualquier momento. Ninguna automatización debe intentar evadirlo.
+
+**Implementación comprobada por tests sin efectos remotos:** `scripts/flow-security-signals.mjs`, `scripts/check-google-security-guard.mjs`, `free-browser-provider.js`, `scripts/free-runtime-runner-v2.mjs`, `scripts/verify-flow-auth-cold-restore.mjs`, `.github/workflows/flow-auth-cold-restore.yml`; Supabase `publisher-flow-account-bootstrap-v2` v11 distingue `security_challenge` y `unusual_activity`. La reanudación de una cuenta que requiera verificaciones debe hacerse solamente por medios legítimos autorizados.
