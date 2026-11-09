@@ -12,6 +12,7 @@ import {
   resolveVisualCharacters, buildPrompt, seedInitial, ensureBacklog, enforceEpisodeIntent, materializeCreativePackage, validateEpisodePrompt
 } from './runtime-config.js';
 import { buildPublicationCopy } from './publication-copy.js';
+import { classifyFlowSecuritySignal } from './scripts/flow-security-signals.mjs';
 
 
 const CHROMIUM_PATH=String(process.env.CHROMIUM_PATH||'/usr/bin/chromium');
@@ -898,9 +899,11 @@ async function waitFlowReady(page,timeout=60000){
   const deadline=Date.now()+timeout;
   while(Date.now()<deadline){
     const url=String(page.url()||'');
-    if(/accounts\.google\.com|signin|ServiceLogin|\/about(?:$|[?#])/i.test(url))throw new Error('FLOW_AUTH_REQUIRED');
     const text=(await getBody(page)).slice(0,12000);
-    if(/verify it'?s you|verifica que eres t[uú]|captcha|security check|verificaci[oó]n de seguridad|email or phone|enter your password/i.test(text))throw new Error('FLOW_AUTH_CHALLENGE');
+    const signal=classifyFlowSecuritySignal(url,text);
+    if(signal==='unusual_activity')throw new Error('FLOW_UNUSUAL_ACTIVITY_MANUAL_REVIEW_REQUIRED');
+    if(signal==='security_challenge')throw new Error('FLOW_SECURITY_CHALLENGE_MANUAL_REQUIRED');
+    if(signal==='login_required')throw new Error('FLOW_AUTH_REQUIRED');
     if(url.includes(projectPath())){
       try{
         const editor=await promptEditor(page);
@@ -2347,9 +2350,11 @@ async function clickSubmitExactlyOnce(page){
 
 async function renderAuthGuard(page){
   const url=String(page.url()||'');
-  if(/accounts\.google\.com|signin|ServiceLogin/i.test(url))throw new Error('FLOW_AUTH_REQUIRED_DURING_RENDER');
   const text=(await getBody(page)).slice(0,12000);
-  if(/verify it'?s you|verifica que eres t[uú]|captcha|security check|verificaci[oó]n de seguridad/i.test(text))throw new Error('FLOW_AUTH_CHALLENGE_DURING_RENDER');
+  const signal=classifyFlowSecuritySignal(url,text);
+  if(signal==='unusual_activity')throw new Error('FLOW_UNUSUAL_ACTIVITY_MANUAL_REVIEW_REQUIRED');
+  if(signal==='security_challenge')throw new Error('FLOW_SECURITY_CHALLENGE_MANUAL_REQUIRED');
+  if(signal==='login_required')throw new Error('FLOW_AUTH_REQUIRED_DURING_RENDER');
   return true;
 }
 
