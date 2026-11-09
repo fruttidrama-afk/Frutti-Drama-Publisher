@@ -31,6 +31,14 @@ async function getConfig(){
   fs.writeFileSync(CONFIG,JSON.stringify(j,null,2));
   return j;
 }
+async function authorize(){
+ // An expired or unrequested workflow must NEVER open a remote Google login.
+ const r=await api('/authorize/'+KEY,{method:'POST'});
+ if(!r.ok)throw new Error('OWNER_RECONNECT_AUTHORIZATION_'+r.status);
+ const j=await r.json();
+ if(j.allowed!==true)throw new Error('OWNER_RECONNECT_REQUEST_NOT_FOUND');
+ console.log('OWNER_REQUEST_VERIFIED',KEY);
+}
 async function announce(){
   const url=String(process.env.FLOW_BOOTSTRAP_URL||'').trim();
   const r=await api('/session/'+KEY,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({url,password:String(process.env.FLOW_BOOTSTRAP_PASSWORD||'')})});
@@ -131,7 +139,8 @@ async function complete(){
 }
 
 const mode=String(process.argv[2]||'');
-if(mode==='config'){const j=await getConfig();process.stdout.write(String(j.start_url||'https://flow.google.com/'))}
+if(mode==='authorize')await authorize();
+else if(mode==='config'){const j=await getConfig();process.stdout.write(String(j.start_url||'https://flow.google.com/'))}
 else if(mode==='announce')await announce();
 else if(mode==='waitsignal')await waitSignal();
 else if(mode==='capture')await capture();
