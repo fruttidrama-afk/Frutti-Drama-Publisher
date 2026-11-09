@@ -6,7 +6,6 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/free-runtime-runner.yml"
       - "scripts/free-runtime-runner-v2.mjs"
       - "free-browser-provider.js"
       - "unattended-supervisor.js"
@@ -26,6 +25,7 @@ on:
 permissions:
   contents: read
   id-token: write
+  actions: write
 
 concurrency:
   group: publisher-free-runtime-global
@@ -57,6 +57,11 @@ jobs:
           command -v google-chrome
           node --version
           node --check scripts/free-runtime-runner-v2.mjs
+
+      - name: Dispatch only owner-requested Flow login sessions
+        env:
+          GH_BOOTSTRAP_TOKEN: ${{ github.token }}
+        run: node scripts/dispatch-owner-flow-reconnects.mjs
 
       - name: Install runtime dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
