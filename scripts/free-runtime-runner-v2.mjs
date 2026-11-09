@@ -272,6 +272,19 @@ function statusSnapshot(){
   }
   return null;
 }
+function confirmedFlowNoChargeCooldown(){
+  const dbp=path.join(FACTORY,'factory.sqlite');
+  if(!fs.existsSync(dbp))return null;
+  const db=new DatabaseSync(dbp,{timeout:5000,readOnly:true});
+  try{
+    const meta=(key)=>String(db.prepare('SELECT value FROM factory_meta WHERE key=?').get(key)?.value||'');
+    const state=meta('flow:state');
+    const reason=meta('flow:lastNoChargeConfirmedAt');
+    const until=Number(meta('flow:transientCooldownUntil')||0);
+    return state==='FLOW_UNUSUAL_ACTIVITY_COOLDOWN'&&reason&&until>Date.now()
+      ?{until,streak:Number(meta('flow:noChargeStreak:provider')||0)}:null;
+  }finally{db.close()}
+}
 
 fs.rmSync(ROOT,{recursive:true,force:true});
 fs.mkdirSync(FACTORY,{recursive:true});
@@ -336,12 +349,21 @@ try{
 
   const timeout=Number(process.env.FREE_RUNTIME_JOB_TIMEOUT_MS||(kind==='generation'?22*60*1000:12*60*1000));
   const deadline=Date.now()+timeout;
-  let success=false,last=baseline,creditWait=false,creditProbeFailure=null,privateStagedWait=false,childFatal=null,restarts=0;
+  let success=false,last=baseline,creditWait=false,creditProbeFailure=null,privateStagedWait=false,flowNoCharge=null,childFatal=null,restarts=0;
   while(Date.now()<deadline){
     await sleep(5000);
     last=metrics();
     if(kind==='generation'&&(last.generation>baseline.generation||last.review>baseline.review)){success=true;break}
     if(kind==='publication'&&last.publication>baseline.publication){success=true;break}
+    if(kind==='generation'){
+      flowNoCharge=confirmedFlowNoChargeCooldown();
+      if(flowNoCharge){
+        console.log('FLOW_UNUSUAL_ACTIVITY_COOLDOWN_CONFIRMED', 'streak='+flowNoCharge.streak,
+          'not_before='+new Date(flowNoCharge.until).toISOString(),
+          'no_remote_retry=true');
+        break;
+      }
+    }
     if(kind==='publication'&&String(p.platform||'')==='youtube'&&last.privateStaged>0){
       const h=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Argentina/Buenos_Aires',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
       if(h<'19:00'){privateStagedWait=true;break}
@@ -412,6 +434,15 @@ try{
     await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',error:childFatal,approved_stock:last.stock});
     console.error('Blocked unsafe child restart; runtime state archived for reconciliation.');
     process.exit(1);
+  }
+  if(flowNoCharge){
+    // State has already been uploaded to Supabase. Report a one-time,
+    // account-wide delay using this exact OIDC claim (idempotent on receipt).
+    await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',
+      error:'FLOW_UNUSUAL_ACTIVITY_COOLDOWN',flow_no_charge_confirmed:true,
+      flow_item_id:String(o.id),approved_stock:last.stock});
+    console.log('Flow explicit no-charge rejection saved; no new Generate until global deadline.');
+    process.exit(0);
   }
   if(privateStagedWait){
     await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',error:'YOUTUBE_PRIVATE_STAGED_WAITING_19',approved_stock:last.stock});
