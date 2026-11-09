@@ -3663,6 +3663,14 @@ async function processRow(db,row){
     setLifecycle(db,row,'PREFLIGHT_PASSED',{preflight_at:now(),settings:pf.settings,characters:cp.visual,prompt_hash:cp.hash,prepared_state_verified:Boolean(pf.prepared_state_verified)});
     if(!submitAuthorized){const used=effectiveDailyCount(db);setMeta(db,'flow:state',used>=dailyProductionLimit(db)?'ESPERANDO CRÉDITOS':'CONECTADO');setMeta(db,'flow:currentStep',used>=dailyProductionLimit(db)?'daily-limit':'preflight:passed-no-submit');publish(used>=dailyProductionLimit(db)?'DAILY_LIMIT':'PREFLIGHT_READY_NO_SUBMIT',{episode:'E'+row.episode,job_id:row.id,characters:cp.visual,settings:pf.settings});return false}
     if(manualSubmit)setMeta(db,'automation:allowSubmit','0');
+    // This check is at the final external Submit boundary, including manual
+    // extra runs and Review REDO: no other episode bypasses a Flow-wide hold.
+    const until=Math.max(0,Number(meta(db,'flow:transientCooldownUntil','0'))||0);
+    if(until>Date.now()){
+      db.prepare('UPDATE factory_items SET nextTry=?,updatedAt=? WHERE id=?').run(until,now(),row.id);
+      publish('FLOW_UNUSUAL_ACTIVITY_GLOBAL_WAIT',{episode:'E'+row.episode,next_retry_at:new Date(until).toISOString()});
+      return false;
+    }
     // All submit modes share the same durable fence. No draft, REDO or manual
     // override can click Generate repeatedly, even after ambiguous errors.
     const safety=submitSafetyWindow(db);
@@ -3699,7 +3707,7 @@ async function processRow(db,row){
       const bodyAfter=await getBody(page).catch(()=>'');
       const explicitNoCharge=/unusual activity|actividad inusual/i.test(bodyAfter)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(bodyAfter);
       if(explicitNoCharge){
-        scheduleNoChargeRetry(db,row,{run:genId,submitMode,evidence:started.evidence,reason:'Flow UI reported unusual activity and explicitly confirmed no charge.'});
+        scheduleNoChargeRetry(db,row,{run:genId,submitMode,evidence:started.evidence,confirmed:true,reason:'Flow UI reported unusual activity and explicitly confirmed no charge.'});
         return false;
       }
       const retryAt=Date.now()+30000;
@@ -3988,18 +3996,50 @@ function setProviderSecurityHold(db,row,reason){
   });
 }
 function scheduleNoChargeRetry(db,row,opts={}){
-  // Historical versions automatically retried a Flow "Unusual Activity /
-  // not charged" rejection up to 6 times, even resetting browser caches.
-  // This can worsen account-security prompts. Replace that behavior with a
-  // persistent provider-wide review hold, preserving the original episode.
+  // Flow's OWN explicit 'Unusual Activity' + 'not charged' rejection is a
+  // rate-limit style event, not a Google Account 2FA/security challenge.
+  // Reconcile a retained tile before opening any NEW Generate boundary.
+  if(opts.confirmed!==true){
+    setProviderSecurityHold(db,row,'FLOW_UNCONFIRMED_NO_CHARGE_REVIEW_REQUIRED');
+    return null;
+  }
   const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row;
-  const run=String(opts.run||lifecycle(db,fresh)?.generation_id||fresh.providerRunId||'');
+  const prior=lifecycle(db,fresh)||{};
+  const run=String(opts.run||prior.generation_id||fresh.providerRunId||'');
   if(run)try{
-    db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Google Flow explicitly reported no retained generation and no charge.',updatedAt=? WHERE itemId=? AND runId=?")
+    db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Flow explicitly confirmed Unusual Activity and no charge; rejected attempt.',updatedAt=? WHERE itemId=? AND runId=?")
       .run(now(),fresh.id,run);
   }catch{}
-  setProviderSecurityHold(db,fresh,'FLOW_UNUSUAL_ACTIVITY_MANUAL_REVIEW_REQUIRED');
-  return null;
+  const streak=Math.min(1000,Math.max(0,Number(meta(db,'flow:noChargeStreak:provider','0'))||0)+1);
+  const previousUntil=Math.max(0,Number(meta(db,'flow:transientCooldownUntil','0'))||0);
+  const nextAt=Math.max(Date.now()+noChargeDelayMs(streak),previousUntil);
+  setMeta(db,'flow:noChargeStreak:provider',String(streak));
+  setMeta(db,'flow:transientCooldownUntil',String(nextAt));
+  setMeta(db,'flow:lastNoChargeConfirmedAt',now());
+  setMeta(db,'flow:state','FLOW_UNUSUAL_ACTIVITY_COOLDOWN');
+  setMeta(db,'flow:currentStep',streak>=6?'unusual-activity-24h-notice':'unusual-activity-provider-wide-cooldown');
+  setMeta(db,'flow:message','Flow rechazó la generación sin cobro. Intento '+streak+'; espera global hasta '+new Date(nextAt).toISOString()+'. El mismo episodio retomará primero.');
+  const reviewerRetry=Boolean(prior.reviewer_retry&&String(fresh.reviewRetryToken||'').trim());
+  db.prepare("UPDATE factory_items SET status=?,providerRunId=NULL,runtimeAttemptCount=0,nextTry=?,error=?,updatedAt=? WHERE id=?")
+    .run(reviewerRetry?'regen_wait':'draft',nextAt,
+      streak>=6?'FLOW_UNUSUAL_ACTIVITY_24H_PROVIDER_COOLDOWN':'FLOW_UNUSUAL_ACTIVITY_NO_CHARGE_PROVIDER_COOLDOWN',
+      now(),fresh.id);
+  if(reviewerRetry)try{db.prepare('UPDATE factory_items SET reviewRetrySubmittedToken=NULL WHERE id=?').run(fresh.id)}catch{}
+  setLifecycle(db,fresh,'TRANSIENT_NO_CHARGE_RETRY',{
+    ...prior,prior_generation_id:run,generation_id:null,submit_boundary_at:null,
+    confirmed_no_charge:true,automatic_submit_forbidden:false,
+    unusual_activity_streak:streak,
+    retry_at:new Date(nextAt).toISOString(),
+    rejected_attempt_at:now(),last_error:'FLOW_UNUSUAL_ACTIVITY_NO_CHARGE'
+  });
+  publish(streak>=6?'FLOW_UNUSUAL_ACTIVITY_24H_NOTICE':'FLOW_PROVIDER_WIDE_BACKOFF',{
+    episode:'E'+fresh.episode,job_id:fresh.id,streak,
+    cooldown_minutes:Math.round(noChargeDelayMs(streak)/60000),
+    next_retry_at:new Date(nextAt).toISOString(),
+    provider_wide:true,no_charge_confirmed:true,
+    message:'Este episodio será el primero en reintentarse al vencer la espera. Otros episodios/REDO no pueden saltarla. Ningún envío automático durante la pausa.'
+  });
+  return {streak,nextAt};
 }
 function resetNoChargeBackoff(db,row){
   // A confirmed retained render is definitive evidence that the Flow account
@@ -4156,74 +4196,16 @@ function repairProviderBackoffAfterConfirmedSuccessV2(db){
 }
 
 function normalizeLiveNoChargeCooldown(db){
-  try{
-    const rows=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND (error LIKE 'FLOW%NO_CHARGE%' OR error LIKE 'FLOW_UNUSUAL_ACTIVITY_%') ORDER BY episode").all();
-    // Migrate legacy automatic retries to a safe hold exactly once, instead
-    // of erasing cookies/caches or replaying an already rejected Generate.
-    if(rows.length){
-      for(const row of rows){
-        db.prepare("UPDATE factory_items SET status='manual_hold',error='FLOW_UNUSUAL_ACTIVITY_MANUAL_REVIEW_REQUIRED',nextTry=0,updatedAt=? WHERE id=?")
-          .run(now(),row.id);
-        setLifecycle(db,row,'FLOW_SECURITY_OPERATOR_HOLD',{
-          ...(lifecycle(db,row)||{}),
-          security_review_required:true,automatic_submit_forbidden:true,held_at:now()
-        });
-      }
-      setMeta(db,'flow:securityHold','operator_review_required');
-      setMeta(db,'flow:securityHoldReason','FLOW_UNUSUAL_ACTIVITY_MANUAL_REVIEW_REQUIRED');
-      publish('FLOW_SECURITY_LEGACY_AUTORETRY_STOPPED',{count:rows.length,message:'Legacy Flow unusual-activity retries quarantined; no browser-cache reset or new Generate.'});
-      return;
-    }
-
-    // One-time migration from the old per-episode streak model. Never resurrect
-    // legacy item streaks after a confirmed provider recovery.
-    let providerStreak=Math.max(0,Number(meta(db,'flow:noChargeStreak:provider','0'))||0);
-    const legacyMigrated=meta(db,'flow:legacyNoChargeStreakMigratedV2','')==='done';
-    const recoveredAt=String(meta(db,'flow:lastProviderRecoveryAt','')).trim();
-    if(providerStreak<1&&!legacyMigrated&&!recoveredAt){
-      try{
-        const legacy=db.prepare("SELECT key,value FROM factory_meta WHERE key LIKE 'flow:noChargeStreak:%' AND key<>'flow:noChargeStreak:provider'").all();
-        providerStreak=Math.max(0,...legacy.map(x=>Number(x.value)||0));
-        if(providerStreak>0)setMeta(db,'flow:noChargeStreak:provider',String(providerStreak));
-        setMeta(db,'flow:legacyNoChargeStreakMigratedV2','done');
-      }catch{}
-    }
-    if(providerStreak<1||!rows.length)return;
-
-    const currentUntil=Number(meta(db,'flow:transientCooldownUntil','0'))||0;
-    let desiredUntil=currentUntil;
-    for(const row of rows){
-      if(providerStreak>=4)resetFlowTransientCaches(db,row);
-      const base=Date.parse(String(row.lastProgressAt||row.updatedAt||''))||Date.now();
-      desiredUntil=Math.max(desiredUntil,base+noChargeDelayMs(providerStreak),Number(row.nextTry||0));
-    }
-    // Critical invariant: normalization may extend but NEVER shorten provider cooldown.
-    setMeta(db,'flow:transientCooldownUntil',String(desiredUntil));
-
-    for(const row of rows){
-      if(Number(row.nextTry||0)<desiredUntil){
-        db.prepare("UPDATE factory_items SET nextTry=?,error=?,updatedAt=? WHERE id=?").run(
-          desiredUntil,
-          providerStreak>=6?'FLOW_UNUSUAL_ACTIVITY_OVERNIGHT — provider-wide wait; next automatic retry after 24h.':'FLOW_NO_CHARGE — provider-wide exponential backoff active.',
-          now(),row.id
-        );
-      }
-    }
-    setMeta(db,'flow:state',providerStreak>=6?'PAUSA PROTECTORA':'CONECTADO');
-    setMeta(db,'flow:message','Unusual Activity global: streak '+providerStreak+'; ningún episodio puede enviar hasta '+new Date(desiredUntil).toISOString()+'.');
-
-    const onceKey='flow:providerWideBackoffV3:'+providerStreak+':'+desiredUntil;
-    if(meta(db,onceKey,'')!=='done'){
-      publish('FLOW_PROVIDER_WIDE_BACKOFF_NORMALIZED',{
-        provider_no_charge_streak:providerStreak,
-        until:new Date(desiredUntil).toISOString(),
-        cooldown_minutes:Math.max(0,Math.round((desiredUntil-Date.now())/60000)),
-        blocked_rows:rows.map(r=>'E'+r.episode).slice(0,30),
-        message:'Provider-wide cooldown is monotonic. Older rows cannot shorten it and no other episode may submit during the wait.'
-      });
-      setMeta(db,onceKey,'done');
-    }
-  }catch(e){publish('FLOW_TRANSIENT_COOLDOWN_WARNING',{message:compact(e?.message||e,300)})}
+  // Preserve the one and only provider-wide monotonic clock. Do NOT
+  // extend it on every startup, do NOT reset caches and do NOT promote a
+  // confirmed no-charge rejection to a permanent identity hold.
+  const until=Math.max(0,Number(meta(db,'flow:transientCooldownUntil','0'))||0);
+  if(until>Date.now()){
+    const streak=Math.max(1,Number(meta(db,'flow:noChargeStreak:provider','1'))||1);
+    setMeta(db,'flow:state','FLOW_UNUSUAL_ACTIVITY_COOLDOWN');
+    setMeta(db,'flow:currentStep',streak>=6?'unusual-activity-24h-notice':'unusual-activity-provider-wide-cooldown');
+    setMeta(db,'flow:message','Flow Unusual Activity: espera global '+streak+'/6 hasta '+new Date(until).toISOString()+'; Generate bloqueado para TODOS los episodios.');
+  }
 }
 function seedTransientCooldownFromRecentNoCharge(db){
   const key='repair:flow-transient-cooldown-seed-v1';
@@ -4414,6 +4396,14 @@ async function runProvider(){
         reason:meta(db,'flow:securityHoldReason','FLOW_SECURITY_MANUAL_REVIEW_REQUIRED'),
         message:'Google account security review pending. Skipping all Google Flow generation and recovery visits.'
       });
+      return;
+    }
+    const providerUntil=Math.max(0,Number(meta(db,'flow:transientCooldownUntil','0'))||0);
+    if(providerUntil>Date.now()){
+      const streak=Math.max(1,Number(meta(db,'flow:noChargeStreak:provider','1'))||1);
+      setMeta(db,'flow:state','FLOW_UNUSUAL_ACTIVITY_COOLDOWN');
+      setMeta(db,'flow:currentStep',streak>=6?'unusual-activity-24h-notice':'unusual-activity-provider-wide-cooldown');
+      setMeta(db,'flow:message','Google Flow: espera global por actividad inusual sin cobro. Reanudación no antes de '+new Date(providerUntil).toISOString()+'.');
       return;
     }
     const goldenRecovery=await recoverGoldenRunIfRequested(db);
