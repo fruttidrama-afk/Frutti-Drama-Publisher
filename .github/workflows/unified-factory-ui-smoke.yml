@@ -9,6 +9,9 @@ on:
       - "scripts/check-unified-factory-ui.mjs"
       - "scripts/test-frutti-copy.mjs"
       - "scripts/check-publication-safety.mjs"
+      - "scripts/check-flow-auth-persistence.mjs"
+      - "scripts/bootstrap-flow-account-v2.mjs"
+      - "scripts/run-flow-account-bootstrap-v2.sh"
       - "scripts/dispatch-owner-flow-reconnects.mjs"
       - "scripts/bootstrap-flow-account-v2.mjs"
       - ".github/workflows/free-runtime-runner.yml"
@@ -49,5 +52,8 @@ jobs:
           node --check free-browser-provider.js
           node --check scripts/free-runtime-runner-v2.mjs
           node scripts/check-publication-safety.mjs
+          node scripts/check-flow-auth-persistence.mjs
+          node --check scripts/bootstrap-flow-account-v2.mjs
+          bash -n scripts/run-flow-account-bootstrap-v2.sh
           node --check scripts/dispatch-owner-flow-reconnects.mjs
           node --check scripts/bootstrap-flow-account-v2.mjs
