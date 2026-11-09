@@ -563,3 +563,16 @@ Cambios 2026-11-09: `free-browser-provider.js` preserva IndexedDB y actualiza sn
 **Caveat crítico:** el Chrome profile archivado tenía 66.882.255 bytes, excedió el límite Edge y se archivó únicamente el Playwright storageState portátil en `profile.tgz` de 3.471 bytes. Este artefacto se guardó exitosamente, pero **no demuestra que vaya a restaurar Google en otro runner**. Antes de declarar reautenticación realmente solucionada, efectuar preflight de restauración de Google exacto y en modo lectura, sin Generate, y verificar sesiones duraderas. Si falla, mejorar backup multipart de perfil completo sin perder el estado portátil ni obligar a repetir el login innecesariamente.
 
 **Seguridad:** nunca mostrar URL ni contraseña temporal del VNC tras cierre; no registrar tokens. Todas las verificaciones de credenciales deben ocurrir por la API protegida por propietario. Validación del cliente: GitHub Actions `Unified Publisher Factory UI Smoke Test` 42710953375 SUCCESS. El despliegue Pages correspondiente debe verificarse antes de pedir recarga de Safari.
+
+
+## 2026-11-09 — Factory creation contract drift: YouTube private-to-public and Flow SOP
+
+**Symptom:** The deployed GitHub Pages `docs/index.html` and the packaged `factory-web/public/index.html` disagreed with `publisher.config.schema.json`, the canonical Flow SOP SHA, and the operator-corrected YouTube release policy. Both creation validators still required zero-minute lead or obsolete release modes; the Pages template also omitted mandatory Flow credit/AI disclosure fields, while the packaged template used a 30-hour credit fallback beyond the schema/runtime's 24-hour bound.
+
+**Root cause:** Two independently maintained UI copies drifted after the 2026-11-02 publication contract change. A green UI smoke test previously checked rendering/syntax but not publication safety fields.
+
+**Fix:** Commits `c2fda2b3` and `c3547db1` aligned both validators with the exact canonical Flow SOP SHA `b857758b...`, YouTube `upload_lead_minutes=390`, `privacy_before_publish=private`, `release_mode=same_day_private_to_public_api_update`, `use_publish_at=false`, `preserve_private_lead_window=true`, and native synthetic-media disclosure. The creation templates now carry current credit-gate fields and a schema-compatible 24-hour fallback. Commit `2aa2c4a8` added a regression assertion to the shared UI smoke script that rejects obsolete direct-public modes.
+
+**Verification:** GitHub UI smoke runs `42714410753`, `42714417206`, and `42714564417` all succeeded on the respective changes, with no generation/upload invoked. Pages deployment must also complete for live UI promotion. This is a **contract-only** correction; it does NOT provision new publishers, connect OAuth, reconcile historical stock, or prove real publication.
+
+**Recovery:** Revert only the relevant UI/contract commits if an unexpected regression appears; preserve all existing publisher configs, original media, sessions and remote video IDs. Keep creation/production unverified until real owner-scoped provisioning and end-to-end acceptance are demonstrated.
