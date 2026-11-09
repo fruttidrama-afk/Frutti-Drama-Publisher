@@ -2691,11 +2691,15 @@ async function waitGenerationStarted(page,baseline,baselineInventory,baselineBus
   const startedAt=Date.now(),deadline=startedAt+timeout;
   let lastEvidence='';
   while(Date.now()<deadline){
-    await renderAuthGuard(page);
+    // This check MUST precede renderAuthGuard: the latter intentionally
+    // classifies generic "Unusual activity" as a security warning. Here a
+    // fresh, correlated post-submit "not charged" rejection is specifically
+    // recoverable under the historical provider-wide cooldown contract.
     const bodyText=await getBody(page).catch(()=>'');
     if(/unusual activity|actividad inusual/i.test(bodyText)&&/not been charged|no (?:se )?te (?:ha )?cobrado|no se (?:te )?cobr[oó]/i.test(bodyText)){
       return{started:false,evidence:'FLOW_TRANSIENT_NO_CHARGE: Flow explicitly reported that the attempt was not charged.'};
     }
+    await renderAuthGuard(page);
     const vids=await currentVideos(page);
     const freshVideo=vids.some(v=>v.src&&!baseSrc.has(v.src)&&Number(v.duration||0)>0);
     const inv=await captureFlowInventory(page);
