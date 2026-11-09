@@ -7,6 +7,17 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
  const html=fs.readFileSync(name,"utf8");
  const markers=["id=\"unifiedDashboard\"","id=\"udStatus\"","function udOpen(","publisher-unified-read","ABRIR EN FACTORY","if(!managed)"];
  for(const marker of markers)if(!html.includes(marker))throw Error(name+" missing "+marker);
+ for(const marker of [
+  "✓ GOOGLE FLOW · AUTENTICACIÓN GUARDADA CORRECTAMENTE",
+  "GOOGLE FLOW AUTENTICADO · PRODUCCIÓN AÚN NO VERIFICADA",
+  "VALIDANDO Y GUARDANDO LA SESIÓN…",
+  "auth_saved_at",
+  'state==="capture_requested"',
+  'setTimeout(()=>{if(activeUnifiedPublisher===publisherId)udFlowConnection(publisherId,accessToken)},4000)',
+  "No necesitás repetir el inicio de sesión."
+ ]){
+  if(!html.includes(marker))throw Error(name+" missing completed-auth / iPad auto-refresh marker: "+marker);
+ }
  // Operator-facing reconnection must be actionable from Safari on iPad and
  // must never submit a video or expose credentials except to an owner.
  for(const marker of [
