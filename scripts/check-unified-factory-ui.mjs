@@ -28,6 +28,25 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
   'udFlowPollTimer=setTimeout',
   "ABRIR GOOGLE FLOW · SESIÓN TEMPORAL"
  ])if(!html.includes(marker))throw Error(name+" missing iPad Flow reconnection control "+marker);
+ // Keep Factory's new-publisher contract aligned with the deployed runtime:
+ // YouTube uploads one PRIVATE video at 12:30 ART and releases the same ID
+ // at 19:00 ART; no native publishAt or direct-public fallback.
+ for(const marker of [
+  'const canonical="b857758bc2f46b0759a1327a39a32566e4168b6629dfa0103357ad1ec58ffab1"',
+  'Number(s.upload_lead_minutes)!==390',
+  'p.privacy_before_publish!=="private"',
+  'p.release_mode!=="same_day_private_to_public_api_update"',
+  'p.preserve_private_lead_window!==true',
+  'Number(p.upload_lead_minutes)!==390',
+  'youtube_upload_policy:"same-day-private-1230-then-public-1900-no-publishat"',
+  'credit_refresh_fallback_hours:24'
+ ])if(!html.includes(marker))throw Error(name+" stale unsafe new-publisher policy: "+marker);
+ for(const obsolete of [
+  'private_then_public_at_posting_time',
+  'direct_public_at_posting_time',
+  'stock-until-posting-time-direct-public',
+  'privacy_before_publish!=="not_uploaded"'
+ ])if(html.includes(obsolete))throw Error(name+" obsolete publication contract: "+obsolete);
  const scripts=[...html.matchAll(/<script\s+type="module"\s*>([\s\S]*?)<\/script>/g)];
  if(scripts.length!==1)throw Error(name+": expected exactly one module script, found "+scripts.length);
  const temp=path.join(os.tmpdir(),"publisher-ui-check-"+path.basename(path.dirname(name))+".mjs");
