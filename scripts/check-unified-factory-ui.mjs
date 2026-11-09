@@ -14,7 +14,12 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
   "auth_saved_at",
   'state==="capture_requested"',
   'setTimeout(()=>{if(activeUnifiedPublisher===publisherId)udFlowConnection(publisherId,accessToken)},4000)',
-  "No necesitás repetir el inicio de sesión."
+  "No necesitás repetir el inicio de sesión.",
+  "GOOGLE FLOW · REVISIÓN DE SEGURIDAD NECESARIA",
+  "ABRIR SEGURIDAD DE GOOGLE",
+  "YA REVISÉ LA SEGURIDAD · PERMITIR NUEVA CONEXIÓN",
+  'action:"acknowledge_security"',
+  "payload.security_review_required"
  ]){
   if(!html.includes(marker))throw Error(name+" missing completed-auth / iPad auto-refresh marker: "+marker);
  }
