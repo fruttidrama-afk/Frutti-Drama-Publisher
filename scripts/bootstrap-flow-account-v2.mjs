@@ -52,16 +52,8 @@ async function waitSignal(){
       console.log('CAPTURE_REQUESTED');
       return cfg;
     }
-    if(KEY==='frutti'){
-      try{
-        const targets=await fetch('http://127.0.0.1:9222/json').then(r=>r.json());
-        const expected=String(cfg.expected_project_id||'');
-        if(Array.isArray(targets)&&targets.some(t=>String(t?.url||'').includes('/project/'+expected))){
-          console.log('FRUTTI_PROJECT_VISIBLE');
-          return cfg;
-        }
-      }catch{}
-    }
+    // Explicit operator confirmation is mandatory for EVERY show, including
+    // FruttiDrama. Seeing a project URL does not prove Google is signed in.
     await sleep(3000);
   }
   throw new Error('CAPTURE_SIGNAL_TIMEOUT');
@@ -113,8 +105,22 @@ async function capture(){
       await sleep(2500);
     }
 
+    // A Google login can redirect through /project/<id> before the account
+    // is fully usable. Never archive a browser that only displays a sign-in
+    // interstitial or has no authenticated Google session cookies.
+    const cookies=await ctx.cookies(['https://flow.google.com','https://accounts.google.com']);
+    const hasGoogleSession=cookies.some(c=>
+      /(^|\.)google\.com$/i.test(String(c.domain||''))&&
+      /^(?:SID|HSID|SSID|APISID|SAPISID|__Secure-(?:1P|3P)SID(?:CC|TS)?|LSID)$/.test(String(c.name||''))&&
+      String(c.value||'').length>8
+    );
+    if(!hasGoogleSession)throw new Error('FLOW_LOGIN_NO_VERIFIED_GOOGLE_SESSION');
+    if(body.trim().length<30)throw new Error('FLOW_PROJECT_UI_NOT_READY');
+
     await ctx.storageState({path:STATE,indexedDB:true});
-    if(!fs.existsSync(STATE)||fs.statSync(STATE).size<500)throw new Error('FLOW_STORAGE_STATE_INVALID');
+    const snapshot=JSON.parse(fs.readFileSync(STATE,'utf8'));
+    if(!Array.isArray(snapshot.cookies)||!Array.isArray(snapshot.origins)||fs.statSync(STATE).size<500)
+      throw new Error('FLOW_STORAGE_STATE_INVALID');
 
     const pr=await api('/project/'+KEY,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({project_id:projectId,project_name:observedName||cfg.project_name})});
     if(!pr.ok)throw new Error('PROJECT_PERSIST_'+pr.status+' '+(await pr.text()).slice(0,400));
