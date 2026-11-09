@@ -1,0 +1,36 @@
+name: Flow Reconnect On Demand
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/flow-reconnect-on-demand.yml"
+      - "scripts/dispatch-owner-flow-reconnects.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  actions: write
+
+concurrency:
+  group: flow-reconnect-owner-queue
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Check no-video owner reconnection queue and dispatch only requested logins
+        env:
+          GH_BOOTSTRAP_TOKEN: ${{ github.token }}
+        run: |
+          node --check scripts/dispatch-owner-flow-reconnects.mjs
+          node scripts/dispatch-owner-flow-reconnects.mjs
