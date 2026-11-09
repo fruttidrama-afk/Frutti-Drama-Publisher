@@ -1,6 +1,5 @@
-// Mirror of LIVE Supabase Edge publisher-free-runtime v10 (2026-11-09).
-// Source of truth for contracts in GitHub CI; deployed code must be kept synchronized.
-// No credentials or key material: all secrets read from Supabase runtime environment.
+// Mirror of LIVE Supabase Edge publisher-free-runtime v11 (2026-11-09).
+// Auth: GitHub OIDC / Supabase service role. No stored tokens or sensitive values.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -124,21 +123,14 @@ async function flowCooldown(publisherId:string){
 async function recordUnusualActivity(o:any,claimId:string,body:any){
  if(o.kind!=="generation"||body.flow_no_charge_confirmed!==true)
   throw new Error("FLOW_NO_CHARGE_PROOF_REQUIRED");
- const old=await flowCooldown(String(o.publisher_id));
- if(String(old?.last_alert_claim_id||"")===claimId)return old;
- const streak=Math.min(1000,Number(old?.streak||0)+1);
- const minutes=FLOW_BACKOFF_MINUTES[Math.min(streak,6)-1];
- const previous=old?.not_before?Date.parse(old.not_before):0;
- const notBefore=new Date(Math.max(Date.now()+minutes*60000,previous||0)).toISOString();
- const payload={
-  publisher_id:o.publisher_id,streak,not_before:notBefore,last_alert_at:now(),
-  last_alert_claim_id:claimId,last_alert_item_id:String(body.flow_item_id||o.id).slice(0,150),
-  status:minutes===1440?"attention_24h":"cooldown",updated_at:now()
- };
- const saved=await db.from("publisher_runtime_flow_cooldowns")
-  .upsert(payload,{onConflict:"publisher_id"}).select("streak,not_before,status").single();
- if(saved.error)throw saved.error;
- return saved.data;
+ // One serializable, row-locked database operation. The prior select/upsert
+ // could lose a concurrent 24h deadline, double count or shorten a cooldown.
+ const {data,error}=await db.rpc("publisher_flow_record_no_charge",{
+  p_publisher_id:o.publisher_id,p_claim_id:claimId,
+  p_item_id:String(body.flow_item_id||o.id).slice(0,150)
+ });
+ if(error)throw error;
+ return Array.isArray(data)?data[0]:data;
 }
 async function claim(filterPublisher="",filterKind=""){
   await releaseExpired();await materialize();
@@ -241,6 +233,17 @@ async function callback(body:any){
   if(!["running","completed","blocked","failed"].includes(status))throw new Error("CALLBACK_STATUS");
   const lease=status==="running"?new Date(Date.now()+45*60*1000).toISOString():null;
   const err=body.error?String(body.error).slice(0,1800):null;
+  const prior=String(o.status||"");
+  // Terminal callbacks cannot be replayed into a NEW remote mutation or
+  // overwrite a completed result. A repeated identical callback is harmless.
+  if(["completed","failed"].includes(prior)){
+    if(prior===status)return {ok:true,duplicate:true};
+    throw new Error("CALLBACK_TERMINAL_STATE_LOCKED");
+  }
+  if(prior==="blocked"){
+    if(status==="blocked"&&String(o.last_error||"")===String(err||""))return {ok:true,duplicate:true};
+    throw new Error("CALLBACK_BLOCKED_STATE_LOCKED");
+  }
   if(o.kind==="generation"&&status==="blocked"&&err==="FLOW_UNUSUAL_ACTIVITY_COOLDOWN")
     await recordUnusualActivity(o,claimId,body);
   const u=await db.from("publisher_runtime_obligations").update({status,lease_until:lease,last_error:err,updated_at:now()}).eq("id",id).eq("claim_id",claimId);
