@@ -10,6 +10,9 @@ on:
       - "scripts/test-frutti-copy.mjs"
       - "scripts/check-publication-safety.mjs"
       - "scripts/check-flow-auth-persistence.mjs"
+      - "scripts/novnc-ipad-touch.mjs"
+      - "scripts/install-novnc-ipad-touch.mjs"
+      - "scripts/check-novnc-ipad-touch.mjs"
       - "scripts/bootstrap-flow-account-v2.mjs"
       - "scripts/run-flow-account-bootstrap-v2.sh"
       - "scripts/dispatch-owner-flow-reconnects.mjs"
@@ -53,6 +56,7 @@ jobs:
           node --check scripts/free-runtime-runner-v2.mjs
           node scripts/check-publication-safety.mjs
           node scripts/check-flow-auth-persistence.mjs
+          node scripts/check-novnc-ipad-touch.mjs
           node --check scripts/bootstrap-flow-account-v2.mjs
           bash -n scripts/run-flow-account-bootstrap-v2.sh
           node --check scripts/dispatch-owner-flow-reconnects.mjs
