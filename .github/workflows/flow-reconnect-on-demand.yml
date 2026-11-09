@@ -34,3 +34,5 @@ jobs:
         run: |
           node --check scripts/dispatch-owner-flow-reconnects.mjs
           node scripts/dispatch-owner-flow-reconnects.mjs
+
+# Owner-queued Dinnie login request: enqueue watcher wake-up, no video generation.
