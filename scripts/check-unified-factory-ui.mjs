@@ -7,6 +7,16 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
  const html=fs.readFileSync(name,"utf8");
  const markers=["id=\"unifiedDashboard\"","id=\"udStatus\"","function udOpen(","publisher-unified-read","ABRIR EN FACTORY","if(!managed)"];
  for(const marker of markers)if(!html.includes(marker))throw Error(name+" missing "+marker);
+ // Operator-facing reconnection must be actionable from Safari on iPad and
+ // must never submit a video or expose credentials except to an owner.
+ for(const marker of [
+  "INICIAR RECONEXIÓN DESDE ESTE IPAD",
+  "COPIAR CONTRASEÑA TEMPORAL",
+  'action:"start"',
+  'action:"capture"',
+  'udFlowPollTimer=setTimeout',
+  "ABRIR GOOGLE FLOW · SESIÓN TEMPORAL"
+ ])if(!html.includes(marker))throw Error(name+" missing iPad Flow reconnection control "+marker);
  const scripts=[...html.matchAll(/<script\s+type="module"\s*>([\s\S]*?)<\/script>/g)];
  if(scripts.length!==1)throw Error(name+": expected exactly one module script, found "+scripts.length);
  const temp=path.join(os.tmpdir(),"publisher-ui-check-"+path.basename(path.dirname(name))+".mjs");
