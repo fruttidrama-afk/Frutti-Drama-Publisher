@@ -13,6 +13,7 @@ import {
 } from './runtime-config.js';
 import { buildPublicationCopy } from './publication-copy.js';
 import { classifyFlowSecuritySignal } from './scripts/flow-security-signals.mjs';
+import { flowNoChargeDelayMs, flowNoChargeDeadline } from './scripts/flow-unusual-cooldown.mjs';
 
 
 const CHROMIUM_PATH=String(process.env.CHROMIUM_PATH||'/usr/bin/chromium');
@@ -3935,18 +3936,7 @@ function normalizeOutOfOrderAmbiguous(db){
     break;
   }
 }
-function noChargeDelayMs(streak){
-  // Global Publisher rule for Google Flow "Unusual activity" + "not charged":
-  // 1st alert 30m, 2nd 1h, 3rd 2h, 4th 4h, 5th 8h.
-  // The next mathematical doubling would be 16h, which crosses the operator's
-  // 10-hour ceiling, so from the 6th consecutive alert onward wait a full 24h.
-  if(streak<=1)return 30*60*1000;
-  if(streak===2)return 60*60*1000;
-  if(streak===3)return 2*60*60*1000;
-  if(streak===4)return 4*60*60*1000;
-  if(streak===5)return 8*60*60*1000;
-  return 24*60*60*1000;
-}
+function noChargeDelayMs(streak){return flowNoChargeDelayMs(streak)}
 function resetFlowTransientCaches(db,row){
   const key='flow:transientCacheResetV1:'+row.id;
   if(meta(db,key,'')==='done')return false;
@@ -4012,7 +4002,7 @@ function scheduleNoChargeRetry(db,row,opts={}){
   }catch{}
   const streak=Math.min(1000,Math.max(0,Number(meta(db,'flow:noChargeStreak:provider','0'))||0)+1);
   const previousUntil=Math.max(0,Number(meta(db,'flow:transientCooldownUntil','0'))||0);
-  const nextAt=Math.max(Date.now()+noChargeDelayMs(streak),previousUntil);
+  const nextAt=flowNoChargeDeadline(previousUntil,Date.now(),streak);
   setMeta(db,'flow:noChargeStreak:provider',String(streak));
   setMeta(db,'flow:transientCooldownUntil',String(nextAt));
   setMeta(db,'flow:lastNoChargeConfirmedAt',now());
