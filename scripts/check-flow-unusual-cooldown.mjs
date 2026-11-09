@@ -14,6 +14,7 @@ assert.equal(flowNoChargeDeadline(base+1440*60000,base+60000,2),base+1440*60000,
 assert.throws(()=>flowNoChargeDeadline(0,NaN,1),/INVALID/);
 
 const edge=repoFile('supabase/functions/publisher-free-runtime/index.ts');
+const pgMigration=repoFile('supabase/migrations/20261109_flow_global_unusual_cooldown.sql');
 const provider=repoFile('free-browser-provider.js');
 const runner=repoFile('scripts/free-runtime-runner-v2.mjs');
 const readUI=repoFile('docs/index.html');
@@ -29,7 +30,10 @@ for(const [label,ok] of [
  ['Server holds every generation while paused',edge.includes("Date.parse(cd.not_before)>Date.now())continue")],
  ['Server restores blocked same obligation before fresh next episode',edge.includes("FLOW_UNUSUAL_ACTIVITY_COOLDOWN")],
  ['Server cooldown persists outside ephemeral runner',edge.includes("publisher_runtime_flow_cooldowns")],
- ['24h remains the cap after sixth alert',edge.includes("FLOW_BACKOFF_MINUTES=[30,60,120,240,480,1440]")],
+ ['24h remains the cap after sixth alert',pgMigration.includes("WHEN next_streak=5 THEN 480")&&pgMigration.includes("ELSE 1440 END")],
+ ['Atomic, claim-idempotent Postgres transition',edge.includes('db.rpc("publisher_flow_record_no_charge"')&&pgMigration.includes("FOR UPDATE")&&pgMigration.includes("IF rec.last_alert_claim_id=p_claim_id THEN")],
+ ['Only trusted service role may use cooldown RPC',pgMigration.includes("GRANT EXECUTE ON FUNCTION public.publisher_flow_record_no_charge(uuid,uuid,text) TO service_role")],
+ ['Stale callback cannot replace a completed obligation',edge.includes("CALLBACK_TERMINAL_STATE_LOCKED")&&edge.includes("CALLBACK_BLOCKED_STATE_LOCKED")],
  ['Fresh obligations cannot pass active provider deadline',edge.includes("if(cd?.not_before&&Date.parse(cd.not_before)>Date.now())continue")],
  ['Panel shows final 24h alert',readUI.includes("ATENCIÓN · GOOGLE FLOW EN PAUSA PROTECTORA DE 24 HORAS")],
  ['Panel shows exact retry time',readUI.includes("new Date(deadline).toLocaleString")],
