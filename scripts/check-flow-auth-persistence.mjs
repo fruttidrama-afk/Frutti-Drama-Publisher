@@ -9,7 +9,7 @@ const checks=[
  ['bootstrapping captures IndexedDB',capture.includes('ctx.storageState({path:STATE,indexedDB:true})')],
  ['bootstrapping requires explicit human capture for Frutti too',!capture.includes("if(KEY==='frutti')")&&capture.includes("cfg.migration_state||'')==='capture_requested'")],
  ['bootstrapping verifies project and Google session',capture.includes('FLOW_LOGIN_NO_VERIFIED_GOOGLE_SESSION')&&capture.includes('FLOW_EXPECTED_PROJECT_NOT_OPEN')],
- ['persistent Chrome profile is quiesced before archiving',shell.indexOf('kill -TERM "$CHROME_PID"')>shell.indexOf('node scripts/bootstrap-flow-account-v2.mjs capture')&&shell.indexOf('kill -TERM "$CHROME_PID"')<shell.indexOf('cp -a "$PROFILE"'))],
+ ['persistent Chrome profile is quiesced before archiving',shell.indexOf('kill -TERM "$CHROME_PID"')>shell.indexOf('node scripts/bootstrap-flow-account-v2.mjs capture')&&shell.indexOf('kill -TERM "$CHROME_PID"')<shell.indexOf('cp -a "$PROFILE"')],
  ['provider captures indexedDB when portable state changes',provider.includes('context.storageState({path:candidate,indexedDB:true})')],
  ['provider refresh is atomic and Google cookie gated',provider.includes('fs.renameSync(candidate,PORTABLE_STORAGE_STATE)')&&provider.includes('hasGoogleLogin')],
  ['runner validates exact project before any runtime starts',runner.indexOf('await validateFlowAuthAndRefreshState(expectedProjectUrl);')<runner.indexOf("child=spawn('npm',['start']")],
