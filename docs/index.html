@@ -672,6 +672,7 @@ async function udFlowConnection(publisherId,accessToken){
    copy.onclick=async()=>{try{await navigator.clipboard.writeText(s.password);copy.textContent="CONTRASEÑA COPIADA"}catch{copy.textContent="Seleccioná y copiá el código de arriba"}};
    target.append(copy);
    if(expiresAt&&Number.isFinite(expiresAt.getTime()))target.append(udText("p","udmuted","Vence: "+expiresAt.toLocaleString("es-AR",{timeZone:"America/Argentina/Buenos_Aires"})+" (Argentina)."));
+   target.append(udText("p","udmuted","Importante: este vencimiento corresponde SOLO al escritorio remoto temporal. Una vez validada, tu sesión de Google Flow se guarda para reutilizarla en futuras ejecuciones, hasta que Google la revoque o pida una verificación nueva."));
    target.append(udText("p","udmuted","En el escritorio remoto, iniciá sesión en Google, abrí el proyecto exacto y después confirmá aquí. No presiones Generate."));
    const done=document.createElement("button");done.type="button";done.className="btn primary";done.textContent="YA ENTRÉ A GOOGLE FLOW · VALIDAR Y GUARDAR SESIÓN";
    done.onclick=async()=>{done.disabled=true;try{
