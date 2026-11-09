@@ -10,6 +10,14 @@ const sop=JSON.parse(read('GOOGLE_FLOW_AUTOMATION_SOP.json'));
 const manifest=JSON.parse(read('FLOW_SOP_KNOWLEDGE_MANIFEST.json'));
 const schema=JSON.parse(read('publisher.config.schema.json'));
 const provider=read('free-browser-provider.js');
+const flowBackoffModule=read('scripts/flow-unusual-cooldown.mjs');
+for(const k of ['30,60,120,240,480,1440','export function flowNoChargeDelayMs','export function flowNoChargeDeadline']){
+  must(flowBackoffModule.includes(k),'provider-wide Flow cooldown module missing '+k);
+}
+must(provider.includes("if(opts.confirmed!==true)"),'explicit no-charge evidence gate missing');
+must(provider.includes("if(providerCooldown>Date.now())return null"),'global cooldown gate missing');
+must(provider.includes("if(until>Date.now())"),'manual REDO and extra submit cooldown gate missing');
+
 const runtimeConfig=read('runtime-config.js');
 const init=read('runtime-init.js');
 const server=read('server.js');
@@ -59,7 +67,7 @@ must(ytSchema?.properties?.use_publish_at?.const===false,'YouTube schema must fo
 must(ytSchema?.properties?.preserve_private_lead_window?.const===true,'YouTube schema must forbid a private lead window');
 must(ytSchema?.properties?.upload_lead_minutes?.const===390,'YouTube schema must require zero-minute lead');
 
-for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY_ENTERED','automatic_submit_forbidden','flow-grid-tile-container','flow-tile-hover-footer','EPISODE_INTENT_REPAIRED','CREATIVE_PACKAGE_READY','creativePackageHash','source:\'creative-package\'','let editor=await waitFlowReady(page,30000)','FLOW_UNUSUAL_ACTIVITY_OVERNIGHT','30*60*1000','8*60*60*1000','24*60*60*1000','GEMINI_FEEDBACK_URL','FEEDBACK_AI_INTERPRET_START','creative_rewrite','POST_SUBMIT_TIMEOUT_RECONCILIATION_ONLY','DAILY_FLOW_GRANT_CREDITS','ensureDailyCreditCycle','WAITING_DAILY_FLOW_CREDIT_REFRESH','flow:dailyCreditBatchOpen','daily-flow-credit-refresh']){
+for(const token of ['flow-generate-icon-button','arrow_forward','SUBMIT_BOUNDARY_ENTERED','automatic_submit_forbidden','flow-grid-tile-container','flow-tile-hover-footer','EPISODE_INTENT_REPAIRED','CREATIVE_PACKAGE_READY','creativePackageHash','source:\'creative-package\'','let editor=await waitFlowReady(page,30000)','FLOW_UNUSUAL_ACTIVITY_24H_NOTICE','flowNoChargeDeadline(previousUntil,Date.now(),streak)','FLOW_UNUSUAL_ACTIVITY_NO_CHARGE_PROVIDER_COOLDOWN','flow:transientCooldownUntil','GEMINI_FEEDBACK_URL','FEEDBACK_AI_INTERPRET_START','creative_rewrite','POST_SUBMIT_TIMEOUT_RECONCILIATION_ONLY','DAILY_FLOW_GRANT_CREDITS','ensureDailyCreditCycle','WAITING_DAILY_FLOW_CREDIT_REFRESH','flow:dailyCreditBatchOpen','daily-flow-credit-refresh']){
   must(provider.includes(token),'provider contract missing '+token);
 }
 must(!provider.includes("await waitFlowReady(page,30000);\n  const editor=await promptEditor(page);"),'provider must not re-query the Flow composer immediately after readiness');
