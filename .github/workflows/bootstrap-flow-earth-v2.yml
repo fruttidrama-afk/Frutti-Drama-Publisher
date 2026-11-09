@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   id-token: write
+  actions: write
 
 concurrency:
   group: publisher-flow-earth-bootstrap-v2
@@ -40,3 +41,9 @@ jobs:
           timeout 180 npm install --ignore-scripts --no-audit --no-fund
       - name: Bootstrap isolated Earth Flow account
         run: bash scripts/run-flow-account-bootstrap-v2.sh
+      - name: Verify captured Google Flow state once from a new isolated runner
+        if: success()
+        env:
+          GH_COLD_RESTORE_DISPATCH_TOKEN: ${{ github.token }}
+        run: node scripts/dispatch-one-flow-cold-check.mjs
+
