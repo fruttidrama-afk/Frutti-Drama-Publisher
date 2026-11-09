@@ -8,6 +8,10 @@ mkdir -p "$PROFILE"
 
 START_URL="$(node scripts/bootstrap-flow-account-v2.mjs config)"
 
+# Safe iPad scrolling support for this remote desktop (no browser credentials).
+# Installer modifies only noVNC's UI, never an existing Google session.
+sudo node scripts/install-novnc-ipad-touch.mjs
+
 Xvfb :99 -screen 0 1440x900x24 -nolisten tcp -ac >/tmp/xvfb.log 2>&1 &
 sleep 2
 
