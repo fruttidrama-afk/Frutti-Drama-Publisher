@@ -1388,7 +1388,26 @@ async function launchLocal() {
     });
     const page=await context.newPage();
     const cleanup=async()=>{
-      try{await context.storageState({path:PORTABLE_STORAGE_STATE})}catch{}
+      // Never downgrade a validated Google session to a state with missing
+      // IndexedDB or only signed-out cookies. The last-known-good snapshot
+      // remains intact until a fresh complete snapshot is verified.
+      const candidate=PORTABLE_STORAGE_STATE+'.candidate-'+process.pid;
+      try{
+        const cookies=await context.cookies(['https://flow.google.com','https://accounts.google.com']);
+        const hasGoogleLogin=cookies.some(c=>
+          /(^|\.)google\.com$/.test(String(c.domain||''))&&
+          /^(?:SID|HSID|SSID|APISID|SAPISID|__Secure-(?:1P|3P)SID(?:CC|TS)?|LSID)$/.test(String(c.name||''))&&
+          String(c.value||'').length>8
+        );
+        if(hasGoogleLogin){
+          await context.storageState({path:candidate,indexedDB:true});
+          const snap=JSON.parse(fs.readFileSync(candidate,'utf8'));
+          if(Array.isArray(snap.cookies)&&snap.cookies.length&&Array.isArray(snap.origins)&&fs.statSync(candidate).size>500){
+            fs.renameSync(candidate,PORTABLE_STORAGE_STATE);
+          }
+        }
+      }catch(err){console.warn('FLOW_PORTABLE_AUTH_REFRESH_SKIPPED',compact(err?.message||err,110))}
+      finally{try{fs.rmSync(candidate,{force:true})}catch{}}
       try{await context.close()}catch{}
       try{await browser.close()}catch{}
     };
