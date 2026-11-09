@@ -1,12 +1,15 @@
 name: Flow Auth Cold Restore (Read Only)
 on:
-  schedule:
-    - cron: "23 11 * * *"
-  push:
+  # Verify precisely once after a real human-authenticated session is stored.
+  # Routine daily probes are intentionally forbidden: they add unnecessary
+  # visits from ephemeral cloud browsers and cannot prevent a Google challenge.
+  workflow_run:
+    workflows:
+      - "Bootstrap Flow Frutti Account V2"
+      - "Bootstrap Flow Earth Account V2"
+      - "Bootstrap Flow Dinnie Account V2"
+    types: [completed]
     branches: [main]
-    paths:
-      - ".github/workflows/flow-auth-cold-restore.yml"
-      - "scripts/verify-flow-auth-cold-restore.mjs"
   workflow_dispatch:
     inputs:
       publisher:
@@ -22,10 +25,11 @@ concurrency:
   cancel-in-progress: false
 jobs:
   verify:
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      FLOW_VERIFY_ONLY: ${{ inputs.publisher || '' }}
+      FLOW_VERIFY_ONLY: ${{ inputs.publisher || (github.event.workflow_run.name == 'Bootstrap Flow Frutti Account V2' && 'frutti') || (github.event.workflow_run.name == 'Bootstrap Flow Earth Account V2' && 'earth') || (github.event.workflow_run.name == 'Bootstrap Flow Dinnie Account V2' && 'dinnie') || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
