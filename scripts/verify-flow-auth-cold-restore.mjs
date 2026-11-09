@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {chromium} from 'playwright-core';
+import {classifyFlowSecuritySignal} from './flow-security-signals.mjs';
 
 // Read-only cold restore, never click Generate or modify profile.tgz.
 // Each iteration is a clean isolated browser context on a new GitHub VM.
@@ -57,9 +58,10 @@ async function verify(key,project){
    await page.waitForTimeout(6500);
   }catch{result='project_inaccessible';throw Error('FLOW_PROJECT_NAVIGATION_FAILED')}
   const url=String(page.url()),body=String(await page.locator('body').innerText({timeout:10000}).catch(()=>'')).slice(0,16000);
-  const loggedOut=/(?:accounts\.google\.com|ServiceLogin|signin\/v2|\/about(?:$|[?#]))/i.test(url)
-    ||/(?:email or phone|enter your password|sign in to continue|iniciar sesi[oó]n|accede a tu cuenta|verify it.s you)/i.test(body);
-  if(loggedOut){result='login_required';throw Error('COLD_RESTORE_LOGIN_REQUIRED')}
+  const signal=classifyFlowSecuritySignal(url,body);
+  if(signal==='security_challenge'){result='security_challenge';throw Error('COLD_RESTORE_SECURITY_CHALLENGE')}
+  if(signal==='unusual_activity'){result='unusual_activity';throw Error('COLD_RESTORE_FLOW_UNUSUAL_ACTIVITY')}
+  if(signal==='login_required'){result='login_required';throw Error('COLD_RESTORE_LOGIN_REQUIRED')}
   if(!url.includes('/project/'+project)||body.trim().length<40){result='project_inaccessible';throw Error('COLD_RESTORE_EXACT_PROJECT_INACCESSIBLE')}
   const cookies=await context.cookies(['https://flow.google.com','https://accounts.google.com']);
   const hasSession=cookies.some(c=>/(^|\.)google\.com$/i.test(String(c.domain||''))&&/^(?:SID|HSID|SSID|APISID|SAPISID|__Secure-(?:1P|3P)SID(?:CC|TS)?|LSID)$/.test(String(c.name||''))&&String(c.value||'').length>8);
