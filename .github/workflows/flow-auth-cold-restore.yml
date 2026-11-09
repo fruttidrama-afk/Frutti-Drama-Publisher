@@ -1,0 +1,37 @@
+name: Flow Auth Cold Restore (Read Only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/flow-auth-cold-restore.yml"
+      - "scripts/verify-flow-auth-cold-restore.mjs"
+  workflow_dispatch:
+    inputs:
+      publisher:
+        description: Specific publisher to test; leave blank for all
+        required: false
+        type: choice
+        options: ["",frutti,earth,dinnie]
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: flow-auth-readonly-cold-restore
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      FLOW_VERIFY_ONLY: ${{ inputs.publisher || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.14.0"
+      - name: Syntax preflight
+        run: node --check scripts/verify-flow-auth-cold-restore.mjs
+      - name: Install browser runtime
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Verify saved Google Flow login in fresh isolated Chrome with NO Generate clicks
+        run: node scripts/verify-flow-auth-cold-restore.mjs
