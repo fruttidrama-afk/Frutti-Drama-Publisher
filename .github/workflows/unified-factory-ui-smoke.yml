@@ -9,6 +9,12 @@ on:
       - "scripts/check-unified-factory-ui.mjs"
       - "scripts/test-frutti-copy.mjs"
       - "scripts/check-publication-safety.mjs"
+      - "scripts/dispatch-owner-flow-reconnects.mjs"
+      - "scripts/bootstrap-flow-account-v2.mjs"
+      - ".github/workflows/free-runtime-runner.yml"
+      - ".github/workflows/bootstrap-flow-frutti-v2.yml"
+      - ".github/workflows/bootstrap-flow-earth-v2.yml"
+      - ".github/workflows/bootstrap-flow-dinnie-v2.yml"
       - "publication.js"
       - "publication-facebook.js"
       - "free-browser-provider.js"
@@ -43,3 +49,5 @@ jobs:
           node --check free-browser-provider.js
           node --check scripts/free-runtime-runner-v2.mjs
           node scripts/check-publication-safety.mjs
+          node --check scripts/dispatch-owner-flow-reconnects.mjs
+          node --check scripts/bootstrap-flow-account-v2.mjs
