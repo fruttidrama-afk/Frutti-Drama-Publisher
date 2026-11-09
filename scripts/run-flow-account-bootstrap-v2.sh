@@ -12,6 +12,7 @@ Xvfb :99 -screen 0 1440x900x24 -nolisten tcp -ac >/tmp/xvfb.log 2>&1 &
 sleep 2
 
 google-chrome   --user-data-dir="$PROFILE"   --remote-debugging-address=127.0.0.1   --remote-debugging-port=9222   --remote-allow-origins='*'   --no-sandbox   --disable-dev-shm-usage   --disable-gpu   --password-store=basic   --no-first-run   --no-default-browser-check   --window-size=1440,900   "$START_URL" >/tmp/chrome.log 2>&1 &
+CHROME_PID="$!"
 
 VNC_PASSWORD="$(openssl rand -hex 12)"
 x11vnc -storepasswd "$VNC_PASSWORD" /tmp/x11vnc.pass >/dev/null
@@ -35,6 +36,18 @@ FLOW_BOOTSTRAP_URL="$FULL_URL" FLOW_BOOTSTRAP_PASSWORD="$VNC_PASSWORD" node scri
 node scripts/bootstrap-flow-account-v2.mjs waitsignal
 node scripts/bootstrap-flow-account-v2.mjs capture
 
+# Quiesce Chrome completely before archiving its SQLite Cookies/IndexedDB
+# databases. A live profile copy can be inconsistent after a hard runner exit.
+if kill -0 "$CHROME_PID" 2>/dev/null; then
+  kill -TERM "$CHROME_PID" 2>/dev/null || true
+  for i in $(seq 1 20); do
+    if ! kill -0 "$CHROME_PID" 2>/dev/null; then break; fi
+    sleep 0.5
+  done
+fi
+wait "$CHROME_PID" 2>/dev/null || true
+rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonSocket" "$PROFILE/SingletonCookie"
+
 # Persist both the portable Playwright auth state and the real Chrome profile.
 # The full profile preserves Google/Flow browser state that storageState alone
 # cannot represent. Caches are deliberately excluded.
@@ -54,7 +67,7 @@ rm -rf \
   "$PACK/flow-profile/Crashpad" \
   "$PACK/flow-profile/component_crx_cache" \
   "$PACK/flow-profile/BrowserMetrics" || true
-tar -czf "$ARCHIVE" --exclude='flow-profile/Default/Media Cache' --exclude='flow-profile/Default/Blob Storage' --exclude='flow-profile/Default/Service Worker/ScriptCache' --exclude='flow-profile/Default/Shared Dictionary' --exclude='flow-profile/OptimizationGuidePredictionModels' --exclude='flow-profile/Default/OptimizationGuidePredictionModels' --exclude='flow-profile/Safe Browsing' --exclude='flow-profile/WidevineCdm' -C "$PACK" flow-auth-state.json flow-profile
+tar -czf "$ARCHIVE" --exclude='*/Cache' --exclude='*/Code Cache' --exclude='*/GPUCache' --exclude='*/ShaderCache' --exclude='*/Crashpad' --exclude='*/SingletonLock' --exclude='*/SingletonSocket' --exclude='*/SingletonCookie' --exclude='flow-profile/Default/Media Cache' --exclude='flow-profile/Default/Blob Storage' --exclude='flow-profile/Default/Service Worker/ScriptCache' --exclude='flow-profile/Default/Shared Dictionary' --exclude='flow-profile/OptimizationGuidePredictionModels' --exclude='flow-profile/Default/OptimizationGuidePredictionModels' --exclude='flow-profile/Safe Browsing' --exclude='flow-profile/WidevineCdm' -C "$PACK" flow-auth-state.json flow-profile
 echo "PROFILE_ARCHIVE_BYTES=$(stat -c %s "$ARCHIVE")"
 if [ "$(stat -c %s "$ARCHIVE")" -ge 41943040 ]; then
   # Keep the already validated indexedDB-inclusive Playwright storageState.
