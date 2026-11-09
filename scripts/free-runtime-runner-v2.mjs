@@ -127,8 +127,14 @@ function metrics(){
     const localParts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Argentina/Buenos_Aires',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
     const dayTokens=Object.fromEntries(localParts.filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
     const today=dayTokens.year+'-'+dayTokens.month+'-'+dayTokens.day;
-    const privateStaged=tableExists(db,'publication_items')
-      ?Number(db.prepare("SELECT COUNT(*) n FROM publication_items WHERE COALESCE(provider,'youtube')='youtube' AND videoId IS NOT NULL AND remotePrivacyStatus='private' AND substr(scheduledAt,1,10)=? AND status NOT IN ('published','cancelled','deleted')").get(today)?.n||0):0;
+    // Legacy publisher SQLite schemas often do NOT have a provider column.
+    // Never let a monitoring metric crash the runner BEFORE video generation.
+    const pubCols=tableExists(db,'publication_items')
+      ?new Set(db.prepare("PRAGMA table_info(publication_items)").all().map(c=>String(c.name))):new Set();
+    const stagedCols=['videoId','remotePrivacyStatus','scheduledAt','status'].every(k=>pubCols.has(k));
+    const providerFilter=pubCols.has('provider')?" AND COALESCE(provider,'youtube')='youtube'":"";
+    const privateStaged=stagedCols
+      ?Number(db.prepare("SELECT COUNT(*) n FROM publication_items WHERE videoId IS NOT NULL AND remotePrivacyStatus='private' AND substr(scheduledAt,1,10)=? AND status NOT IN ('published','cancelled','deleted')"+providerFilter).get(today)?.n||0):0;
     return{generation,publication,stock,review,privateStaged};
   }finally{db.close()}
 }
