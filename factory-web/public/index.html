@@ -664,6 +664,23 @@ async function udFlowConnection(publisherId,accessToken){
   target.replaceChildren();
   const s=payload.session||{},state=String(s.status||"not_started");
   const expiresAt=s.expires_at?new Date(s.expires_at):null;
+  if(payload.auth_saved||(state==="completed"&&["auth_verified","ready"].includes(String(payload.migration_state||"")))){
+   target.append(udText("strong","","✓ GOOGLE FLOW · AUTENTICACIÓN GUARDADA CORRECTAMENTE"));
+   const savedAt=payload.auth_saved_at||s.saved_at;
+   if(savedAt){
+    const stamp=new Date(savedAt);
+    if(Number.isFinite(stamp.getTime()))target.append(udText("p","udmuted","Guardada el "+stamp.toLocaleString("es-AR",{timeZone:"America/Argentina/Buenos_Aires"})+" (Argentina)."));
+   }
+   target.append(udText("p","udmuted","Proyecto de Google Flow validado y copia de autenticación conservada en almacenamiento privado. No necesitás repetir el inicio de sesión."));
+   target.append(udText("p","udmuted","Pendiente: comprobar que la sesión se restaura en una ejecución nueva. Esto NO confirma todavía la generación ni la publicación automática."));
+   return;
+  }
+  if(state==="capture_requested"){
+   target.append(udText("strong","","VALIDANDO Y GUARDANDO LA SESIÓN…"));
+   target.append(udText("p","udmuted","Recibimos la confirmación. El ejecutor está verificando el proyecto y guardando la autenticación. No vuelvas a iniciar sesión ni pulses el botón otra vez."));
+   udFlowPollTimer=setTimeout(()=>{if(activeUnifiedPublisher===publisherId)udFlowConnection(publisherId,accessToken)},5000);
+   return;
+  }
   if(s.url&&s.password&&s.active){
    target.append(udText("p","udmuted","Sesión lista para abrir en Safari. Usá este enlace únicamente para la cuenta Google de este publisher."));
    const link=document.createElement("a");link.className="btn";link.textContent="ABRIR GOOGLE FLOW · SESIÓN TEMPORAL";link.href=s.url;link.target="_blank";link.rel="noopener noreferrer";
@@ -680,7 +697,11 @@ async function udFlowConnection(publisherId,accessToken){
    done.onclick=async()=>{done.disabled=true;try{
     const r=await fetch(endpoint,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({publisher_id:publisherId,action:"capture"})});
     const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||"No se pudo solicitar la captura");
-    target.replaceChildren(udText("p","udmuted","Captura solicitada. El sistema verificará el proyecto exacto y guardará la sesión. Tocá ACTUALIZAR para comprobar el resultado."));
+    target.replaceChildren(
+     udText("strong","","VALIDANDO Y GUARDANDO LA SESIÓN…"),
+     udText("p","udmuted","Recibimos tu confirmación. El resultado aparecerá automáticamente aquí, sin reiniciar esta pantalla.")
+    );
+    udFlowPollTimer=setTimeout(()=>{if(activeUnifiedPublisher===publisherId)udFlowConnection(publisherId,accessToken)},4000);
    }catch(e){done.disabled=false;target.append(udText("p","udmuted",String(e.message||e)))}};
    target.append(done);
    return;
@@ -693,8 +714,8 @@ async function udFlowConnection(publisherId,accessToken){
    udFlowPollTimer=setTimeout(()=>{if(activeUnifiedPublisher===publisherId)udFlowConnection(publisherId,accessToken)},12000);
    return;
   }
-  if(state==="completed"&&["auth_verified","ready"].includes(String(payload.migration_state||""))){
-   target.append(udText("p","udmuted","La última sesión fue guardada. La generación y publicación se verificarán por separado."));
+  if(state==="completed"){
+   target.append(udText("p","udmuted","La captura terminó, pero el estado de autenticación requiere comprobación técnica. No inicies otra sesión hasta revisarlo."));
   }else if(state==="expired"){
    target.append(udText("p","udmuted","La sesión temporal anterior venció. Podés solicitar otra desde el iPad."));
   }else{
@@ -727,7 +748,7 @@ async function udOpen(id,changeUrl=true){
  $("#udName").textContent=p.name;$("#udPlatform").textContent=p.platform==="facebook"?"Facebook Reels":"YouTube Shorts";
  const lastGenerationMs=p.last_generation_at?Date.parse(p.last_generation_at):NaN;
  const generationCurrent=Number.isFinite(lastGenerationMs)&&lastGenerationMs<=Date.now()&&(Date.now()-lastGenerationMs)<36*3600000;
- const operationalLabel=p.migration_state!=="ready"?"MIGRACIÓN INCOMPLETA":generationCurrent?"GENERACIÓN CONFIRMADA EN 36 H":"SIN GENERACIÓN CONFIRMADA · AUTOMATIZACIÓN NO VERIFICADA";
+ const operationalLabel=p.migration_state==="auth_verified"?"GOOGLE FLOW AUTENTICADO · PRODUCCIÓN AÚN NO VERIFICADA":p.migration_state!=="ready"?"MIGRACIÓN INCOMPLETA":generationCurrent?"GENERACIÓN CONFIRMADA EN 36 H":"SIN GENERACIÓN CONFIRMADA · AUTOMATIZACIÓN NO VERIFICADA";
  $("#udStatus").textContent=operationalLabel+" · Runtime: "+p.migration_state+" · Último error: "+(p.last_error||"ninguno")+" · Último runner: "+(p.last_runner_at?new Date(p.last_runner_at).toLocaleString("es-AR"):"sin registro");
  udFlowConnection(id,s.access_token);
  for(const [label,value] of [["Generaciones/día",p.generation_target],["Publicaciones/día",p.publication_target],["Stock indexado (parcial)",p.approved_stock],["Última generación",p.last_generation_at?new Date(p.last_generation_at).toLocaleString("es-AR"):"sin confirmar"],["Última publicación",p.last_publication_at?new Date(p.last_publication_at).toLocaleDateString("es-AR"):"sin confirmar"]]){
@@ -984,7 +1005,11 @@ $("#udShowVideos").onclick=()=>udSetRecoveryMobilePane(false);
 $("#udShowPrompts").onclick=()=>udSetRecoveryMobilePane(true);
 
 $("#udBack").onclick=()=>udClose();
-$("#udRefresh").onclick=()=>{if(activeUnifiedPublisher)udOpen(activeUnifiedPublisher,false)};
+$("#udRefresh").onclick=async()=>{if(activeUnifiedPublisher){
+  const y=window.scrollY;
+  await udOpen(activeUnifiedPublisher,false);
+  requestAnimationFrame(()=>window.scrollTo({top:y,behavior:"instant"}));
+ }};
 window.addEventListener("popstate",()=>{const id=new URL(location.href).searchParams.get("publisher_id");if(id)udOpen(id,false);else udClose(false)});
 
 $("#refresh").onclick=()=>list();boot();
