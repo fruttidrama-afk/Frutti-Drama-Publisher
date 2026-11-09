@@ -647,34 +647,69 @@ async function railState(){
 let activeUnifiedPublisher=null;
 const unifiedEndpoint="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-unified-read";
 function udText(t,c,v){const n=document.createElement(t);if(c)n.className=c;n.textContent=String(v??"");return n}
-function udClose(changeUrl=true){activeUnifiedPublisher=null;$("#unifiedDashboard").classList.add("hidden");if(changeUrl){const u=new URL(location.href);u.searchParams.delete("publisher_id");u.searchParams.delete("mode");history.pushState({},"",u)}}
+function udClose(changeUrl=true){if(udFlowPollTimer){clearTimeout(udFlowPollTimer);udFlowPollTimer=null}activeUnifiedPublisher=null;$("#unifiedDashboard").classList.add("hidden");if(changeUrl){const u=new URL(location.href);u.searchParams.delete("publisher_id");u.searchParams.delete("mode");history.pushState({},"",u)}}
+let udFlowPollTimer=null;
 async function udFlowConnection(publisherId,accessToken){
  const target=$("#udFlowConnection");
- target.replaceChildren(udText("p","udmuted","Verificando conexión de Google Flow…"));
+ if(udFlowPollTimer){clearTimeout(udFlowPollTimer);udFlowPollTimer=null}
+ target.replaceChildren(udText("p","udmuted","Verificando sesión segura de Google Flow…"));
  try{
-  const response=await fetch("https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-flow-operator?publisher_id="+encodeURIComponent(publisherId),{headers:{Authorization:"Bearer "+accessToken},cache:"no-store"});
+  const endpoint="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-flow-operator";
+  const response=await fetch(endpoint+"?publisher_id="+encodeURIComponent(publisherId),{headers:{Authorization:"Bearer "+accessToken},cache:"no-store"});
   const payload=await response.json().catch(()=>({}));
   if(!response.ok)throw Error(payload.error||"No se pudo consultar la reconexión");
   if(activeUnifiedPublisher!==publisherId)return;
   target.replaceChildren();
-  const s=payload.session||{};
-  if(!s.url||!s.password){
-   target.append(udText("p","udmuted","No hay sesión de acceso activa. Si aparece una reconexión pendiente, necesitás iniciar sesión en Google Flow mediante el enlace temporal que se habilitará acá."));
+  const s=payload.session||{},state=String(s.status||"not_started");
+  const expiresAt=s.expires_at?new Date(s.expires_at):null;
+  if(s.url&&s.password&&s.active){
+   target.append(udText("p","udmuted","Sesión lista para abrir en Safari. Usá este enlace únicamente para la cuenta Google de este publisher."));
+   const link=document.createElement("a");link.className="btn";link.textContent="ABRIR GOOGLE FLOW · SESIÓN TEMPORAL";link.href=s.url;link.target="_blank";link.rel="noopener noreferrer";
+   target.append(link);
+   const note=udText("p","udmuted","Contraseña temporal del escritorio remoto (NO es tu contraseña de Google):");target.append(note);
+   const pw=udText("code","",s.password);pw.style.userSelect="all";target.append(pw);
+   const copy=document.createElement("button");copy.type="button";copy.className="btn";copy.textContent="COPIAR CONTRASEÑA TEMPORAL";
+   copy.onclick=async()=>{try{await navigator.clipboard.writeText(s.password);copy.textContent="CONTRASEÑA COPIADA"}catch{copy.textContent="Seleccioná y copiá el código de arriba"}};
+   target.append(copy);
+   if(expiresAt&&Number.isFinite(expiresAt.getTime()))target.append(udText("p","udmuted","Vence: "+expiresAt.toLocaleString("es-AR",{timeZone:"America/Argentina/Buenos_Aires"})+" (Argentina)."));
+   target.append(udText("p","udmuted","En el escritorio remoto, iniciá sesión en Google, abrí el proyecto exacto y después confirmá aquí. No presiones Generate."));
+   const done=document.createElement("button");done.type="button";done.className="btn primary";done.textContent="YA ENTRÉ A GOOGLE FLOW · VALIDAR Y GUARDAR SESIÓN";
+   done.onclick=async()=>{done.disabled=true;try{
+    const r=await fetch(endpoint,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({publisher_id:publisherId,action:"capture"})});
+    const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||"No se pudo solicitar la captura");
+    target.replaceChildren(udText("p","udmuted","Captura solicitada. El sistema verificará el proyecto exacto y guardará la sesión. Tocá ACTUALIZAR para comprobar el resultado."));
+   }catch(e){done.disabled=false;target.append(udText("p","udmuted",String(e.message||e)))}};
+   target.append(done);
    return;
   }
-  const link=document.createElement("a");link.className="btn";link.textContent="ABRIR GOOGLE FLOW · SESIÓN TEMPORAL";link.href=s.url;link.target="_blank";link.rel="noopener noreferrer";
-  target.append(link);
-  target.append(udText("p","udmuted","Contraseña temporal del escritorio remoto (no es la contraseña de Google):"));
-  const pw=udText("code","",s.password);pw.style.userSelect="all";target.append(pw);
-  target.append(udText("p","udmuted","Ingresá en la cuenta Google correcta, abrí el proyecto de este publisher y, solo después, confirmá la captura."));
-  const done=document.createElement("button");done.type="button";done.className="btn primary";done.textContent="YA ENTRÉ A GOOGLE FLOW · VALIDAR Y GUARDAR SESIÓN";
-  done.onclick=async()=>{done.disabled=true;try{
-   const r=await fetch("https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-flow-operator",{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({publisher_id:publisherId,action:"capture"})});
-   const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||"No se pudo solicitar la captura");
-   target.replaceChildren(udText("p","udmuted","Captura solicitada. El sistema verificará el proyecto exacto antes de activar el publisher. Actualizá este panel para revisar el resultado."));
-  }catch(e){done.disabled=false;target.append(udText("p","udmuted",String(e.message||e)))}};
-  target.append(done);
- }catch(e){target.replaceChildren(udText("p","udmuted","Reconexión no disponible: "+String(e.message||e)))}
+  if(["requested","launching","booting"].includes(state)){
+   const message=state==="requested"?"Solicitud recibida. Esperando que el ejecutor gratuito active el acceso…"
+    :state==="launching"?"Se está iniciando el ejecutor seguro de Google Flow…":"Preparando el escritorio remoto…";
+   target.append(udText("p","udmuted",message));
+   target.append(udText("p","udmuted","Esta pantalla se actualiza automáticamente. No se está generando ni publicando ningún video. Si el proveedor demora, la sesión puede tardar en aparecer."));
+   udFlowPollTimer=setTimeout(()=>{if(activeUnifiedPublisher===publisherId)udFlowConnection(publisherId,accessToken)},12000);
+   return;
+  }
+  if(state==="completed"&&["auth_verified","ready"].includes(String(payload.migration_state||""))){
+   target.append(udText("p","udmuted","La última sesión fue guardada. La generación y publicación se verificarán por separado."));
+  }else if(state==="expired"){
+   target.append(udText("p","udmuted","La sesión temporal anterior venció. Podés solicitar otra desde el iPad."));
+  }else{
+   target.append(udText("p","udmuted","No hay sesión de Google Flow activa. Podés solicitarla ahora, sin una computadora."));
+  }
+  const start=document.createElement("button");start.type="button";start.className="btn primary";start.textContent="INICIAR RECONEXIÓN DESDE ESTE IPAD";
+  start.onclick=async()=>{
+   start.disabled=true;start.textContent="SOLICITANDO SESIÓN SEGURA…";
+   try{
+    const r=await fetch(endpoint,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({publisher_id:publisherId,action:"start"})});
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok)throw Error(data.error==="RECONNECT_COOLDOWN"?"Reintento temporalmente limitado por seguridad. Volvé a probar más tarde.":data.error||"No se pudo iniciar la sesión");
+    if(activeUnifiedPublisher===publisherId)await udFlowConnection(publisherId,accessToken);
+   }catch(e){start.disabled=false;start.textContent="REINTENTAR RECONEXIÓN";target.append(udText("p","udmuted",String(e.message||e)))}
+  };
+  target.append(start);
+  target.append(udText("p","udmuted","La solicitud está protegida por tu sesión de Publisher Factory. El ejecutor de GitHub abrirá un acceso temporal y esta tarjeta mostrará el enlace. No dispara Generate, REDO ni publicaciones."));
+ }catch(e){if(activeUnifiedPublisher===publisherId)target.replaceChildren(udText("p","udmuted","Reconexión no disponible: "+String(e.message||e)))}
 }
 async function udOpen(id,changeUrl=true){
  if(!/^[0-9a-f-]{36}$/i.test(String(id)))return;
