@@ -283,18 +283,27 @@ try{
   if(hasProfile)run('tar',['-xzf',profileTar,'-C',FACTORY]);
 
   fs.writeFileSync(path.join(DATA,'publisher-config.json'),JSON.stringify(p.config||{},null,2),{mode:0o600});
-  if(!hasProfile||!fs.existsSync(PORTABLE_STATE)){
+  // No Flow render or credits may be attempted if the Earth/Frutti/Dinnie
+  // creative authority is missing. Hard-block instead of crash/restart storms.
+  if(kind==='generation'&&!String(p.config?.content?.creative_bible||'').trim()){
+    await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',error:'SHOW_BIBLE_REQUIRED_CONFIGURATION_MISSING',approved_stock:metrics().stock});
+    console.error('SHOW_BIBLE_REQUIRED_CONFIGURATION_MISSING; no video submitted.');
+    process.exit(0);
+  }
+  if(kind==='generation'&&(!hasProfile||!fs.existsSync(PORTABLE_STATE))){
     await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',error:'MIGRATION_PROFILE_REQUIRED',approved_stock:metrics().stock});
-    console.log('Portable Flow authentication is not migrated yet.');
+    console.log('Portable Flow authentication is not migrated yet. No video submitted.');
     process.exit(0);
   }
 
-  // Validate the exact Flow project and current Google cookies read-only
-  // before any production process can spend credits. Persist a VERIFIED
-  // IndexedDB-inclusive portable fallback, never a signed-out snapshot.
+  // YouTube/Facebook publication must be independent of Flow authentication.
+  // Publishing already-approved media cannot be blocked by an unrelated
+  // Google Flow login, and must never need Generate or free Flow credits.
   const expectedProjectUrl=String(p.config?.generation?.project_url||('https://flow.google.com/project/'+String(p.config?.generation?.project_id||'')));
-  await validateFlowAuthAndRefreshState(expectedProjectUrl);
-  console.log('Flow authentication preflight verified for configured project (read-only).');
+  if(kind==='generation'){
+    await validateFlowAuthAndRefreshState(expectedProjectUrl);
+    console.log('Flow authentication preflight verified for configured project (read-only).');
+  }
 
   const baseline=metrics();
   const fd=fs.openSync(LOG,'a');
@@ -316,7 +325,7 @@ try{
 
   const timeout=Number(process.env.FREE_RUNTIME_JOB_TIMEOUT_MS||(kind==='generation'?22*60*1000:12*60*1000));
   const deadline=Date.now()+timeout;
-  let success=false,last=baseline,creditWait=false,creditProbeFailure=null,privateStagedWait=false;
+  let success=false,last=baseline,creditWait=false,creditProbeFailure=null,privateStagedWait=false,childFatal=null,restarts=0;
   while(Date.now()<deadline){
     await sleep(5000);
     last=metrics();
@@ -335,8 +344,19 @@ try{
       break;
     }
     if(kind==='generation'&&/DAILY_CREDIT_BATCH_COMPLETE|AUTOMATIC_BATCH_WAITING_FOR_DAILY_CREDITS|WAITING_DAILY_FLOW_CREDIT_REFRESH|WAITING_FIRST_DAILY_FLOW_CREDIT_REFRESH/i.test(state)){creditWait=true;break}
-    if(child.exitCode!==null&&Date.now()+30000<deadline){
-      child=spawn('npm',['start'],{cwd:process.cwd(),env,stdio:['ignore',fd,fd],detached:true});
+    if(child.exitCode!==null){
+      const tail=fs.existsSync(LOG)?fs.readFileSync(LOG,'utf8').slice(-13000):'';
+      const permanent=/SHOW_BIBLE_REQUIRED|CREATIVE_BIBLE_REQUIRED|CONFIG_SCHEMA_INVALID|PUBLISHER_CONFIG_INVALID/.test(tail);
+      if(permanent){
+        childFatal='RUNTIME_CONFIGURATION_INVALID_BLOCKED_NO_RESTART';
+        console.error(childFatal,'exit_code='+String(child.exitCode));break;
+      }
+      // An unknown crash might occur AFTER a remote submit. Restarting with
+      // a fresh local state would risk a duplicate. Fail closed for human/
+      // remote-ID reconciliation, not 258 restarts in 22 minutes.
+      childFatal='RUNTIME_CHILD_EXITED_RECONCILIATION_REQUIRED';
+      console.error(childFatal,'exit_code='+String(child.exitCode),'restarts='+restarts);
+      break;
     }
   }
 
@@ -347,14 +367,16 @@ try{
   // validation. If Google invalidates a session, retain the last-known-good
   // vault and block production; never overwrite it with a signed-out state.
   let authenticatedAfterRun=false;
-  try{
-    await validateFlowAuthAndRefreshState(expectedProjectUrl);
-    authenticatedAfterRun=true;
-  }catch(e){
-    console.warn('FLOW_AUTH_REFRESH_SKIPPED_LAST_GOOD_PRESERVED',String(e?.message||e).slice(0,140));
+  if(kind==='generation'){
+    try{
+      await validateFlowAuthAndRefreshState(expectedProjectUrl);
+      authenticatedAfterRun=true;
+    }catch(e){
+      console.warn('FLOW_AUTH_REFRESH_SKIPPED_LAST_GOOD_PRESERVED',String(e?.message||e).slice(0,140));
+    }
+    if(!fs.existsSync(PORTABLE_STATE)||fs.statSync(PORTABLE_STATE).size<500)throw new Error('PORTABLE_FLOW_STATE_LOST');
+    console.log('Flow auth state preserved',{portable_bytes:fs.statSync(PORTABLE_STATE).size,persistent_profile:hasPersistentProfile});
   }
-  if(!fs.existsSync(PORTABLE_STATE)||fs.statSync(PORTABLE_STATE).size<500)throw new Error('PORTABLE_FLOW_STATE_LOST');
-  console.log('Flow auth state preserved',{portable_bytes:fs.statSync(PORTABLE_STATE).size,persistent_profile:hasPersistentProfile});
   await uploadBlob('state',publisherId,packState());
   // A failed post-run check must never replace the authenticated remote vault
   // with a possibly signed-out or half-written Chrome profile.
@@ -366,6 +388,11 @@ try{
     await callback({obligation_id:o.id,claim_id:claimId,status:'completed',approved_stock:last.stock});
     console.log('Completed',kind,o.id,last);
     process.exit(0);
+  }
+  if(childFatal){
+    await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',error:childFatal,approved_stock:last.stock});
+    console.error('Blocked unsafe child restart; runtime state archived for reconciliation.');
+    process.exit(1);
   }
   if(privateStagedWait){
     await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',error:'YOUTUBE_PRIVATE_STAGED_WAITING_19',approved_stock:last.stock});
@@ -393,7 +420,7 @@ try{
   const message=String(err?.stack||err).slice(0,1800);
   console.error(message);
   if(CURRENT){
-    const blocked=/GITHUB_OIDC|MIGRATION_PROFILE_REQUIRED|AUTH_REQUIRED|MISSING_/i.test(message);
+    const blocked=/GITHUB_OIDC|MIGRATION_PROFILE_REQUIRED|AUTH_REQUIRED|MISSING_|FLOW_AUTH|FLOW_EXPECTED|SHOW_BIBLE_REQUIRED|AUTH_VAULT/i.test(message);
     await callback({
       obligation_id:CURRENT.obligation.id,
       claim_id:CURRENT.claim_id,
