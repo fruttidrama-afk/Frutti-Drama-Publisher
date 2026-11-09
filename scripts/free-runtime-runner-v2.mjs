@@ -175,23 +175,55 @@ async function seedProfileFromPortableState(projectUrl){
     await ctx.close().catch(()=>{});
   }
 }
-async function capturePortableState(){
-  if(!fs.existsSync(PROFILE))return false;
-  const ctx=await chromium.launchPersistentContext(PROFILE,{
-    executablePath:chromiumPath(),
-    headless:true,
-    locale:'en-US',
-    timezoneId:'America/Argentina/Buenos_Aires',
-    viewport:{width:1280,height:800},
-    args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--password-store=basic','--no-first-run','--no-default-browser-check']
-  });
+
+async function validateFlowAuthAndRefreshState(projectUrl){
+  // A successful Chrome launch or a nonempty cookie file does NOT prove that
+  // Google has accepted the account session. Read only: no Generate clicks.
+  const expectedId=String(projectUrl||'').match(/\/project\/([a-f0-9-]+)/i)?.[1]||'';
+  if(!expectedId)throw new Error('FLOW_EXPECTED_PROJECT_ID_REQUIRED');
+  const candidate=PORTABLE_STATE+'.verified-'+process.pid;
+  let browser=null,ctx=null;
+  const useProfile=fs.existsSync(path.join(PROFILE,'Default','Cookies'));
   try{
-    await ctx.storageState({path:PORTABLE_STATE});
-    return fs.existsSync(PORTABLE_STATE)&&fs.statSync(PORTABLE_STATE).size>500;
+    const options={
+      executablePath:chromiumPath(),headless:true,
+      args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--password-store=basic','--no-first-run','--no-default-browser-check']
+    };
+    if(useProfile){
+      ctx=await chromium.launchPersistentContext(PROFILE,{...options,locale:'en-US',timezoneId:'America/Argentina/Buenos_Aires',viewport:{width:1440,height:900}});
+    }else{
+      if(!fs.existsSync(PORTABLE_STATE))throw new Error('FLOW_AUTH_STATE_MISSING');
+      browser=await chromium.launch(options);
+      ctx=await browser.newContext({storageState:PORTABLE_STATE,locale:'en-US',timezoneId:'America/Argentina/Buenos_Aires',viewport:{width:1440,height:900}});
+    }
+    const page=ctx.pages()[0]||await ctx.newPage();
+    await page.goto(projectUrl,{waitUntil:'domcontentloaded',timeout:55000});
+    await sleep(3000);
+    const url=String(page.url());
+    const body=String(await page.locator('body').innerText({timeout:10000}).catch(()=>'')).slice(0,12000);
+    const login=/(?:accounts\.google\.com|ServiceLogin|signin\/v2|\/about(?:$|[?#]))/i.test(url)
+      ||/(?:sign in to continue|email or phone|enter your password|iniciar sesi[oó]n|accede a tu cuenta|verify it.s you)/i.test(body);
+    if(login||!url.includes('/project/'+expectedId))throw new Error('FLOW_AUTH_REQUIRED_OR_PROJECT_INACCESSIBLE');
+    const cookies=await ctx.cookies(['https://flow.google.com','https://accounts.google.com']);
+    const hasGoogleSession=cookies.some(c=>
+      /(^|\.)google\.com$/i.test(String(c.domain||''))&&
+      /^(?:SID|HSID|SSID|APISID|SAPISID|__Secure-(?:1P|3P)SID(?:CC|TS)?|LSID)$/.test(String(c.name||''))&&
+      String(c.value||'').length>8
+    );
+    if(!hasGoogleSession)throw new Error('FLOW_AUTH_GOOGLE_SESSION_COOKIES_MISSING');
+    await ctx.storageState({path:candidate,indexedDB:true});
+    const snapshot=JSON.parse(fs.readFileSync(candidate,'utf8'));
+    if(!Array.isArray(snapshot.cookies)||!snapshot.cookies.length||!Array.isArray(snapshot.origins)||fs.statSync(candidate).size<500)
+      throw new Error('FLOW_AUTH_VERIFIED_SNAPSHOT_INVALID');
+    fs.renameSync(candidate,PORTABLE_STATE);
+    return{ok:true,persistent_profile:useProfile};
   }finally{
-    await ctx.close().catch(()=>{});
+    try{fs.rmSync(candidate,{force:true})}catch{}
+    try{await ctx?.close()}catch{}
+    try{await browser?.close()}catch{}
   }
 }
+
 function packState(){
   fs.mkdirSync(FACTORY,{recursive:true});
   const stateTar=path.join(ROOT,'state.tgz');
@@ -204,8 +236,23 @@ function packPortableProfile(){
   const profileTar=path.join(ROOT,'profile.tgz');
   fs.rmSync(profileTar,{force:true});
   const entries=['flow-auth-state.json'];
-  if(fs.existsSync(PROFILE))entries.push('flow-profile');
-  run('tar',['-czf',profileTar,'-C',FACTORY,...entries]);
+  if(fs.existsSync(path.join(PROFILE,'Default','Cookies')))entries.push('flow-profile');
+  const exclusions=[
+    '*/Cache','*/Code Cache','*/GPUCache','*/Media Cache','*/Crashpad',
+    '*/Service Worker/CacheStorage','*/Service Worker/ScriptCache',
+    '*/OptimizationGuidePredictionModels','*/GrShaderCache',
+    '*/ShaderCache','*/DawnCache','*/Safe Browsing',
+    '*/SingletonLock','*/SingletonCookie','*/SingletonSocket'
+  ];
+  const args=exclusions.map(pattern=>'--exclude='+pattern);
+  run('tar',[...args,'-czf',profileTar,'-C',FACTORY,...entries]);
+  if(fs.statSync(profileTar).size>=39*1024*1024){
+    // The private Edge currently caps uploads at 40MiB. Never let growing
+    // browser caches break an otherwise successful generation.
+    fs.rmSync(profileTar,{force:true});
+    run('tar',['-czf',profileTar,'-C',FACTORY,'flow-auth-state.json']);
+    console.warn('FLOW_AUTH_PROFILE_TRIMMED_TO_PORTABLE_STATE');
+  }
   return profileTar;
 }
 function statusSnapshot(){
@@ -242,8 +289,13 @@ try{
     process.exit(0);
   }
 
-  // The FreeBrowserProvider consumes the proven portable storageState directly.
-  // Do not transcode Google auth into a synthetic persistent Chrome profile.
+  // Validate the exact Flow project and current Google cookies read-only
+  // before any production process can spend credits. Persist a VERIFIED
+  // IndexedDB-inclusive portable fallback, never a signed-out snapshot.
+  const expectedProjectUrl=String(p.config?.generation?.project_url||('https://flow.google.com/project/'+String(p.config?.generation?.project_id||'')));
+  await validateFlowAuthAndRefreshState(expectedProjectUrl);
+  console.log('Flow authentication preflight verified for configured project (read-only).');
+
   const baseline=metrics();
   const fd=fs.openSync(LOG,'a');
   const env={
@@ -291,13 +343,22 @@ try{
   killTree(child);
   await sleep(2500);
   const hasPersistentProfile=fs.existsSync(path.join(PROFILE,'Default','Cookies'));
-  if(hasPersistentProfile){
-    await capturePortableState().catch(e=>console.log('PORTABLE_STATE_REFRESH_WARNING',String(e?.message||e)));
+  // Refresh cookies/IndexedDB only after read-only Google + exact-project
+  // validation. If Google invalidates a session, retain the last-known-good
+  // vault and block production; never overwrite it with a signed-out state.
+  let authenticatedAfterRun=false;
+  try{
+    await validateFlowAuthAndRefreshState(expectedProjectUrl);
+    authenticatedAfterRun=true;
+  }catch(e){
+    console.warn('FLOW_AUTH_REFRESH_SKIPPED_LAST_GOOD_PRESERVED',String(e?.message||e).slice(0,140));
   }
   if(!fs.existsSync(PORTABLE_STATE)||fs.statSync(PORTABLE_STATE).size<500)throw new Error('PORTABLE_FLOW_STATE_LOST');
   console.log('Flow auth state preserved',{portable_bytes:fs.statSync(PORTABLE_STATE).size,persistent_profile:hasPersistentProfile});
   await uploadBlob('state',publisherId,packState());
-  const portableTar=packPortableProfile();
+  // A failed post-run check must never replace the authenticated remote vault
+  // with a possibly signed-out or half-written Chrome profile.
+  const portableTar=authenticatedAfterRun?packPortableProfile():null;
   if(portableTar)await uploadBlob('profile',publisherId,portableTar);
   last=metrics();
 
