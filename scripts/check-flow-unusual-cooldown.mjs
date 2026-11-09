@@ -25,6 +25,12 @@ for(const [label,ok] of [
  ['Monotonic deadline linked to tested module',provider.includes("flowNoChargeDeadline(previousUntil,Date.now(),streak)")],
  ['Provider never bypasses even manual Submit and REDO',provider.includes("if(providerCooldown>Date.now())return null")&&provider.includes("if(until>Date.now())")],
  ['One submit intent lock still present',provider.includes("reserveGenerateBoundary(db,row,genId)")],
+ ['Explicit post-submit no-charge detection runs BEFORE generic security challenge guard',(()=>{
+   const fragment=provider.slice(provider.indexOf("async function waitGenerationStarted("),provider.indexOf("function firstFreshRendered("));
+   const explicit=fragment.indexOf("return{started:false,evidence:'FLOW_TRANSIENT_NO_CHARGE:");
+   const generic=fragment.indexOf("await renderAuthGuard(page);");
+   return explicit>0&&generic>explicit;
+ })()],
  ['Runner records no-charge once after state is saved',runner.indexOf("await uploadBlob('state',publisherId,packState())")<runner.indexOf("flow_no_charge_confirmed:true")],
  ['Server rejects callback without confirmed no-charge',edge.includes("FLOW_NO_CHARGE_PROOF_REQUIRED")],
  ['Server holds every generation while paused',edge.includes("Date.parse(cd.not_before)>Date.now())continue")],
