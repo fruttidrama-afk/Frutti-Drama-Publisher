@@ -13,7 +13,7 @@ for(let streak=1;streak<=9;streak++){
 assert.equal(flowNoChargeDeadline(base+1440*60000,base+60000,2),base+1440*60000,'later routine cannot shorten prior deadline');
 assert.throws(()=>flowNoChargeDeadline(0,NaN,1),/INVALID/);
 
-const edge=repoFile('docs/FLOW_COOLDOWN_EDGE_CONTRACT_2026-11-09.md');
+const edge=repoFile('supabase/functions/publisher-free-runtime/index.ts');
 const provider=repoFile('free-browser-provider.js');
 const runner=repoFile('scripts/free-runtime-runner-v2.mjs');
 const readUI=repoFile('docs/index.html');
@@ -29,6 +29,8 @@ for(const [label,ok] of [
  ['Server holds every generation while paused',edge.includes("Date.parse(cd.not_before)>Date.now())continue")],
  ['Server restores blocked same obligation before fresh next episode',edge.includes("FLOW_UNUSUAL_ACTIVITY_COOLDOWN")],
  ['Server cooldown persists outside ephemeral runner',edge.includes("publisher_runtime_flow_cooldowns")],
+ ['24h remains the cap after sixth alert',edge.includes("FLOW_BACKOFF_MINUTES=[30,60,120,240,480,1440]")],
+ ['Fresh obligations cannot pass active provider deadline',edge.includes("if(cd?.not_before&&Date.parse(cd.not_before)>Date.now())continue")],
  ['Panel shows final 24h alert',readUI.includes("ATENCIÓN · GOOGLE FLOW EN PAUSA PROTECTORA DE 24 HORAS")],
  ['Panel shows exact retry time',readUI.includes("new Date(deadline).toLocaleString")],
  ['Google security challenge still demands real human review',provider.includes("setProviderSecurityHold(db,row,'FLOW_SECURITY_MANUAL_REVIEW_REQUIRED')")],
