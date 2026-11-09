@@ -670,7 +670,13 @@ async function udFlowConnection(publisherId,accessToken){
     if(Number.isFinite(stamp.getTime()))target.append(udText("p","udmuted","Guardada el "+stamp.toLocaleString("es-AR",{timeZone:"America/Argentina/Buenos_Aires"})+" (Argentina)."));
    }
    target.append(udText("p","udmuted","Proyecto de Google Flow validado y copia de autenticación conservada en almacenamiento privado. No necesitás repetir el inicio de sesión."));
-   target.append(udText("p","udmuted","Pendiente: comprobar que la sesión se restaura en una ejecución nueva. Esto NO confirma todavía la generación ni la publicación automática."));
+   const cold=payload.restore_preflight||null;
+   if(cold?.result==="verified"){
+    target.append(udText("strong","","✓ RESTAURACIÓN CONFIRMADA EN UN EJECUTOR NUEVO"));
+    target.append(udText("p","udmuted","Probamos el proyecto real con tu sesión almacenada, desde otro navegador, sin contraseña ni generación. Aún falta verificar la automatización completa de videos y publicaciones."));
+   }else{
+    target.append(udText("p","udmuted","La autenticación se guardó, pero su restauración en un ejecutor nuevo todavía no está comprobada. La generación/publicación se verifican por separado."));
+   }
    return;
   }
   if(state==="capture_requested"){
@@ -712,7 +718,9 @@ async function udFlowConnection(publisherId,accessToken){
    udFlowPollTimer=setTimeout(()=>{if(activeUnifiedPublisher===publisherId)udFlowConnection(publisherId,accessToken)},12000);
    return;
   }
-  if(state==="completed"){
+  if(payload.restore_preflight?.result==="login_required"){
+   target.append(udText("p","udmuted","La sesión guardada anteriormente ya no permite entrar a Google Flow. Se comprobó desde un navegador nuevo sin generar videos. Hace falta reconectar esta cuenta cuando el sistema esté preparado."));
+  }else if(state==="completed"){
    target.append(udText("p","udmuted","La captura terminó, pero el estado de autenticación requiere comprobación técnica. No inicies otra sesión hasta revisarlo."));
   }else if(state==="expired"){
    target.append(udText("p","udmuted","La sesión temporal anterior venció. Podés solicitar otra desde el iPad."));
