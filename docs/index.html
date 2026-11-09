@@ -681,6 +681,24 @@ async function udFlowConnection(publisherId,accessToken){
    }
    return;
   }
+  if(payload.security_review_required){
+   target.append(udText("strong","","GOOGLE FLOW · REVISIÓN DE SEGURIDAD NECESARIA"));
+   target.append(udText("p","udmuted","Google solicitó verificar la cuenta o mostró actividad inusual. Por seguridad, pausamos nuevos inicios de sesión y generaciones de este publisher. NO repetimos contraseñas, CAPTCHA ni Generate."));
+   const link=document.createElement("a");link.className="btn";link.href="https://myaccount.google.com/security";link.target="_blank";link.rel="noopener noreferrer";link.textContent="ABRIR SEGURIDAD DE GOOGLE";
+   target.append(link);
+   target.append(udText("p","udmuted","Revisá la actividad de la cuenta desde Safari y completá únicamente los pasos oficiales que Google te indique. Si la cuenta no tiene una alerta que reconozcas, revisá la situación antes de autorizar otra sesión."));
+   const ack=document.createElement("button");ack.type="button";ack.className="btn";ack.textContent="YA REVISÉ LA SEGURIDAD · PERMITIR NUEVA CONEXIÓN";
+   ack.onclick=async()=>{
+     ack.disabled=true;
+     try{
+      const r=await fetch(endpoint,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({publisher_id:publisherId,action:"acknowledge_security"})});
+      const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||"No se pudo registrar la revisión");
+      if(activeUnifiedPublisher===publisherId)await udFlowConnection(publisherId,accessToken);
+     }catch(e){ack.disabled=false;target.append(udText("p","udmuted",String(e.message||e)))}
+   };
+   target.append(ack);
+   return;
+  }
   if(state==="capture_requested"){
    target.append(udText("strong","","VALIDANDO Y GUARDANDO LA SESIÓN…"));
    target.append(udText("p","udmuted","Recibimos la confirmación. El ejecutor está verificando el proyecto y guardando la autenticación. No vuelvas a iniciar sesión ni pulses el botón otra vez."));
