@@ -12,6 +12,9 @@ on:
       - "scripts/check-flow-auth-persistence.mjs"
       - "scripts/flow-security-signals.mjs"
       - "scripts/check-google-security-guard.mjs"
+      - "scripts/flow-unusual-cooldown.mjs"
+      - "scripts/check-flow-unusual-cooldown.mjs"
+      - "docs/FLOW_COOLDOWN_EDGE_CONTRACT_2026-11-09.md"
       - "scripts/dispatch-one-flow-cold-check.mjs"
       - "scripts/verify-flow-auth-cold-restore.mjs"
       - ".github/workflows/flow-auth-cold-restore.yml"
@@ -64,6 +67,8 @@ jobs:
           node --check scripts/flow-security-signals.mjs
           node --check scripts/verify-flow-auth-cold-restore.mjs
           node scripts/check-google-security-guard.mjs
+          node --check scripts/flow-unusual-cooldown.mjs
+          node scripts/check-flow-unusual-cooldown.mjs
           node --check scripts/dispatch-one-flow-cold-check.mjs
           node scripts/check-novnc-ipad-touch.mjs
           node --check scripts/bootstrap-flow-account-v2.mjs
