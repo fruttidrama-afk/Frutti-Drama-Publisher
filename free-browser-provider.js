@@ -4038,6 +4038,9 @@ function resetNoChargeBackoff(db,row){
 }
 function repairLegacyBackoffAfterConfirmedSuccess(db){
   const key='repair:provider-backoff-after-confirmed-success-v1';
+  // This one-time old-state migration must never shorten an ACTIVE modern
+  // provider-wide cooldown that has positive Flow no-charge evidence.
+  if(meta(db,'flow:lastNoChargeConfirmedAt','')){setMeta(db,key,'done');return}
   if(meta(db,key,'')==='done')return;
   try{
     const globalStreak=Math.max(0,Number(meta(db,'flow:noChargeStreak:provider','0'))||0);
@@ -4098,6 +4101,7 @@ function repairLegacyBackoffAfterConfirmedSuccess(db){
 
 function repairProviderBackoffAfterConfirmedSuccessV2(db){
   const key='repair:provider-backoff-after-confirmed-success-v2';
+  if(meta(db,'flow:lastNoChargeConfirmedAt','')){setMeta(db,key,'done');return}
   if(meta(db,key,'')==='done')return;
   try{
     const success=db.prepare("SELECT itemId,updatedAt,createdAt FROM factory_generations WHERE credits>0 AND status IN ('review','completed') ORDER BY updatedAt DESC LIMIT 1").get();
