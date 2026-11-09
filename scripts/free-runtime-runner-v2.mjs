@@ -4,6 +4,7 @@ import os from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { chromium } from 'playwright-core';
+import { classifyFlowSecuritySignal } from './flow-security-signals.mjs';
 
 const ORCH=String(process.env.FREE_RUNTIME_ORCHESTRATOR_URL||'https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-free-runtime').replace(/\/$/,'');
 const AUD='publisher-factory-free-runtime';
@@ -207,9 +208,13 @@ async function validateFlowAuthAndRefreshState(projectUrl){
     await sleep(3000);
     const url=String(page.url());
     const body=String(await page.locator('body').innerText({timeout:10000}).catch(()=>'')).slice(0,12000);
-    const login=/(?:accounts\.google\.com|ServiceLogin|signin\/v2|\/about(?:$|[?#]))/i.test(url)
-      ||/(?:sign in to continue|email or phone|enter your password|iniciar sesi[oó]n|accede a tu cuenta|verify it.s you)/i.test(body);
-    if(login||!url.includes('/project/'+expectedId))throw new Error('FLOW_AUTH_REQUIRED_OR_PROJECT_INACCESSIBLE');
+    const signal=classifyFlowSecuritySignal(url,body);
+    // Do not keep probing a Google identity challenge or Flow's own abuse
+    // screen; never attempt a CAPTCHA, 2FA, or policy challenge automatically.
+    if(signal==='security_challenge')throw new Error('FLOW_SECURITY_CHALLENGE_MANUAL_REQUIRED');
+    if(signal==='unusual_activity')throw new Error('FLOW_UNUSUAL_ACTIVITY_MANUAL_REVIEW_REQUIRED');
+    if(signal==='login_required')throw new Error('FLOW_AUTH_REQUIRED_OR_PROJECT_INACCESSIBLE');
+    if(!url.includes('/project/'+expectedId))throw new Error('FLOW_AUTH_REQUIRED_OR_PROJECT_INACCESSIBLE');
     const cookies=await ctx.cookies(['https://flow.google.com','https://accounts.google.com']);
     const hasGoogleSession=cookies.some(c=>
       /(^|\.)google\.com$/i.test(String(c.domain||''))&&
@@ -353,6 +358,11 @@ try{
     if(child.exitCode!==null){
       const tail=fs.existsSync(LOG)?fs.readFileSync(LOG,'utf8').slice(-13000):'';
       const permanent=/SHOW_BIBLE_REQUIRED|CREATIVE_BIBLE_REQUIRED|CONFIG_SCHEMA_INVALID|PUBLISHER_CONFIG_INVALID/.test(tail);
+      const googleChallenge=/FLOW_AUTH_CHALLENGE|FLOW_SECURITY_CHALLENGE|FLOW_UNUSUAL_ACTIVITY|FLOW_AUTH_REQUIRED_DURING_RENDER|FLOW_LOGIN_REQUIRED/.test(tail);
+      if(googleChallenge){
+        childFatal='FLOW_SECURITY_REVIEW_REQUIRED_NO_AUTOMATIC_RETRY';
+        console.error(childFatal,'exit_code='+String(child.exitCode));break;
+      }
       if(permanent){
         childFatal='RUNTIME_CONFIGURATION_INVALID_BLOCKED_NO_RESTART';
         console.error(childFatal,'exit_code='+String(child.exitCode));break;
@@ -426,7 +436,7 @@ try{
   const message=String(err?.stack||err).slice(0,1800);
   console.error(message);
   if(CURRENT){
-    const blocked=/GITHUB_OIDC|MIGRATION_PROFILE_REQUIRED|AUTH_REQUIRED|MISSING_|FLOW_AUTH|FLOW_EXPECTED|SHOW_BIBLE_REQUIRED|AUTH_VAULT/i.test(message);
+    const blocked=/GITHUB_OIDC|MIGRATION_PROFILE_REQUIRED|AUTH_REQUIRED|MISSING_|FLOW_AUTH|FLOW_EXPECTED|SHOW_BIBLE_REQUIRED|AUTH_VAULT|FLOW_SECURITY_CHALLENGE|FLOW_UNUSUAL_ACTIVITY|GOOGLE_SECURITY/i.test(message);
     await callback({
       obligation_id:CURRENT.obligation.id,
       claim_id:CURRENT.claim_id,
