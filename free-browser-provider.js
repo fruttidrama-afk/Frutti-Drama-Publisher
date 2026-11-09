@@ -3937,27 +3937,9 @@ function normalizeOutOfOrderAmbiguous(db){
   }
 }
 function noChargeDelayMs(streak){return flowNoChargeDelayMs(streak)}
-function resetFlowTransientCaches(db,row){
-  const key='flow:transientCacheResetV1:'+row.id;
-  if(meta(db,key,'')==='done')return false;
-  const dirs=[
-    path.join(PROFILE_DIR,'Default','Cache'),
-    path.join(PROFILE_DIR,'Default','Code Cache'),
-    path.join(PROFILE_DIR,'Default','GPUCache'),
-    path.join(PROFILE_DIR,'Default','Service Worker','CacheStorage'),
-    path.join(PROFILE_DIR,'Default','Service Worker','ScriptCache'),
-    path.join(PROFILE_DIR,'GrShaderCache'),
-    path.join(PROFILE_DIR,'GraphiteDawnCache'),
-    path.join(PROFILE_DIR,'ShaderCache')
-  ];
-  let removed=0;
-  for(const dir of dirs){
-    try{if(fs.existsSync(dir)){fs.rmSync(dir,{recursive:true,force:true});removed++}}catch{}
-  }
-  setMeta(db,key,'done');
-  publish('FLOW_TRANSIENT_CACHE_RESET',{episode:'E'+row.episode,job_id:row.id,removed_paths:removed,message:'Persistent Flow unusual-activity state detected. Non-cookie browser caches were cleared once; Google login cookies and the authenticated account were preserved.'});
-  return true;
-}
+// Flow account's cookies, IndexedDB and browser caches are intentionally
+// left untouched after unusual-activity responses. Clearing them to evade
+// a security challenge is prohibited, and was removed from the runtime.
 function setProviderSecurityHold(db,row,reason){
   // A Google identity challenge or Flow's Unusual Activity warning is not a
   // transport retry. Preserve the asset identity and existing auth vault.
