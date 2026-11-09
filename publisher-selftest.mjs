@@ -42,6 +42,12 @@ must(machine.review?.feedback_interpreter==='semantic-ai','machine SOP semantic 
 must(Array.isArray(manifest.canonical_files)&&manifest.canonical_files.length>=7,'knowledge pack incomplete');
 
 const provider=read('free-browser-provider.js');
+const progressiveCooldown=read('scripts/flow-unusual-cooldown.mjs');
+for(const token of ['30,60,120,240,480,1440','export function flowNoChargeDelayMs','export function flowNoChargeDeadline']){
+ must(progressiveCooldown.includes(token),'progressive global Flow cooldown contract missing '+token);
+}
+must(provider.includes("if(opts.confirmed!==true)"),'no unproven Flow unusual-activity automatic retry');
+must(provider.includes("if(providerCooldown>Date.now())return null"),'account-wide provider pause must gate all episodes');
 const runtimeConfig=read('runtime-config.js');
 for(const [token,label] of [
   ['flow-generate-icon-button','verified Flow submit selector'],
@@ -60,10 +66,9 @@ for(const [token,label] of [
   ['FLOW_DUPLICATE_REVIEW_MEDIA','duplicate review-media rejection'],
   ["source:'creative-package'",'review metadata preservation'],
   ['let editor=await waitFlowReady(page,30000)','stable Flow composer handoff'],
-  ['FLOW_UNUSUAL_ACTIVITY_OVERNIGHT','24h unusual-activity fallback'],
-  ['30*60*1000','first unusual-activity delay'],
-  ['8*60*60*1000','fifth unusual-activity delay'],
-  ['24*60*60*1000','24h unusual-activity fallback'],
+  ['FLOW_UNUSUAL_ACTIVITY_24H_NOTICE','24h unusual-activity panel event'],
+  ['flowNoChargeDeadline(previousUntil,Date.now(),streak)','tested global monotonic deadline'],
+  ['FLOW_UNUSUAL_ACTIVITY_NO_CHARGE_PROVIDER_COOLDOWN','verified no-charge cooldown state'],
   ['GEMINI_FEEDBACK_URL','semantic AI feedback surface'],
   ['FEEDBACK_AI_INTERPRET_START','semantic REDO interpreter'],
   ['creative_rewrite','semantic creative replacement decision'],
