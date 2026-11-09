@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/bootstrap-flow-earth-v2.yml"
       - "ops/trigger-flow-earth-v2.txt"
   workflow_dispatch:
 
@@ -14,7 +13,7 @@ permissions:
 
 concurrency:
   group: publisher-flow-earth-bootstrap-v2
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   bootstrap:
@@ -28,6 +27,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24.14.0'
+      - name: Verify live owner-initiated reconnection request
+        run: node scripts/bootstrap-flow-account-v2.mjs authorize
       - name: Install browser bridge
         shell: bash
         run: |
