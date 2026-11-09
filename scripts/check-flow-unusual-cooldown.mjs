@@ -24,6 +24,11 @@ for(const [label,ok] of [
  ['Explicit proof only',provider.includes("opts.confirmed!==true")&&provider.includes("confirmed:true,reason:'Flow UI reported unusual activity")],
  ['Monotonic deadline linked to tested module',provider.includes("flowNoChargeDeadline(previousUntil,Date.now(),streak)")],
  ['Provider never bypasses even manual Submit and REDO',provider.includes("if(providerCooldown>Date.now())return null")&&provider.includes("if(until>Date.now())")],
+ ['Legacy cooldown repair cannot reset a newer confirmed no-charge window',(()=>{
+  const old=provider.slice(provider.indexOf("function repairLegacyBackoffAfterConfirmedSuccess(db){"),provider.indexOf("function repairProviderBackoffAfterConfirmedSuccessV2(db){"));
+  const newer=provider.slice(provider.indexOf("function repairProviderBackoffAfterConfirmedSuccessV2(db){"),provider.indexOf("function normalizeLiveNoChargeCooldown(db){"));
+  return old.includes("if(meta(db,'flow:lastNoChargeConfirmedAt',''))")&&newer.includes("if(meta(db,'flow:lastNoChargeConfirmedAt',''))");
+ })()],
  ['One submit intent lock still present',provider.includes("reserveGenerateBoundary(db,row,genId)")],
  ['Explicit post-submit no-charge detection runs BEFORE generic security challenge guard',(()=>{
    const fragment=provider.slice(provider.indexOf("async function waitGenerationStarted("),provider.indexOf("function firstFreshRendered("));
