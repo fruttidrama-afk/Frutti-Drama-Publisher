@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import { chromium } from 'playwright-core';
 
 const KEY=String(process.env.TARGET_KEY||'').trim().toLowerCase();
 if(!['earth','dinnie','frutti'].includes(KEY))throw new Error('TARGET_KEY_INVALID');
@@ -68,6 +67,7 @@ async function waitSignal(){
   throw new Error('CAPTURE_SIGNAL_TIMEOUT');
 }
 async function capture(){
+  const { chromium }=await import('playwright-core');
   const cfg=fs.existsSync(CONFIG)?JSON.parse(fs.readFileSync(CONFIG,'utf8')):await getConfig();
   const browser=await chromium.connectOverCDP('http://127.0.0.1:9222',{timeout:15000});
   try{
