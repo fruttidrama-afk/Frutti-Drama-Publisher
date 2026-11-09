@@ -3960,56 +3960,46 @@ function resetFlowTransientCaches(db,row){
   publish('FLOW_TRANSIENT_CACHE_RESET',{episode:'E'+row.episode,job_id:row.id,removed_paths:removed,message:'Persistent Flow unusual-activity state detected. Non-cookie browser caches were cleared once; Google login cookies and the authenticated account were preserved.'});
   return true;
 }
+function setProviderSecurityHold(db,row,reason){
+  // A Google identity challenge or Flow's Unusual Activity warning is not a
+  // transport retry. Preserve the asset identity and existing auth vault.
+  // Never attempt CAPTCHA/2FA, switch networks, clear device identity, or
+  // click Generate again without explicit operator review.
+  const code=/^[A-Z0-9_]{8,90}$/.test(String(reason||''))?reason:'FLOW_SECURITY_MANUAL_REVIEW_REQUIRED';
+  setMeta(db,'flow:securityHold','operator_review_required');
+  setMeta(db,'flow:securityHoldReason',code);
+  setMeta(db,'flow:state','REQUIERE_VERIFICACIÓN');
+  setMeta(db,'flow:currentStep','security-hold-human-review');
+  setMeta(db,'flow:message','Google Flow requiere revisión humana de autenticación o actividad inusual. No se enviará otro Generate automáticamente.');
+  if(row?.id){
+    const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row;
+    const prior=lifecycle(db,fresh)||{};
+    const stamp=now();
+    db.prepare("UPDATE factory_items SET status='manual_hold',error=?,nextTry=0,lastProgressAt=?,updatedAt=? WHERE id=?")
+      .run(code,stamp,stamp,fresh.id);
+    setLifecycle(db,fresh,'FLOW_SECURITY_OPERATOR_HOLD',{
+      ...prior,last_error:code,automatic_submit_forbidden:true,
+      security_review_required:true,held_at:stamp
+    });
+  }
+  publish('FLOW_SECURITY_HOLD',{
+    reason:code,episode:row?.episode?('E'+row.episode):null,
+    message:'Security/anti-abuse signal detected; no automatic Google login, Generate retry, or browser-cache reset is permitted.'
+  });
+}
 function scheduleNoChargeRetry(db,row,opts={}){
-  const fresh=db.prepare("SELECT * FROM factory_items WHERE id=?").get(row.id)||row;
+  // Historical versions automatically retried a Flow "Unusual Activity /
+  // not charged" rejection up to 6 times, even resetting browser caches.
+  // This can worsen account-security prompts. Replace that behavior with a
+  // persistent provider-wide review hold, preserving the original episode.
+  const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row;
   const run=String(opts.run||lifecycle(db,fresh)?.generation_id||fresh.providerRunId||'');
-  if(run)try{db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Google Flow explicitly reported no retained generation and no charge.',updatedAt=? WHERE itemId=? AND runId=?").run(now(),fresh.id,run)}catch{}
-
-  // IMPORTANT: Unusual Activity belongs to the Google/Flow provider account,
-  // not to an episode. The streak and cooldown are therefore provider-wide.
-  const providerStreakKey='flow:noChargeStreak:provider';
-  const streak=Math.max(0,Number(meta(db,providerStreakKey,'0'))||0)+1;
-  setMeta(db,providerStreakKey,String(streak));
-  // Keep a row counter only for diagnostics; it never controls retry timing.
-  setMeta(db,'flow:noChargeStreak:'+fresh.id,String(Math.max(0,Number(meta(db,'flow:noChargeStreak:'+fresh.id,'0'))||0)+1));
-
-  if(streak>=4)resetFlowTransientCaches(db,fresh);
-  const delay=noChargeDelayMs(streak);
-  const requestedRetryAt=Date.now()+delay;
-  const existingUntil=Number(meta(db,'flow:transientCooldownUntil','0'))||0;
-  // Provider cooldown is monotonic until a hard generation start resets it.
-  // A stale/older row may NEVER shorten a newer cooldown.
-  const retryAt=Math.max(existingUntil,requestedRetryAt);
-  const overnight=streak>=6;
-  setMeta(db,'flow:transientCooldownUntil',String(retryAt));
-
-  db.prepare("UPDATE factory_items SET status='draft',providerRunId=NULL,error=?,nextTry=?,runtimeAttemptCount=runtimeAttemptCount+1,lastProgressAt=?,updatedAt=? WHERE id=?")
-    .run(overnight?'FLOW_UNUSUAL_ACTIVITY_OVERNIGHT — same episode preserved; next automatic retry after 24h.':'FLOW_NO_CHARGE — exponential provider backoff active; same episode remains head-of-line.',retryAt,now(),now(),fresh.id);
-  setLifecycle(db,fresh,overnight?'UNUSUAL_ACTIVITY_OVERNIGHT':'TRANSIENT_NO_CHARGE_RETRY',{
-    prior_generation_id:run,
-    submit_mode:String(opts.submitMode||''),
-    evidence:String(opts.evidence||opts.reason||''),
-    provider_no_charge_streak:streak,
-    retry_at:new Date(retryAt).toISOString(),
-    provider_cooldown_until:new Date(retryAt).toISOString(),
-    automatic_submit_forbidden:false,
-    protective_overnight_wait:overnight
-  });
-  setMeta(db,'flow:state',overnight?'PAUSA PROTECTORA':'CONECTADO');
-  setMeta(db,'flow:message',overnight
-    ?'Google Flow rechazó repetidamente por actividad inusual. El proveedor completo queda en espera 24h; E'+fresh.episode+' sigue pendiente.'
-    :'Google Flow rechazó sin cargo. Backoff global del proveedor activo: 30m → 1h → 2h → 4h → 8h → 24h.');
-  publish(overnight?'FLOW_UNUSUAL_ACTIVITY_OVERNIGHT':'TRANSIENT_NO_CHARGE_RETRY',{
-    episode:'E'+fresh.episode,
-    job_id:fresh.id,
-    retry_at:new Date(retryAt).toISOString(),
-    provider_no_charge_streak:streak,
-    cooldown_minutes:Math.round((retryAt-Date.now())/60000),
-    message:overnight
-      ?'Provider-wide unusual-activity streak crossed the 10h ceiling. No episode or REDO may submit for 24h.'
-      :'Provider-wide unusual-activity backoff is active. No episode or REDO may bypass it.'
-  });
-  return retryAt;
+  if(run)try{
+    db.prepare("UPDATE factory_generations SET credits=0,status='no_generation',error='Google Flow explicitly reported no retained generation and no charge.',updatedAt=? WHERE itemId=? AND runId=?")
+      .run(now(),fresh.id,run);
+  }catch{}
+  setProviderSecurityHold(db,fresh,'FLOW_UNUSUAL_ACTIVITY_MANUAL_REVIEW_REQUIRED');
+  return null;
 }
 function resetNoChargeBackoff(db,row){
   // A confirmed retained render is definitive evidence that the Flow account
@@ -4168,6 +4158,22 @@ function repairProviderBackoffAfterConfirmedSuccessV2(db){
 function normalizeLiveNoChargeCooldown(db){
   try{
     const rows=db.prepare("SELECT * FROM factory_items WHERE status='draft' AND (error LIKE 'FLOW%NO_CHARGE%' OR error LIKE 'FLOW_UNUSUAL_ACTIVITY_%') ORDER BY episode").all();
+    // Migrate legacy automatic retries to a safe hold exactly once, instead
+    // of erasing cookies/caches or replaying an already rejected Generate.
+    if(rows.length){
+      for(const row of rows){
+        db.prepare("UPDATE factory_items SET status='manual_hold',error='FLOW_UNUSUAL_ACTIVITY_MANUAL_REVIEW_REQUIRED',nextTry=0,updatedAt=? WHERE id=?")
+          .run(now(),row.id);
+        setLifecycle(db,row,'FLOW_SECURITY_OPERATOR_HOLD',{
+          ...(lifecycle(db,row)||{}),
+          security_review_required:true,automatic_submit_forbidden:true,held_at:now()
+        });
+      }
+      setMeta(db,'flow:securityHold','operator_review_required');
+      setMeta(db,'flow:securityHoldReason','FLOW_UNUSUAL_ACTIVITY_MANUAL_REVIEW_REQUIRED');
+      publish('FLOW_SECURITY_LEGACY_AUTORETRY_STOPPED',{count:rows.length,message:'Legacy Flow unusual-activity retries quarantined; no browser-cache reset or new Generate.'});
+      return;
+    }
 
     // One-time migration from the old per-episode streak model. Never resurrect
     // legacy item streaks after a confirmed provider recovery.
@@ -4234,6 +4240,9 @@ function seedTransientCooldownFromRecentNoCharge(db){
 
 
 function productionCandidate(db){
+  // Global security hold survives process restarts, prevents new prompts and
+  // even human REDO from bypassing a Google identity/account-safety event.
+  if(meta(db,'flow:securityHold','')==='operator_review_required')return null;
   // Recovery always wins, but out-of-order ambiguous rows are quarantined by
   // normalizeOutOfOrderAmbiguous() before this function runs.
   const inflight=db.prepare("SELECT * FROM factory_items WHERE status='generating' ORDER BY episode LIMIT 1").get();
@@ -4400,6 +4409,13 @@ async function runProvider(){
     // If a token is present, this worker tick ALWAYS returns after recovery:
     // successful or pending. It can never fall through to Generate.
     const migrated=await migrateProfileOnce(db);if(!migrated)return;
+    if(meta(db,'flow:securityHold','')==='operator_review_required'){
+      publish('FLOW_SECURITY_HOLD_ACTIVE',{
+        reason:meta(db,'flow:securityHoldReason','FLOW_SECURITY_MANUAL_REVIEW_REQUIRED'),
+        message:'Google account security review pending. Skipping all Google Flow generation and recovery visits.'
+      });
+      return;
+    }
     const goldenRecovery=await recoverGoldenRunIfRequested(db);
     if(goldenRecovery.needed)return;
 
@@ -4448,6 +4464,10 @@ async function runProvider(){
     publish(priorityRetry?'REVIEW_RETRY_PICKED':(manualExtraAuthorized?'MANUAL_EXTRA_PICKED':'PRODUCTION_PICKED'),{episode:'E'+row.episode,job_id:row.id,used_credit_cycle:used,remaining_credit_cycle:Math.max(0,creditGate.target-used),credit_cycle_id:creditGate.cycle?.id||null,daily_limit_bypassed:priorityRetry||manualExtraAuthorized});await processRow(db,row);
   }catch(err){
     const message=compact(err?.stack||err?.message||err,900);
+    if(db&&/FLOW_(?:SECURITY_CHALLENGE|AUTH_CHALLENGE|UNUSUAL_ACTIVITY|AUTH_REQUIRED)|GOOGLE_SECURITY/i.test(message)){
+      try{setProviderSecurityHold(db,row,'FLOW_SECURITY_MANUAL_REVIEW_REQUIRED')}catch{}
+      return;
+    }
     try{if(db&&row){const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row,lc=lifecycle(db,fresh)||{},state=String(lc.state||'').toUpperCase(),attempts=Number(fresh.runtimeAttemptCount||0)+1,beforeGenerate=!AFTER_GENERATE.has(state)&&!AMBIGUOUS.has(state),browserRetrievalCrash=/Target crashed|Target closed|Browser closed/i.test(message)&&(AFTER_GENERATE.has(state)||AMBIGUOUS.has(state)),baseBackoff=browserRetrievalCrash?5000:(beforeGenerate?10000:60000),capBackoff=browserRetrievalCrash?15000:(beforeGenerate?5*60*1000:60*60*1000),backoff=Math.min(capBackoff,baseBackoff*Math.pow(2,Math.min(attempts-1,6))),nextTry=Date.now()+backoff;if(/FLOW_TRANSIENT_NO_CHARGE/.test(message)){
   const run=String(lc?.generation_id||fresh.providerRunId||'');
   scheduleNoChargeRetry(db,fresh,{run,evidence:message,reason:'exception-no-charge'});
