@@ -383,7 +383,10 @@ try{
   // validation. If Google invalidates a session, retain the last-known-good
   // vault and block production; never overwrite it with a signed-out state.
   let authenticatedAfterRun=false;
-  if(kind==='generation'){
+  // A security challenge, missing credits, ambiguity or crashed worker is not
+  // permission to open Google in ANOTHER fresh browser. Recheck only after a
+  // real new generation/review result, when refreshing auth is useful.
+  if(kind==='generation'&&success){
     try{
       await validateFlowAuthAndRefreshState(expectedProjectUrl);
       authenticatedAfterRun=true;
