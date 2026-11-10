@@ -669,7 +669,26 @@ function extractCollapsedCurrentStory(input) {
  // Also handle collapsed inline headings, e.g. "... STORY: ... CAMERA: ...",
  // when the prompt is copied as one long paragraph from Flow.
  stop(/\s+(?:CAMERA|C[AÁ]MARA|LIGHTING|ILUMINACI[OÓ]N|CINEMATOGRAPHY|VISUAL\s+STYLE|OUTPUT(?:\s+CONSTRAINTS?)?|RENDER|ANTI.GLITCH|NEGATIVE\s+PROMPT|SOUND\s+DESIGN|AUDIO|DIALOGUE(?:\s+RULES)?|CHARACTER\s+(?:LOCK|REFERENCES?|SHEETS?)|PRODUCTION\s+NOTES|TECHNICAL\s+INSTRUCTIONS|SHOT\s+PLAN|SCENE\s+PLAN|BEATS?\s*[/&]\s*TIMING|NARRATIVE\s+NOVELTY\s+LOCK|STRICT\s+ANTI.GLITCH|TIMELINE|EXACT\s+10.SECOND|CONSTRAINTS?)\s*[:：]/gi);
- const offset=cuts.length?Math.min(...cuts):narrative.length;
+
+ // Generic noncanonical headings and paragraph separators.
+ stop(/\n\s*(?:#{1,6}\s*)?[\p{L}][\p{L}\d /&+().,-]{2,84}\s*[:：]\s*/giu);
+ stop(/[ \t]+[A-ZÁÉÍÓÚÜÑ0-9]{2,}(?:[ /&+().-]+[A-ZÁÉÍÓÚÜÑ0-9]{2,}){1,8}\s*[:：]\s*/g);
+ stop(/\n\s*(?:[-•*]{1,3}|[—–-]{2,})\s+[\p{L}]/giu);
+ stop(/[ \t]+(?:---|——|––)\s+[\p{L}]/giu);
+ for(const m of narrative.matchAll(/\n[ \t]*\n/g)){
+  const before=narrative.slice(0,m.index).trim();
+  if(before.length>=25&&before.length<1500&&/[.!?…]["'»”]?$/u.test(before))cuts.push(m.index);
+ }
+ let offset=cuts.length?Math.min(...cuts):narrative.length;
+ if(offset>1800){
+  // Last-resort: the first narrative line is allowed only when it forms a
+  // complete sentence, has no technical imperative and is under 1100 chars.
+  const first=narrative.trimStart().split("\n")[0].trim();
+  if(first.length>=30&&first.length<=1100&&/[.!?…]["'»”]?$/u.test(first)
+    &&!/^(?:CAMERA|CHARACTER|CONSTRAINT|AUDIO|BEAT|SHOT|SCENE|VISUAL|NARRATIVE NOVELTY|OUTPUT|PREVIOUS|USE\b|KEEP\b|MAKE\b|ONLY\b|NEVER\b|THE CAMERA\b|THE SHOT\b|TECHNICAL\b|MAINTAIN\b|PRESERVE\b|ENFORCE\b|RENDER\b|ENSURE\b|GENERATE\b|CINEMATIC\b|CINEMATOGRAPHY\b)/i.test(first))
+     offset=narrative.indexOf(first)+first.length;
+ }
+
  let story=narrative.slice(0,offset).replace(/^\s*[-•*]\s*/,"").replace(/\s+/g," ").trim();
  // Be conservative: a 10-second current STORY is typically 1–3 sentences.
  // If truly >1800 without a verifiable heading, do not invent a boundary.
