@@ -124,12 +124,12 @@ function sceneConversation(story,actor){
  const parts=String(story).split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÜÑ])|;\s*/).filter(Boolean);
  const romance=/\b(?:romantic|romance|intimate|intimately|affectionate|flirt(?:ing)?|sweet moment|love|rom[aá]ntic(?:o|a|os|as|amente)|romantically|[ií]ntim[oa]s?|coquetea(?:n|ndo)?|enamorad[oa]s?)\b/i;
  const talking=/\b(?:conversation|talk(?:ing)?|chat(?:ting)?|speak(?:ing)?|discuss(?:ing)?|conversaci[oó]n|charla(?:n|ndo)?|convers(?:an|ando)?|habla(?:n|ndo)?|encuentro|moment|momento)\b/i;
- const explicitPair=/\b(?:entre|between|with|con)\b/i;
+ const verifiedPair=/\b(?:Uva(?: Reyes)?\s+(?:and|y|with|con)\s+Lim[oó]n(?: Duarte)?|Lim[oó]n(?: Duarte)?\s+(?:and|y|with|con)\s+Uva(?: Reyes)?)\b|\b(?:Uva(?: Reyes)?\s+(?:conversa|habla|charla)\s+con\s+Lim[oó]n(?: Duarte)?|Lim[oó]n(?: Duarte)?\s+(?:conversa|habla|charla)\s+con\s+Uva(?: Reyes)?)\b/i;
  const candidates=[];
  for(const part of parts){
   const absent=(name)=>{const p=part.toLocaleLowerCase("es"),n=name.toLocaleLowerCase("es");return p.includes("sin "+n)||p.includes("without "+n)||p.includes(n+" no está")||p.includes(n+" is absent")||p.includes(n+" no aparece");};
   const involved=names(part).filter(n=>n!==actor&&!absent(n));
-  if(involved.length>=2&&(talking.test(part)||romance.test(part)||explicitPair.test(part))){
+  if(involved.length>=2&&verifiedPair.test(part)&&(talking.test(part)||romance.test(part))){
    candidates.push({pair:involved.slice(0,2),romantic:romance.test(part),text:part,score:(romance.test(part)?8:0)+(talking.test(part)?4:0)});
   }
  }
@@ -460,14 +460,18 @@ function proseSceneCopy(prompt){
   [/insulta|humilla|insults?|humiliates?/i,"HUMILLACIÓN CRUEL","humilla",88],
   [/enfrenta|confronts?|encara/i,"ENFRENTAMIENTO DIRECTO","enfrenta",87],
   [/\bbesa\b|\bbesan\b|kisses?/i,"BESO REVELADOR","besa",85],
-  [/reads?|reading|lee|examina|examines?|studies?|reviews?/i,"DOCUMENTO REVELADOR","examina",77],
-  [/muestra|shows?|entrega|hands? over/i,"PRUEBA ENTREGADA","muestra",75],
+  [/reads?|reading|lee/i,"DOCUMENTO REVELADOR","lee",78],
+  [/examina|examines?|studies?|reviews?/i,"DOCUMENTO REVELADOR","examina",77],
+  [/entrega|hands? over/i,"PRUEBA ENTREGADA","entrega",76],
+  [/muestra|shows?/i,"PRUEBA MOSTRADA","muestra",75],
   [/encuentra|encuentran|finds?|found/i,"HALLAZGO INESPERADO","encuentra",72],
   [/ordena|orders?|exige|demands?/i,"ORDEN TERMINANTE","ordena",70],
   [/recibe|receives?/i,"NOTICIA INESPERADA","recibe",66],
   [/esconde|oculta|hides?|conceals?/i,"SECRETO OCULTO","esconde",63],
   [/llora|cries?|sobs?/i,"DOLOR PROFUNDO","llora",58],
-  [/looks? at|stares? at|mira|observa|holds?|sostiene|abre|opens?/i,"ESCENA REVELADORA","observa",52],
+  [/abre|opens?/i,"HALLAZGO ABIERTO","abre",54],
+  [/holds?|sostiene/i,"OBJETO REVELADOR","sostiene",53],
+  [/looks? at|stares? at|mira|observa/i,"ESCENA REVELADORA","observa",52],
   [/speaks?|says?|tells?|whispers?|shouts?|dice|responde|grita/i,"PALABRAS DECISIVAS","habla",48],
   [/enters?|walks? into|walks? in|entra|aparece|arrives?/i,"LLEGADA INESPERADA","aparece",35]
  ];
@@ -502,7 +506,7 @@ function proseSceneCopy(prompt){
     if(!actor)continue;
     const target=names(after).find(n=>n!==actor)||"";
     const obj=objects.find(([re])=>re.test(after))?.[1]||"";
-    if(["examina","muestra","recibe","roba","esconde"].includes(verb)&&!obj)continue;
+    if(["lee","examina","muestra","entrega","recibe","roba","esconde","abre","sostiene"].includes(verb)&&!obj)continue;
     const quote=chunk.match(/[«“"]([^»”"]{10,200})[»”"]/);
     const score=rank+(pre.length?12:0)+(target?5:0)+(obj?4:0)-(chunk.startsWith("Use the attached")?9:0);
     candidates.push({chunk,actor,target,obj,hook,verb,score,order:i,quote:quote?.[1]||""});
@@ -514,7 +518,7 @@ function proseSceneCopy(prompt){
  candidates.sort((a,b)=>b.score-a.score||a.order-b.order);
  const best=candidates[0];if(best.score<55)return null;
  const verb=best.verb;
- const objectFirst=["examina","muestra","recibe","roba","esconde","encuentra","observa"].includes(verb);
+ const objectFirst=["lee","examina","muestra","entrega","recibe","roba","esconde","abre","sostiene","encuentra","observa"].includes(verb);
  const withTarget=best.target?((verb==="habla"?" con ":" a ")+best.target):"";
  const event=best.actor+" "+verb+(objectFirst&&best.obj?" "+best.obj:best.target?withTarget:best.obj?" "+best.obj:"");
  const title=makeTitle(best.hook,event);if(!title)return null;
@@ -539,7 +543,7 @@ export function generateFruttiRecapCopy(fullPrompt){
  const uncertainty=riskyEvent(ev);
  if(uncertainty)return {error:"NARRATIVE_GROUNDING_REQUIRED",detail:uncertainty,episode_excerpt:clean(ev.line).slice(0,500)};
  const copy=narrative(ev,input.story);
- if(!copy)return {error:"EPISODE_ACTION_UNCLEAR",detail:"No pude identificar con certeza quién actúa y a quién afecta. Podés completar el título y la descripción manualmente."};
+ if(!copy)return proseSceneCopy(fullPrompt)||{error:"EPISODE_ACTION_UNCLEAR",detail:"No pude identificar con certeza quién actúa y a quién afecta. Podés completar el título y la descripción manualmente."};
  const originalHook=clean(input.hook).toUpperCase();
  const usable=/^[A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+$/.test(originalHook)&&!/(DRAMA FAMILIAR|NUEVA CRISIS|GIRO IMPACTANTE)/.test(originalHook);
  const title=makeTitle(usable&&ev.rule.key!=="interrupcion_con_contexto"?originalHook:copy.hook,copy.core)||makeTitle(copy.hook,copy.core);
