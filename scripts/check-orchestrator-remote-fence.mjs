@@ -50,4 +50,36 @@ assert.equal(await run([row('LEASE_EXPIRED_REMOTE_RECONCILIATION_REQUIRED','bloc
 assert.equal(await run([row('LEASE_EXPIRED_REMOTE_RECONCILIATION_REQUIRED','blocked','generation','earth')]),false,'one publisher cannot block another');
 assert.equal(await run([row('LEASE_EXPIRED_REMOTE_RECONCILIATION_REQUIRED','blocked','publication')],'dinnie','publication'),true,'ambiguous upload blocks later upload');
 await assert.rejects(()=>run([], 'dinnie','generation',true),/DATABASE_READ_FAILED/);
+// Execute the EXACT Edge publication phase functions with mocked local time.
+// This catches the old bug where a pending YouTube upload could be claimed at
+// 19:00, and a staged video's release vanished after approved_stock reached 0.
+const phaseStart=src.indexOf('function youtubePublicationPhase(');
+const phaseEnd=src.indexOf('\nconst FLOW_BACKOFF_MINUTES',phaseStart);
+assert.ok(phaseStart>0&&phaseEnd>phaseStart,'YouTube two-stage functions are present');
+const phaseSource=src.slice(phaseStart,phaseEnd).replaceAll('p:any','p');
+function evaluatePhase(clock,p){
+ const functions=vm.runInNewContext(phaseSource+'\n({youtubePublicationPhase,publicationDue})',{localClock:()=>clock});
+ return {phase:functions.youtubePublicationPhase(p),due:functions.publicationDue(p)};
+}
+const youtube=(stock)=>({platform:'youtube',timezone:'America/Argentina/Buenos_Aires',approved_stock:stock});
+const facebook=(stock)=>({platform:'facebook',timezone:'America/Argentina/Buenos_Aires',approved_stock:stock,config:{schedule:{posting_times:['19:00']}}});
+for(const [clock,stock,phase,due] of [
+ ['12:29',1,'none',false],['12:30',1,'stage',true],
+ ['12:59',1,'stage',true],['13:00',1,'none',false],
+ ['18:59',1,'none',false],['19:00',1,'release',true],
+ ['19:00',0,'release',true],['23:59',0,'release',true],
+ ['12:30',0,'none',false]
+]){
+ const got=evaluatePhase(clock,youtube(stock));
+ assert.equal(got.phase,phase,'YouTube phase '+clock+' stock='+stock);
+ assert.equal(got.due,due,'YouTube due '+clock+' stock='+stock);
+}
+assert.equal(evaluatePhase('19:00',facebook(0)).due,false,'Facebook needs approved stock');
+assert.equal(evaluatePhase('19:00',facebook(1)).due,true,'Facebook schedule still works');
+assert.match(src,/const youtubePhase=kind==="publication"/,'claim distinguishes YouTube phases');
+assert.match(src,/if\(!q\.data && youtubePhase!=="release"\)\{/,'19:00 may never claim fresh pending upload');
+assert.match(src,/if\(!q\.data && youtubePhase==="release"\)\{/,'19:00 reclaims staged PRIVATE video');
+assert.match(src,/\.eq\("status","blocked"\)\.eq\("last_error","YOUTUBE_PRIVATE_STAGED_WAITING_19"\)/,'only exact staged obligation is eligible');
+console.log('PASS 11 mocked YouTube/Facebook clock-stock cases plus four phase fences; zero remote calls.');
+
 console.log('PASS 11 real Edge guard cases: cross-day, cross-kind, publisher isolation, no-charge and fail-closed; zero remote calls.');
