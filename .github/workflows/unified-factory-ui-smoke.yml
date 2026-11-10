@@ -16,6 +16,8 @@ on:
       - "scripts/check-google-security-guard.mjs"
       - "scripts/flow-unusual-cooldown.mjs"
       - "scripts/check-flow-unusual-cooldown.mjs"
+      - "scripts/check-orchestrator-remote-fence.mjs"
+      - "supabase/functions/publisher-free-runtime/index.ts"
       - "docs/FLOW_COOLDOWN_EDGE_CONTRACT_2026-11-09.md"
       - "scripts/dispatch-one-flow-cold-check.mjs"
       - "scripts/verify-flow-auth-cold-restore.mjs"
@@ -71,6 +73,7 @@ jobs:
           node scripts/check-google-security-guard.mjs
           node --check scripts/flow-unusual-cooldown.mjs
           node scripts/check-flow-unusual-cooldown.mjs
+          node scripts/check-orchestrator-remote-fence.mjs
           node --check scripts/dispatch-one-flow-cold-check.mjs
           node scripts/check-novnc-ipad-touch.mjs
           node --check scripts/bootstrap-flow-account-v2.mjs
