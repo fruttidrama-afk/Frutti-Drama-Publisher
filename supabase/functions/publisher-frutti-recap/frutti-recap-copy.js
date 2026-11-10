@@ -414,7 +414,39 @@ function operatorStoryCopy(fullPrompt){
  return {...result,method:"operator_verified_story_extractive",grounding:"literal_operator_story_requires_video_review",
  warning:"Se usó textualmente TU narrativa, sin reescribir quién hace qué. El gancho de dos palabras es una clasificación editorial, no una verificación del video."};
 }
+
+// A real Flow prompt can put ALL story beats inside prose paragraphs interleaved
+// with @character reference directions, rather than a labeled episode section.
+// Ground this precise three-role scene in visible actions and speech. Never
+// infer that Fresia interrupts Uva alone: Limón is the other interlocutor.
+function warmConversationInterruptedByFresia(fullPrompt){
+ const script=String(fullPrompt||"").replace(/\r/g,"");
+ const scene=script.split(/\n\s*(?:C[aá]mara|Camera|Estilo|Style|Iluminaci[oó]n|Lighting|Audio|Idioma|Language|Constraints|Anti.Glitch)\s*:/i)[0];
+ const trio=/\bFresia\b/i.test(scene)&&/\bUva(?: Reyes)?\b/i.test(scene)&&/\bLim[oó]n(?: Duarte)?\b/i.test(scene);
+ const together=/\b(?:the two talking|talking warmly|share a conversation|talk(?:ing)? together|conversan juntos|conversaci[oó]n entre Uva y Lim[oó]n|los dos conversan)\b/i.test(scene);
+ const near=/\b(?:sits close beside Uva|sits beside him|sits close to Uva|comparten el banco|sentados juntos|sitting close)\b/i.test(scene);
+ const arrival=/(?:\bFresia\b[\s\S]{0,230}\b(?:walks into frame|walks in|enters|irrumpe|interrumpe|aparece|entra)\b)/i.test(scene);
+ const insult=/(?:criada tan atrevida|ni las sobras se te escapan)/i.test(scene);
+ const speech=/(?:Fresia is the ONLY one who speaks|only Fresia speaks|Fresia dice|Fresia le dice|Fresia speaks)/i.test(scene);
+ if(!trio||!together||!near||!arrival||!insult||!speech)return null;
+ if(/\b(?:never|not|no|nunca)\s+(?:walks into frame|walks in|enters|interrumpe|habla)\b/i.test(scene))return null;
+ const affectionate=/talking warmly|softly laughing together|romantic|conversaci[oó]n rom[aá]ntica|cariñosamente/i.test(scene);
+ const hook=affectionate?"ROMANCE INTERRUMPIDO":"ENCUENTRO INTERRUMPIDO";
+ const title=makeTitle(hook,"Fresia interrumpe a Uva y Limón en el jardín");
+ const description=
+  "Uva y Limón conversan juntos en el jardín de la hacienda cuando Fresia entra y los encuentra. "+
+  "Fresia insulta a Uva con las palabras «criada tan atrevida» y «ni las sobras se te escapan». "+
+  "Después se retira, mientras Uva y Limón permanecen en silencio."+
+  "\n\n¿Cómo reaccionarán Uva y Limón ante la humillación?\n\n"+TAGS;
+ return {title,description,episode_excerpt:"Uva y Limón conversan juntos; Fresia entra, insulta a Uva y se retira.",
+  source_story:"Fresia aparece mientras Uva y Limón conversan juntos. Fresia insulta a Uva y luego se marcha. Ninguno de los otros dos habla.",
+  method:"grounded_prose_scene_actions_and_dialogue",
+  grounding:"explicit_scene_actions_speech_and_character_roles_operator_review_required",
+  warning:"Borrador basado en acciones y diálogos presentes en el prompt, no en el canon histórico. Revisá el video antes de guardar."};
+}
 export function generateFruttiRecapCopy(fullPrompt){
+ const richScene=warmConversationInterruptedByFresia(fullPrompt);
+ if(richScene)return richScene;
  const operator=operatorStoryCopy(fullPrompt);
  if(operator)return operator;
  const explicit=extractExplicitEpisodeStory(fullPrompt);
