@@ -825,6 +825,18 @@ function creativePackageDigest(row,title=row?.title,description=row?.description
  return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
 function ensureCopy(row){
+  if(/frutti\s*drama|fruttidrama/i.test(String(CONFIG.identity?.show_name||""))){
+    const title=String(row?.title||""),description=String(row?.description||""),prompt=String(row?.prompt||"");
+    const digest=creativePackageDigest(row);
+    const ledger=db.prepare("SELECT hook,story,prompt,title,description,packageHash FROM factory_creative_packages WHERE packageId=? AND itemId=?")
+      .get(String(row?.creativePackageId||""),String(row?.id||""));
+    if(!title||!description||!prompt||!ledger||String(row.creativePackageHash||"")!==digest||
+      ledger.packageHash!==digest||ledger.hook!==row.hook||ledger.story!==row.story||
+      ledger.prompt!==prompt||ledger.title!==title||ledger.description!==description)
+      throw Error("FRUTTI_CREATIVE_PACKAGE_LEDGER_REQUIRED: title and description may not be reconstructed from the prompt after generation");
+    return row;
+  }
+
  const providers=CONFIG.publication?.providers||[];
  const provider=providers.find(x=>x.type===CONFIG.publication?.selected_provider)||providers[0]||{};
  let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
