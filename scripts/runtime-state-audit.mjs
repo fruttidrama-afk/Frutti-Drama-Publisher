@@ -90,6 +90,9 @@ for(const [name,id] of targets){
    const info=safe(()=>JSON.parse(fs.readFileSync(f,'utf8')),{});
    return{file,present:true,encrypted_envelope:Boolean(info&&info.v===1&&info.iv&&info.tag&&info.data)};
  });
+ // Metadata only: never print OAuth tokens, refresh secrets or account cookies.
+ const authMetaKeys=safe(()=>db.prepare("SELECT key FROM factory_meta WHERE lower(key) LIKE '%oauth%' OR lower(key) LIKE '%youtube%' OR lower(key) LIKE '%facebook%' OR lower(key) LIKE '%token%' ORDER BY key LIMIT 50").all().map(x=>x.key),[]);
+ const unresolvedItems=table('factory_items')?safe(()=>db.prepare("SELECT season,episode,status,CASE WHEN providerRunId IS NOT NULL AND TRIM(providerRunId)<>'' THEN 1 ELSE 0 END has_provider_run,CASE WHEN flowResult IS NOT NULL AND TRIM(flowResult)<>'' THEN 1 ELSE 0 END has_flow_result FROM factory_items WHERE status IN ('generating','manual_hold','failed_after_generate') ORDER BY season,episode LIMIT 40").all().map(x=>({...x,has_provider_run:Boolean(x.has_provider_run),has_flow_result:Boolean(x.has_flow_result)})),[]):[];
  const publication=table('publication_items')?safe(()=>db.prepare("SELECT episode,status,COALESCE(provider,'youtube') provider,CASE WHEN videoId IS NOT NULL AND TRIM(videoId)<>'' THEN 1 ELSE 0 END remote_id,COALESCE(remotePrivacyStatus,'') remote_privacy,scheduledAt,uploadAt,filePath FROM publication_items ORDER BY scheduledAt DESC LIMIT 30").all().map(x=>({episode:x.episode,status:x.status,provider:x.provider,remote_id:Boolean(x.remote_id),remote_privacy:x.remote_privacy,scheduledAt:x.scheduledAt,uploadAt:x.uploadAt,media:x.filePath?(String(x.filePath).includes('://')?'cloud':fs.existsSync(x.filePath)?'local':'missing'):'none'})),[]):[];
  const episodes=table('factory_items')?safe(()=>db.prepare("SELECT season,episode,status,hook,CASE WHEN videoPath IS NOT NULL AND TRIM(videoPath)<>'' THEN 1 ELSE 0 END has_media FROM factory_items ORDER BY season DESC,episode DESC LIMIT 16").all(),[]):[];
  const recovery=table('flow_recovered_assets')?safe(()=>({
@@ -116,6 +119,6 @@ for(const [name,id] of targets){
   const response=await sync.json().catch(()=>({}));
   console.log('UNIFIED_INVENTORY_SYNC',JSON.stringify({name,ok:sync.ok,review:reviewItems.length,stock:stockItems.length,reason:sync.ok?'':String(response.error||sync.status).slice(0,250)}));
  }catch(e){console.log('UNIFIED_INVENTORY_ERROR',JSON.stringify({name,error:String(e?.message||e).slice(0,250)}))}
- console.log('RUNTIME_STATE_AUDIT',JSON.stringify({name,id,bytes:fs.statSync(tar).size,meta,counts,gens,credentials,candidateStatePaths,publication,episodes,recovery,credits}));
- console.log('FLOW_READONLY_AUTH_AUDIT',JSON.stringify(await inspectFlowProfile(root,name,id)));
+ console.log('RUNTIME_STATE_AUDIT',JSON.stringify({name,id,bytes:fs.statSync(tar).size,meta,counts,gens,credentials,authMetaKeys,unresolvedItems,candidateStatePaths,publication,episodes,recovery,credits}));
+ console.log('FLOW_READONLY_AUTH_AUDIT',JSON.stringify(process.env.RUNTIME_AUDIT_NO_FLOW==='1'?{name,skipped:'cold_restore_already_verified'}:await inspectFlowProfile(root,name,id)));
 }
