@@ -221,3 +221,35 @@ assert(!/ROMANCE INTERRUMPIDO|interrumpe a Uva y Limón/.test(unrelatedWitness.t
 const honestTechnicalOnly=generate("Generate one video, vertical 9:16, no subtitles, camera close-up and reference sheets.");
 assert(honestTechnicalOnly.error,"technical-only prompts must remain rejected instead of hallucinating a plot");
 console.log("PASS unlabeled scene prose, physical actions, spoken roles, no false romance or canon contamination");
+
+// REGRESSION: Legacy factory prompt originally embedded hook/story as a two-field
+// contract. Do NOT attempt to infer a different event from surrounding CANON.
+const legacyFlow=[
+ "FRUTTIDRAMA — Season 2, Episode 9. Vertical 9:16, exactly ten seconds.",
+ "CANON / CONTINUITY",
+ "Mango poisoned Banana in a past episode; the poisoning must not be the title.",
+ "EPISODE",
+ "CRIADA ATREVIDA: Fresia interrumpe la conversación entre Uva Reyes y Limón Duarte en el jardín y humilla a Uva con un insulto.",
+ "STRICT ANTI-GLITCH",
+ "No duplicates."
+].join("\n");
+const structured=generate(legacyFlow);
+assert(!structured.error,"legacy EPISODE hook/story must be recognized");
+assert(/^CRIADA ATREVIDA: Fresia interrumpe a Uva y Limón/.test(structured.title),
+ "Never truncate the pair into 'Fresia interrumpe a Uva'");
+assert(structured.description.includes("interrumpe la conversación entre Uva Reyes y Limón Duarte"),
+ "Description must preserve complete source relationship");
+assert(!/Mango envenen/.test(structured.title),"canon must not become current story");
+const legacySuspicion=generate("EPISODE\nSOSPECHA CRECIENTE: Fresia sospecha que Mango pudo haber envenenado a Banana, pero no tiene pruebas.");
+assert(!legacySuspicion.error,"legacy suspicion story must be processed");
+assert(/sospecha/.test(legacySuspicion.title.toLowerCase()),"must not present suspicion as proven poisoning");
+const legacyConfront=generate("EPISODE\nCELOS DECLARADOS: Fresia confronts Uva Reyes about her relationship with Limón Duarte. Uva refuses to compete and insists she will only trust actions, not promises.");
+assert(!legacyConfront.error,"long structured confrontations need a grounded full title");
+assert(/Fresia enfrenta a Uva por su relación con Limón/.test(legacyConfront.title),
+ "Shortening must preserve actor, addressee and explicitly stated third-person motive");
+const witnessedKiss=generate("EPISODE\nBESO REVELADOR: Limón Duarte kisses Uva Reyes in the hacienda garden. Fresia sees the kiss from a distance.");
+assert(witnessedKiss.title.startsWith("BESO REVELADOR: Limón besa a Uva"),"kiss must preserve actor and recipient");
+assert(witnessedKiss.description.includes("Fresia presencia el beso"),"kiss witness must be described in Spanish without invented acts");
+const foundNotInterrupted=generate("EPISODE\nENCUENTRO INESPERADO: Fresia encuentra a Uva y Limón conversando en el jardín.");
+assert(!/interrumpe/.test(foundNotInterrupted.title+" "+foundNotInterrupted.description),"finding the pair must not become an interruption");
+console.log("PASS 2026 legacy hook/story contract and coordinated-person fidelity");
