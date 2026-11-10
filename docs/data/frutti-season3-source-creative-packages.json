@@ -1,0 +1,129 @@
+{
+  "schema": "frutti-source-creative-ideas-v1",
+  "status": "planned_not_generated",
+  "publication_platform": "youtube",
+  "description": "12 stored season 3 hooks and stories combined with separately authored canonical metadata *before future generation*. No MP4 identity or final posted copy is inferred.",
+  "source": "supabase.publisher_runtime_publishers.config.content.initial_episodes",
+  "entries": [
+    {
+      "season": 3,
+      "episode": 1,
+      "original_hook": "NUEVO COMIENZO",
+      "story": "Después del memorial de Banana, Uva Reyes y Limón Duarte deciden darse una oportunidad real como pareja. Bananita los ve juntos y Uva siente por primera vez que puede empezar una nueva etapa.",
+      "publicationHook": "NUEVO COMIENZO",
+      "titleCore": "Uva y Limón se dan otra oportunidad",
+      "descriptionCore": "Después del memorial de Banana, Uva Reyes y Limón Duarte deciden darse una oportunidad real como pareja. Bananita los ve juntos y Uva siente por primera vez que puede empezar una nueva etapa.",
+      "creative_copy_status": "source_authored_plan_not_render_verified"
+    },
+    {
+      "season": 3,
+      "episode": 2,
+      "original_hook": "BESO INTERRUMPIDO",
+      "story": "Uva Reyes y Limón Duarte se besan en el jardín de la hacienda. Fresia aparece inesperadamente, ve el beso y queda visiblemente afectada.",
+      "publicationHook": "BESO INTERRUMPIDO",
+      "titleCore": "Fresia descubre el beso de Uva y Limón",
+      "descriptionCore": "Uva Reyes y Limón Duarte se besan en el jardín de la hacienda. Fresia aparece inesperadamente, ve el beso y queda visiblemente afectada.",
+      "creative_copy_status": "source_authored_plan_not_render_verified"
+    },
+    {
+      "season": 3,
+      "episode": 3,
+      "original_hook": "CELOS DE FRESIA",
+      "story": "Fresia enfrenta a Limón Duarte a solas y le recuerda que tienen un hijo en común. Limón deja claro que será un padre presente, pero que su relación sentimental con Fresia terminó.",
+      "publicationHook": "CELOS REVELADOS",
+      "titleCore": "Limón confirma el fin con Fresia",
+      "descriptionCore": "Fresia enfrenta a Limón Duarte a solas y le recuerda que tienen un hijo en común. Limón deja claro que será un padre presente, pero que su relación sentimental con Fresia terminó.",
+      "creative_copy_status": "source_authored_plan_not_render_verified"
+    },
+    {
+      "season": 3,
+      "episode": 4,
+      "original_hook": "DUDA DE UVA",
+      "story": "Uva Reyes escucha una parte de la conversación entre Fresia y Limón Duarte y teme volver a quedar atrapada en un triángulo amoroso. Limón intenta explicarle que eligió estar con ella.",
+      "publicationHook": "DUDA AMOROSA",
+      "titleCore": "Uva teme volver al triángulo amoroso",
+      "descriptionCore": "Uva Reyes escucha una parte de la conversación entre Fresia y Limón Duarte y teme volver a quedar atrapada en un triángulo amoroso. Limón intenta explicarle que eligió estar con ella.",
+      "creative_copy_status": "source_authored_plan_not_render_verified"
+    },
+    {
+      "season": 3,
+      "episode": 5,
+      "original_hook": "LÍMITE FINAL",
+      "story": "Limón Duarte pone un límite definitivo a Fresia: pueden criar a su hijo juntos, pero no volverán a ser pareja. Fresia contiene la humillación y decide no mostrar cuánto le dolió.",
+      "publicationHook": "LÍMITE FINAL",
+      "titleCore": "Limón cierra la puerta a Fresia",
+      "descriptionCore": "Limón Duarte pone un límite definitivo a Fresia: pueden criar a su hijo juntos, pero no volverán a ser pareja. Fresia contiene la humillación y decide no mostrar cuánto le dolió.",
+      "creative_copy_status": "source_authored_plan_not_render_verified"
+    },
+    {
+      "season": 3,
+      "episode": 6,
+      "original_hook": "FRESIA CONTRAATACA",
+      "story": "Fresia le dice a Uva Reyes que Limón siempre estará unido a ella por su hijo. Uva se niega a competir y le responde que la confianza se demuestra con hechos.",
+      "publicationHook": "FRESIA CONTRAATACA",
+      "titleCore": "Uva rechaza competir por Limón",
+      "descriptionCore": "Fresia le dice a Uva Reyes que Limón siempre estará unido a ella por su hijo. Uva se niega a competir y le responde que la confianza se demuestra con hechos.",
+      "creative_copy_status": "source_authored_plan_not_render_verified"
+    },
+    {
+      "season": 3,
+      "episode": 7,
+      "original_hook": "PROMESA DE LIMÓN",
+      "story": "Limón Duarte busca a Uva Reyes y le promete que no repetirá las mentiras del pasado. Uva acepta seguir con la relación, pero le exige transparencia absoluta.",
+      "publicationHook": "PROMESA SINCERA",
+      "titleCore": "Limón promete transparencia a Uva",
+      "descriptionCore": "Limón Duarte busca a Uva Reyes y le promete que no repetirá las mentiras del pasado. Uva acepta seguir con la relación, pero le exige transparencia absoluta.",
+      "creative_copy_status": "source_authored_plan_not_render_verified"
+    },
+    {
+      "season": 3,
+      "episode": 8,
+      "original_hook": "SECRETO ESCUCHADO",
+      "story": "Don Melón escucha a Fresia admitir que todavía siente algo por Limón Duarte. Sin intervenir todavía, comprende que el nuevo equilibrio de la hacienda puede romperse.",
+      "publicationHook": "SECRETO ESCUCHADO",
+      "titleCore": "Don Melón escucha confesar a Fresia",
+      "descriptionCore": "Don Melón escucha a Fresia admitir que todavía siente algo por Limón Duarte. Sin intervenir todavía, comprende que el nuevo equilibrio de la hacienda puede romperse.",
+      "creative_copy_status": "source_authored_plan_not_render_verified"
+    },
+    {
+      "season": 3,
+      "episode": 9,
+      "original_hook": "ADVERTENCIA DE MELÓN",
+      "story": "Don Melón confronta a Fresia y le exige que no destruya la relación entre Uva Reyes y Limón Duarte. Fresia asegura que no hará nada, pero su expresión revela conflicto.",
+      "publicationHook": "ADVERTENCIA FAMILIAR",
+      "titleCore": "Don Melón exige respeto a Fresia",
+      "descriptionCore": "Don Melón confronta a Fresia y le exige que no destruya la relación entre Uva Reyes y Limón Duarte. Fresia asegura que no hará nada, pero su expresión revela conflicto.",
+      "creative_copy_status": "source_authored_plan_not_render_verified"
+    },
+    {
+      "season": 3,
+      "episode": 10,
+      "original_hook": "CITA FAMILIAR",
+      "story": "Uva Reyes, Limón Duarte y Bananita comparten una tarde tranquila en el jardín. La escena confirma que están formando una nueva familia mientras Fresia los observa desde lejos.",
+      "publicationHook": "CITA FAMILIAR",
+      "titleCore": "Uva y Limón comparten la tarde con Bananita",
+      "descriptionCore": "Uva Reyes, Limón Duarte y Bananita comparten una tarde tranquila en el jardín. La escena confirma que están formando una nueva familia mientras Fresia los observa desde lejos.",
+      "creative_copy_status": "source_authored_plan_not_render_verified"
+    },
+    {
+      "season": 3,
+      "episode": 11,
+      "original_hook": "CONFESIÓN DE FRESIA",
+      "story": "Fresia admite frente a Uva Reyes que todavía tiene sentimientos por Limón Duarte. Uva no retrocede y le exige que respete la relación que Limón eligió.",
+      "publicationHook": "CONFESIÓN INCÓMODA",
+      "titleCore": "Fresia admite sus sentimientos por Limón",
+      "descriptionCore": "Fresia admite frente a Uva Reyes que todavía tiene sentimientos por Limón Duarte. Uva no retrocede y le exige que respete la relación que Limón eligió.",
+      "creative_copy_status": "source_authored_plan_not_render_verified"
+    },
+    {
+      "season": 3,
+      "episode": 12,
+      "original_hook": "ELECCIÓN DEFINITIVA",
+      "story": "Limón Duarte reafirma delante de Uva Reyes y Fresia que quiere construir su futuro con Uva. Fresia se queda sola con una decisión que puede cambiar la temporada.",
+      "publicationHook": "ELECCIÓN DEFINITIVA",
+      "titleCore": "Limón elige a Uva ante Fresia",
+      "descriptionCore": "Limón Duarte reafirma delante de Uva Reyes y Fresia que quiere construir su futuro con Uva. Fresia se queda sola con una decisión que puede cambiar la temporada.",
+      "creative_copy_status": "source_authored_plan_not_render_verified"
+    }
+  ]
+}
