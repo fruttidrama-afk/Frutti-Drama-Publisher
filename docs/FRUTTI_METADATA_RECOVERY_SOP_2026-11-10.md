@@ -1,27 +1,43 @@
-# FruttiDrama — SOP de metadatos y reconstrucción narrativa
-**Fecha:** 2026-11-10. **Alcance:** estación de conciliación histórica de 31 MP4; solo propuestas y fichas manuales, sin publicaciones ni generación de Flow.
+# FruttiDrama — SOP ACTUAL de conciliación manual y paquetes creativos integrados
+**Versión operativa: 2026-11-10.** Sustituye íntegramente el procedimiento anterior de extracción de narrativa desde prompts.
 
-## 1. Qué hacía la automatización original
-El motor en el repositorio histórico `FruttiDrama-Publisher/queue.js` exporta `metadataFromStory(hook,story,preferredCore)`. Las historias de `factory-flow.js` tenían `row.hook` y `row.story` **antes de generar el prompt**; el productor hacía `EPISODE\n<HOOK>: <STORY>`. Para episodios especiales, `T2_CANON` incluía sinopsis editoriales específicas. No necesitaba interpretar desde cero un prompt cinematográfico arbitrario. Éste es el contrato original que debe respetarse.
+## 1. Decisión irrevocable de producto
+**NO utilizar jamás inteligencia artificial, reglas de extracción, palabras clave, historias inferidas ni lectura semántica de un prompt de Google Flow para fabricar títulos/descripciones de FruttiDrama.**
+El antiguo extractor `story_action_v34` quedó retirado del backend y eliminado de las dos interfaces. La petición obsoleta `action="suggest"` devuelve HTTP 410 `NARRATIVE_EXTRACTOR_RETIRED`.
+El usuario ha indicado expresamente que el método fue disfuncional y no se volverá a emplear, ni en conciliación ni cuando retorne la producción.
 
-## 2. Error de migración
-La estación de reconstrucción nueva recibe el prompt completo copiado de Google Flow, pero no tiene el `row.story` original vinculado de manera verificada al MP4. La función `publisher-frutti-recap` v17–21 había sido reconstruida mediante reglas de palabras/verbos y plantillas. Confundía canon con acción actual, testigos con protagonistas, intentos con hechos, y podía devolver `STORY_NOT_FOUND` ante prosa sin sección `EPISODE`. Las pruebas anteriores eran mayormente prompts con `TRAMA CENTRAL`, por lo que no medían esa falla.
+## 2. Conciliación histórica de los 31 videos
+El operador **ve el MP4 real** y determina temporada/episodio. No asignar identidad por orden de tiles, transcripciones tentativas ni storyboard previo.
+Se ofrecen exactamente dos alternativas editoriales:
+1. **Metadatos históricos originales**: solo cuando hay título y descripción auténticos documentados, recuperarlos sin reinterpretar el prompt; T2E2–T2E13 provienen de `FruttiDrama-Publisher/queue.js:T2_CANON`. La copia canónica podría diferir de una edición posterior de YouTube; cotejar con el video.
+2. **Redacción manual con estructura canónica**: el operador escribe TODO el contenido del título y de la descripción; el panel solo aporta formato/hashtags, nunca adivina sucesos.
 
-## 3. Orden de autoridad y ejecución
-1. **Story confirmado por operadora:** usarlo literalmente para formar la propuesta; preservar acciones, sujeto, objeto, negaciones y participantes.
-2. **Story explícito en el prompt real:** primero `EPISODE\nHOOK: STORY`, luego `TRAMA CENTRAL DE ESTE EPISODIO`, `EPISODE INTENT` y rótulos equivalentes. Extraer solo el episodio actual, nunca biografía/canon.
-3. **Prosa cinematográfica sin rótulos:** extraer acciones observables con evidencia textual, sin transformar coexistencia de personajes en romance ni acusación en hecho consumado. Se puede conservar una cita literal. Si algo es ambiguo se presenta como propuesta para cotejo, no como verdad canónica.
-4. **Respaldo con reglas editoriales:** reutilizar solamente cuando no contradiga las acciones; para escenas no soportadas, no inventar tramas. No ejecutar Generate ni publicar como consecuencia de generar metadatos.
+Formato manual de título: `GANCHO CENTRAL: [hecho dramático] #Shorts #ViralShorts #FruttiDrama`.
+- `GANCHO CENTRAL` representa DOS PALABRAS INICIALES EN MAYÚSCULAS, separadas de una frase sobre lo que efectivamente ocurre mediante dos puntos.
+- 100 caracteres MÁXIMO contando espacios y hashtags; sin truncamiento ni puntos suspensivos nuevos.
+- Formato descripción: una o dos frases reales sobre quién hace qué y qué cambia, línea vacía, y `#Shorts #ViralShorts #FruttiDrama`.
+- La plantilla con los corchetes es **solo una guía** y está bloqueada en validación hasta que se escriba un texto real.
+- Excepciones (tres palabras o puntos suspensivos) son admisibles SOLO cuando corresponden a un par histórico canónico literal, título Y descripción idénticos al archivo verificado; jamás para textos nuevos.
 
-## 4. Guardado y trazabilidad
-Mantener intactos `source_sha256`, `generation_prompt`, `file_index`, `season` y `episode` asignados por la persona operadora. Conservar por separado `episode_story_evidence` y `episode_story_extraction_method`, marcados como **no verificados**, para no perder la fuente de la propuesta. Las revisiones de texto no deben modificar MP4 ni su identidad. La asignación del video a episodio permanece manual; los archivos `docs/data/frutti-prompt-studio-*.json` sirven para pruebas, no para inferir correspondencias verdaderas.
+El **prompt original** se pega si está disponible, pero **NO es requisito** para identificar y guardar el MP4: si no se encuentra se registra `generation_prompt=""` y `prompt_provenance="historical_prompt_not_yet_available"` sin inventar contenido. Puede adjuntarse después reabriendo la ficha. El título/descripcion manuales son la fuente editorial para videos históricos identificados sin su prompt.
 
-## 5. Aceptación
-- Ejecutar `node scripts/test-frutti-copy.mjs` de forma íntegra; cubrir los 50 prompts de archivo y 50 stories y ejemplos de prosa libre sin `STORY`.
-- Probar el prompt real recuperado del stock T2E9 (sin copiarlo al repositorio público): reconocer a Uva y Limón conversando, Fresia entrando e insultando, y el silencio de ambos.
-- Verificar que un informe médico leído por Don Melón no sea descrito como una acción médica realizada por otro personaje; que un intento de beso no sea un beso consumado; que un simple testigo no se convierta en interlocutor o motivo amoroso.
-- Publicar el backend solo si estas verificaciones pasan; confirmar versión activa desde Supabase y que el código desplegado corresponde al probado.
-- La comprobación final del prompt que falla en el iPad requiere una interacción real del propietario en el panel, ya que el texto no guardado en su navegador no es visible al backend ni a GitHub.
+Controles: cada archivo mantiene SHA-256 real, índice, identidad, edición con `expected_revision` optimista, y bloqueo de duplicados por temporada/episodio. El formulario guarda únicamente `publisher_frutti_reconstructed_stock` con `record_status=reconstructed_unapproved`, `publication_status=unverified`; no aprueba, genera, sube, agenda, publica ni levanta `historical_reconciliation_pending`. No borrar ni reemplazar copias MP4.
 
-## 6. Guardas de producción
-La conciliación histórica `historical_reconciliation_pending` de FruttiDrama **no se levanta** al corregir metadatos. Sin mapeo auténtico de MP4→temporada/episodio→prompt no se autoriza generación ni publicación. No usar TinyFish, no duplicar Generate ni gastar créditos pagos.
+## 3. Temporada 3
+`publisher_runtime_publishers.config.content.initial_episodes` conserva 12 planes narrativos; el inventario migrado señala seis episodios en Review y otros seis planes sin render confirmado. NINGUNA de estas 12 sinopsis es prueba de 12 MP4 ni de metadatos finales históricos.
+No presentar `season3-story-metadata.js` como un archivo de títulos históricos: sus títulos fueron reconstruidos y el modo actual **NO los expone** como recuperación histórica. Si no existe título/descr. auténtico para el episodio, solo se ofrece redacción manual.
+
+## 4. Nueva producción — paquete creativo único y atómico
+El **generador de episodios** recibe primero una idea editorial estructurada con `hook`, `story`, `publicationHook` (gancho de título de exactamente dos palabras, cuando el hook narrativo original tenga más de dos), `titleCore` y `descriptionCore` o equivalentes `title`/`description`.
+En la MISMA etapa autoral, `runtime-config.js:materializeCreativePackage` produce el prompt de Google Flow y la copia editorial del episodio desde **esa misma idea previa**. No permite producir prompt si falta el título o la descripción del origen. No extrae ni sintetiza la copia a partir del prompt creado: el prompt es una salida hermana, no fuente de lectura.
+Se registra en una transacción SQLite **un único paquete** `(season,episode,hook,story,prompt,title,description,promptHash,packageHash,packageId)` en `factory_items` y en el ledger privado `factory_creative_packages`. La tabla ledger es append-only con triggers que rechazan UPDATE/DELETE.
+El render sólo puede enviarse a Flow con copia y paquete completos. Review, aprobación, Stock y YouTube **consumen la misma copia inmutable**, contrastada contra el ledger y su hash. Nunca recalculan textos posteriormente ni aplican fallback para FruttiDrama: faltante/discordancia provoca un bloqueo explícito.
+La tabla de ideas T3 ya posee 12 **paquetes editoriales de planificación**, autorizados como fuente futura pero NO renders existentes. No retroactivarlos a MP4 de Review ni a títulos de YouTube. El generador sigue condicionado a nuevos episodios genuinos; no repetir cíclicamente copias de seeds sin autoría nueva.
+
+## 5. Activación y verificación
+El backend temporal `publisher-frutti-recap` usa JWT del propietario más verificación de pertenencia; `verify_jwt=false` del gateway no equivale a endpoint público. El GET devuelve `metadata_modes=["historical","manual"]` y solo archivo canónico, no tramas inventadas.
+**No levantar la pausa histórica ni reanudar producción/publicación solo por haber cambiado este código.** Primero deben verificarse los mapeos reales de video→temporada/episodio con consentimiento del operador, consistencia de stock y medios, OAuth real al canal correcto, ID de proyecto Flow, obligaciones ambiguas remotas, y una ejecución completa antes de declarar autonomía.
+Pruebas requeridas: `node scripts/test-frutti-manual-recovery.mjs`, `node scripts/check-unified-factory-ui.mjs` y smoke de paquete creativo + ledger; confirmar ejecución CI y despliegue servido. Los tests en memoria no prueban la carga autenticada desde Safari. No gastar créditos pagos, no usar TinyFish, no hacer generación/publicación sintética.
+
+## 6. Intervención humana y formato de respuesta
+Cuando el próximo paso dependa de que el operador reconozca visualmente un video, indicar exactamente qué debe hacer en el panel, siempre al **final** de la respuesta; no pedirle tareas técnicas que pueda hacer el asistente. Todo paso sin intervención humana se completa antes de responder, sin prometer trabajo en segundo plano.
