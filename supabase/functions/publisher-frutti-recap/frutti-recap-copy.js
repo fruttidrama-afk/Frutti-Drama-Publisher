@@ -374,8 +374,14 @@ function explicitEpisodeCopy(explicit){
    /roba|steals?/i.test(story)?"¿Qué consecuencias tendrá este robo?":
    /encuentra|encuentran|discovers?/i.test(story)?"¿Qué ocurrirá después de este hallazgo?":
    "¿Qué pasará ahora?";
- const description=explicit.story.replace(/\s+/g," ").trim().replace(/[.!?]+\s*$/,".")+
+ let description=explicit.story.replace(/\s+/g," ").trim().replace(/[.!?]+\s*$/,".")+
   "\n\n"+question+"\n\n"+TAGS;
+ // Exact English Flow narration can have a witnessed kiss. Preserve the actual
+ // subject/object/witness while writing a natural Spanish editorial description.
+ if(involved.length>=3&&/\bkisses?\b/i.test(story)&&/\bsees?\s+the\s+kiss\s+from\s+a\s+distance\b/i.test(story)&&/\bin\s+the\s+hacienda\s+garden\b/i.test(story)){
+  description=involved[0]+" besa a "+involved[1]+" en el jardín de la hacienda. "+
+   involved[2]+" presencia el beso a la distancia.\n\n¿Cómo reaccionará "+involved[2]+" al verlos?\n\n"+TAGS;
+ }
  return {title,description,episode_excerpt:explicit.evidence.slice(0,500),
   source_story:explicit.story,method:"explicit_current_episode_extractive",
   grounding:"literal_episode_source_operator_review_required",
