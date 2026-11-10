@@ -81,5 +81,38 @@ assert.match(src,/if\(!q\.data && youtubePhase!=="release"\)\{/,'19:00 may never
 assert.match(src,/if\(!q\.data && youtubePhase==="release"\)\{/,'19:00 reclaims staged PRIVATE video');
 assert.match(src,/\.eq\("status","blocked"\)\.eq\("last_error","YOUTUBE_PRIVATE_STAGED_WAITING_19"\)/,'only exact staged obligation is eligible');
 console.log('PASS 11 mocked YouTube/Facebook clock-stock cases plus four phase fences; zero remote calls.');
+// Exercise the exact Edge materializer without a network connection.
+const matStart=src.indexOf('async function materialize(){');
+const matEnd=src.indexOf('\nasync function releaseExpired(){',matStart);
+assert.ok(matStart>0&&matEnd>matStart,'today-only materializer present');
+const materializeSource=src.slice(matStart,matEnd).replace('const rows:any[]=[];','const rows=[];');
+async function testMaterialize(){
+ const calls=[];
+ const publishers=[
+  {id:'frutti',timezone:'America/Argentina/Buenos_Aires',activation_day:'2026-10-06',generation_target:3,publication_target:1},
+  {id:'future',timezone:'America/Argentina/Buenos_Aires',activation_day:'2026-11-11',generation_target:3,publication_target:1}
+ ];
+ const mock={
+  from(table){
+   if(table==='publisher_runtime_publishers')return {
+    select(){return this},eq(){return Promise.resolve({data:publishers,error:null})}
+   };
+   assert.equal(table,'publisher_runtime_obligations');
+   return {upsert(rows,options){calls.push({rows,options});return Promise.resolve({error:null})}};
+  }
+ };
+ const fn=vm.runInNewContext(materializeSource+'\nmaterialize',{
+  db:mock,localDay:()=> '2026-11-10',now:()=> '2026-11-10T10:00:00Z'
+ });
+ await fn();
+ assert.equal(calls.length,1,'one bulk upsert, not hundreds of per-day calls');
+ assert.equal(calls[0].rows.length,4,'only today's three generations and one publication');
+ assert.ok(calls[0].rows.every(r=>r.local_day==='2026-11-10'&&r.publisher_id==='frutti'),'no historic catch-up or future activation');
+ assert.equal(calls[0].options.ignoreDuplicates,true,'never overwrite durable claimed/blocked/completed state');
+ assert.equal(calls[0].options.onConflict,'publisher_id,local_day,kind,ordinal','stable obligation identity');
+}
+await testMaterialize();
+console.log('PASS idempotent today-only materialization with preserved historic/claimed obligations; zero remote calls.');
+
 
 console.log('PASS 11 real Edge guard cases: cross-day, cross-kind, publisher isolation, no-charge and fail-closed; zero remote calls.');
