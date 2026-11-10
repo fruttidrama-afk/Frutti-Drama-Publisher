@@ -1,0 +1,34 @@
+name: FruttiDrama Metadata Fidelity
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/publisher-frutti-recap/**"
+      - "scripts/test-frutti-copy.mjs"
+      - "docs/data/frutti-prompt-studio-active.json"
+      - ".github/workflows/frutti-metadata-fidelity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frutti-metadata-fidelity
+  cancel-in-progress: false
+
+jobs:
+  narrative-fidelity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.0'
+      - name: Syntax
+        run: |
+          node --check scripts/test-frutti-copy.mjs
+          node --check supabase/functions/publisher-frutti-recap/frutti-recap-copy.js
+      - name: Full editorial regression corpus
+        run: node scripts/test-frutti-copy.mjs
