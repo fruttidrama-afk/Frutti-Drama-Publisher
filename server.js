@@ -40,6 +40,9 @@ for(const sql of [
   "ALTER TABLE factory_items ADD COLUMN reviewInterpretationAt TEXT",
   "ALTER TABLE factory_items ADD COLUMN creativePackageHash TEXT",
   "ALTER TABLE factory_items ADD COLUMN creativePackageId TEXT",
+  "ALTER TABLE factory_items ADD COLUMN sourcePublicationHook TEXT",
+  "ALTER TABLE factory_items ADD COLUMN sourceTitleCore TEXT",
+  "ALTER TABLE factory_items ADD COLUMN sourceDescriptionCore TEXT",
   "ALTER TABLE factory_generations ADD COLUMN generationKind TEXT NOT NULL DEFAULT 'automatic'"
 ]){try{db.exec(sql)}catch{}}
 
