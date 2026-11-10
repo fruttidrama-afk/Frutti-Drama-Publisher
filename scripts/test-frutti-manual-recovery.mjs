@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {DatabaseSync} from "node:sqlite";
 import {buildFruttiSourceCopy,selectFruttiSourceIdea,FRUTTI_TITLE_TAGS} from "../frutti-creative-package.js";
+import {createFruttiShowrunnerInstruction,validateFruttiShowrunnerOutput} from "../frutti-autonomous-source.js";
 import {checkFruttiMetadata,FRUTTI_CANONICAL_TAGS,FRUTTI_TITLE_TEMPLATE,FRUTTI_DESCRIPTION_TEMPLATE} from "../supabase/functions/publisher-frutti-recap/metadata-contract.js";
 import {LEGACY_FRUTTI_METADATA} from "../supabase/functions/publisher-frutti-recap/legacy-metadata.js";
 import {initFruttiRecap,FRUTTI_MANUAL_TITLE,FRUTTI_MANUAL_DESCRIPTION} from "../docs/frutti-recap.js";
@@ -80,6 +81,11 @@ check(runtime.includes("INSERT INTO factory_creative_packages("),"Archive captur
 check(runtime.includes("FRUTTI_SOURCE_IDEA_NOT_MATCHED")===false,"Only source-contract module owns exact-intent error");
 check(provider.includes("FRUTTI_COPY_MUST_ORIGINATE_WITH_EPISODE_SOURCE"),"Provider disallows fallback title generator");
 check(provider.includes("FRUTTI_METADATA_REPAIR_FORBIDDEN"),"Review cannot reconstruct failed source copy");
+check(provider.includes('row=await authorFruttiSourceEpisode(db,row);'),"Every fresh Frutti Flow preparation receives upstream source episode decision");
+check(provider.indexOf('row=await authorFruttiSourceEpisode(db,row);')<provider.indexOf('const cp=preparePromptIfNeeded(db,row);',provider.indexOf('async function processRow(db,row)')),"Source creative author must run BEFORE prompt builder and Flow");
+check(provider.includes("FRUTTI_SOURCE_REWRITE_AFTER_PROMPT_FORBIDDEN"),"Do not rewrite an existing prompt or media");
+check(provider.includes("FRUTTI_SHOWRUNNER_CONCURRENT_SOURCE_CHANGE"),"Source writer preserves once-only atomic guard");
+
 check(provider.includes("FRUTTI_REWRITE_MUST_AUTHOR_FULL_CREATIVE_PACKAGE")&&provider.includes("new_publication_hook")&&provider.includes("new_title_core")&&provider.includes("new_description_core"),"Creative-rewrite AI must author all copy at the same time as new episode intent");
 check(server.includes("FRUTTI_CREATIVE_PACKAGE_LEDGER_REQUIRED"),"Review approval cannot invent missing copy");
 check(publication.includes("FRUTTI_CREATIVE_PACKAGE_ARCHIVE_REQUIRED"),"Publishing requires archived copy, not Flow inference");
@@ -163,6 +169,36 @@ same(requests.filter(x=>x.method==="POST").length,1,"One operator-written save o
 same(requests.filter(x=>x.body?.action==="suggest").length,0,"Never call failed AI endpoint");
 same(requests.find(x=>x.body?.action==="save").body.generation_prompt,"","Video identity may be saved with missing historical Flow prompt");
 same(remoteItems.length,1,"Exactly one operator-authorized stock record");
+
+
+const showrunnerRequest=createFruttiShowrunnerInstruction({
+ season:3,episode:13,creativeBible:"Una telenovela de frutas humanoides, totalmente seria.",
+ canon:"Uva cuida a Bananita. Banana murió. Limón está cerca de Uva.",
+ previous:[{episode:12,hook:"ELECCIÓN DEFINITIVA",story:"Limón elige estar con Uva",status:"approved"}]
+});
+check(showrunnerRequest.includes("descriptionCore")&&showrunnerRequest.includes("titleCore")&&showrunnerRequest.includes("publicationHook"),"Source author requests copy alongside story");
+check(!showrunnerRequest.includes("interpret the Flow prompt"),"Source author must never ask to interpret a finished Flow prompt");
+const authored=validateFruttiShowrunnerOutput({
+ hook:"TESTIGO SILENCIOSO",
+ story:"Fresia descubre una carta escrita por Don Melón y decide ocultarla cuando Uva entra a la habitación.",
+ publicationHook:"CARTA OCULTA",
+ titleCore:"Fresia esconde una carta comprometedora",
+ descriptionCore:"Fresia descubre una carta de Don Melón y decide ocultarla cuando escucha entrar a Uva."
+},{season:3,episode:13,previous:[{episode:12,hook:"ELECCIÓN DEFINITIVA",story:"Limón elige estar con Uva"}]});
+check(authored.title.startsWith("CARTA OCULTA:"),"Source author validates two-word publication title");
+check(authored.description.endsWith(FRUTTI_TITLE_TAGS),"Source author validates complete original description");
+check(authored.sourceMethod==="autonomous_episode_showrunner_v1","Source author explicitly stamps origin");
+let priorRejected=false;try{validateFruttiShowrunnerOutput({
+ hook:"TESTIGO SILENCIOSO",story:authored.story,publicationHook:authored.publicationHook,
+ titleCore:authored.titleCore,descriptionCore:authored.descriptionCore
+},{season:3,episode:14,existing:[{hook:authored.hook,story:authored.story}]})}catch{priorRejected=true}
+check(priorRejected,"Repeat episode rejected before Flow");
+let incompleteBlocked=false;try{validateFruttiShowrunnerOutput({
+ hook:"NUEVA CARTA",story:"Fresia encuentra una carta pero decide no leerla hasta la noche.",
+ publicationHook:"NUEVA CARTA",titleCore:"Fresia encuentra una carta"
+},{season:3,episode:14})}catch{incompleteBlocked=true}
+check(incompleteBlocked,"Source author cannot generate prompt with missing description");
+check(!createFruttiShowrunnerInstruction({season:3,episode:13,creativeBible:"test",canon:"test"}).includes("story_action_v34"),"No retired narrative extractor in source author");
 
 // Real SQLite integration of the SAME source-stage function used by the Flow
 // runtime. This proves a future generation consumes a single package and
