@@ -358,8 +358,10 @@ function explicitEpisodeCopy(explicit){
   candidates.splice(1,0,participants[0]+" interrumpe a "+participants[1]+" y "+participants[2]);
  if(participants.length>=3&&/\bconfronts?\b/i.test(story)&&/\babout\s+(?:her|his|their)\s+relationship\s+with\b/i.test(story))
   candidates.splice(1,0,participants[0]+" enfrenta a "+participants[1]+" por su relación con "+participants[2]);
- const secondEvent=story.match(/^((?:El|La|Don)\s+[A-ZÁÉÍÓÚÑ][^\s,;]+|[A-ZÁÉÍÓÚÑ][^\s,;]+)\s+.+?\s+y\s+(revela|confiesa|descubre|encuentra|advierte|anuncia|demuestra|declara)\s+(.+)$/i);
- if(secondEvent)candidates.splice(1,0,secondEvent[1]+" "+secondEvent[2]+" "+secondEvent[3]);
+ const subjectForReveal=story.match(/^((?:El|La|Don)\s+[^ .,;]+|[A-ZÁÉÍÓÚÑ][^ .,;]+)\b/i);
+ const laterReveal=story.match(/\s+y\s+(revela|confiesa|descubre|encuentra|advierte|anuncia|demuestra|declara)\s+(.+)$/i);
+ if(subjectForReveal&&laterReveal)
+  candidates.splice(1,0,subjectForReveal[1]+" "+laterReveal[1]+" "+laterReveal[2]);
  let title=null,coveredStory="";
  for(const v of candidates){
   const t=makeTitle(hook,v);
