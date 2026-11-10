@@ -106,7 +106,7 @@ async function testMaterialize(){
  });
  await fn();
  assert.equal(calls.length,1,'one bulk upsert, not hundreds of per-day calls');
- assert.equal(calls[0].rows.length,4,'only today's three generations and one publication');
+ assert.equal(calls[0].rows.length,4,"only today\u0027s three generations and one publication");
  assert.ok(calls[0].rows.every(r=>r.local_day==='2026-11-10'&&r.publisher_id==='frutti'),'no historic catch-up or future activation');
  assert.equal(calls[0].options.ignoreDuplicates,true,'never overwrite durable claimed/blocked/completed state');
  assert.equal(calls[0].options.onConflict,'publisher_id,local_day,kind,ordinal','stable obligation identity');
