@@ -618,7 +618,7 @@ function buildCreativePackage(row,prompt){
   if(!title.trim()||!description.trim())throw new Error('CREATIVE_PACKAGE_METADATA_EMPTY');
   return{title,description,hash:creativePackageHash(row,prompt,title,description),id:'creative-package-v1-'+randomUUID()};
 }
-function packageMatches(row){
+function packageMatches(db,row){
   const prompt=String(row?.prompt||''),title=String(row?.title||''),description=String(row?.description||'');
   if(!prompt||!title||!description||!String(row?.creativePackageHash||''))return false;
   if(String(row.creativePackageHash)!==creativePackageHash(row,prompt,title,description))return false;
@@ -649,13 +649,13 @@ function preparePromptIfNeeded(db,row){
   if(pkg.created)publish('CREATIVE_PACKAGE_READY',{episode:'E'+row.episode,job_id:row.id,prompt_hash:row.promptHash,package_hash:row.creativePackageHash,title:row.title,reason:revise?'human-redo-revision':'episode-materialization'});
   validateEpisodePrompt(row,row.prompt);
   const cp=checkpoint(row);
-  if(!cp||!packageMatches(row))throw new Error('RUNTIME_CREATIVE_PACKAGE_CHECKPOINT_FAILED');
+  if(!cp||!packageMatches(db,row))throw new Error('RUNTIME_CREATIVE_PACKAGE_CHECKPOINT_FAILED');
   return{...cp,title:row.title,description:row.description,creativePackageHash:row.creativePackageHash,creativePackageId:row.creativePackageId};
 }
 
-function reviewMetadata(row,flowResult={}){
+function reviewMetadata(db,row,flowResult={}){
   if(/frutti\s*drama|fruttidrama/i.test(String(CONFIG.identity?.show_name||SHOW||""))){
-    if(!packageMatches(row))throw Error("FRUTTI_CREATIVE_PACKAGE_LEDGER_REQUIRED: never derive copy from Flow prompt after generation");
+    if(!packageMatches(db,row))throw Error("FRUTTI_CREATIVE_PACKAGE_LEDGER_REQUIRED: never derive copy from Flow prompt after generation");
     return{title:String(row.title),description:String(row.description)};
   }
   const provider=(CONFIG.publication?.providers||[]).find(x=>x.type==='youtube')||{};
@@ -679,14 +679,14 @@ function reviewMetadata(row,flowResult={}){
 function persistReviewMetadata(db,row,flowResult={}){
   try{
     const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id)||row;
-    if(packageMatches(fresh)){
+    if(packageMatches(db,fresh)){
       const m={title:String(fresh.title),description:String(fresh.description)};
       publish('REVIEW_METADATA_READY',{episode:'E'+fresh.episode,job_id:fresh.id,title:m.title,source:'creative-package',package_hash:fresh.creativePackageHash});
       return m;
     }
     if(/frutti\s*drama|fruttidrama/i.test(String(CONFIG.identity?.show_name||SHOW||"")))
       throw Error("FRUTTI_METADATA_REPAIR_FORBIDDEN: original creative package missing; retain video for operator review");
-    const m=reviewMetadata(fresh,flowResult),pkgHash=creativePackageHash(fresh,fresh.prompt,m.title,m.description);
+    const m=reviewMetadata(db,fresh,flowResult),pkgHash=creativePackageHash(fresh,fresh.prompt,m.title,m.description);
     db.prepare('UPDATE factory_items SET title=?,description=?,creativePackageHash=?,creativePackageId=?,updatedAt=? WHERE id=?')
       .run(m.title,m.description,pkgHash,'creative-package-legacy-'+randomUUID(),now(),fresh.id);
     publish('REVIEW_METADATA_READY',{episode:'E'+fresh.episode,job_id:fresh.id,title:m.title,source:'legacy-repair',package_hash:pkgHash});
