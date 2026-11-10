@@ -103,11 +103,20 @@ function localClock(tz:string){
   const p=Object.fromEntries(parts.filter(x=>x.type!=="literal").map(x=>[x.type,x.value]));
   return p.hour+":"+p.minute;
 }
+// YouTube has two different remote mutations on the SAME local-day obligation:
+// PRIVATE upload only at 12:30-12:59, then release of that staged video at 19:00.
+// Release must remain eligible even when staging consumed the last stock item.
+// Never start a new upload after the staging window just because it is 19:00.
+function youtubePublicationPhase(p:any,clock=localClock(String(p.timezone||"America/Argentina/Buenos_Aires"))){
+  if(clock>="19:00")return "release";
+  if(clock>="12:30"&&clock<"13:00"&&Number(p.approved_stock||0)>0)return "stage";
+  return "none";
+}
 function publicationDue(p:any){
+  if(String(p.platform||"").toLowerCase()==="youtube")
+    return youtubePublicationPhase(p)!=="none";
   if(Number(p.approved_stock||0)<=0)return false;
   const clock=localClock(String(p.timezone||"America/Argentina/Buenos_Aires"));
-  if(String(p.platform||"").toLowerCase()==="youtube")
-    return(clock>="12:30"&&clock<"13:00")||clock>="19:00";
   const schedule=Array.isArray(p.config?.schedule?.posting_times)?p.config.schedule.posting_times:[];
   const posted=String(schedule[0]||"19:00");
   return clock>=posted;
@@ -183,6 +192,8 @@ async function claim(filterPublisher="",filterKind=""){
     const kinds=filterKind?[filterKind]:["publication","generation"];
     for(const kind of kinds){
       if(!["generation","publication"].includes(kind))continue;
+      const youtubePhase=kind==="publication"&&String(p.platform||"").toLowerCase()==="youtube"
+        ?youtubePublicationPhase(p):null;
       // Per-kind fence: unrelated approved publication may proceed when a
       // generation is ambiguous, but a later Generate cannot skip its ancestor.
       if(await unresolvedRemoteMutation(String(p.id),kind))continue;
@@ -197,7 +208,9 @@ async function claim(filterPublisher="",filterKind=""){
           .order("local_day",{ascending:false}).order("ordinal").limit(1).maybeSingle();
         if(q.error)throw q.error;
       }
-      if(!q.data){
+      // At/after 19:00 only the previously PRIVATE-staged obligation may run.
+      // In particular, never claim a fresh pending upload at 19:00.
+      if(!q.data && youtubePhase!=="release"){
         q=await db.from("publisher_runtime_obligations")
           .select("*").eq("publisher_id",p.id).eq("local_day",today).eq("kind",kind).eq("status","pending")
           .order("ordinal").limit(1).maybeSingle();
@@ -217,7 +230,7 @@ async function claim(filterPublisher="",filterKind=""){
       }
       // The 12:30 PRIVATE upload is stage one, not a completed publication.
       // Reclaim the SAME obligation at 19:00 for a single explicit privacy change.
-      if(!q.data && kind==="publication" && String(p.platform||"").toLowerCase()==="youtube" && localClock(String(p.timezone||"America/Argentina/Buenos_Aires"))>="19:00"){
+      if(!q.data && youtubePhase==="release"){
         q=await db.from("publisher_runtime_obligations")
           .select("*").eq("publisher_id",p.id).eq("local_day",today).eq("kind","publication")
           .eq("status","blocked").eq("last_error","YOUTUBE_PRIVATE_STAGED_WAITING_19")
