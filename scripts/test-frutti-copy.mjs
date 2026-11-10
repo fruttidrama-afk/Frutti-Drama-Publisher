@@ -292,3 +292,49 @@ assert(operatorClinical.description.includes("Uva Reyes comprende que no fue una
 assert(!/Banana envenena a Don Melón|Mango|Fresia/.test(operatorClinical.title+" "+operatorClinical.description),"operator medical story must not hallucinate a perpetrator");
 assert(operatorClinical.method==="operator_story_literal_v27","operator input must use literal path, not old heuristic");
 console.log("PASS operator-supplied medical story factual fidelity; no poisoning reassignment");
+
+
+// CANONICAL-COLLAPSED-20: 20 distinct canonical storyboard cases × 5
+// layout variations. These archived test prompts are NOT verified matches
+// for the 31 actual MP4 files; their expected current STORY is unambiguous.
+const canonical20=archive.prompts.slice(13,33);
+assert.equal(canonical20.length,20,"canonical collapsed corpus must have 20 episodes");
+const canonicalFormats=[
+ (prev,row)=>"FRUTTIDRAMA\nCONTINUITY\nPrevious canonical beat: "+prev.hook+" — "+prev.story+"\nPermanent canon: Mango poisoned Banana historically.\nSTORY / ACTION\nHOOK: "+row.hook+"\nSTORY: "+row.story+"\nCAMERA\nClose-up.",
+ (prev,row)=>"CONTINUITY Previous canonical beat: "+prev.hook+" — "+prev.story+"\nSTORY / ACTION HOOK: "+row.hook+" STORY: "+row.story+"\nCAMERA: dramatic shot.",
+ (prev,row)=>"CONTINUITY Previous canonical beat: "+prev.hook+" — "+prev.story+" STORY / ACTION HOOK: "+row.hook+" STORY: "+row.story+" CAMERA: dramatic shot.",
+ (prev,row)=>"## CONTINUITY\nPrevious canonical beat: "+prev.hook+" — "+prev.story+"\n## STORY / ACTION:\n**HOOK:** "+row.hook+"\n**STORY:** "+row.story+"\n## CAMERA\nClose-up.",
+ (prev,row)=>"CONTINUITY\nHOOK: "+prev.hook+"\nSTORY: "+prev.story+"\nSTORY / ACTION:\nHOOK: "+row.hook+"\nSTORY: "+row.story+"\nOUTPUT CONSTRAINTS\n10 seconds."
+];
+const canonicalHookOverrides={"ORDEN DE SALIDA":"SALIDA FORZADA","FURIA DEL PATRÓN":"FURIA PATRONAL"};
+let canonicalPasses=0;
+for(let i=0;i<canonical20.length;i++){
+ const current=canonical20[i],previous=archive.prompts[12+i];
+ const targetHook=canonicalHookOverrides[current.hook]||current.hook;
+ for(let j=0;j<canonicalFormats.length;j++){
+  const out=generate(canonicalFormats[j](previous,current));
+  const id="canonical T"+current.season+"E"+current.episode+" layout "+j;
+  assert(!out.error,id+" generation failed: "+JSON.stringify(out));
+  assert.equal(out.source_story,current.story,id+" extracted previous beat instead of current STORY");
+  assert(out.title.startsWith(targetHook+": "),id+" wrong HOOK: "+out.title);
+  assert(out.description.includes(current.story),id+" lost complete current story");
+  assert(!out.description.includes(previous.story),id+" previous canonical beat leaked");
+  assert(out.title.length<=100,id+" YouTube title overflow");
+  assert(!/CONTINUITY Previous canonical beat/.test(out.episode_excerpt||""),id+" source evidence from wrong section");
+  canonicalPasses++;
+ }
+}
+assert.equal(canonicalPasses,100,"20 episodes × 5 formats = 100");
+for(const [bad,shouldError] of [
+ ["CONTINUITY Previous canonical beat: SOSPECHA ABIERTA — Fresia confronta a Mango.\nCAMERA: close-up.",true],
+ ["CONTINUITY Previous canonical beat: SOSPECHA ABIERTA — Fresia confronta a Mango. STORY / ACTION HOOK: PRUEBA TÓXICA CAMERA: close-up.",true],
+ ["CONTINUITY Previous canonical beat: SOSPECHA ABIERTA — Fresia confronta a Mango. STORY / ACTION STORY: Don Melón recibe un informe. CAMERA: close-up.",true]
+]){
+ const out=generate(bad);
+ assert.equal(!!out.error,shouldError,"never hallucinate a current beat from previous canon");
+}
+const actualProblem=generate("CONTINUITY Previous canonical beat: SOSPECHA ABIERTA — Fresia confronta a Mango Del Rio por su reacción ante la muerte de Banana. Mango evita responder y deja a Fresia convencida de que esconde algo grave. STORY / ACTION HOOK: PRUEBA TÓXICA STORY: Don Melón recibe una prueba médica que confirma que la muerte de Banana estuvo relacionada con un envenenamiento. Uva Reyes comprende que no fue una muerte natural. CAMERA: close-up.");
+assert(actualProblem.title.startsWith("PRUEBA TÓXICA: Don Melón recibe"),"exact screenshot-style collapsed prompt: "+JSON.stringify(actualProblem));
+assert(!/Fresia|Mango|SOSPECHA ABIERTA/.test(actualProblem.title+" "+actualProblem.description),"previous beat contaminated metadata");
+assert(actualProblem.description.includes("Uva Reyes comprende que no fue una muerte natural"),"current plot conclusion missing");
+console.log("PASS CANONICAL-COLLAPSED-20: 20 canonical episodes, 100 variants, fail-closed previous-beat guards");
