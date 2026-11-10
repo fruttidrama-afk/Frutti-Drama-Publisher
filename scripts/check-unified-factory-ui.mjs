@@ -70,7 +70,7 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
   if(!html.includes(id))throw Error(name+" missing visible AI diagnostic "+id);
  }
  if(!(html.indexOf('id="udRecapAiState"')<html.indexOf('id="udRecapSuggest"')&&html.indexOf('id="udRecapSuggest"')<html.indexOf('id="udRecapAiResult"')))throw Error(name+" AI error is not beside button");
- for(const phrase of ['response.ai_status','showAIResult("No se pudo identificar','Generador editorial original']){
+ for(const phrase of ['response.ai_status','No generé un título que pudiera alterar la historia','GENERAR PROPUESTA DESDE PROMPT','El guardado en stock reconstruido no publica ni modifica videos en YouTube.']){
   if(!recapJs.includes(phrase))throw Error(name+" missing historical editorial recap handling: "+phrase);
  }
 
