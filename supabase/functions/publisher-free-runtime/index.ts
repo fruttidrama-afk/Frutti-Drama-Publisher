@@ -132,6 +132,27 @@ async function recordUnusualActivity(o:any,claimId:string,body:any){
  if(error)throw error;
  return Array.isArray(data)?data[0]:data;
 }
+// A new calendar day does not clear an unresolved remote mutation. Older
+// lease-expired Generate/upload attempts must be reconciled by remote ID before
+// ANY later obligation of the same kind can run. Credit waits and proven
+// no-charge rejections are not remote-ambiguity fences.
+async function unresolvedRemoteMutation(publisherId:string,kind:string){
+  const blocked=await db.from("publisher_runtime_obligations")
+    .select("id").eq("publisher_id",publisherId).eq("kind",kind)
+    .eq("status","blocked")
+    .or("last_error.ilike.%RECONCILIATION_REQUIRED%,last_error.ilike.%SUBMIT_AMBIGUOUS%,last_error.ilike.%REMOTE_ID_UNVERIFIED%")
+    .limit(1);
+  if(blocked.error)throw blocked.error;
+  if((blocked.data||[]).length>0)return true;
+  // Historical migration left some expired claims as pending. They are NOT
+  // fresh unsubmitted work merely because their status says pending.
+  const legacy=await db.from("publisher_runtime_obligations")
+    .select("id").eq("publisher_id",publisherId).eq("kind",kind)
+    .eq("status","pending").eq("last_error","RUNNER_LEASE_EXPIRED")
+    .limit(1);
+  if(legacy.error)throw legacy.error;
+  return (legacy.data||[]).length>0;
+}
 async function claim(filterPublisher="",filterKind=""){
   await releaseExpired();await materialize();
   const {data:pubs,error}=await db.from("publisher_runtime_publishers").select("*").eq("enabled",true)
@@ -162,6 +183,9 @@ async function claim(filterPublisher="",filterKind=""){
     const kinds=filterKind?[filterKind]:["publication","generation"];
     for(const kind of kinds){
       if(!["generation","publication"].includes(kind))continue;
+      // Per-kind fence: unrelated approved publication may proceed when a
+      // generation is ambiguous, but a later Generate cannot skip its ancestor.
+      if(await unresolvedRemoteMutation(String(p.id),kind))continue;
       if(kind==="publication"&&!publicationDue(p))continue;
       let q:any={data:null,error:null};
       if(kind==="generation"){
