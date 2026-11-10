@@ -13,6 +13,7 @@ import {
 } from './runtime-config.js';
 import { buildPublicationCopy } from './publication-copy.js';
 import { buildFruttiSourceCopy } from './frutti-creative-package.js';
+import { createFruttiShowrunnerInstruction, validateFruttiShowrunnerOutput } from './frutti-autonomous-source.js';
 import { classifyFlowSecuritySignal } from './scripts/flow-security-signals.mjs';
 import { flowNoChargeDelayMs, flowNoChargeDeadline } from './scripts/flow-unusual-cooldown.mjs';
 
@@ -1500,6 +1501,126 @@ async function launchLocal() {
     await cleanup();
     throw err;
   }
+}
+
+
+function isFruttiSourceRuntime(){
+ return /frutti\s*drama|fruttidrama/i.test(String(CONFIG.identity?.show_name||SHOW||""));
+}
+function sourceIdeaMissing(row){
+ if(!isFruttiSourceRuntime())return false;
+ if(String(row.status||"")==="generating")return false; // never change an already-submitted render
+ if(String(row.retryStrategy||"")==="reuse_prompt"||String(row.retryStrategy||"")==="revise_prompt")return false;
+ if(String(row.sourceTitleCore||"").trim()&&String(row.sourceDescriptionCore||"").trim())return false;
+ const initial=CONFIG.content.initial_episodes?.[Number(row.episode)-1];
+ if(initial&&String(initial.hook||"")===String(row.hook||"")&&
+   String(initial.story||"")===String(row.story||"")&&
+   String(initial.titleCore||initial.title||"").trim()&&
+   String(initial.descriptionCore||initial.description||"").trim())return false;
+ // Only write NEW source-stage episodes, never touch a historical unverified MP4.
+ if(row.videoPath||row.remoteUrl||row.providerRunId||row.reviewVideoId||row.stockId)throw Error("FRUTTI_SOURCE_REWRITE_AFTER_VIDEO_FORBIDDEN");
+ if(String(row.prompt||"").trim()||String(row.creativePackageId||"").trim())
+   throw Error("FRUTTI_SOURCE_REWRITE_AFTER_PROMPT_FORBIDDEN");
+ return true;
+}
+async function authorFruttiSourceEpisode(db,row){
+ if(!sourceIdeaMissing(row))return row;
+ if(!["draft","regen_wait"].includes(String(row.status||"")))
+   throw Error("FRUTTI_SHOWRUNNER_SOURCE_STAGE_ONLY");
+ const previous=db.prepare("SELECT episode,hook,story,status FROM factory_items WHERE season=? AND episode<? ORDER BY episode DESC LIMIT 12")
+   .all(Number(row.season),Number(row.episode)).reverse();
+ const existing=db.prepare("SELECT episode,hook,story,status FROM factory_items WHERE season=? AND episode<>? ORDER BY episode DESC LIMIT 45")
+   .all(Number(row.season),Number(row.episode));
+ const instruction=createFruttiShowrunnerInstruction({
+   season:Number(row.season),episode:Number(row.episode),
+   creativeBible:String(CONFIG.content.creative_bible||""),
+   canon:String(CONFIG.content.canon||""),
+   previous,existing
+ });
+ const marker="FRUTTI_SOURCE_"+randomUUID().replace(/-/g,"").slice(0,18).toUpperCase();
+ const begin=marker+"_BEGIN",finish=marker+"_END";
+ let browser=null;
+ try{
+   publish("FRUTTI_SOURCE_AUTHORING_START",{
+     episode:"T"+row.season+"E"+row.episode,job_id:row.id,
+     message:"Creating episode narrative, canonical title and description in one creative-source step before Google Flow."
+   });
+   browser=await launchLocal();
+   const page=browser.page;
+   await page.goto(GEMINI_FEEDBACK_URL,{waitUntil:"domcontentloaded",timeout:45000});
+   await sleep(1700);
+   for(const re of [/I agree|Acepto/i,/Get started|Empezar/i,/Continue|Continuar/i]){
+     const button=page.getByRole("button",{name:re}).last();
+     if(await button.count().catch(()=>0)&&await button.isVisible().catch(()=>false)){
+       await button.click({timeout:3000}).catch(()=>{});
+       await sleep(500);
+     }
+   }
+   let input=null;
+   for(const target of [
+     page.locator('rich-textarea div[contenteditable="true"]').last(),
+     page.locator('div[contenteditable="true"][role="textbox"]').last(),
+     page.locator('div[contenteditable="true"]').last(),
+     page.locator('textarea').last()
+   ]){
+     if(await target.count().catch(()=>0)&&await target.isVisible().catch(()=>false)){input=target;break}
+   }
+   if(!input)throw Error("FRUTTI_SHOWRUNNER_AUTH_OR_INPUT_REQUIRED");
+   const message=[
+     "Write the complete NEW episode idea and its publication copy together. Not a response to any existing Google Flow prompt.",
+     "Return exactly one JSON object within these markers:",
+     begin,
+     '{"hook":"","story":"","publicationHook":"","titleCore":"","descriptionCore":""}',
+     finish,
+     instruction
+   ].join("\n\n");
+   await input.click({timeout:5000});
+   await input.fill(message).catch(async()=>{
+     await page.keyboard.press("Control+A").catch(()=>{});
+     await page.keyboard.insertText(message);
+   });
+   let sent=false;
+   for(const name of [/Send message|Enviar mensaje|Send|Enviar/i]){
+     const button=page.getByRole("button",{name}).last();
+     if(await button.count().catch(()=>0)&&await button.isVisible().catch(()=>false)&&await button.isEnabled().catch(()=>false)){
+       await button.click({timeout:4000});
+       sent=true;break;
+     }
+   }
+   if(!sent)await page.keyboard.press("Enter");
+   const deadline=Date.now()+65000;
+   let candidate=null,last="";
+   while(Date.now()<deadline){
+     await sleep(1000);
+     last=await page.locator("body").innerText().catch(()=>last);
+     const start=last.lastIndexOf(begin);
+     if(start<0)continue;
+     const end=last.indexOf(finish,start+begin.length);
+     if(end<start)continue;
+     const block=last.slice(start+begin.length,end).trim()
+       .replace(new RegExp("^\\x60{3}(?:json)?\\s*","i"),"").replace(/\s*\x60{3}$/,"").trim();
+     try{candidate=JSON.parse(block)}catch{}
+     if(candidate?.hook&&candidate?.story&&candidate?.publicationHook&&candidate?.titleCore&&candidate?.descriptionCore)break;
+   }
+   if(!candidate)throw Error("FRUTTI_SHOWRUNNER_SOURCE_JSON_NOT_RECEIVED:"+compact(last.slice(-250),250));
+   const source=validateFruttiShowrunnerOutput(candidate,{
+     season:Number(row.season),episode:Number(row.episode),previous,existing
+   });
+   // Commit a future episode's actual authored narrative + title + description
+   // atomically. A re-run consumes these fields; never reads Flow to make copy.
+   const stamp=now();
+   const update=db.prepare("UPDATE factory_items SET hook=?,story=?,sourcePublicationHook=?,sourceTitleCore=?,sourceDescriptionCore=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',creativePackageHash=NULL,creativePackageId=NULL,error=NULL,nextTry=0,updatedAt=? WHERE id=? AND status IN ('draft','regen_wait') AND COALESCE(prompt,'')='' AND providerRunId IS NULL AND reviewVideoId IS NULL AND stockId IS NULL")
+     .run(source.hook,source.story,source.publicationHook,source.titleCore,source.descriptionCore,stamp,row.id);
+   if(Number(update.changes)!==1)throw Error("FRUTTI_SHOWRUNNER_CONCURRENT_SOURCE_CHANGE");
+   const fresh=db.prepare("SELECT * FROM factory_items WHERE id=?").get(row.id);
+   if(!fresh)throw Error("FRUTTI_SHOWRUNNER_SOURCE_PERSISTENCE_FAILED");
+   publish("FRUTTI_SOURCE_AUTHORING_SAVED",{
+     episode:"T"+fresh.season+"E"+fresh.episode,job_id:fresh.id,
+     title:source.title,source_method:source.sourceMethod,
+     message:"Episode story and both editorial fields saved before Flow. Prompt will be built from the same source."
+   });
+   return fresh;
+ }finally{try{await browser?.close()}catch{}}
 }
 
 function feedbackContext(db,row){
@@ -3673,6 +3794,7 @@ async function retrieveExisting(page,row,cp,lc,db){
 }
 
 async function processRow(db,row){
+  row=await authorFruttiSourceEpisode(db,row);
   const cp=preparePromptIfNeeded(db,row);row=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);let lc=lifecycle(db,row);const state=String(lc?.state||'').toUpperCase(),session=await launchLocal(),context=session.context;
   try{
     const page=session.page||context.pages()[0]||await context.newPage();
