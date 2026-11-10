@@ -1,5 +1,5 @@
 // FruttiDrama operator reconstruction. No generation, approval, queue or YouTube mutations.
-export const FRUTTI_EXPECTED_ENGINE_REVISION="story_action_v33";
+export const FRUTTI_EXPECTED_ENGINE_REVISION="story_action_v34";
 export function fruttiEngineLabel(serverRevision){
  const revision=String(serverRevision||"");
  return revision===FRUTTI_EXPECTED_ENGINE_REVISION
