@@ -122,7 +122,7 @@ const RULES=[
 // people in a romantic conversation. A single-verb parser loses one of them.
 function sceneConversation(story,actor){
  const parts=String(story).split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÜÑ])|;\s*/).filter(Boolean);
- const romance=/\b(?:romantic|romance|intimate|intimately|affectionate|flirt(?:ing)?|sweet moment|love|rom[aá]ntic[oa]s?|[ií]ntim[oa]s?|coquetea(?:n|ndo)?|enamorad[oa]s?)\b/i;
+ const romance=/\b(?:romantic|romance|intimate|intimately|affectionate|flirt(?:ing)?|sweet moment|love|rom[aá]ntic(?:o|a|os|as|amente)|romantically|[ií]ntim[oa]s?|coquetea(?:n|ndo)?|enamorad[oa]s?)\b/i;
  const talking=/\b(?:conversation|talk(?:ing)?|chat(?:ting)?|speak(?:ing)?|discuss(?:ing)?|conversaci[oó]n|charla(?:n|ndo)?|convers(?:an|ando)?|habla(?:n|ndo)?|encuentro|moment|momento)\b/i;
  const explicitPair=/\b(?:entre|between|with|con)\b/i;
  const candidates=[];
@@ -148,7 +148,7 @@ function interruptionArrival(story){
   const scene=sceneConversation(story,actor);
   if(!scene)continue;
   return {rule:{key:"interrupcion_con_contexto",hook:scene.romantic?"ROMANCE INTERRUMPIDO":"ENCUENTRO INTERRUMPIDO"},
-   priority:-1,line:part,actor,target:scene.pair[0],pair:scene.pair,romantic:scene.romantic,interrupted:/interrumpe|irrumpe|interrupt|walks? in|steps? in|entra|enters?/i.test(part)};
+   priority:-1,line:part,actor,target:scene.pair[0],pair:scene.pair,romantic:scene.romantic,interrupted:/\b(?:interrumpe|irrumpe|interrupt(?:s|ed)?|walks? in|steps? in|entra|enters?)\b/i.test(part)&&!/\b(?:no|nunca|never|not)\s+interrumpe\b/i.test(part)};
  }
  return null;
 }
@@ -277,7 +277,10 @@ function narrative(ev,story){
 function riskyEvent(ev){
  const line=clean(ev.line);
  const key=ev.rule.key;
- if(key==="interrupcion_con_contexto")return null;
+ if(key==="interrupcion_con_contexto"){
+  if(/\\b(?:no|nunca|never|not)\\s+(?:interrumpe|interrupts?)\\b/i.test(line))return "El episodio niega la interrupción.";
+  return null;
+ }
  const hit=line.match(ev.rule.re);
  if(!hit)return "No hay evidencia literal del acontecimiento seleccionado.";
  const before=line.slice(Math.max(0,hit.index-95),hit.index);
