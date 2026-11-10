@@ -352,6 +352,8 @@ function explicitEpisodeCopy(explicit){
  const participants=names(story);
  // Only verified semantic contractions. Never omit the second member of
  // a paired conversation; never turn an accusation/suspicion into a fact.
+ if(participants.length>=2&&/\b(?:kisses|kissed|besa|besan)\b/i.test(story)&&!/\b(?:tries?\s+to|attempts?\s+to|intenta(?:n)?)\s+(?:kiss|besar)\b/i.test(story))
+  candidates.splice(1,0,participants[0]+" besa a "+participants[1]);
  if(participants.length>=3&&/\binterrumpe\b/i.test(story)&&/\bconversaci[oó]n\s+entre\b/i.test(story))
   candidates.splice(1,0,participants[0]+" interrumpe a "+participants[1]+" y "+participants[2]);
  if(participants.length>=3&&/\bconfronts?\b/i.test(story)&&/\babout\s+(?:her|his|their)\s+relationship\s+with\b/i.test(story))
