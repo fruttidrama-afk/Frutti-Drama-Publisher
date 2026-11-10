@@ -297,7 +297,53 @@ function makeTitle(hook,core){
  const candidate=capital+": "+clean(core).replace(/[.!?]+$/,"");
  return [candidate+" "+TAGS,candidate+" #Shorts #FruttiDrama",candidate].find(x=>x.length<=100)||null;
 }
+
+// An explicitly identified CURRENT EPISODE story is the strongest possible
+// evidence: retain the original subjects, verbs, objects, negations and tense.
+// Do not run the plot through keyword-to-plot templates (which fabricate events).
+function extractExplicitEpisodeStory(fullPrompt){
+ const src=String(fullPrompt||"").replace(/\r/g,"");
+ // Include recognized Flow production headers and operator-supplied EPISODE INTENT.
+ const markers=[
+  /(?:^|\n)\s*(?:TRAMA CENTRAL DE ESTE EPISODIO|TRAMA PRINCIPAL DEL EPISODIO|NARRATIVA CENTRAL DEL EPISODIO|EPISODE INTENT|EPISODIO ACTUAL)\s*:\s*([^\n]*)/gi
+ ];
+ for(const marker of markers){
+  for(const match of src.matchAll(marker)){
+   const line=clean(match[1]||"")||clean(src.slice(match.index+match[0].length).split("\n").find(x=>x.trim())||"");
+   if(line.length<20||line.length>900)continue;
+   const named=line.match(/^([A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+):\s*(.{20,})$/);
+   const hook=named?named[1]:"";
+   const story=named?named[2]:line;
+   if(TECH.test(story)&&!ACT.test(story))continue;
+   // For unlabeled lines we cannot fabricate a hook: use the safer
+   // existing scene-extraction logic, which also supports dialogue.
+   if(!hook)continue;
+   return {hook,story:clean(story),evidence:clean(line)};
+  }
+ }
+ return null;
+}
+function explicitEpisodeCopy(explicit){
+ const hook=explicit.hook;
+ const story=explicit.story.replace(/\s+/g," ").trim().replace(/[.!?]+\s*$/,"");
+ const candidates=[story, ...story.split(/\s*;\s*|\s+\bpero\b\s+|\s+\by\b\s+(?=[A-ZÁÉÍÓÚÑ])/i).map(x=>x.trim())].filter(Boolean);
+ let title=null,coveredStory="";
+ for(const v of candidates){
+  const t=makeTitle(hook,v);
+  if(t){title=t;coveredStory=v;break}
+ }
+ if(!title)return {error:"TITLE_LENGTH_INVALID",detail:"La trama identificada es demasiado larga para un título factual completo de YouTube. No se recortó ni reformuló su significado.",source_story:explicit.story};
+ const description=explicit.story.replace(/\s+/g," ").trim().replace(/[.!?]+\s*$/,".")+
+  "\n\n¿Qué pasará ahora?\n\n"+TAGS;
+ return {title,description,episode_excerpt:explicit.evidence.slice(0,500),
+  source_story:explicit.story,method:"explicit_current_episode_extractive",
+  grounding:"literal_episode_source_operator_review_required",
+  warning:"Título y descripción extractivos basados en la TRAMA CENTRAL explícita, sin alterar actores ni acciones. Revisá el video antes de guardar.",
+  title_excerpt:coveredStory};
+}
 export function generateFruttiRecapCopy(fullPrompt){
+ const explicit=extractExplicitEpisodeStory(fullPrompt);
+ if(explicit)return explicitEpisodeCopy(explicit);
  const input=extract(fullPrompt);
  if(input.error)return input;
  const ev=episodeEvent(input.story);
