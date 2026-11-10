@@ -23,6 +23,8 @@ check(api.indexOf("const owner=")<api.indexOf('historical_metadata:LEGACY_FRUTTI
 check(api.includes("checkFruttiMetadata("),"Backend verifies manual formats");
 check(api.includes('metadata_method:exactLegacy?"legacy_canonical_operator_reviewed":"operator_manual_copy"'),"Provenance distinguishes human from original");
 check(api.includes('publication_queue_unchanged:true'),"Publication queue unchanged");
+check(api.includes('historical_prompt_not_yet_available'),"Missing source Flow prompt is never invented");
+check(api.includes('prompt.length>0&&prompt.length<20'),"Historical prompt optional, but partial copy rejected");
 same(LEGACY_FRUTTI_METADATA.length,12,"Only 12 source-backed T2 pairs");
 check(LEGACY_FRUTTI_METADATA.every(x=>x.season===2&&x.episode>=2&&x.episode<=13),"No invented T3 historical metadata");
 check(LEGACY_FRUTTI_METADATA.find(x=>x.episode===9).title.startsWith("CRIADA ATREVIDA:"),"T2E9 from source, not extractor");
@@ -101,7 +103,7 @@ for(const h of [html,html2]){
   check(h.includes('id="'+marker+'"'),"HTML field "+marker+" exists");
  for(const obsolete of ["udRecapSuggest","udRecapOperatorStory","GENERAR PROPUESTA DESDE PROMPT","Cargando generador editorial local"])
   check(!h.includes(obsolete),"No obsolete extractor controls "+obsolete);
- check(h.includes("frutti-recap.js?v=20261110-manual-recap-v1"),"iPad cache-busting");
+ check(h.includes("frutti-recap.js?v=20261110-manual-recap-v2"),"iPad cache-busting");
 }
 check(!ui.includes('action:"suggest"')&&!ui.includes("episode_excerpt")&&!ui.includes("story_action_v"),"No client narrative AI call");
 
@@ -151,12 +153,13 @@ $("#udRecapTitle").value="";$("#udRecapDescription").value="";
 $("#udRecapTemplate").onclick();
 same($("#udRecapTitle").value,FRUTTI_TITLE_TEMPLATE,"Manual title template filled");
 same($("#udRecapDescription").value,FRUTTI_DESCRIPTION_TEMPLATE,"Manual description template filled");
-$("#udRecapPrompt").value="Real Flow generation prompt containing scene directions and exact referenced characters.";
+$("#udRecapPrompt").value=""; // Historic Flow prompt is unavailable; do not fabricate it.
 $("#udRecapSave").onclick();
 same(requests.filter(x=>x.method==="POST").length,0,"Incomplete template must not be saved");
 $("#udRecapTitle").value=copyTitle;$("#udRecapDescription").value=copyDesc;
 await $("#udRecapSave").onclick();
 same(requests.filter(x=>x.method==="POST").length,1,"One operator-written save only");
 same(requests.filter(x=>x.body?.action==="suggest").length,0,"Never call failed AI endpoint");
+same(requests.find(x=>x.body?.action==="save").body.generation_prompt,"","Video identity may be saved with missing historical Flow prompt");
 same(remoteItems.length,1,"Exactly one operator-authorized stock record");
 console.log("PASS Frutti human recovery contract, original metadata, source creative packages and immutable ledger: "+checks+" checks; zero Flow/YouTube calls.");
