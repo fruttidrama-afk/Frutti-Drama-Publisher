@@ -20,5 +20,7 @@ jobs:
           node-version: '24.14.0'
       - name: Install read-only Flow browser tooling
         run: npm install --ignore-scripts --no-audit --no-fund
-      - name: Audit persisted state and exact Flow project access without generating
+      - name: Audit persisted state and OAuth indicators without generating or revisiting Google
+        env:
+          RUNTIME_AUDIT_NO_FLOW: '1'
         run: node scripts/runtime-state-audit.mjs
