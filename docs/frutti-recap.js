@@ -16,7 +16,7 @@ export function initFruttiRecap({session,udText}){
   const link=$("#udRecapFreeAiSetup");if(link)link.hidden=true;
   if(aiStatus.connected===true){
    el.dataset.status="connected";
-   el.textContent="✓ Asistente editorial local activo · "+(aiStatus.engine_revision==="story_action_v30"?"Extractor de episodio actual v28":"versión no confirmada")+". Usa reglas verificables sobre el prompt (no un modelo de lenguaje). Cada título y descripción requiere cotejo con el video antes de guardar.";
+   el.textContent="✓ Asistente editorial local activo · "+(aiStatus.engine_revision==="story_action_v33"?"Extractor de episodio actual v28":"versión no confirmada")+". Usa reglas verificables sobre el prompt (no un modelo de lenguaje). Cada título y descripción requiere cotejo con el video antes de guardar.";
   }else if(aiStatus.connected===false){
    el.dataset.status="missing";
    el.textContent="No pude comprobar el estado del generador editorial. Actualizá la página; no necesitás claves ni cuentas externas.";
@@ -123,7 +123,7 @@ export function initFruttiRecap({session,udText}){
   try{
    const summary=$("#udRecapOperatorStory").value.trim();
    const data=await request("POST",{action:"suggest",generation_prompt:prompt,operator_story:summary});
-   if(data.engine_revision!=="story_action_v30")throw Error("VERSIÓN OBSOLETA DEL EXTRACTOR: actualizá el panel antes de guardar. El texto anterior no se sobrescribió.");
+   if(data.engine_revision!=="story_action_v33")throw Error("VERSIÓN OBSOLETA DEL EXTRACTOR: actualizá el panel antes de guardar. El texto anterior no se sobrescribió.");
    if(data.error)throw Error(data.detail||data.error);
    if(!data.title||!data.description)throw Error("No se pudieron crear metadatos narrativos completos.");
    $("#udRecapTitle").value=data.title;
