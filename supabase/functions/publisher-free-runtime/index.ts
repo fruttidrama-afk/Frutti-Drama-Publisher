@@ -342,14 +342,15 @@ async function blob(req:Request,id:string,type:string){
   }
   return J({error:"method"},405);
 }
+// Public /health is a liveness probe, not an inventory API. The function
+// has a service-role DB client; never leak publisher names, errors, account
+// states, stock or obligation details to an unauthenticated caller.
+// A HEAD-only database probe proves storage reachability without returning rows.
 async function health(){
-  const [p,o]=await Promise.all([
-    db.from("publisher_runtime_publishers").select("id,name,enabled,migration_state,last_generation_at,last_publication_at,last_error"),
-    db.from("publisher_runtime_obligations").select("status")
-  ]);
-  if(p.error)throw p.error;if(o.error)throw o.error;
-  const counts:any={};for(const x of o.data||[])counts[x.status]=(counts[x.status]||0)+1;
-  return J({ok:true,version:"publisher-free-runtime-supabase-v1",at:now(),publishers:p.data||[],obligations:counts});
+  const probe=await db.from("publisher_runtime_publishers")
+    .select("id",{head:true,count:"exact"});
+  if(probe.error)throw probe.error;
+  return J({ok:true,version:"publisher-free-runtime-supabase-v1",at:now()});
 }
 
 Deno.serve(async(req:Request)=>{
