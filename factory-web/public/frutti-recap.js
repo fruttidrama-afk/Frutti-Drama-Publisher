@@ -126,7 +126,7 @@ export function initFruttiRecap({session,udText}){
   const f=files.find(x=>x.file_index===selected);if(!f){$("#udRecapStatus").textContent="Seleccioná un archivo original.";return}
   const v=values(),season=Number(v.season),episode=Number(v.episode);
   if(![2,3].includes(season)||!Number.isInteger(episode)||episode<1||episode>25){$("#udRecapStatus").textContent="Elegí temporada 2 o 3 y un número de episodio entre 1 y 25.";return}
-  if(v.generation_prompt.trim().length<20){$("#udRecapStatus").textContent="Pegá el prompt REAL y completo usado en Google Flow (no el plan de Prompt Studio).";return}
+  if(v.generation_prompt.trim().length>0&&v.generation_prompt.trim().length<20){$("#udRecapStatus").textContent="Si pegás el prompt original de Flow, debe estar completo. Si no lo tenés, podés dejarlo vacío y guardarlo más adelante.";return}
   if(!v.title.trim()||!v.description.trim()||synopsisNotAllowed.test(v.title+" "+v.description)){$("#udRecapStatus").textContent="Completá el título y la descripción con el hecho real. No se puede guardar el texto de ejemplo ni una plantilla sin completar.";return}
   const conflict=[...records.values()].find(x=>x.file_index!==selected&&x.season===season&&x.episode===episode);
   if(conflict){$("#udRecapStatus").textContent="T"+season+"E"+episode+" ya corresponde al archivo "+(conflict.file_index+1)+". Confirmá cuál es el video correcto.";return}
@@ -138,7 +138,7 @@ export function initFruttiRecap({session,udText}){
    if(!answer.saved)throw Error("El servidor no confirmó el guardado.");
    drafts.delete(selected);
    await load(files);
-   $("#udRecapStatus").textContent="✓ GUARDADO T"+season+"E"+episode+" · archivo "+(selected+1)+". Stock reconstruido actualizado; MP4, YouTube y cola de publicación intactos.";
+   $("#udRecapStatus").textContent="✓ GUARDADO T"+season+"E"+episode+" · archivo "+(selected+1)+(v.generation_prompt.trim()?" · prompt original asociado.":" · prompt original pendiente (no inventado).") +" No se modificaron MP4, YouTube ni la cola de publicación.";
   }catch(e){$("#udRecapStatus").textContent="NO SE GUARDÓ: "+String(e?.message||e)}
   finally{btn.disabled=false;btn.textContent="GUARDAR EN STOCK RECONSTRUIDO";}
  }
