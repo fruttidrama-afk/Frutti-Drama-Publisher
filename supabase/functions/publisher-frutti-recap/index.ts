@@ -1,5 +1,6 @@
 import {generateFruttiRecapCopy} from "./frutti-recap-copy.js";
 import {LEGACY_FRUTTI_METADATA,LEGACY_METADATA_SOURCE} from "./legacy-metadata.js";
+import {FRUTTI_S3_STORY_METADATA,FRUTTI_S3_STORY_SOURCE} from "./season3-story-metadata.js";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {createClient} from "npm:@supabase/supabase-js@2";
 const BASE=Deno.env.get("SUPABASE_URL")!;
@@ -29,7 +30,7 @@ Deno.serve(async(req:Request)=>{
   if(pubError||!pub)return json({error:"FORBIDDEN"},403);
   if(req.method==="GET"){
    const {data,error}=await admin.from(TABLE).select("file_index,source_sha256,season,episode,generation_prompt,prompt_provenance,title,description,metadata_method,episode_story_evidence,episode_story_extraction_method,note,record_status,publication_status,revision,updated_at,created_at").eq("publisher_id",PID).order("season").order("episode");
-   return error?json({error:"READ_FAILED"},503):json({items:data||[],historical_metadata:LEGACY_FRUTTI_METADATA,historical_metadata_source:LEGACY_METADATA_SOURCE,historical_metadata_status:"canonical_legacy_code_not_verified_youtube_final",publication_boundary:{season:2,episode:8},publication_queue_unchanged:true,ai_status:{connected:true,provider:"Extractor editorial verificable · local",engine_revision:"story_action_v34",method:"deterministic_rules",semantic_model:false,review_required:true,free_only:true,billing_automation_disabled:true,external_ai_required:false}});
+   return error?json({error:"READ_FAILED"},503):json({items:data||[],historical_metadata:[...LEGACY_FRUTTI_METADATA,...FRUTTI_S3_STORY_METADATA],historical_metadata_source:LEGACY_METADATA_SOURCE,season3_story_metadata_source:FRUTTI_S3_STORY_SOURCE,historical_metadata_status:"t2_canonical_legacy_code_and_t3_story_based_derived_copy_not_verified_youtube_final",publication_boundary:{season:2,episode:8},publication_queue_unchanged:true,ai_status:{connected:true,provider:"Extractor editorial verificable · local",engine_revision:"story_action_v34",method:"deterministic_rules",semantic_model:false,review_required:true,free_only:true,billing_automation_disabled:true,external_ai_required:false}});
   }
   const b=await req.json().catch(()=>null);
   if(!b||typeof b!=="object")return json({error:"INVALID_BODY"},400);
@@ -51,11 +52,13 @@ Deno.serve(async(req:Request)=>{
   if(prompt.length<20||prompt.length>50000)return json({error:"PROMPT_LENGTH_INVALID"},400);
   const title=tidy(String(b.title||"")),description=String(b.description||"").trim(),note=String(b.note||"").trim();
   const exactLegacy=LEGACY_FRUTTI_METADATA.find((entry:any)=>entry.season===season&&entry.episode===episode&&entry.title===title&&entry.description===description);
+  const exactS3Story=FRUTTI_S3_STORY_METADATA.find((entry:any)=>entry.season===season&&entry.episode===episode&&entry.title===title&&entry.description===description);
+  const sourceMatched=Boolean(exactLegacy||exactS3Story);
   const episode_story_evidence=tidy(String(b.episode_story_evidence||"")).slice(0,2000);
   const episode_story_extraction_method=tidy(String(b.episode_story_extraction_method||"")).slice(0,100);
   if(/^DRAMA FAMILIAR:|^GIRO IMPACTANTE:/i.test(title)||/\b(?:one continuous scene|unbroken take|cinematic shot|camera movement|character reference sheets|9:16 vertical|no duplicates|ambient audio)\b/i.test(description))
    return json({error:"COPY_NOT_NARRATIVE",hint:"El título debe explicar el suceso real, y la descripción debe narrar la trama, sin copiar instrucciones técnicas."},400);
-  if(title.length<12||title.length>100||(!exactLegacy&&(!/^([A-ZÁÉÍÓÚÜÑ0-9]+) ([A-ZÁÉÍÓÚÜÑ0-9]+):\s+.+/.test(title)||title.includes("…")||title.includes("..."))))return json({error:"TITLE_FORMAT_INVALID",hint:"DOS PALABRAS EN MAYÚSCULAS: oración completa. Máximo 100 caracteres. Los títulos históricos exactos son excepciones documentadas."},400);
+  if(title.length<12||title.length>100||(!sourceMatched&&(!/^([A-ZÁÉÍÓÚÜÑ0-9]+) ([A-ZÁÉÍÓÚÜÑ0-9]+):\s+.+/.test(title)||title.includes("…")||title.includes("..."))))return json({error:"TITLE_FORMAT_INVALID",hint:"DOS PALABRAS EN MAYÚSCULAS: oración completa. Máximo 100 caracteres. Los títulos históricos exactos son excepciones documentadas."},400);
   if(description.length<12||description.length>4000)return json({error:"DESCRIPTION_INVALID"},400);
   if(note.length>700)return json({error:"NOTE_TOO_LONG"},400);
   const {data:src,error:srcErr}=await admin.from("publisher_factory_knowledge").select("content").eq("key",MANIFEST).eq("active",false).single();
@@ -70,7 +73,7 @@ Deno.serve(async(req:Request)=>{
   if(old&&old.source_sha256!==digest)return json({error:"VIDEO_REPLACEMENT_FORBIDDEN"},409);
   if(old&&b.expected_revision!==old.revision)return json({error:"STALE_EDIT_REFRESH_REQUIRED"},409);
   if(!old&&b.expected_revision!=null)return json({error:"STALE_EDIT_REFRESH_REQUIRED"},409);
-  const row={publisher_id:PID,file_index:idx,source_sha256:digest,season,episode,generation_prompt:prompt,prompt_provenance:"operator_copied_google_flow",title,description,metadata_method:exactLegacy?"legacy_canonical_operator_reviewed":"operator_reviewed",episode_story_evidence,episode_story_extraction_method,note,record_status:"reconstructed_unapproved",publication_status:"unverified",assigned_by:owner,revision:old?old.revision+1:1,updated_at:new Date().toISOString()};
+  const row={publisher_id:PID,file_index:idx,source_sha256:digest,season,episode,generation_prompt:prompt,prompt_provenance:"operator_copied_google_flow",title,description,metadata_method:exactLegacy?"legacy_canonical_operator_reviewed":exactS3Story?"s3_story_derived_operator_reviewed":"operator_reviewed",episode_story_evidence,episode_story_extraction_method,note,record_status:"reconstructed_unapproved",publication_status:"unverified",assigned_by:owner,revision:old?old.revision+1:1,updated_at:new Date().toISOString()};
   const {data:saved,error:saveError}=await admin.from(TABLE).upsert(row,{onConflict:"publisher_id,file_index"}).select("file_index,season,episode,revision,updated_at,title,description").single();
   if(saveError){if(saveError.code==="23505")return json({error:"EPISODE_ALREADY_ASSIGNED_TO_ANOTHER_VIDEO"},409);return json({error:"RECONSTRUCTED_STOCK_SAVE_FAILED"},503)}
   return json({saved:true,record:saved,reconstructed_stock:true,publication_queue_unchanged:true,media_unmodified:true});
