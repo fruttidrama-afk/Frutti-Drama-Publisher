@@ -444,13 +444,93 @@ function warmConversationInterruptedByFresia(fullPrompt){
   grounding:"explicit_scene_actions_speech_and_character_roles_operator_review_required",
   warning:"Borrador basado en acciones y diálogos presentes en el prompt, no en el canon histórico. Revisá el video antes de guardar."};
 }
+
+// Recover the narrative from free-form Google Flow prose when a separate
+// structured hook/story is unavailable. Source evidence stays visible.
+function proseSceneCopy(prompt){
+ const raw=String(prompt||"").replace(/\r/g,"");
+ const lines=raw.split("\n");
+ const actions=[
+  [/intenta\s+besar|tries?\s+to\s+kiss/i,"BESO INTENTADO","intenta besar",100],
+  [/roba|steals?|stole/i,"ROBO REVELADO","roba",96],
+  [/confiesa|confesses?|admits?|admite/i,"CONFESIÓN IMPACTANTE","confiesa",94],
+  [/acusa|accuses?/i,"ACUSACIÓN DIRECTA","acusa",93],
+  [/revela|reveals?|anuncia|announces?/i,"REVELACIÓN IMPORTANTE","revela",91],
+  [/descubre|discovers?|finds? out/i,"HALLAZGO DECISIVO","descubre",89],
+  [/insulta|humilla|insults?|humiliates?/i,"HUMILLACIÓN CRUEL","humilla",88],
+  [/enfrenta|confronts?|encara/i,"ENFRENTAMIENTO DIRECTO","enfrenta",87],
+  [/\bbesa\b|\bbesan\b|kisses?/i,"BESO REVELADOR","besa",85],
+  [/reads?|reading|lee|examina|examines?|studies?|reviews?/i,"DOCUMENTO REVELADOR","examina",77],
+  [/muestra|shows?|entrega|hands? over/i,"PRUEBA ENTREGADA","muestra",75],
+  [/encuentra|encuentran|finds?|found/i,"HALLAZGO INESPERADO","encuentra",72],
+  [/ordena|orders?|exige|demands?/i,"ORDEN DIRECTA","ordena",70],
+  [/recibe|receives?/i,"NOTICIA INESPERADA","recibe",66],
+  [/esconde|oculta|hides?|conceals?/i,"SECRETO OCULTO","esconde",63],
+  [/llora|cries?|sobs?/i,"DOLOR PROFUNDO","llora",58],
+  [/looks? at|stares? at|mira|observa|holds?|sostiene|abre|opens?/i,"ESCENA REVELADORA","observa",52],
+  [/speaks?|says?|tells?|whispers?|shouts?|dice|responde|grita/i,"PALABRAS DECISIVAS","habla",48],
+  [/enters?|walks? into|walks? in|entra|aparece|arrives?/i,"LLEGADA INESPERADA","aparece",35]
+ ];
+ const objects=[
+  [/medical report|clinical report|medical file|lab results?|medical records?|informe m[eé]dico|informe cl[ií]nico|an[aá]lisis cl[ií]nicos?/i,"un informe médico"],
+  [/diagnosis|diagn[oó]stico/i,"un diagnóstico"],
+  [/letter|carta/i,"una carta"],[/document|documento|paperwork|papeles/i,"un documento"],
+  [/photograph|photo|foto|fotograf[ií]a/i,"una fotografía"],[/envelope|sobre/i,"un sobre"],
+  [/message|mensaje|note\b|nota\b/i,"una nota"],[/report|informe/i,"un informe"],
+  [/box|caja/i,"una caja"],[/key\b|llave/i,"una llave"],[/phone|call\b|llamada/i,"una llamada"]
+ ];
+ const candidates=[];let section="scene",i=0;
+ for(let line of lines){
+  line=clean(line);if(!line)continue;i++;
+  if(/^(?:CANON|CONTINUITY|CREATIVE BIBLE|SHOW BIBLE|PREVIOUS EPISODE|BACKSTORY|ANTECEDENTES|AUTORIDAD VISUAL Y CANON)\s*:?\s*$/i.test(line)){section="canon";continue}
+  if(/^(?:C[AÁ]MARA|CAMERA|LIGHTING|ILUMINACI[OÓ]N|ESTILO|STYLE|RENDER|AUDIO|SOUND|CONSTRAINTS|ANTI.GLITCH|IDIOMA|LANGUAGE|NEGATIVE|ASSETS?|REFERENCE|GENERATION)\s*:/i.test(line)){section="technical";continue}
+  if(/^(?:SCENE|ESCENA|BEAT|SEQUENCE|SECUENCIA|TRAMA|STORY|EPISODE|EPISODIO|ACTION|ACCI[OÓ]N)(?:\s*\d+)?\s*[:：-]?\s*(.*)$/i.test(line)){
+   section="scene";line=line.replace(/^(?:SCENE|ESCENA|BEAT|SEQUENCE|SECUENCIA|TRAMA|STORY|EPISODE|EPISODIO|ACTION|ACCI[OÓ]N)(?:\s*\d+)?\s*[:：-]?\s*/i,"");
+  }
+  if(section!=="scene")continue;
+  const chunks=line.split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÑ"“@¿])|;\s*/).map(clean).filter(Boolean);
+  for(const chunk of chunks){
+   const people=names(chunk);if(!people.length)continue;
+   if(/^(?:generate|render|create exactly|no duplicates|no subtitles)/i.test(chunk))continue;
+   for(const [re,hook,verb,rank] of actions){
+    const hit=chunk.match(re);if(!hit)continue;
+    const before=chunk.slice(0,hit.index),after=chunk.slice(hit.index+hit[0].length);
+    if(/\b(?:no|nunca|not|never|almost|casi)\s*$/i.test(before))continue;
+    if(/\b(?:attempts?|tries?|intenta)\s+(?:to\s+)?$/i.test(before)&&hook!=="BESO INTENTADO")continue;
+    const pre=names(before),actor=pre.at(-1)||people[0];
+    if(!actor)continue;
+    const target=names(after).find(n=>n!==actor)||"";
+    const obj=objects.find(([re])=>re.test(after))?.[1]||"";
+    if(["examina","muestra","recibe","roba","esconde"].includes(verb)&&!target&&!obj)continue;
+    const quote=chunk.match(/[«“"]([^»”"]{10,200})[»”"]/);
+    const score=rank+(pre.length?12:0)+(target?5:0)+(obj?4:0)-(chunk.startsWith("Use the attached")?9:0);
+    candidates.push({chunk,actor,target,obj,hook,verb,score,order:i,quote:quote?.[1]||""});
+    break;
+   }
+  }
+ }
+ if(!candidates.length)return null;
+ candidates.sort((a,b)=>b.score-a.score||a.order-b.order);
+ const best=candidates[0];if(best.score<55)return null;
+ const verb=best.verb,withTarget=best.target?((verb==="habla"?" con ":" a ")+best.target):"";
+ const event=best.actor+" "+verb+(best.target?withTarget:best.obj?" "+best.obj:"");
+ const title=makeTitle(best.hook,event);if(!title)return null;
+ const evidence=[...new Set(candidates.sort((a,b)=>a.order-b.order).filter(v=>v.score>=55).slice(0,5).map(v=>v.chunk))].join(" ").slice(0,1800);
+ const quote=best.quote?" En el episodio se escucha: «"+best.quote.replace(/[«»“”"]/g,"").trim()+"».":"";
+ const desc=event.charAt(0).toUpperCase()+event.slice(1)+"."+quote+"\n\n¿Qué sucederá después?\n\n"+TAGS;
+ return {title,description:desc,episode_excerpt:best.chunk.slice(0,500),source_story:evidence,
+  method:"unstructured_scene_action_evidence",grounding:"literal_scene_actions_requires_review",
+  warning:"Propuesta extraída de acciones explícitas de una escena libre. Se muestran los fragmentos fuente; verificá que el evento principal corresponda al video."};
+}
 export function generateFruttiRecapCopy(fullPrompt){
- const richScene=warmConversationInterruptedByFresia(fullPrompt);
- if(richScene)return richScene;
  const operator=operatorStoryCopy(fullPrompt);
  if(operator)return operator;
  const explicit=extractExplicitEpisodeStory(fullPrompt);
  if(explicit)return explicitEpisodeCopy(explicit);
+ const richScene=warmConversationInterruptedByFresia(fullPrompt);
+ if(richScene)return richScene;
+ const scene=proseSceneCopy(fullPrompt);
+ if(scene)return scene;
  const input=extract(fullPrompt);
  if(input.error)return input;
  const ev=episodeEvent(input.story);
