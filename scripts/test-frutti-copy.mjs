@@ -408,3 +408,43 @@ assert(screenshotCopy.title.startsWith("PRUEBA TÓXICA: Don Melón recibe"),"scr
 assert(screenshotCopy.description.includes("Uva Reyes comprende que no fue una muerte natural"),"screenshot-style final story sentence lost");
 assert(!/Mango|Fresia/.test(screenshotCopy.title+" "+screenshotCopy.description),"previous canonical beat used as current story");
 console.log("PASS LONG-FLOW-20-BLOCKS: 20 canonical episodes x 6 long-format variants, 120/120; 1 screenshot regression");
+
+
+// UNKNOWN-HEADING-CANONICAL-20: real regression for iPad's
+// CURRENT_STORY_BOUNDARY_AMBIGUOUS with unknown production headings.
+// 20 different canonical stories x 6 hostile Flow prompt layouts; these are
+// test fixtures, NOT claimed links to 20 verified historical MP4s.
+const unknownHeadingLong="Maintain the fixed reference assets, locked fruit faces, one voice at a time, no duplicate characters or frame glitch. ".repeat(35);
+const weirdLayouts=[
+ (p,c)=>"CONTINUITY Previous canonical beat: "+p.story+"\nSTORY / ACTION HOOK: "+c.hook+" STORY: "+c.story+" Camera choreography and acting: "+unknownHeadingLong,
+ (p,c)=>"CONTINUITY Previous canonical beat: "+p.story+"\nSTORY / ACTION\nHOOK: "+c.hook+"\nSTORY: "+c.story+"\n\nCamera choreography and acting:\n"+unknownHeadingLong,
+ (p,c)=>"CONTINUITY Previous canonical beat: "+p.story+"\nSTORY / ACTION\nHOOK: "+c.hook+"\nSTORY: "+c.story+"\nThe characters are the same fixed assets and must remain stable. "+unknownHeadingLong,
+ (p,c)=>{const words=c.story.split(" "),half=Math.floor(words.length/2);return "CONTINUITY Previous canonical beat: "+p.story+"\nSTORY / ACTION\nHOOK: "+c.hook+"\nSTORY:\n"+words.slice(0,half).join(" ")+"\n"+words.slice(half).join(" ")+"\nThe characters are the same fixed assets. "+unknownHeadingLong},
+ (p,c)=>"CONTINUITY Previous canonical beat: "+p.story+"\nSTORY / ACTION\nHOOK: "+c.hook+"\nSTORY: "+c.story+"\n\nAction choreography:\n"+unknownHeadingLong,
+ (p,c)=>"CONTINUITY Previous canonical beat: "+p.story+"\nSTORY / ACTION\nHOOK: "+c.hook+"\nSTORY: "+c.story+"\n--- Production notes: "+unknownHeadingLong
+];
+let weirdCount=0;
+for(let i=13;i<33;i++){
+ const previous=archive.prompts[i-1],current=archive.prompts[i];
+ for(let j=0;j<weirdLayouts.length;j++){
+  const p=weirdLayouts[j](previous,current),out=generate(p);
+  const id="UNKNOWN-HEADING-CANONICAL-20 T"+current.season+"E"+current.episode+" format "+j;
+  assert(p.length>1800,id+": scenario not long enough to exercise bug");
+  assert(!out.error,id+": "+JSON.stringify(out));
+  assert.equal(out.source_story,current.story,id+": STORY includes production text or previous beat");
+  assert(out.title.startsWith((hookReshape[current.hook]||current.hook)+": "),id+": hook contaminated by previous episode");
+  assert(out.description.includes(current.story),id+": lost current plot");
+  assert(!out.description.includes(previous.story),id+": previous plot leaked into description");
+  assert(out.title.length<=100,id+": YouTube title overflow");
+  weirdCount++;
+ }
+}
+assert.equal(weirdCount,120,"20 canonical episodes must pass all 120 unknown-heading tests");
+const fakeNonStory=generate("CONTINUITY Previous canonical beat: SOSPECHA ABIERTA — Fresia acusa a Mango. STORY / ACTION HOOK: PRUEBA TÓXICA STORY: Use the character reference sheet and maintain scene stability.\nThe characters are the same fixed assets. "+unknownHeadingLong);
+assert(fakeNonStory.error,"Technical instructions alone must not be treated as narrative");
+const unknownReal=generate("CONTINUITY Previous canonical beat: SOSPECHA ABIERTA — Fresia confronta a Mango Del Rio. STORY / ACTION HOOK: PRUEBA TÓXICA STORY: Don Melón recibe una prueba médica que confirma que la muerte de Banana estuvo relacionada con un envenenamiento. Uva Reyes comprende que no fue una muerte natural.\n\nCamera choreography and acting: "+unknownHeadingLong);
+assert(!unknownReal.error,"Prueba tóxica must survive long unknown technical headings");
+assert(unknownReal.title.startsWith("PRUEBA TÓXICA: Don Melón recibe"),"Prueba tóxica hook must be current plot");
+assert(unknownReal.description.includes("Uva Reyes comprende que no fue una muerte natural"),"Second current story beat lost");
+assert(!/Fresia|Mango/.test(unknownReal.title+" "+unknownReal.description),"Previous canonical beat leaked");
+console.log("PASS UNKNOWN-HEADING-CANONICAL-20: 20 episodes x 6 long formats = 120/120; technical-only fail-close and screenshot incident");
