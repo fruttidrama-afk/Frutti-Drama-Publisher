@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { buildPublicationCopy } from './publication-copy.js';
+import { selectFruttiSourceIdea,FRUTTI_CREATIVE_PACKAGE_SCHEMA } from './frutti-creative-package.js';
 
 const DATA_DIR=path.resolve(process.env.DATA_DIR||'/data');
 const PERSISTED=path.join(DATA_DIR,'publisher-config.json');
@@ -438,6 +439,7 @@ function earthCurrentIntentConflict(db,row){
 }
 
 function isEarthIn10(){return /earth\s*in\s*10/i.test(String(SHOW||CONFIG.identity?.show_name||''));}
+function isFruttiDrama(){return /frutti\s*drama|fruttidrama/i.test(String(SHOW||CONFIG.identity?.show_name||''));}
 function isGenericAutonomousIdea(hook,story){
   return /^NEXT CHAPTER$/i.test(String(hook||'').trim())||/Continue the configured Creative Bible and canon from the previous accepted beat/i.test(String(story||''));
 }
@@ -532,27 +534,34 @@ export function materializeCreativePackage(db,row,{force=false}={}){
   const existingDigest=existingPrompt&&existingTitle&&existingDescription
     ? creativePackageDigest(row,existingPrompt,existingTitle,existingDescription)
     : '';
-  if(!force&&existingPrompt&&existingTitle&&existingDescription&&
-     String(row?.creativePackageHash||'')===existingDigest){
-    try{
-      validateEpisodePrompt(row,existingPrompt);
-      const providers=CONFIG.publication?.providers||[],provider=providers.find(x=>x.type===CONFIG.publication?.selected_provider)||providers[0]||{};
-      const expected=buildPublicationCopy({
-        hook:row.hook,
-        story:row.story,
-        prompt:existingPrompt,
-        contextTerms:[],
-        hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
-        showName:CONFIG.identity?.show_name||SHOW,
-        maxTitleLength:100
-      });
-      let expectedDescription=String(expected.description||'');
-      while(Buffer.byteLength(expectedDescription,'utf8')>4800)expectedDescription=expectedDescription.slice(0,-30).trimEnd();
-      const expectedTitle=String(expected.title||'').slice(0,100);
-      if(existingTitle!==expectedTitle||existingDescription!==expectedDescription)force=true;
-      else return{row,repaired:intent.repaired,reason:intent.reason,created:false};
-    }catch{
-      force=true;
+  if(!force&&existingPrompt&&existingTitle&&existingDescription&&String(row?.creativePackageHash||"")===existingDigest){
+    if(isFruttiDrama()){
+      // Exact package is already in the append-only creative ledger.
+      // Never derive title or description by looking at a Flow prompt later.
+      const stored=db.prepare("SELECT prompt,title,description,hook,story,packageHash FROM factory_creative_packages WHERE packageId=? AND itemId=?")
+        .get(String(row.creativePackageId||""),row.id);
+      if(stored&&stored.packageHash===existingDigest&&stored.prompt===existingPrompt&&
+        stored.title===existingTitle&&stored.description===existingDescription&&
+        stored.hook===row.hook&&stored.story===row.story){
+        validateEpisodePrompt(row,existingPrompt);
+        return{row,repaired:intent.repaired,reason:intent.reason,created:false};
+      }
+      // Existing legacy copy without this ledger cannot masquerade as a
+      // source-authored creative package. Rebuild only from full source fields.
+    }else{
+      try{
+        validateEpisodePrompt(row,existingPrompt);
+        const providers=CONFIG.publication?.providers||[],provider=providers.find(x=>x.type===CONFIG.publication?.selected_provider)||providers[0]||{};
+        const expected=buildPublicationCopy({
+          hook:row.hook,story:row.story,prompt:existingPrompt,contextTerms:[],
+          hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+          showName:CONFIG.identity?.show_name||SHOW,maxTitleLength:100
+        });
+        let expectedDescription=String(expected.description||"");
+        while(Buffer.byteLength(expectedDescription,"utf8")>4800)expectedDescription=expectedDescription.slice(0,-30).trimEnd();
+        if(existingTitle===String(expected.title||"").slice(0,100)&&existingDescription===expectedDescription)
+          return{row,repaired:intent.repaired,reason:intent.reason,created:false};
+      }catch{}
     }
   }
 
@@ -560,26 +569,39 @@ export function materializeCreativePackage(db,row,{force=false}={}){
   const prompt=buildPrompt(db,row,visual);
   validateEpisodePrompt(row,prompt);
   const providers=CONFIG.publication?.providers||[],provider=providers.find(x=>x.type===CONFIG.publication?.selected_provider)||providers[0]||{};
-  const copy=buildPublicationCopy({
-    hook:row.hook,
-    story:row.story,
-    prompt,
-    contextTerms:[],
-    hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
-    showName:CONFIG.identity?.show_name||SHOW,
-    maxTitleLength:100
-  });
-  let description=String(copy.description||'');
-  while(Buffer.byteLength(description,'utf8')>4800)description=description.slice(0,-30).trimEnd();
-  const title=String(copy.title||'').slice(0,100);
+  const copy=isFruttiDrama()
+    ?selectFruttiSourceIdea(row,ideaForEpisode(Number(row.episode)))
+    :buildPublicationCopy({
+      hook:row.hook,story:row.story,prompt,contextTerms:[],
+      hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
+      showName:CONFIG.identity?.show_name||SHOW,maxTitleLength:100
+    });
+  let description=String(copy.description||"");
+  while(Buffer.byteLength(description,"utf8")>4800)description=description.slice(0,-30).trimEnd();
+  const title=String(copy.title||"");
+  if(title.length>100)throw Error("CREATIVE_PACKAGE_TITLE_TOO_LONG");
   if(!title.trim()||!description.trim())throw new Error('CREATIVE_PACKAGE_METADATA_EMPTY');
-  const promptHash=sha256(prompt),packageHash=creativePackageDigest(row,prompt,title,description),packageId='creative-package-v2-'+randomUUID();
+  const promptHash=sha256(prompt),packageHash=creativePackageDigest(row,prompt,title,description),packageId=(isFruttiDrama()?'frutti-creative-package-v1-':'creative-package-v2-')+randomUUID();
   const roles=visual.map(name=>({name,role:'ON_SCREEN',visual:true}));
   const registryData=registry();
   const handles=visual.map(name=>registryData.characters.find(x=>String(x.name)===String(name))?.mention||('@'+name));
 
-  db.prepare("UPDATE factory_items SET prompt=?,promptHash=?,promptGenerationId=?,characterHandles=?,characterRoles=?,promptPayloadHash=?,promptPayloadLength=?,title=?,description=?,creativePackageHash=?,creativePackageId=?,updatedAt=? WHERE id=?")
-    .run(prompt,promptHash,'runtime-package-v2-'+randomUUID(),JSON.stringify(handles),JSON.stringify(roles),promptHash,Buffer.byteLength(prompt,'utf8'),title,description,packageHash,packageId,new Date().toISOString(),row.id);
+  if(isFruttiDrama()){
+    // One transaction: the package can neither exist only in factory_items nor
+    // be recorded only in its immutable ledger. Prompt and copy are siblings.
+    const stamp=new Date().toISOString();
+    db.exec("BEGIN IMMEDIATE");
+    try{
+      db.prepare("INSERT INTO factory_creative_packages(packageId,itemId,season,episode,hook,story,prompt,title,description,promptHash,packageHash,packageSchema,sourceMethod,createdAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+        .run(packageId,row.id,Number(row.season||ACTIVE_SEASON),Number(row.episode),String(row.hook),String(row.story),prompt,title,description,promptHash,packageHash,FRUTTI_CREATIVE_PACKAGE_SCHEMA,"episode_source_authored",stamp);
+      db.prepare("UPDATE factory_items SET prompt=?,promptHash=?,promptGenerationId=?,characterHandles=?,characterRoles=?,promptPayloadHash=?,promptPayloadLength=?,title=?,description=?,creativePackageHash=?,creativePackageId=?,updatedAt=? WHERE id=?")
+        .run(prompt,promptHash,"runtime-package-v3-"+randomUUID(),JSON.stringify(handles),JSON.stringify(roles),promptHash,Buffer.byteLength(prompt,"utf8"),title,description,packageHash,packageId,stamp,row.id);
+      db.exec("COMMIT");
+    }catch(error){db.exec("ROLLBACK");throw error}
+  }else{
+    db.prepare("UPDATE factory_items SET prompt=?,promptHash=?,promptGenerationId=?,characterHandles=?,characterRoles=?,promptPayloadHash=?,promptPayloadLength=?,title=?,description=?,creativePackageHash=?,creativePackageId=?,updatedAt=? WHERE id=?")
+      .run(prompt,promptHash,"runtime-package-v2-"+randomUUID(),JSON.stringify(handles),JSON.stringify(roles),promptHash,Buffer.byteLength(prompt,"utf8"),title,description,packageHash,packageId,new Date().toISOString(),row.id);
+  }
 
   const fresh=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);
   if(!fresh||!String(fresh.prompt||'').trim())throw new Error('PROMPT_QUALITY_GATE: prompt persistence failed.');
@@ -590,8 +612,8 @@ export function materializeCreativePackage(db,row,{force=false}={}){
 export function ideaForEpisode(episode){
   const i=Number(episode)-1,initial=CONFIG.content.initial_episodes[i];
   if(initial){
-    if(Array.isArray(initial))return{hook:String(initial[0]||('EPISODE '+episode)),story:String(initial[1]||'')};
-    return{hook:String(initial.hook||initial.title||('EPISODE '+episode)),story:String(initial.story||initial.intent||initial.description||'')};
+    if(Array.isArray(initial))return{hook:String(initial[0]||('EPISODE '+episode)),story:String(initial[1]||''),titleCore:String(initial[2]||''),descriptionCore:String(initial[3]||'')};
+    return{hook:String(initial.hook||('EPISODE '+episode)),story:String(initial.story||initial.intent||''),titleCore:String(initial.titleCore||initial.title_core||''),title:String(initial.title||''),description:String(initial.description||''),descriptionCore:String(initial.descriptionCore||initial.description_core||'')};
   }
   const seeds=CONFIG.content.autonomous_seed_ideas;
   if(seeds.length){
@@ -602,7 +624,7 @@ export function ideaForEpisode(episode){
     const v=seeds[seedIndex%seeds.length],cycle=Math.floor(seedIndex/seeds.length)+1;
     const cycleSuffix=cycle>1?' Continuation cycle '+cycle+'. Preserve canon and create a new consequence rather than repeating the previous episode.':'';
     if(typeof v==='string')return{hook:'NEW TURN',story:v+cycleSuffix};
-    return{hook:String(v.hook||'NEW TURN'),story:String(v.story||v.intent||'')+cycleSuffix};
+    return{hook:String(v.hook||'NEW TURN'),story:String(v.story||v.intent||'')+cycleSuffix,titleCore:String(v.titleCore||v.title_core||''),title:String(v.title||''),description:String(v.description||''),descriptionCore:String(v.descriptionCore||v.description_core||'')};
   }
   if(isEarthIn10()){
     // New Earth backlog rows start as planner placeholders. The DB-aware
@@ -635,6 +657,13 @@ export function ensureBacklog(db,minReady=Math.max(9,DAILY_LIMIT*3)){
       }
     }
     const force=isGenericAutonomousIdea(row.hook,row.story)||/HOOK:\s*NEXT CHAPTER/i.test(String(row.prompt||''))||/EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(String(row.prompt||''));
+    if(isFruttiDrama()){
+      const source=ideaForEpisode(Number(row.episode));
+      // Old migrated hook+story drafts are kept safely. No title or description
+      // is manufactured from Flow text; only a full editorial source can proceed.
+      if(!source||(String(source.hook||"")!==String(row.hook||""))||(String(source.story||"")!==String(row.story||""))||
+         !(source.title||source.titleCore)||!(source.description||source.descriptionCore))continue;
+    }
     materializeCreativePackage(db,row,{force});
   }
 }
