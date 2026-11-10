@@ -418,7 +418,7 @@ function operatorStoryCopy(fullPrompt){
   [/ordena|orders?/i,"ORDEN DIRECTA"],
   [/amenaza|threatens?/i,"AMENAZA DIRECTA"],
   [/confiesa|admite|confesses?|admits?/i,"CONFESIÓN REVELADORA"],
-  [/revela|demuestra|reveals?|proves?/i,"REVELACIÓN IMPORTANTE"],
+  [/revela|demuestra|reveals?|proves?/i,"REVELACIÓN BOMBA"],
   [/se niega|rechaza|refuses?|rejects?/i,"RECHAZO DIRECTO"],
   [/encuentra|encuentran|descubre|descubren|finds?|discovers?/i,"HALLAZGO IMPORTANTE"],
   [/exige|demands?/i,"EXIGENCIA DIRECTA"],
