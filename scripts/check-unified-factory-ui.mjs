@@ -91,7 +91,7 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
  if(!recapJs.includes("derived_from_preserved_story_via_legacy_rules")||!recapJs.includes('entry.workflow_stage!=="review"')||!recapJs.includes("HISTORIA PLANIFICADA, SIN VIDEO EN REVIEW CONFIRMADO"))throw Error(name+" missing Season 3 source-provenance separation");
  const season3Data=fs.readFileSync("supabase/functions/publisher-frutti-recap/season3-story-metadata.js","utf8");
  if(!season3Data.includes('"workflow_stage": "story_plan_no_verified_review"')||!season3Data.includes('"workflow_stage": "review"')||!season3Data.includes('"youtube_copy_verified": false'))throw Error(name+" backend Season 3 evidence/proposal stages missing");
- if(!html.includes('frutti-recap.js?v=20261110-season3-story-recovery'))throw Error(name+" references stale Safari recap module");
+ if(!html.includes('frutti-recap.js?v=20261110-season3-provenance-safe-v2'))throw Error(name+" references stale Safari recap module");
  if(/Extractor de episodio actual v(?:28|30)/.test(recapJs))throw Error(name+" misleading hardcoded visible v28/v30 label");
  const recapModule=await import("data:text/javascript;base64,"+Buffer.from(recapJs).toString("base64"));
  const deployedIndex=fs.readFileSync("supabase/functions/publisher-frutti-recap/index.ts","utf8");
