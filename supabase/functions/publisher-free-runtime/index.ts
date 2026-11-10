@@ -1,4 +1,4 @@
-// Mirror of LIVE Supabase Edge publisher-free-runtime v11 (2026-11-09).
+// Mirror of LIVE Supabase Edge publisher-free-runtime v12 (2026-11-10).
 // Auth: GitHub OIDC / Supabase service role. No stored tokens or sensitive values.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
