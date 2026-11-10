@@ -312,8 +312,9 @@ function extractExplicitEpisodeStory(fullPrompt){
    const line=clean(match[1]||"")||clean(src.slice(match.index+match[0].length).split("\n").find(x=>x.trim())||"");
    if(line.length<20||line.length>900)continue;
    const named=line.match(/^([A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+):\s*(.{20,})$/);
-   const hook=named?named[1]:"";
-   const story=named?named[2]:line;
+   const rawHook=line.match(/^([A-ZÁÉÍÓÚÜÑ0-9]+(?:\s+(?:[A-ZÁÉÍÓÚÜÑ0-9]+|DE|DEL|LA|EL)){0,4}):\s*(.{20,})$/);
+   const hook=rawHook?rawHook[1]:"";
+   const story=rawHook?rawHook[2]:line;
    if(TECH.test(story)&&!ACT.test(story))continue;
    // For unlabeled lines we cannot fabricate a hook: use the safer
    // existing scene-extraction logic, which also supports dialogue.
@@ -324,9 +325,20 @@ function extractExplicitEpisodeStory(fullPrompt){
  return null;
 }
 function explicitEpisodeCopy(explicit){
- const hook=explicit.hook;
  const story=explicit.story.replace(/\s+/g," ").trim().replace(/[.!?]+\s*$/,"");
- const candidates=[story, ...story.split(/\s*;\s*|\s+\bpero\b\s+|\s+\by\b\s+(?=[A-ZÁÉÍÓÚÑ])/i).map(x=>x.trim())].filter(Boolean);
+ const rawHook=clean(explicit.hook).toLocaleUpperCase("es");
+ // Titles have exactly two uppercase hook words, irrespective of older prompt
+ // variants that used one or three. Derived hooks cannot change the plot claim.
+ const hook=/^[A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+$/.test(rawHook)?rawHook:
+   /\bordena\b/i.test(story)?"ORDEN DIRECTA":
+   /\bpromete\b/i.test(story)?"PROMESA DECISIVA":
+   /\b(?:sigue|persigue)\b/i.test(story)?"SEGUIMIENTO VEHICULAR":"";
+ if(!hook)return {error:"HOOK_NOT_GROUNDED",detail:"El encabezado del episodio no tiene dos palabras y no se pudo derivar otro sin alterar la trama.",source_story:explicit.story};
+ const candidates=[story];
+ const cuts=story.split(/\s*;\s*|\s+\bpero\b\s+|\s+\by\b\s+(?=[A-ZÁÉÍÓÚÑ])/i).map(x=>x.trim()).filter(Boolean);
+ candidates.push(...cuts);
+ const secondEvent=story.match(/^((?:El|La|Don)\s+[A-ZÁÉÍÓÚÑ][^\s,;]+|[A-ZÁÉÍÓÚÑ][^\s,;]+)\s+.+?\s+y\s+(revela|confiesa|descubre|encuentra|advierte|anuncia|demuestra|declara)\s+(.+)$/i);
+ if(secondEvent)candidates.splice(1,0,secondEvent[1]+" "+secondEvent[2]+" "+secondEvent[3]);
  let title=null,coveredStory="";
  for(const v of candidates){
   const t=makeTitle(hook,v);
