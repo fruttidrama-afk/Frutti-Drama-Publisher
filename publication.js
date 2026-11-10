@@ -62,7 +62,21 @@ function legacyEarthPublicationRepair(row,item,config,episode1Title=''){
     source:'historical-prompt-copy-audit'
   };
 }
-function metadata(row,config){
+function metadata(row,config,db){
+  if(/frutti\s*drama|fruttidrama/i.test(String(config.identity?.show_name||""))){
+    // Review, Stock and publication are consumers of an already authored
+    // immutable creative package. No later prompt/story/clip interpretation.
+    const title=String(row?.title||""),description=String(row?.description||"");
+    const digest=creativePackageDigest(row,title,description);
+    const archived=db?.prepare("SELECT hook,story,prompt,title,description,packageHash FROM factory_creative_packages WHERE packageId=? AND itemId=?")
+      .get(String(row.creativePackageId||""),String(row.id||row.itemId||""));
+    if(!title||!description||!archived||archived.packageHash!==digest||
+       row.creativePackageHash!==digest||archived.hook!==row.hook||
+       archived.story!==row.story||archived.prompt!==row.prompt||
+       archived.title!==title||archived.description!==description)
+      throw Error("FRUTTI_CREATIVE_PACKAGE_ARCHIVE_REQUIRED: publication must use source-authored metadata without regeneration");
+    return {title,description,source:"immutable-creative-package"};
+  }
   const provider=(config.publication?.providers||[]).find(x=>x.type==='youtube')||{};
   // For Earth in Ten, the exact episode generation prompt is the source of truth.
   // Legacy generic-prompt rows keep their explicit reviewed copy, but every concrete
@@ -196,7 +210,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       const sourceMediaTransferred=Boolean(row.videoPath&&existing.filePath&&!isReviewStorageUri(existing.filePath)&&path.resolve(String(row.videoPath))===path.resolve(String(existing.filePath)));
       return {...publicItem(existing),sourceMediaTransferred};
     }
-    const {title,description}=metadata(row,config),scheduledAt=nextSlot(db,config),uploadAt=zonedLocal(dayKey(new Date(scheduledAt),config.schedule.timezone),'12:30',config.schedule.timezone).toISOString(),id=randomUUID();
+    const {title,description}=metadata(row,config,db),scheduledAt=nextSlot(db,config),uploadAt=zonedLocal(dayKey(new Date(scheduledAt),config.schedule.timezone),'12:30',config.schedule.timezone).toISOString(),id=randomUUID();
     let filePath=null,fileSize=0,videoId=row.reviewVideoId||null;
     let sourceMediaTransferred=false;
     if(!videoId){
@@ -400,7 +414,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       const row=db.prepare('SELECT episode,hook,story,prompt,title,description,creativePackageHash,creativePackageId,flowResult FROM factory_items WHERE id=?').get(item.itemId);
       if(!row)continue;
       const legacyRepair=legacyEarthPublicationRepair(row,item,config,episode1Title);
-      const copy=legacyRepair||metadata(row,config),description=copy.description;
+      const copy=legacyRepair||metadata(row,config,db),description=copy.description;
       const promptAuthoritative=isEarthIn10(config)&&earthPromptIsEpisodeBound(row);
       const repairFactory=Boolean(legacyRepair)||promptAuthoritative;
       let factoryChanged=false;
