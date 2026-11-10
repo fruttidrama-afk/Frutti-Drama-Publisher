@@ -88,7 +88,8 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
  const recapJs=fs.readFileSync(pathToRecap,"utf8");
  if(!recapJs.includes('story_action_v34'))throw Error(name+" missing v33 current-episode extractor revision lock");
  if(!recapJs.includes('udRecapRestoreHistorical')||!recapJs.includes('historical_metadata'))throw Error(name+" lacks historical episode metadata recovery before extractor");
- if(!html.includes('frutti-recap.js?v=20261110-legacy-metadata-recovery'))throw Error(name+" references stale Safari recap module");
+ if(!recapJs.includes("derived_from_preserved_story_via_legacy_rules")||!recapJs.includes("story_plan_no_verified_review"))throw Error(name+" missing Season 3 source-provenance separation");
+ if(!html.includes('frutti-recap.js?v=20261110-season3-story-recovery'))throw Error(name+" references stale Safari recap module");
  if(/Extractor de episodio actual v(?:28|30)/.test(recapJs))throw Error(name+" misleading hardcoded visible v28/v30 label");
  const recapModule=await import("data:text/javascript;base64,"+Buffer.from(recapJs).toString("base64"));
  const deployedIndex=fs.readFileSync("supabase/functions/publisher-frutti-recap/index.ts","utf8");
