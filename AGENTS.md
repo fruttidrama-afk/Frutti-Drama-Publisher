@@ -38,3 +38,7 @@ Generation credits are a production resource. Never submit an additional Google 
 ## Primary SOP
 
 Read: `docs/SOP_MASTER_PUBLISHER_FACTORY.md`.
+
+## FruttiDrama narrative/metadata source lock (2026-11-10)
+
+FruttiDrama must never derive, regenerate, correct, or infer publication title/description by analyzing a Google Flow prompt (or by a narrative extractor / story_action engine) during recovery, Review, stock or publication. Its historical reconciliation UI has exactly two methods: authenticated canonical-original metadata recovery when it exists, and operator-written title/description using the fixed YouTube hashtag template. A true old Flow prompt is optional if unavailable, tracked honestly as pending; never fabricate it. All future generated episode content must begin as a single source-authored creative package containing prompt, title and description together, persist them in the append-only `factory_creative_packages` ledger, then consume the same metadata downstream without re-derivation. Source stories for T3E1–E12 are planning evidence, NOT proof that 12 videos exist. Keep the historical production/publication pause until human video mapping plus verified downstream readiness. See `docs/FRUTTI_METADATA_RECOVERY_SOP_2026-11-10.md`.
