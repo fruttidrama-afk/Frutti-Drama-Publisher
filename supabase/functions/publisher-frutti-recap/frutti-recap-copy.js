@@ -47,6 +47,7 @@ function extract(raw){
  };
  for(const line of lines){
   lineNo++;
+  if(section==="canon"&&/^(?:HOOK|STORY|EPISODE INTENT)\s*[:：]/i.test(line))continue;
   const h=line.match(/^HOOK\s*[:：]\s*(.{3,90})$/i);
   if(h){hook=h[1].trim();continue}
   const inline=line.match(/^(?:EPISODE INTENT|EPISODE STORY|CURRENT EPISODE|EPISODIO ACTUAL|TRAMA(?: DEL EPISODIO)?|SINOPSIS|PLOT|STORY|CONFLICTO|DRAMATIC ACTION|ACTION BEAT)\s*[:：-]\s*(.{20,})$/i);
@@ -567,9 +568,64 @@ function proseSceneCopy(prompt){
   method:"unstructured_scene_action_evidence",grounding:"literal_scene_actions_requires_review",
   warning:"Propuesta extraída de acciones explícitas de una escena libre. Se muestran los fragmentos fuente; verificá que el evento principal corresponda al video."};
 }
+
+// v26 — Exact current STORY/H O O K contract. Prior CANON is never the present episode.
+function authoritativeCurrentStory(source) {
+ const lines=String(source||"").replace(/\r/g,"").split("\n");
+ let section="other",hook="",story=[],reading=false,hasEpisode=false;
+ for(const raw of lines){
+  const line=raw.trim().replace(/^#{1,5}\s*/,"").replace(/^[•*-]\s+/,"").trim();
+  if(!line)continue;
+  if(/^(?:CANON|CONTINUITY|PREVIOUS(?:\s+CANONICAL)?\s+(?:BEAT|EPISODE)|PERMANENT CANON|BACKSTORY|SHOW BIBLE|CREATIVE BIBLE)\b/i.test(line)){section="context";reading=false;continue}
+  if(/^(?:STORY\s*[/&+]\s*ACTION|EPISODE|EPISODIO|CURRENT EPISODE|EPISODIO ACTUAL)\s*:?\s*$/i.test(line)){section="current";hasEpisode=true;hook="";story=[];reading=false;continue}
+  if(/^(?:CAMERA|LIGHTING|AUDIO|VOICE|SOUND|OUTPUT|VISUALS?|CHARACTER|REFERENCE|CONSTRAINTS?|ANTI.GLITCH|GENERATION|BEATS\s*\/\s*TIMING|RENDER|IDIOMA|LANGUAGE|NEGATIVE)\s*(?::|\/|$)/i.test(line)){section="technical";reading=false;continue}
+  if(section!=="current")continue;
+  const h=line.match(/^HOOK\s*[:：]\s*(.+)$/i);
+  if(h){hook=h[1].trim();reading=false;continue}
+  const s=line.match(/^(?:STORY|EPISODE INTENT|TRAMA(?: DEL EPISODIO)?)\s*[:：]\s*(.*)$/i);
+  if(s){story=s[1].trim()?[s[1].trim()]:[];reading=true;continue}
+  if(reading&&!/^(?:SHOT|SCENE|ESCENA|BEAT)\s*\d*\s*[:：]/i.test(line))story.push(line);
+ }
+ if(!hasEpisode||!hook)return null;
+ const plot=story.join(" ").replace(/\s+/g," ").trim();
+ if(plot.length<22)return {error:"CURRENT_STORY_MISSING",detail:"El episodio actual tiene HOOK pero no STORY. No se usó CONTINUITY."};
+ if(plot.length>1800)return {error:"CURRENT_STORY_TOO_LONG",detail:"La narrativa excede el límite de extracción segura."};
+ return {hook,story:plot,evidence:"HOOK: "+hook+" | STORY: "+plot};
+}
+// Titles are literal, not invented paraphrases. Full STORY is retained in description.
+function literalCurrentCopy(e){
+ const story=String(e.story||"").replace(/\s+/g," ").trim(),hook=String(e.hook||"").toLocaleUpperCase("es").trim();
+ if(!/^[A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+$/.test(hook))return {error:"HOOK_FORMAT_INVALID",detail:"HOOK debe tener dos palabras."};
+ const first=story.split(/(?<=[.!?])\s+(?=[A-ZÁÉÍÓÚÜÑ¿])/)[0].replace(/[.!?]+$/,"");
+ const words=first.split(/\s+/),pieces=[first];
+ for(const pattern of [/\s*;\s*/,/,\s*(?:pero|mientras|aunque)\b/i,/\s+que\s+(?:confirma|indica|revela|demuestra|significa)\b/i]){
+  const m=first.match(pattern);if(m&&m.index>=25)pieces.push(first.slice(0,m.index).trim());
+ }
+ for(let n=words.length-1;n>=5;n--){
+  if(/^(de|del|a|al|con|para|entre|el|la|que|y|o|pero|en|sobre|sus?|un|una|no|nunca)$/i.test(words[n-1]))continue;
+  const prefix=words.slice(0,n).join(" ");if(prefix.length<25)break;pieces.push(prefix);
+ }
+ const pair=first.match(/(?:entre|between)\s+([A-ZÁÉÍÓÚÜÑ]\p{L}+)(?:\s+\p{L}+)?\s+(?:y|and)\s+([A-ZÁÉÍÓÚÜÑ]\p{L}+)/iu);
+ const verbs=/\b(?:recibe|lee|entrega|confirma|interrumpe|irrumpe|encuentra|enfrenta|confronta|besa|intenta|acusa|rechaza|niega|descubre|sospecha|conversa|habla|promete|muere|envenena|revela|confiesa|advierte|observa|escucha|ordena|sigue|muestra|roba|recuerda|conoce|comprende|discute|regresa|abandona|enfrentan?|interrumpen?|intentan?|reciben?|se entera|confronts?|receives?|finds?|interrupts?|kisses?|accuses?)\b/i;
+ for(const p of [...new Set(pieces)]){
+  if(p.length<24||!verbs.test(p))continue;
+  if(pair&&(!p.includes(pair[1])||!p.includes(pair[2])))continue;
+  const polar=/\b(?:no|nunca|ni|intenta|sospecha|acusa|niega|podr[ií]a|quiz[aá]s)\b/i;
+  if(polar.test(first)&&!polar.test(p))continue;
+  const title=makeTitle(hook,p);
+  if(title)return {title,description:story.replace(/[.!?]+\s*$/,".")+"\n\n¿Qué pasará después?\n\n"+TAGS,
+   source_story:story,episode_excerpt:e.evidence.slice(0,500),title_excerpt:p,
+   method:"authoritative_hook_story_literal_v26",grounding:"literal_current_episode_operator_review",
+   warning:"HOOK y STORY tomados del episodio actual. Título extractivo, descripción íntegra. Verificá el video antes de guardar."};
+ }
+ return {error:"TITLE_LENGTH_INVALID",detail:"No se encontró un fragmento literal para un título fiel de hasta 100 caracteres.",source_story:story};
+}
+
 export function generateFruttiRecapCopy(fullPrompt){
  const operator=operatorStoryCopy(fullPrompt);
  if(operator)return operator;
+ const strict=authoritativeCurrentStory(fullPrompt);
+ if(strict)return strict.error?strict:literalCurrentCopy(strict);
  const explicit=extractExplicitEpisodeStory(fullPrompt);
  if(explicit)return explicitEpisodeCopy(explicit);
  const richScene=warmConversationInterruptedByFresia(fullPrompt);
