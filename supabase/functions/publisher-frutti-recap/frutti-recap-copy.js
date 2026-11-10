@@ -353,7 +353,60 @@ function explicitEpisodeCopy(explicit){
   warning:"Título y descripción extractivos basados en la TRAMA CENTRAL explícita, sin alterar actores ni acciones. Revisá el video antes de guardar.",
   title_excerpt:coveredStory};
 }
+
+// The operator's optional exact narrative is stronger than speculative token
+// ranking. Preserve it verbatim and derive only a two-word, non-contradictory hook.
+function operatorStoryCopy(fullPrompt){
+ const match=String(fullPrompt||"").match(/^OPERATOR_VERIFIED_STORY:\s*([\s\S]+)$/i);
+ if(!match)return null;
+ const raw=clean(match[1]).slice(0,900);
+ if(raw.length<22)return {error:"PLOT_SUMMARY_INVALID",detail:"La narrativa proporcionada es demasiado corta."};
+ const withHook=raw.match(/^([A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+):\s*(.{20,})$/);
+ const story=withHook?withHook[2]:raw;
+ const context=/\b(?:rom[aá]ntic(?:[oa]s?|amente)|romantic(?:ally)?|amoroso|amorosa)\b/i.test(story);
+ const patterns=[
+  [/intenta(?:n)?\s+besar|tries?\s+to\s+kiss/i,"BESO INTENTADO"],
+  [/acusa|accuses?/i,"ACUSACIÓN DIRECTA"],
+  [/niega|denies?/i,"NEGACIÓN DIRECTA"],
+  [/interrumpe|irrumpe|interrupts?/i,context?"ROMANCE INTERRUMPIDO":"ENCUENTRO INTERRUMPIDO"],
+  [/envenena|poisons?/i,"ENVENENAMIENTO CONSUMADO"],
+  [/roba|steals?/i,"ROBO CONSUMADO"],
+  [/muere|fallece|dies?/i,"MUERTE DEVASTADORA"],
+  [/\bbesa\b|\bbesan\b|kisses?/i,"BESO REVELADOR"],
+  [/embarazad[oa]|pregnan/i,"EMBARAZO REVELADO"],
+  [/confronta|enfrenta|encara|confronts?/i,"ENFRENTAMIENTO DIRECTO"],
+  [/promete|promises?/i,"PROMESA DECISIVA"],
+  [/ordena|orders?/i,"ORDEN DIRECTA"],
+  [/amenaza|threatens?/i,"AMENAZA DIRECTA"],
+  [/confiesa|admite|confesses?|admits?/i,"CONFESIÓN REVELADORA"],
+  [/revela|demuestra|reveals?|proves?/i,"REVELACIÓN IMPORTANTE"],
+  [/se niega|rechaza|refuses?|rejects?/i,"RECHAZO DIRECTO"],
+  [/encuentra|encuentran|descubre|descubren|finds?|discovers?/i,"HALLAZGO IMPORTANTE"],
+  [/exige|demands?/i,"EXIGENCIA DIRECTA"],
+  [/escucha|overhears?/i,"CONVERSACIÓN ESCUCHADA"],
+  [/sospecha|desconfía|suspects?/i,"SOSPECHA CRECIENTE"],
+  [/buscan?|searches?/i,"BÚSQUEDA INICIADA"],
+  [/ofrece|offers?/i,"PROPUESTA DIRECTA"],
+  [/sigue|follows?/i,"SEGUIMIENTO DIRECTO"],
+  [/se esconden|se esconde|hide|hides/i,"REFUGIO ESCONDIDO"],
+  [/prepara|prepares?/i,"PREPARATIVOS ACTIVOS"],
+  [/llama|calls?/i,"LLAMADA DIRECTA"],
+  [/recuerda|reminds?/i,"RECUERDO DECISIVO"],
+  [/observa|watches?|ve a|sees?/i,"ESCENA OBSERVADA"],
+  [/hablan|conversan|talk(?:ing)?|conversation|conversaci[oó]n/i,context?"CONVERSACIÓN ROMÁNTICA":"CONVERSACIÓN DIRECTA"]
+ ];
+ let hook=withHook?.[1]||patterns.find(([re])=>re.test(story))?.[1]||"TRAMA CENTRAL";
+ // The title body and description are an EXTRACTIVE copy of the operator's
+ // words. No one can be changed from spectator to perpetrator, or from a
+ // suspected action to a confirmed outcome, by this branch.
+ const result=explicitEpisodeCopy({hook,story,evidence:raw});
+ if(result.error)return result;
+ return {...result,method:"operator_verified_story_extractive",grounding:"literal_operator_story_requires_video_review",
+ warning:"Se usó textualmente TU narrativa, sin reescribir quién hace qué. El gancho de dos palabras es una clasificación editorial, no una verificación del video."};
+}
 export function generateFruttiRecapCopy(fullPrompt){
+ const operator=operatorStoryCopy(fullPrompt);
+ if(operator)return operator;
  const explicit=extractExplicitEpisodeStory(fullPrompt);
  if(explicit)return explicitEpisodeCopy(explicit);
  const input=extract(fullPrompt);
