@@ -163,4 +163,45 @@ same(requests.filter(x=>x.method==="POST").length,1,"One operator-written save o
 same(requests.filter(x=>x.body?.action==="suggest").length,0,"Never call failed AI endpoint");
 same(requests.find(x=>x.body?.action==="save").body.generation_prompt,"","Video identity may be saved with missing historical Flow prompt");
 same(remoteItems.length,1,"Exactly one operator-authorized stock record");
+
+// Real SQLite integration of the SAME source-stage function used by the Flow
+// runtime. This proves a future generation consumes a single package and
+// inserts one append-only ledger row in the same transaction as factory_items.
+const originalEnv={DATA_DIR:process.env.DATA_DIR,PUBLISHER_CONFIG_JSON:process.env.PUBLISHER_CONFIG_JSON};
+const testRoot=fs.mkdtempSync("/tmp/frutti-creative-package-");
+try{
+ process.env.DATA_DIR=testRoot;
+ process.env.PUBLISHER_CONFIG_JSON=JSON.stringify({
+  identity:{show_name:"FruttiDrama",publisher_name:"FruttiDrama",language:"es-419"},
+  content:{active_season:3,serialized:true,creative_bible:"FruttiDrama es una telenovela seriamente melodramática de frutas humanoides.",initial_episodes:[idea]},
+  generation:{duration_seconds:10,aspect_ratio:"9:16",output_count:1}
+ });
+ const rt=await import("../runtime-config.js?frutti-package-integration=1");
+ const db=new DatabaseSync(":memory:");
+ const ddl=init.slice(init.indexOf("CREATE TABLE IF NOT EXISTS factory_items("),init.indexOf("CREATE TABLE IF NOT EXISTS factory_meta("));
+ db.exec(ddl);
+ const timestamp=new Date().toISOString();
+ db.prepare("INSERT INTO factory_items(id,season,episode,hook,story,status,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?)")
+  .run("source-episode-1",3,1,idea.hook,idea.story,"draft",timestamp,timestamp);
+ const original=db.prepare("SELECT * FROM factory_items WHERE id='source-episode-1'").get();
+ const built=rt.materializeCreativePackage(db,original);
+ same(built.row.title,produced.title,"Integrated prompt/creative headline written together");
+ same(built.row.description,produced.description,"Integrated prompt/creative caption written together");
+ check(built.row.prompt.includes("EPISODE INTENT: "+idea.story),"Prompt uses same editorial story");
+ same(db.prepare("SELECT COUNT(*) as count FROM factory_creative_packages").get().count,1,"Exactly one package snapshot");
+ const snapshot=db.prepare("SELECT prompt,title,description,hook,story,packageHash FROM factory_creative_packages WHERE packageId=?").get(built.row.creativePackageId);
+ same(snapshot.prompt,built.row.prompt,"Original prompt archived with copy");
+ same(snapshot.title,built.row.title,"Original title archived with prompt");
+ same(snapshot.description,built.row.description,"Original caption archived with prompt");
+ same(snapshot.packageHash,built.row.creativePackageHash,"Shared package hash bound to runtime item");
+ const again=rt.materializeCreativePackage(db,built.row);
+ check(!again.created,"Existing package with immutable archive must never regenerate metadata");
+ same(db.prepare("SELECT COUNT(*) as count FROM factory_creative_packages").get().count,1,"Idempotent read causes no additional snapshot");
+ db.close();
+}finally{
+ if(originalEnv.DATA_DIR===undefined)delete process.env.DATA_DIR;else process.env.DATA_DIR=originalEnv.DATA_DIR;
+ if(originalEnv.PUBLISHER_CONFIG_JSON===undefined)delete process.env.PUBLISHER_CONFIG_JSON;else process.env.PUBLISHER_CONFIG_JSON=originalEnv.PUBLISHER_CONFIG_JSON;
+ fs.rmSync(testRoot,{recursive:true,force:true});
+}
+
 console.log("PASS Frutti human recovery contract, original metadata, source creative packages and immutable ledger: "+checks+" checks; zero Flow/YouTube calls.");
