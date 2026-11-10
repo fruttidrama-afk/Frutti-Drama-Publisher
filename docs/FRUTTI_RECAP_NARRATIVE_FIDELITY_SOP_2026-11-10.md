@@ -58,3 +58,17 @@ La v27 seguía fallando en prompts que, después de copiarse desde el editor, qu
 **Segundo defecto de visibilidad:** `docs/index.html` y `factory-web/public/index.html` todavía importaban `frutti-recap.js?v=20261110-source-grounded-v20`. Safari podía reutilizar el módulo antiguo y mostrar el mensaje de éxito de v20 aunque el backend hubiera cambiado. Se actualizó el import a `?v=20261110-story-action-v28` en ambas interfaces y hay que abrir el panel con URL nueva para invalidar también la caché HTML del navegador.
 
 **Seguridad:** no se alteró ningún MP4, ficha histórica, título guardado, asignación, videoId, stock aprobado, cola YouTube ni créditos Google Flow. Sigue vigente el bloqueo `historical_reconciliation_pending` hasta que la operadora identifique los 30 videos todavía pendientes. La validación humana del mismo prompt que estaba sin guardar en el iPad sigue siendo indispensable; la prueba local no debe presentarse como comprobación de ese texto exacto.
+
+## Reparación v30 — separación de STORY de instrucciones (2026-11-10)
+
+**Incidente reproducido:** el panel mostraba v28 y devolvió `CURRENT_STORY_TOO_LONG` al procesar un prompt que tenía una historia breve y muchas instrucciones técnicas. El extractor v28 encontraba `STORY / ACTION`, pero incorporaba secciones de producción posteriores a `STORY` y por eso superaba los 1800 caracteres.
+
+**Solución:** `extractCollapsedCurrentStory` v30 conserva la disposición y los saltos de línea originales hasta detectar el siguiente encabezado. Soporta bloques NARRATIVE NOVELTY LOCK, EXACT 10-SECOND / 2–3 BEAT RHYTHM, DIALOGUE, STRICT ANTI-GLITCH, CHARACTER REFERENCE LOCK, SHOT-BY-SHOT TIMING, OUTPUT CONSTRAINTS, SOUND DESIGN, TECHNICAL INSTRUCTIONS, encabezados Markdown y párrafos colapsados. Solo después normaliza el STORY actual. Ante una historia genuinamente ambigua y extensa devuelve `CURRENT_STORY_BOUNDARY_AMBIGUOUS`, sin usar `Previous canonical beat`.
+
+**Pruebas anteriores al despliegue:** 20 episodios canónicos distintos × 6 variantes de formato con varios miles de caracteres técnicos añadidos = **120/120 aprobadas**. La implementación anterior fallaba 80/120 de las mismas pruebas. Además se verificaron los 100 casos históricos del corpus de tests y la ficha auténtica T2E9. La prueba contextual específica reprodujo `PRUEBA TÓXICA: Don Melón recibe una prueba médica`, preservó la comprensión de Uva del envenenamiento de Banana y excluyó Fresia/Mango.
+
+**Regresión permanente:** `scripts/test-frutti-copy.mjs` contiene `LONG-FLOW-20-BLOCKS`; GitHub Actions `FruttiDrama Metadata Fidelity` y `Unified Publisher Factory UI Smoke Test` aprobaron tras aplicar el cambio. Backend commit `510a51d1570b68d00fded4b6497f2b9a4c29fee2`, Supabase Edge actualmente v31 con `engine_revision=story_action_v30`. UI y caché de ambos paneles cambiadas a v30.
+
+**Veracidad:** los 20 son prompts con estructura canónica del corpus de pruebas, **no** 20 correspondencias autenticadas MP4↔prompt. Solo la ficha T2E9 es una asociación auténtica guardada. El prompt específico que seguía sin guardar en el iPad no fue inspeccionado directamente; requiere comprobación humana final en la UI.
+
+**Guardas:** no tocar Generate, publicación, aprobación, stock, créditos, fichas, MP4 ni hash; `historical_reconciliation_pending=true` permanece.
