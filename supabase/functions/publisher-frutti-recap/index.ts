@@ -1,4 +1,5 @@
 import {generateFruttiRecapCopy} from "./frutti-recap-copy.js";
+import {LEGACY_FRUTTI_METADATA,LEGACY_METADATA_SOURCE} from "./legacy-metadata.js";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {createClient} from "npm:@supabase/supabase-js@2";
 const BASE=Deno.env.get("SUPABASE_URL")!;
@@ -28,7 +29,7 @@ Deno.serve(async(req:Request)=>{
   if(pubError||!pub)return json({error:"FORBIDDEN"},403);
   if(req.method==="GET"){
    const {data,error}=await admin.from(TABLE).select("file_index,source_sha256,season,episode,generation_prompt,prompt_provenance,title,description,metadata_method,episode_story_evidence,episode_story_extraction_method,note,record_status,publication_status,revision,updated_at,created_at").eq("publisher_id",PID).order("season").order("episode");
-   return error?json({error:"READ_FAILED"},503):json({items:data||[],publication_boundary:{season:2,episode:8},publication_queue_unchanged:true,ai_status:{connected:true,provider:"Extractor editorial verificable · local",engine_revision:"story_action_v34",method:"deterministic_rules",semantic_model:false,review_required:true,free_only:true,billing_automation_disabled:true,external_ai_required:false}});
+   return error?json({error:"READ_FAILED"},503):json({items:data||[],historical_metadata:LEGACY_FRUTTI_METADATA,historical_metadata_source:LEGACY_METADATA_SOURCE,historical_metadata_status:"canonical_legacy_code_not_verified_youtube_final",publication_boundary:{season:2,episode:8},publication_queue_unchanged:true,ai_status:{connected:true,provider:"Extractor editorial verificable · local",engine_revision:"story_action_v34",method:"deterministic_rules",semantic_model:false,review_required:true,free_only:true,billing_automation_disabled:true,external_ai_required:false}});
   }
   const b=await req.json().catch(()=>null);
   if(!b||typeof b!=="object")return json({error:"INVALID_BODY"},400);
@@ -68,7 +69,8 @@ Deno.serve(async(req:Request)=>{
   if(old&&old.source_sha256!==digest)return json({error:"VIDEO_REPLACEMENT_FORBIDDEN"},409);
   if(old&&b.expected_revision!==old.revision)return json({error:"STALE_EDIT_REFRESH_REQUIRED"},409);
   if(!old&&b.expected_revision!=null)return json({error:"STALE_EDIT_REFRESH_REQUIRED"},409);
-  const row={publisher_id:PID,file_index:idx,source_sha256:digest,season,episode,generation_prompt:prompt,prompt_provenance:"operator_copied_google_flow",title,description,metadata_method:"operator_reviewed",episode_story_evidence,episode_story_extraction_method,note,record_status:"reconstructed_unapproved",publication_status:"unverified",assigned_by:owner,revision:old?old.revision+1:1,updated_at:new Date().toISOString()};
+  const legacyMatch=LEGACY_FRUTTI_METADATA.find((entry:any)=>entry.season===season&&entry.episode===episode&&entry.title===title&&entry.description===description);
+  const row={publisher_id:PID,file_index:idx,source_sha256:digest,season,episode,generation_prompt:prompt,prompt_provenance:"operator_copied_google_flow",title,description,metadata_method:legacyMatch?"legacy_canonical_operator_reviewed":"operator_reviewed",episode_story_evidence,episode_story_extraction_method,note,record_status:"reconstructed_unapproved",publication_status:"unverified",assigned_by:owner,revision:old?old.revision+1:1,updated_at:new Date().toISOString()};
   const {data:saved,error:saveError}=await admin.from(TABLE).upsert(row,{onConflict:"publisher_id,file_index"}).select("file_index,season,episode,revision,updated_at,title,description").single();
   if(saveError){if(saveError.code==="23505")return json({error:"EPISODE_ALREADY_ASSIGNED_TO_ANOTHER_VIDEO"},409);return json({error:"RECONSTRUCTED_STOCK_SAVE_FAILED"},503)}
   return json({saved:true,record:saved,reconstructed_stock:true,publication_queue_unchanged:true,media_unmodified:true});
