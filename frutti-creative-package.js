@@ -8,8 +8,9 @@ export const FRUTTI_CREATIVE_PACKAGE_SCHEMA="frutti-creative-package-v1";
 const twoWordHook=/^[A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+$/u;
 const removeTags=v=>String(v||"").replace(/\s*#(?:Shorts|ViralShorts|FruttiDrama)\b/gi,"").replace(/\s+/g," ").trim();
 const normalize=v=>String(v||"").replace(/[<>]/g," ").replace(/\s+/g," ").trim();
-export function buildFruttiSourceCopy({hook,story,titleCore="",title="",descriptionCore="",description=""}={}){
- const editorialHook=normalize(hook).toLocaleUpperCase("es");
+export function buildFruttiSourceCopy({hook,story,publicationHook="",titleCore="",title="",descriptionCore="",description=""}={}){
+ const narrativeHook=normalize(hook).toLocaleUpperCase("es");
+ const editorialHook=normalize(publicationHook||hook).toLocaleUpperCase("es");
  const premise=normalize(story);
  if(!twoWordHook.test(editorialHook))throw Error("FRUTTI_SOURCE_HOOK_MUST_HAVE_TWO_WORDS");
  if(premise.length<25)throw Error("FRUTTI_SOURCE_STORY_REQUIRED");
@@ -35,7 +36,7 @@ export function buildFruttiSourceCopy({hook,story,titleCore="",title="",descript
   throw Error("FRUTTI_SOURCE_DESCRIPTION_TECHNICAL_OR_PLACEHOLDER");
  const wholeDescription=prose+"\n\n"+FRUTTI_TITLE_TAGS;
  if(wholeDescription.length>4000)throw Error("FRUTTI_SOURCE_DESCRIPTION_TOO_LONG");
- return {title:wholeTitle,description:wholeDescription,hook:editorialHook,story:premise,
+ return {title:wholeTitle,description:wholeDescription,hook:narrativeHook,publicationHook:editorialHook,story:premise,
   metadata_provenance:"creative_episode_source",schema:FRUTTI_CREATIVE_PACKAGE_SCHEMA};
 }
 export function selectFruttiSourceIdea(row,episodeSource){
