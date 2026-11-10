@@ -45,7 +45,7 @@ export function initFruttiRecap({session,udText}){
   $("#udRecapStatus").textContent=previous?"Esta ficha ya existe: podés corregirla sin tocar YouTube.":"Pegá el prompt real y prepará la ficha de este video.";
   const evidence=storyEvidence.get(index)||{story:previous?.episode_story_evidence||"",method:previous?.episode_story_extraction_method||""};
   storyEvidence.set(index,evidence);
-  $("#udRecapEvidence").textContent=evidence.story?"NARRATIVA CONSERVADA (sin convertirla en canon): "+evidence.story:"Acción narrativa extraída: pendiente de analizar el prompt.";
+  $("#udRecapEvidence").textContent=evidence.story?(/operator/i.test(evidence.method)?"NARRATIVA APORTADA POR VOS (sin convertirla en canon): ":"NARRATIVA EXTRAÍDA DEL PROMPT (sin convertirla en canon): ")+evidence.story:"Acción narrativa extraída: pendiente de analizar el prompt.";
   $("#udRecapStoryFallback").hidden=!data.operator_story;
   render();
   if(switchPane&&window.matchMedia("(max-width:900px)").matches){
@@ -129,10 +129,10 @@ export function initFruttiRecap({session,udText}){
    $("#udRecapDescription").value=data.description;
    const evidence={story:String(data.source_story||data.episode_excerpt||""),method:String(data.method||"")};
    storyEvidence.set(selected,evidence);
-   $("#udRecapEvidence").textContent="NARRATIVA EXTRAÍDA DEL PROMPT (compará con el video): "+(evidence.story||"sin detalle");
+   $("#udRecapEvidence").textContent=(/operator/i.test(evidence.method)?"NARRATIVA APORTADA POR VOS (compará con el video): ":"NARRATIVA EXTRAÍDA DEL PROMPT (compará con el video): ")+(evidence.story||"sin detalle");
    $("#udRecapStoryFallback").hidden=true;
    remember();
-   showAIResult("✓ Borrador editorial generado; los nombres y acontecimientos deben contrastarse con el prompt y el video antes de guardarlo. No se modificó el archivo original.","success");
+   showAIResult("✓ Borrador editorial generado a partir de "+(/operator/i.test(evidence.method)?"la narrativa que pegaste":"la trama actual del prompt")+". Contrastá los acontecimientos con el video antes de guardarlo. No se modificó el archivo original.","success");
   }catch(e){
    const detail=String(e?.message||e||"Error desconocido");
    $("#udRecapStoryFallback").hidden=false;
