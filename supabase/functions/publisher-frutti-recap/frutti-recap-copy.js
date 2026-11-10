@@ -302,6 +302,16 @@ function makeTitle(hook,core){
 // Do not run the plot through keyword-to-plot templates (which fabricate events).
 function extractExplicitEpisodeStory(fullPrompt){
  const src=String(fullPrompt||"").replace(/\r/g,"");
+ // Original 2026 automation's Google Flow layout:
+ // EPISODE on its own line, immediately followed by HOOK: story.
+ // These two data items existed BEFORE the Flow generation and are authoritative.
+ const originalBlock=src.match(/(?:^|\n)\s*(?:EPISODE|EPISODIO)\s*\n\s*([A-ZÁÉÍÓÚÜÑ0-9]+(?:\s+(?:[A-ZÁÉÍÓÚÜÑ0-9]+|A|DE|DEL|LA|EL)){0,4}):\s*([^\n]{20,900})/i);
+ if(originalBlock){
+  const legacyStory=clean(originalBlock[2]);
+  if(!TECH.test(legacyStory)||ACT.test(legacyStory))
+   return {hook:clean(originalBlock[1]),story:legacyStory,evidence:clean(originalBlock[1]+": "+legacyStory),legacy_structured:true};
+ }
+
  // Include recognized Flow production headers and operator-supplied EPISODE INTENT.
  const markers=[
   /(?:^|\n)\s*(?:TRAMA CENTRAL DE ESTE EPISODIO|TRAMA PRINCIPAL DEL EPISODIO|NARRATIVA CENTRAL DEL EPISODIO|EPISODE INTENT|EPISODIO ACTUAL)\s*:\s*([^\n]*)/gi
@@ -328,7 +338,9 @@ function explicitEpisodeCopy(explicit){
  const rawHook=clean(explicit.hook).toLocaleUpperCase("es");
  // Titles have exactly two uppercase hook words, irrespective of older prompt
  // variants that used one or three. Derived hooks cannot change the plot claim.
- const hook=/^[A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+$/.test(rawHook)?rawHook:
+ const legacyHooks={"CONFESIÓN A MEDIAS":"CONFESIÓN PARCIAL","MUERTE DE BANANA":"MUERTE DEVASTADORA","FRESIA LO DEJA":"RUPTURA DEFINITIVA","NUEVO GIRO":"NUEVO GIRO"};
+ const normalizedHook=legacyHooks[rawHook]||rawHook;
+ const hook=/^[A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+$/.test(normalizedHook)?normalizedHook:
    /\bordena\b/i.test(story)?"ORDEN DIRECTA":
    /\bpromete\b/i.test(story)?"PROMESA DECISIVA":
    /\b(?:sigue|persigue)\b/i.test(story)?"SEGUIMIENTO VEHICULAR":"";
