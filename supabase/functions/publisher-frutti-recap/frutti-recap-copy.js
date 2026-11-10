@@ -435,10 +435,15 @@ function operatorStoryCopy(fullPrompt){
   [/observa|watches?|ve a|sees?/i,"ESCENA OBSERVADA"],
   [/hablan|conversan|talk(?:ing)?|conversation|conversaci[oó]n/i,context?"CONVERSACIÓN ROMÁNTICA":"CONVERSACIÓN DIRECTA"]
  ];
- let hook=negated?"HECHO NEGADO":withHook?.[1]||patterns.find(([re])=>re.test(story))?.[1]||"TRAMA CENTRAL";
+ let hook=negated?"HECHO NEGADO":withHook?.[1]||(/\bprueba m[eé]dica\b/i.test(story)&&/envenenamiento|envenenad/i.test(story)?"PRUEBA TÓXICA":null)||patterns.find(([re])=>re.test(story))?.[1]||"TRAMA CENTRAL";
  // The title body and description are an EXTRACTIVE copy of the operator's
  // words. No one can be changed from spectator to perpetrator, or from a
  // suspected action to a confirmed outcome, by this branch.
+ const safe=literalCurrentCopy({hook,story,evidence:raw});
+ if(!safe.error)return {...safe,method:"operator_story_literal_v27",
+  warning:"La narrativa provista por la operadora se conserva completa; título estrictamente extractivo. Contrastá con el video."};
+ return safe; // No heuristic rewrite of the operator's factual statement.
+ // v25 fallback intentionally disabled to avoid changing who did what.
  const result=explicitEpisodeCopy({hook,story,evidence:raw});
  if(result.error)return result;
  return {...result,method:"operator_verified_story_extractive",grounding:"literal_operator_story_requires_video_review",
@@ -606,7 +611,7 @@ function literalCurrentCopy(e){
   const prefix=words.slice(0,n).join(" ");if(prefix.length<25)break;pieces.push(prefix);
  }
  const pair=first.match(/(?:entre|between)\s+([A-ZÁÉÍÓÚÜÑ]\p{L}+)(?:\s+\p{L}+)?\s+(?:y|and)\s+([A-ZÁÉÍÓÚÜÑ]\p{L}+)/iu);
- const verbs=/\b(?:recibe|lee|entrega|confirma|interrumpe|irrumpe|encuentra|enfrenta|confronta|besa|intenta|acusa|rechaza|niega|descubre|sospecha|conversa|habla|promete|muere|envenena|revela|confiesa|advierte|observa|escucha|ordena|sigue|muestra|roba|recuerda|conoce|comprende|discute|regresa|abandona|enfrentan?|interrumpen?|intentan?|reciben?|se entera|confronts?|receives?|finds?|interrupts?|kisses?|accuses?)\b/i;
+ const verbs=/\b(?:nota|sorprende|admite|pregunta|exige|obliga|prepara|ofrece|contiene|buscan|busca|encuentran|demuestra|llama|deciden|consigue|incluye|resulta|asegura|descubren|salen|esconden|informa|recibe|lee|entrega|confirma|interrumpe|irrumpe|encuentra|enfrenta|confronta|besa|intenta|acusa|rechaza|niega|descubre|sospecha|conversa|habla|promete|muere|envenena|revela|confiesa|advierte|observa|escucha|ordena|sigue|muestra|roba|recuerda|conoce|comprende|discute|regresa|abandona|enfrentan?|interrumpen?|intentan?|reciben?|se entera|confronts?|receives?|finds?|interrupts?|kisses?|accuses?)\b/i;
  for(const p of [...new Set(pieces)]){
   if(p.length<24||!verbs.test(p))continue;
   if(pair&&(!p.includes(pair[1])||!p.includes(pair[2])))continue;
