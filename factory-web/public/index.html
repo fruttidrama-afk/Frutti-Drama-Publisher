@@ -169,8 +169,8 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
   <label>Temporada<select id="udRecapSeason"><option value="">Elegí una temporada</option><option value="2">Temporada 2</option><option value="3">Temporada 3</option></select></label>
   <label>Número de episodio<input id="udRecapEpisode" type="number" min="1" max="25" step="1" placeholder="Ej. 9"></label>
  </div>
- <label>Prompt ORIGINAL de generación · Google Flow
-  <textarea id="udRecapPrompt" maxlength="50000" spellcheck="false" placeholder="Pegá el prompt completo y exacto usado para generar este video."></textarea>
+ <label>Prompt ORIGINAL de Google Flow (opcional si todavía no lo encontraste)
+  <textarea id="udRecapPrompt" maxlength="50000" spellcheck="false" placeholder="Opcional por ahora: pegá el prompt original de Flow cuando lo encuentres. No inventes ni reemplaces un prompt desconocido."></textarea>
  </label>
  <div class="ud-recap-copy">
   <strong>Título y descripción · edición manual</strong>
@@ -299,7 +299,7 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 
 <script type="module">
 import{createClient}from"https://esm.sh/@supabase/supabase-js@2.105.0";
-import{initFruttiRecap}from"./frutti-recap.js?v=20261110-manual-recap-v1";
+import{initFruttiRecap}from"./frutti-recap.js?v=20261110-manual-recap-v2";
 import JSZip from"https://esm.sh/jszip@3.10.1";
 const sb=createClient("https://wrflttnmlrsuzuukdhtf.supabase.co","sb_publishable_xa4-lNIcfBku4CtgKKI97w_r-VmFcaV",{auth:{persistSession:true,autoRefreshToken:true,experimental:{passkey:true}}});
 const API="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory-railway",$=s=>document.querySelector(s);let user=null,signup=false,createStep=0,referenceFile=null,logoFile=null,brandDraft=null,modPublisher=null,modScreenshot=null,railwayConnections=[],selectedRailwayConnectionId=null,deployWatchTimer=null;
