@@ -12,6 +12,7 @@ import {
   resolveVisualCharacters, buildPrompt, seedInitial, ensureBacklog, enforceEpisodeIntent, materializeCreativePackage, validateEpisodePrompt
 } from './runtime-config.js';
 import { buildPublicationCopy } from './publication-copy.js';
+import { buildFruttiSourceCopy } from './frutti-creative-package.js';
 import { classifyFlowSecuritySignal } from './scripts/flow-security-signals.mjs';
 import { flowNoChargeDelayMs, flowNoChargeDeadline } from './scripts/flow-unusual-cooldown.mjs';
 
@@ -1526,12 +1527,24 @@ function validateAiFeedbackResult(raw,row){
     prompt_changes:compact(raw.prompt_changes||'',1600),
     new_hook:compact(raw.new_hook||'',100).toUpperCase(),
     new_story:compact(raw.new_story||'',1200),
-    new_information:compact(raw.new_information||'',600)
+    new_information:compact(raw.new_information||'',600),
+    new_publication_hook:compact(raw.new_publication_hook||'',100).toUpperCase(),
+    new_title_core:compact(raw.new_title_core||'',180),
+    new_description_core:compact(raw.new_description_core||'',2500)
   };
   if(decision==='prompt_revision'&&!out.prompt_changes)throw new Error('FEEDBACK_AI_PROMPT_CHANGES_MISSING');
   if(decision==='creative_rewrite'){
     if(!out.new_hook||!out.new_story||!out.new_information)throw new Error('FEEDBACK_AI_CREATIVE_PACKAGE_INCOMPLETE');
     if(norm(out.new_hook+' '+out.new_story)===norm(String(row.hook||'')+' '+String(row.story||'')))throw new Error('FEEDBACK_AI_REPEATED_SAME_STORY');
+    if(/frutti\s*drama|fruttidrama/i.test(String(CONFIG.identity?.show_name||SHOW||""))){
+      if(!out.new_publication_hook||!out.new_title_core||!out.new_description_core)
+        throw new Error("FRUTTI_REWRITE_MUST_AUTHOR_FULL_CREATIVE_PACKAGE");
+      // The creative rewrite itself authors all three fields. Do not infer
+      // them later by reading the Flow production prompt.
+      buildFruttiSourceCopy({hook:out.new_hook,story:out.new_story,
+        publicationHook:out.new_publication_hook,titleCore:out.new_title_core,
+        descriptionCore:out.new_description_core});
+    }
   }
   return out;
 }
@@ -1571,11 +1584,12 @@ async function geminiFeedbackInterpretation(db,row){
       '',
       'For serialized shows, preserve accepted continuity and do not re-reveal information the audience already knows.',
       'For non-serialized shows, still avoid repeating the rejected concept and produce a genuinely distinct replacement.',
+      'For FruttiDrama creative_rewrite, author new_hook, new_story, new_publication_hook, new_title_core and new_description_core TOGETHER as one creative episode decision. Do not analyze a separate generation prompt later to invent title or description. Canonical tags are appended by the Publisher.',
       'Human feedback is authoritative even when dictated, misspelled, informal or incomplete.',
       '',
       'Return exactly ONE JSON object between the markers, with no prose outside them.',
       start,
-      '{"decision":"render_retry|prompt_revision|creative_rewrite","reason":"semantic explanation","prompt_changes":"required only for prompt_revision","new_hook":"short hook required only for creative_rewrite","new_story":"replacement episode intent required only for creative_rewrite","new_information":"what is genuinely different/new required only for creative_rewrite"}',
+      '{"decision":"render_retry|prompt_revision|creative_rewrite","reason":"semantic explanation","prompt_changes":"required only for prompt_revision","new_hook":"short hook required only for creative_rewrite","new_story":"replacement episode intent required only for creative_rewrite","new_information":"what is genuinely different/new required only for creative_rewrite","new_publication_hook":"Frutti creative_rewrite ONLY: exactly TWO UPPERCASE words for YouTube title prefix","new_title_core":"Frutti creative_rewrite ONLY: fully authored factual headline clause, no hashtags","new_description_core":"Frutti creative_rewrite ONLY: fully authored scene narrative, no hashtags"}',
       end,
       '',
       'PUBLISHER CONTEXT JSON:',
@@ -1618,8 +1632,8 @@ function applyAiFeedbackDecision(db,row,ai){
     db.prepare("UPDATE factory_items SET status='regen_wait',retryStrategy='revise_prompt',reviewInterpretation=?,reviewInterpretationAt=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,flowResult=NULL,error='AI: keep episode intent and rebuild prompt from human feedback.',nextTry=0,runtimeAttemptCount=0,updatedAt=? WHERE id=?")
       .run(interpretation,stamp,stamp,row.id);
   }else{
-    db.prepare("UPDATE factory_items SET hook=?,story=?,status='regen_wait',retryStrategy='new_story',reviewInterpretation=?,reviewInterpretationAt=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,flowResult=NULL,error='AI: narrative feedback requires a new creative package.',nextTry=0,runtimeAttemptCount=0,updatedAt=? WHERE id=?")
-      .run(ai.new_hook,ai.new_story,interpretation,stamp,stamp,row.id);
+    db.prepare("UPDATE factory_items SET hook=?,story=?,sourcePublicationHook=?,sourceTitleCore=?,sourceDescriptionCore=?,status='regen_wait',retryStrategy='new_story',reviewInterpretation=?,reviewInterpretationAt=?,prompt='',promptHash=NULL,promptGenerationId=NULL,promptPayloadHash=NULL,promptPayloadLength=NULL,title='',description='',creativePackageHash=NULL,creativePackageId=NULL,providerRunId=NULL,flowResult=NULL,error='AI: narrative feedback requires a new creative package.',nextTry=0,runtimeAttemptCount=0,updatedAt=? WHERE id=?")
+      .run(ai.new_hook,ai.new_story,ai.new_publication_hook||null,ai.new_title_core||null,ai.new_description_core||null,interpretation,stamp,stamp,row.id);
     const freshForPackage=db.prepare('SELECT * FROM factory_items WHERE id=?').get(row.id);
     materializeCreativePackage(db,freshForPackage,{force:true});
   }
