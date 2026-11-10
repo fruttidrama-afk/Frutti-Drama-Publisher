@@ -88,3 +88,16 @@ La v27 seguía fallando en prompts que, después de copiarse desde el editor, qu
 **Intervención pendiente:** el texto exacto del prompt sin guardar solo existe en el Safari del usuario, no en la base de datos. Para validar la reparación, copiar el prompt, refrescar la **misma pestaña autenticada** (no abrir obligatoriamente una pestaña nueva que muestre Login), volver a pegarlo y comprobar que el indicador sea `Extractor de episodio actual v33`; revisar título y descripción contra el video y guardar solo si es correcto. Si persiste el fallo, solicitar el prompt completo para reproducirlo sin volver a adivinar etiquetas.
 
 **Seguridad:** sin tocar hashes de video, títulos guardados, stock aprobado, MP4, créditos de Flow ni publicaciones; `historical_reconciliation_pending=true` permanece.
+
+
+## Error de rotulado v28/v33 — causa raíz y reparación (2026-11-10)
+
+**Hallazgo decisivo:** cuando la operadora indicó que el recuadro aún mostraba `v28`, el código fuente publicado de `docs/frutti-recap.js` y `factory-web/public/frutti-recap.js` contenía exactamente la expresión `aiStatus.engine_revision==="story_action_v33" ? "Extractor de episodio actual v28" : "versión no confirmada"`. Es decir: el cliente RECIBÍA y RECONOCÍA la revisión v33 pero imprimía literalmente «v28». No era evidencia de que el backend ni necesariamente Safari siguieran ejecutando v28. Las respuestas anteriores atribuyendo ese rótulo a la caché eran incorrectas.
+
+**Corrección:** módulo UI con `FRUTTI_EXPECTED_ENGINE_REVISION="story_action_v33"` y export `fruttiEngineLabel(serverRevision)` que deriva el texto visible del valor real de la revisión; `story_action_v33` muestra `Extractor de episodio actual v33`, una versión obsoleta muestra `versión no confirmada`. El mismo literal de revisión controla la validación de propuestas en POST. Se modificaron ambas copias idénticas de `frutti-recap.js`. HTML en ambos frontends importa `frutti-recap.js?v=20261110-v33-engine-label-corrected`, invalidando el recurso cacheado en la misma pestaña al actualizarla.
+
+**Protección permanente:** `scripts/check-unified-factory-ui.mjs` importa el módulo visible, compara su `FRUTTI_EXPECTED_ENGINE_REVISION` con las dos declaraciones de `engine_revision` del endpoint de Supabase, invoca `fruttiEngineLabel` y falla si imprime v28 o si permite versiones viejas. GitHub Actions `Unified Publisher Factory UI Smoke Test` aprobó con commit `abf5b1d122e70d185a1cb7ca5ed1e01602462a7c`. Además se repitieron 20 pruebas con prompts de estructura canónica y anexos técnicos largos, todas aprobadas. No son 20 asociaciones de MP4 verificadas.
+
+**Intervención humana final:** para ver la etiqueta corregida, actualizar **la pestaña ya autenticada** del panel en el iPad. No abrir otra ventana que exija iniciar sesión. Si persiste un error de generación o delimitación, pedir el prompt íntegro; no reinterpretar una etiqueta errónea como falla del parser.
+
+**No alterado:** hashes/MP4, ficha reconstruida T2E9, aprobación, stock, Flow, créditos, YouTube; sigue activo el bloqueo `historical_reconciliation_pending=true`.
