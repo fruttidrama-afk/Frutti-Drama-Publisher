@@ -612,8 +612,8 @@ export function materializeCreativePackage(db,row,{force=false}={}){
 export function ideaForEpisode(episode){
   const i=Number(episode)-1,initial=CONFIG.content.initial_episodes[i];
   if(initial){
-    if(Array.isArray(initial))return{hook:String(initial[0]||('EPISODE '+episode)),story:String(initial[1]||''),titleCore:String(initial[2]||''),descriptionCore:String(initial[3]||'')};
-    return{hook:String(initial.hook||('EPISODE '+episode)),story:String(initial.story||initial.intent||''),titleCore:String(initial.titleCore||initial.title_core||''),title:String(initial.title||''),description:String(initial.description||''),descriptionCore:String(initial.descriptionCore||initial.description_core||'')};
+    if(Array.isArray(initial))return{hook:String(initial[0]||('EPISODE '+episode)),story:String(initial[1]||''),titleCore:String(initial[2]||''),descriptionCore:String(initial[3]||''),publicationHook:String(initial[4]||'')};
+    return{hook:String(initial.hook||('EPISODE '+episode)),story:String(initial.story||initial.intent||''),titleCore:String(initial.titleCore||initial.title_core||''),publicationHook:String(initial.publicationHook||initial.publication_hook||''),title:String(initial.title||''),description:String(initial.description||''),descriptionCore:String(initial.descriptionCore||initial.description_core||'')};
   }
   const seeds=CONFIG.content.autonomous_seed_ideas;
   if(seeds.length){
@@ -624,7 +624,7 @@ export function ideaForEpisode(episode){
     const v=seeds[seedIndex%seeds.length],cycle=Math.floor(seedIndex/seeds.length)+1;
     const cycleSuffix=cycle>1?' Continuation cycle '+cycle+'. Preserve canon and create a new consequence rather than repeating the previous episode.':'';
     if(typeof v==='string')return{hook:'NEW TURN',story:v+cycleSuffix};
-    return{hook:String(v.hook||'NEW TURN'),story:String(v.story||v.intent||'')+cycleSuffix,titleCore:String(v.titleCore||v.title_core||''),title:String(v.title||''),description:String(v.description||''),descriptionCore:String(v.descriptionCore||v.description_core||'')};
+    return{hook:String(v.hook||'NEW TURN'),story:String(v.story||v.intent||'')+cycleSuffix,titleCore:String(v.titleCore||v.title_core||''),publicationHook:String(v.publicationHook||v.publication_hook||''),title:String(v.title||''),description:String(v.description||''),descriptionCore:String(v.descriptionCore||v.description_core||'')};
   }
   if(isEarthIn10()){
     // New Earth backlog rows start as planner placeholders. The DB-aware
