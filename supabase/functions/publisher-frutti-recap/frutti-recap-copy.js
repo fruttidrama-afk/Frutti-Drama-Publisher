@@ -673,22 +673,37 @@ function extractCollapsedCurrentStory(input) {
  // Generic noncanonical headings and paragraph separators.
  stop(/\n\s*(?:#{1,6}\s*)?[\p{L}][\p{L}\d /&+().,-]{2,84}\s*[:：]\s*/giu);
  stop(/[ \t]+[A-ZÁÉÍÓÚÜÑ0-9]{2,}(?:[ /&+().-]+[A-ZÁÉÍÓÚÜÑ0-9]{2,}){1,8}\s*[:：]\s*/g);
+ stop(/[ \t]+(?:camera|action|scene|visual|lighting|sound|production|editing|technical|motion|stage|cinematography|animation|voice|performance|environment|direction|acting)\s+[\p{L}0-9][\p{L}0-9 &/+().,-]{3,85}\s*[:：]/giu);
  stop(/\n\s*(?:[-•*]{1,3}|[—–-]{2,})\s+[\p{L}]/giu);
  stop(/[ \t]+(?:---|——|––)\s+[\p{L}]/giu);
+ // A complete narrative sentence followed by another character's scene beat
+ // may continue across a blank line. Do not cut genuine story continuation.
+ const sceneContinuation=s=>/^(?:(?:Don\s+)?(?:Melón|Uva|Fresia|Mango|Limón|Banana|Bananita)|El\s+(?:documento|testigo|grupo)|La\s+(?:carta|prueba|hoja)|Ella|Él|Ambos|Los\s+dos)\b/iu.test(s)
+  && /\b(?:recibe|comprende|descubre|encuentra|dice|acusa|interrumpe|sabe|revela|entiende|responde|confirma|escucha|llora|enfrenta|observa|sale|vuelve|promete|señala|niega|reconoce|admite|ordena|obliga|intenta|ofrece|logra|muestra|ve|habla)\b/iu.test(s);
  for(const m of narrative.matchAll(/\n[ \t]*\n/g)){
   const before=narrative.slice(0,m.index).trim();
-  if(before.length>=25&&before.length<1500&&/[.!?…]["'»”]?$/u.test(before))cuts.push(m.index);
+  const next=narrative.slice(m.index+m[0].length).trimStart().split("\n")[0].trim();
+  if(before.length>=25&&before.length<1500&&/[.!?…]["'»”]?$/u.test(before)&&!sceneContinuation(next))cuts.push(m.index);
  }
  let offset=cuts.length?Math.min(...cuts):narrative.length;
  if(offset>1800){
-  // Last-resort: the first narrative line is allowed only when it forms a
-  // complete sentence, has no technical imperative and is under 1100 chars.
-  const first=narrative.trimStart().split("\n")[0].trim();
-  if(first.length>=30&&first.length<=1100&&/[.!?…]["'»”]?$/u.test(first)
-    &&!/^(?:CAMERA|CHARACTER|CONSTRAINT|AUDIO|BEAT|SHOT|SCENE|VISUAL|NARRATIVE NOVELTY|OUTPUT|PREVIOUS|USE\b|KEEP\b|MAKE\b|ONLY\b|NEVER\b|THE CAMERA\b|THE SHOT\b|TECHNICAL\b|MAINTAIN\b|PRESERVE\b|ENFORCE\b|RENDER\b|ENSURE\b|GENERATE\b|CINEMATIC\b|CINEMATOGRAPHY\b)/i.test(first))
-     offset=narrative.indexOf(first)+first.length;
+  // When all production headings are unrecognizable, extract only finished
+  // sentences from the initial physical STORY lines. Never copy the plan.
+  const lines=narrative.trimStart().split("\n");
+  let candidate="",endAt=-1,read=0;
+  for(const rawLine of lines){
+   const line=rawLine.trim();
+   if(!line){if(candidate&&/[.!?…]["'»”]?$/u.test(candidate))break;continue}
+   if(read>=4||candidate.length+line.length>1300)break;
+   if(candidate&&/[.!?…]["'»”]?$/u.test(candidate)&&!sceneContinuation(line))break;
+   if(/^(?:CAMERA|CHARACTER|CONSTRAINT|AUDIO|BEAT|SHOT|SCENE|VISUAL|NARRATIVE NOVELTY|OUTPUT|PREVIOUS|USE\b|KEEP\b|MAKE\b|ONLY\b|NEVER\b|THE CAMERA\b|THE SHOT\b|TECHNICAL\b|MAINTAIN\b|PRESERVE\b|ENFORCE\b|RENDER\b|ENSURE\b|GENERATE\b|CINEMATIC\b|CINEMATOGRAPHY\b)/i.test(line))break;
+   candidate+=(candidate?" ":"")+line;
+   endAt=narrative.indexOf(line,Math.max(0,endAt))+line.length;
+   read++;
+  }
+  if(candidate.length>=30&&candidate.length<=1300&&/[.!?…]["'»”]?$/u.test(candidate))
+    offset=endAt;
  }
-
  let story=narrative.slice(0,offset).replace(/^\s*[-•*]\s*/,"").replace(/\s+/g," ").trim();
  // Be conservative: a 10-second current STORY is typically 1–3 sentences.
  // If truly >1800 without a verifiable heading, do not invent a boundary.
