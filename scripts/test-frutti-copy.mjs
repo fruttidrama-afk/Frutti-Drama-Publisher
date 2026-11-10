@@ -253,3 +253,33 @@ assert(witnessedKiss.description.includes("Fresia presencia el beso"),"kiss witn
 const foundNotInterrupted=generate("EPISODE\nENCUENTRO INESPERADO: Fresia encuentra a Uva y Limón conversando en el jardín.");
 assert(!/interrumpe/.test(foundNotInterrupted.title+" "+foundNotInterrupted.description),"finding the pair must not become an interruption");
 console.log("PASS 2026 legacy hook/story contract and coordinated-person fidelity");
+
+
+// v26 current-episode extraction must outrank all previous CANON and technical prose.
+const currentStructured = generate([
+  "FRUTTIDRAMA — Episode 13",
+  "CONTINUITY",
+  "Previous canonical beat: SOSPECHA ABIERTA — Fresia acusa a Mango de envenenar a Banana.",
+  "Permanent canon: Mango envenenó a Banana años atrás.",
+  "STORY / ACTION",
+  "HOOK: PRUEBA TÓXICA",
+  "STORY: Don Melón recibe una prueba médica que confirma que la muerte de Banana estuvo relacionada con un envenenamiento. Uva Reyes comprende que no fue una muerte natural.",
+  "CAMERA",
+  "Close-up and ambient audio."
+].join("\n"));
+assert(currentStructured.title.startsWith("PRUEBA TÓXICA: Don Melón recibe"),"HOOK/STORY precedence: "+JSON.stringify(currentStructured));
+assert(currentStructured.description.includes("Uva Reyes comprende"),"Current episode second beat lost");
+assert(!/Fresia|Mango|SOSPECHA ABIERTA/.test(currentStructured.title+" "+currentStructured.description),"Canon leaked into current metadata");
+assert.equal(currentStructured.source_story,
+ "Don Melón recibe una prueba médica que confirma que la muerte de Banana estuvo relacionada con un envenenamiento. Uva Reyes comprende que no fue una muerte natural.",
+ "Metadata must contain every verb and qualification of the current STORY");
+const currentRomance = generate("CONTINUITY\nBanana's death was previously revealed.\nSTORY / ACTION\nHOOK: ROMANCE INTERRUMPIDO\nSTORY: Fresia interrumpe una conversación romántica entre Uva Reyes y Limón Duarte en el jardín.");
+assert(currentRomance.title.startsWith("ROMANCE INTERRUMPIDO: Fresia interrumpe"),"Current romantic interruption wrong");
+assert(currentRomance.description.includes("entre Uva Reyes y Limón Duarte"),"Both interrupted partners must be retained");
+const currentAccusation = generate("STORY / ACTION\nHOOK: ACUSACIÓN DIRECTA\nSTORY: Fresia acusa a Mango de envenenar a Banana delante de Uva.");
+assert(currentAccusation.title.startsWith("ACUSACIÓN DIRECTA: Fresia acusa"),"False statement of poisoning");
+const currentAttempt = generate("STORY / ACTION\nHOOK: BESO INTENTADO\nSTORY: Fresia intenta besar a Limón Duarte, pero él se aleja.");
+assert(currentAttempt.title.startsWith("BESO INTENTADO: Fresia intenta"),"Attempted kiss changed to completed");
+const canonFieldsOnly = generate("CONTINUITY\nHOOK: SOSPECHA ABIERTA\nSTORY: Mango envenena a Banana.\nCAMERA\nOne unbroken take.");
+assert(canonFieldsOnly.error,"Never use HOOK/STORY fields inside CONTINUITY");
+console.log("PASS v26 exact current episode structural precedence + literal event contract + canon-only safety");
