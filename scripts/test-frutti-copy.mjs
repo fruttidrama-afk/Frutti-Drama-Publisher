@@ -193,3 +193,31 @@ assert(/criada tan atrevida/.test(recoveredRealStyle.description),"actual verbal
 assert(/Uva y Limón permanecen en silencio/.test(recoveredRealStyle.description),"must preserve no-response fact");
 assert(!/interrumpe a Uva(?! y Limón)/.test(recoveredRealStyle.title),"no one-sided interruption");
 console.log("PASS unlabeled original Flow prose with both witnesses, spoken insult and exit");
+
+
+// Recovered original hook-story architecture regression:
+// historical automation made metadata from structured story BEFORE Flow;
+// a human-pasted Flow prompt can have NO such label, so require grounded prose fallback.
+const naturalFlowScenes=[
+ ["clinical", "One continuous shot. @Don Melón reads a clinical report about Banana and looks devastated. He holds the paper with shaking hands.\nCAMERA: slow push-in.", /Don Melón lee un informe médico/],
+ ["theft", "SCENE 1: Mango Del Rio steals a letter from Don Melón's office while nobody is watching.\nLighting: warm dusk.", /Mango roba una carta/],
+ ["box", "ESCENA 1: Uva Reyes opens a wooden box in the garden. Limón Duarte watches her.", /Uva abre una caja/],
+ ["accusation", "CANON\nMango envenenó a Banana en el pasado.\nSCENE 1: Fresia acusa a Mango de mentirle a Uva.", /Fresia acusa a Mango/],
+ ["humiliation", "One continuous shot. Fresia walks into the garden and insults Uva Reyes. Limón Duarte only sits beside Uva, no romantic conversation.", /Fresia humilla a Uva/],
+ ["actual-romance", "SCENE 1: Uva Reyes and Limón Duarte share a romantic conversation.\nSCENE 2: Fresia enters and interrupts them.", /Fresia interrumpe a Uva y Limón/],
+ ["kiss-attempt", "SCENE 1: Limón Duarte tries to kiss Uva Reyes, but she steps back.", /Limón intenta besar a Uva/],
+ ["witness", "SCENE 1: Uva Reyes talks to Limón Duarte in the garden. Fresia watches silently from the window.", /Uva habla con Limón/]
+];
+for(const [id,source,expected] of naturalFlowScenes){
+ const meta=generate(source);
+ assert(!meta.error,"unstructured Flow story "+id+" should be recognized: "+JSON.stringify(meta));
+ assert(expected.test(meta.title),"unstructured Flow story "+id+" has wrong subject, action, or object: "+meta.title);
+ assert(meta.title.length<=100,"YouTube title overflow "+id);
+ assert(meta.description.endsWith("#Shorts #ViralShorts #FruttiDrama"),"YouTube tags "+id);
+}
+const unrelatedWitness=generate("One continuous scene. Fresia enters the garden and insults Uva Reyes, while Limón Duarte sits beside Uva.");
+assert(!/ROMANCE INTERRUMPIDO|interrumpe a Uva y Limón/.test(unrelatedWitness.title),
+ "mere co-presence is NOT proof of a romantic conversation");
+const honestTechnicalOnly=generate("Generate one video, vertical 9:16, no subtitles, camera close-up and reference sheets.");
+assert(honestTechnicalOnly.error,"technical-only prompts must remain rejected instead of hallucinating a plot");
+console.log("PASS unlabeled scene prose, physical actions, spoken roles, no false romance or canon contamination");
