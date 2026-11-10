@@ -345,8 +345,16 @@ function explicitEpisodeCopy(explicit){
   if(t){title=t;coveredStory=v;break}
  }
  if(!title)return {error:"TITLE_LENGTH_INVALID",detail:"La trama identificada es demasiado larga para un título factual completo de YouTube. No se recortó ni reformuló su significado.",source_story:explicit.story};
+ const involved=names(story);
+ const question=/(?:interrumpe|irrumpe|interrupts?)/i.test(story)&&involved.length>=3?
+   "¿Cómo reaccionarán "+involved.slice(1,3).join(" y ")+" ante la interrupción?":
+   /acusa|accuses?/i.test(story)&&involved.length>=2?"¿Cómo responderá "+involved[1]+" a esta acusación?":
+   /intenta(?:n)?\s+besar|tries?\s+to\s+kiss/i.test(story)?"¿Qué sucederá después de este intento?":
+   /roba|steals?/i.test(story)?"¿Qué consecuencias tendrá este robo?":
+   /encuentra|encuentran|discovers?/i.test(story)?"¿Qué ocurrirá después de este hallazgo?":
+   "¿Qué pasará ahora?";
  const description=explicit.story.replace(/\s+/g," ").trim().replace(/[.!?]+\s*$/,".")+
-  "\n\n¿Qué pasará ahora?\n\n"+TAGS;
+  "\n\n"+question+"\n\n"+TAGS;
  return {title,description,episode_excerpt:explicit.evidence.slice(0,500),
   source_story:explicit.story,method:"explicit_current_episode_extractive",
   grounding:"literal_episode_source_operator_review_required",
@@ -364,6 +372,8 @@ function operatorStoryCopy(fullPrompt){
  const withHook=raw.match(/^([A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+):\s*(.{20,})$/);
  const story=withHook?withHook[2]:raw;
  const context=/\b(?:rom[aá]ntic(?:[oa]s?|amente)|romantic(?:ally)?|amoroso|amorosa)\b/i.test(story);
+ const negated=/\b(?:no|nunca|jam[aá]s|never|not)\s+(?:(?:se|lo|la|le)\s+)?(?:interrumpe|besa|envenena|mata|kiss(?:es)?|interrupts?|poisons?)\b/i.test(story);
+ const alleged=/\b(?:acusa|sospecha|cree|rumor|denuncia|accuses?|suspects?)\b/i.test(story);
  const patterns=[
   [/intenta(?:n)?\s+besar|tries?\s+to\s+kiss/i,"BESO INTENTADO"],
   [/acusa|accuses?/i,"ACUSACIÓN DIRECTA"],
@@ -395,7 +405,7 @@ function operatorStoryCopy(fullPrompt){
   [/observa|watches?|ve a|sees?/i,"ESCENA OBSERVADA"],
   [/hablan|conversan|talk(?:ing)?|conversation|conversaci[oó]n/i,context?"CONVERSACIÓN ROMÁNTICA":"CONVERSACIÓN DIRECTA"]
  ];
- let hook=withHook?.[1]||patterns.find(([re])=>re.test(story))?.[1]||"TRAMA CENTRAL";
+ let hook=negated?"HECHO NEGADO":withHook?.[1]||patterns.find(([re])=>re.test(story))?.[1]||"TRAMA CENTRAL";
  // The title body and description are an EXTRACTIVE copy of the operator's
  // words. No one can be changed from spectator to perpetrator, or from a
  // suspected action to a confirmed outcome, by this branch.
