@@ -901,7 +901,15 @@ function ensureCopy(row){
 // REDO feedback is intentionally NOT classified here with keywords/regex.
  // The FreeBrowserProvider interprets the complete human message semantically
  // against the Show Bible and episode context before authorizing one retry.
-function card(row){row=ensureCopy(row);const hasReviewMedia=row.status==='review'&&((row.videoPath&&fs.existsSync(row.videoPath))||isReviewStorageUri(row.remoteUrl));return{id:row.id,episode:row.episode,hook:row.hook,story:row.story,title:row.title,description:row.description,status:row.status,videoUrl:hasReviewMedia?'/factory/video/'+encodeURIComponent(row.id):null,archivedOriginal:isReviewStorageUri(row.remoteUrl),updatedAt:row.updatedAt,error:row.error}}
+function card(row){
+ let packageStatus="verified";
+ try{row=ensureCopy(row)}catch(error){
+   if(!/frutti\s*drama|fruttidrama/i.test(String(CONFIG.identity?.show_name||"")))throw error;
+   // Keep migrated/unreconciled historic Review visible to the operator.
+   // No metadata fabrication, no automatic approval before package recovery.
+   packageStatus="historical_package_not_verified";
+ }
+ const hasReviewMedia=row.status==='review'&&((row.videoPath&&fs.existsSync(row.videoPath))||isReviewStorageUri(row.remoteUrl));return{id:row.id,episode:row.episode,hook:row.hook,story:row.story,title:row.title,description:row.description,status:row.status,creativePackageStatus:packageStatus,videoUrl:hasReviewMedia?'/factory/video/'+encodeURIComponent(row.id):null,archivedOriginal:isReviewStorageUri(row.remoteUrl),updatedAt:row.updatedAt,error:row.error}}
 function repairLegacyEarthReviewMetadata(){
  if(!/earth\s*in\s*10/i.test(String(CONFIG.identity?.show_name||'')))return;
  const tags='#EarthIn10 #Nature #Travel #Shorts #ViralShorts';
