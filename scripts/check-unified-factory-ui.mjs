@@ -93,10 +93,11 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
  for(const id of ['id="udRecapRestoreHistorical"','id="udRecapTemplate"','id="udRecapTitleCounter"','id="udRecapDescriptionCounter"','id="udRecapMethodStatus"']){
   if(!html.includes(id))throw Error(name+" missing one of the two manual recovery methods: "+id);
  }
- if(!html.includes('frutti-recap.js?v=20261110-manual-recap-v1'))throw Error(name+" stale Safari recap module");
+ if(!html.includes('frutti-recap.js?v=20261110-manual-recap-v2'))throw Error(name+" stale Safari recap module");
  if(!recapJs.includes("FRUTTI_MANUAL_TITLE")||!recapJs.includes("FRUTTI_MANUAL_DESCRIPTION")||
     !recapJs.includes("historical_metadata")||!recapJs.includes("udRecapRestoreHistorical")||
     !recapJs.includes("udRecapTemplate"))throw Error(name+" absent historical/manual copy alternatives");
+ if(!html.includes("Prompt ORIGINAL de Google Flow (opcional si todavía no lo encontraste)"))throw Error(name+" retains mandatory historical prompt");
  const api=fs.readFileSync("supabase/functions/publisher-frutti-recap/index.ts","utf8");
  if(api.includes('import {generateFruttiRecapCopy}')||api.includes('FRUTTI_S3_STORY_METADATA')||
     !api.includes("NARRATIVE_EXTRACTOR_RETIRED")||
