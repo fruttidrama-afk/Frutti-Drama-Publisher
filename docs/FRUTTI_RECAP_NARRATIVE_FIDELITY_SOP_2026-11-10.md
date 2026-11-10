@@ -43,3 +43,18 @@ El generador existente **NO era una IA semántica**: era un extractor local de e
 - SOP madre: `docs/SOP_MASTER_PUBLISHER_FACTORY.md`
 
 **Principio:** fidelidad factual > titular más llamativo > tasa bruta de generación. Mantener resultado comprobable y jamás inventar una acción o un interlocutor.
+
+
+## Incidente de extracción repetida — reparación v28 (10 de noviembre de 2026)
+La v27 seguía fallando en prompts que, después de copiarse desde el editor, quedaban en una sola línea o con encabezados pegados:
+`CONTINUITY Previous canonical beat: SOSPECHA ABIERTA — [episodio anterior] STORY / ACTION HOOK: PRUEBA TÓXICA STORY: Don Melón recibe una prueba médica… CAMERA: …`.
+
+**Causa técnica comprobada:** la función v27 buscaba `STORY / ACTION` como una línea aislada. Con encabezados colapsados no entraba en esa rama. El extractor de respaldo escaneaba verbos del texto completo, incluyendo `CONTINUITY`, y llegaba a inventar «Banana envenena a Don Melón» o un enfrentamiento de Fresia y Mango. Los tests anteriores solo cubrían encabezados separados en líneas y no eran suficientes.
+
+**Corrección aplicada y desplegada:** `extractCollapsedCurrentStory` v28 detecta `STORY / ACTION` como delimitador en cualquier posición, incluso si todo el prompt está en una línea; busca `HOOK:` y `STORY:` posteriores, corta antes de `CAMERA:` y otros encabezados técnicos y construye el copy únicamente del episodio actual. Si hay `Previous canonical beat` pero no puede extraerse una historia actual verificable, devuelve error y **nunca** inventa metadatos. Los hooks canónicos de tres palabras `ORDEN DE SALIDA` y `FURIA DEL PATRÓN` pasan a las dos palabras editoriales `SALIDA FORZADA` y `FURIA PATRONAL`, sin modificar el relato.
+
+**Evidencia de pruebas:** antes de desplegar v28 se aprobaron **20 episodios canónicos diferentes × 5 formatos = 100 pruebas de precedencia**, además de 100 casos del corpus anterior (50 prompts, 50 historias), cuatro casos de bloqueo y el único prompt histórico auténtico vinculado de manera verificada a un MP4 (T2E9). Los 20 provienen del archivo de planificación usado **exclusivamente como banco de pruebas**: no se los denomina «20 prompts reales verificados». El test quedó permanente en `scripts/test-frutti-copy.mjs` como `CANONICAL-COLLAPSED-20`; GitHub Actions `FruttiDrama Metadata Fidelity` y el control unificado aprobaron la nueva suite. Backend activo `publisher-frutti-recap` v28, GitHub commit `3d1323ac7b5364c30758c9388781588a2ecb704f`.
+
+**Segundo defecto de visibilidad:** `docs/index.html` y `factory-web/public/index.html` todavía importaban `frutti-recap.js?v=20261110-source-grounded-v20`. Safari podía reutilizar el módulo antiguo y mostrar el mensaje de éxito de v20 aunque el backend hubiera cambiado. Se actualizó el import a `?v=20261110-story-action-v28` en ambas interfaces y hay que abrir el panel con URL nueva para invalidar también la caché HTML del navegador.
+
+**Seguridad:** no se alteró ningún MP4, ficha histórica, título guardado, asignación, videoId, stock aprobado, cola YouTube ni créditos Google Flow. Sigue vigente el bloqueo `historical_reconciliation_pending` hasta que la operadora identifique los 30 videos todavía pendientes. La validación humana del mismo prompt que estaba sin guardar en el iPad sigue siendo indispensable; la prueba local no debe presentarse como comprobación de ese texto exacto.
