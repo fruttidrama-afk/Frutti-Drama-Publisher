@@ -569,8 +569,12 @@ export function materializeCreativePackage(db,row,{force=false}={}){
   const prompt=buildPrompt(db,row,visual);
   validateEpisodePrompt(row,prompt);
   const providers=CONFIG.publication?.providers||[],provider=providers.find(x=>x.type===CONFIG.publication?.selected_provider)||providers[0]||{};
+  const fruttiSource=row.sourceTitleCore&&row.sourceDescriptionCore
+    ?{hook:row.hook,story:row.story,publicationHook:String(row.sourcePublicationHook||row.hook),
+      titleCore:String(row.sourceTitleCore),descriptionCore:String(row.sourceDescriptionCore)}
+    :ideaForEpisode(Number(row.episode));
   const copy=isFruttiDrama()
-    ?selectFruttiSourceIdea(row,ideaForEpisode(Number(row.episode)))
+    ?selectFruttiSourceIdea(row,fruttiSource)
     :buildPublicationCopy({
       hook:row.hook,story:row.story,prompt,contextTerms:[],
       hashtags:Array.isArray(provider.hashtags)?provider.hashtags:[],
@@ -658,7 +662,10 @@ export function ensureBacklog(db,minReady=Math.max(9,DAILY_LIMIT*3)){
     }
     const force=isGenericAutonomousIdea(row.hook,row.story)||/HOOK:\s*NEXT CHAPTER/i.test(String(row.prompt||''))||/EPISODE INTENT:\s*Continue the configured Creative Bible and canon from the previous accepted beat/i.test(String(row.prompt||''));
     if(isFruttiDrama()){
-      const source=ideaForEpisode(Number(row.episode));
+      const source=row.sourceTitleCore&&row.sourceDescriptionCore?
+        {hook:row.hook,story:row.story,publicationHook:String(row.sourcePublicationHook||row.hook),
+         titleCore:String(row.sourceTitleCore),descriptionCore:String(row.sourceDescriptionCore)}:
+        ideaForEpisode(Number(row.episode));
       // Old migrated hook+story drafts are kept safely. No title or description
       // is manufactured from Flow text; only a full editorial source can proceed.
       if(!source||(String(source.hook||"")!==String(row.hook||""))||(String(source.story||"")!==String(row.story||""))||
