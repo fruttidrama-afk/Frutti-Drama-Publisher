@@ -24,7 +24,7 @@ export function initFruttiRecap({session,udText}){
   const link=$("#udRecapFreeAiSetup");if(link)link.hidden=true;
   if(aiStatus.connected===true){
    el.dataset.status="connected";
-   el.textContent="✓ Recuperación histórica prioritaria. Si existe un título y una descripción canónicos, no hace falta generarlos. Extractor local opcional · "+fruttiEngineLabel(aiStatus.engine_revision)+". Revisá siempre el video antes de guardar.";
+   el.textContent="✓ Recuperación primero: títulos canónicos T2E2–E13 y tramas guardadas T3E1–E12. Para T3, los títulos son propuestas reconstruidas con reglas originales, NO metadatos finales verificados. Extractor opcional · "+fruttiEngineLabel(aiStatus.engine_revision)+".";
   }else if(aiStatus.connected===false){
    el.dataset.status="missing";
    el.textContent="No pude comprobar el estado del generador editorial. Actualizá la página; no necesitás claves ni cuentas externas.";
@@ -47,18 +47,24 @@ export function initFruttiRecap({session,udText}){
  function showHistoricalAvailability(){
   const season=Number($("#udRecapSeason").value),episode=Number($("#udRecapEpisode").value),entry=currentHistorical();
   originalRecoveryButton.disabled=!entry;
-  if(entry){originalRecoveryStatus.textContent="✓ T"+season+"E"+episode+": título y descripción encontrados en el código canónico original. No se ha verificado que coincidan con la última edición de YouTube. Recuperalos sin regeneración.";}
+  const derived=entry?.metadata_origin==="derived_from_preserved_story_via_legacy_rules";
+  const planned=derived&&entry.workflow_stage!=="review";
+  originalRecoveryButton.textContent=derived?"UTILIZAR METADATOS RECONSTRUIDOS DESDE LA HISTORIA":"RECUPERAR TÍTULO Y DESCRIPCIÓN HISTÓRICOS";
+  if(derived){originalRecoveryStatus.textContent="T"+season+"E"+episode+" · "+(planned?"HISTORIA PLANIFICADA, SIN VIDEO EN REVIEW CONFIRMADO":"HISTORIA GUARDADA, EPISODIO EN REVIEW")+". El título y la descripción fueron calculados con el algoritmo del publisher original; NO se recuperó el texto final de YouTube. "+(planned?"No se completarán automáticamente: elegí la propuesta solo si comprobaste que corresponde al video.":"Se completan si están vacíos; comparalos con el video.")}
+  else if(entry){originalRecoveryStatus.textContent="✓ T"+season+"E"+episode+": título y descripción encontrados en el código canónico original. No se ha verificado que coincidan con la última edición de YouTube. Recuperalos sin regeneración.";}
   else if(Number.isInteger(season)&&season>0&&Number.isInteger(episode)&&episode>0){originalRecoveryStatus.textContent="T"+season+"E"+episode+": sin copia histórica verificada en las fuentes recuperadas. No se inventarán metadatos. Podés completar manualmente o recurrir al extractor opcional.";}
   else originalRecoveryStatus.textContent="Seleccioná la temporada y el episodio para consultar los metadatos históricos. No se necesita generar un título nuevo cuando exista el original.";
  }
  function recoverHistorical(force=false){
   const entry=currentHistorical();if(!entry){showHistoricalAvailability();return false}
+  const derived=entry.metadata_origin==="derived_from_preserved_story_via_legacy_rules";
+  if(derived&&entry.workflow_stage!=="review"&&!force)return false;
   const title=$("#udRecapTitle"),description=$("#udRecapDescription");
   if(!force&&(title.value.trim()||description.value.trim()))return false;
   title.value=entry.title;description.value=entry.description;
   if(selected!==null)autoRecovered.set(selected,{key:historicalKey(entry.season,entry.episode),title:entry.title,description:entry.description});
   remember();
-  originalRecoveryStatus.textContent="✓ Metadatos históricos canónicos de T"+entry.season+"E"+entry.episode+" recuperados. Aún no se guardaron. Revisá si hubo modificaciones posteriores en YouTube y compará con el video.";
+  originalRecoveryStatus.textContent=derived?"✓ Propuesta T3E"+entry.episode+" reconstruida desde el hook y la historia conservados (sin usar el extractor). Aún no se guardó ni verifica el video ni la versión de YouTube.":"✓ Metadatos históricos canónicos de T"+entry.season+"E"+entry.episode+" recuperados. Aún no se guardaron. Revisá si hubo modificaciones posteriores en YouTube y compará con el video.";
   return true;
  }
  function onEpisodeSelection(){
@@ -145,12 +151,12 @@ export function initFruttiRecap({session,udText}){
   aiStatus=response.ai_status||{connected:null,provider:null};
   showAIState();
   $("#udRecapStatus").textContent="El guardado en stock reconstruido no publica ni modifica videos en YouTube.";
-  $("#udForensicStatus").textContent="Listo. Los prompts de planificación fueron retirados de esta sección. Seleccioná un archivo y pegá el verdadero prompt.";
+  $("#udForensicStatus").textContent="Fuentes editoriales: T2E2–E13 conserva copias canónicas históricas; T3E1–E6 conserva tramas en Review y T3E7–E12 tramas planificadas. Los títulos T3 son reconstrucciones, nunca originales finales. Pegá siempre el prompt real del video para guardar.";
   if(selected!==null)selectFile(selected,false);else showHistoricalAvailability();
   $("#udForensicFilter").onchange=render;$("#udForensicSearch").oninput=render;
  }
  async function suggest(){
-  if(currentHistorical()){
+  if(currentHistorical()&&currentHistorical().metadata_origin!=="derived_from_preserved_story_via_legacy_rules"){
    showAIResult("Este episodio ya tiene título y descripción canónicos recuperables. Usá RECUPERAR TÍTULO Y DESCRIPCIÓN HISTÓRICOS: no hace falta volver a generarlos. Podés editarlos manualmente si el video o YouTube muestran una versión posterior.","success");return;
   }
   if(selected===null){
