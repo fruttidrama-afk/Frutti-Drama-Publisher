@@ -281,12 +281,10 @@ function riskyEvent(ev){
  const hit=line.match(ev.rule.re);
  if(!hit)return "No hay evidencia literal del acontecimiento seleccionado.";
  const before=line.slice(Math.max(0,hit.index-95),hit.index);
- const after=line.slice(hit.index+hit[0].length);
- const allegation=/(?:acusa(?:ba)?(?:\\s+a\\s+\\w+){0,4}\\s+de|sospecha(?:\\s+que)?|cree\\s+que|teme\\s+que|rumores?\\s+(?:de|sobre)|niega(?:\\s+haber)?|denies?|suspects?|accuses?|rumou?rs?|no\\s+ha|never|jam[aá]s)\\s*(?:.{0,45})$/i;
+ const allegation=/(?:acusa(?:ba)?(?:\s+a\s+\w+){0,4}\s+de|sospecha(?:\s+que)?|cree\s+que|teme\s+que|rumores?\s+(?:de|sobre)|niega(?:\s+haber)?|denies?|suspects?|accuses?|rumou?rs?|no\s+ha|never|jam[aá]s)\s*(?:.{0,45})$/i;
  if(["veneno","muerte","parto","beso","embarazo"].includes(key)&&allegation.test(before))return "El prompt menciona una acusación, sospecha o negación; no confirma ese hecho.";
- if(["veneno","muerte","parto","beso"].includes(key)&&/(?:no|nunca|jam[aá]s|never|not|almost|casi|iba a|going to)\\s*$/.test(before))return "La narración niega o no consuma el acontecimiento.";
- if(key==="beso"&&/(?:intenta\\s+besar|tries?\\s+to\\s+kiss|attempts?\\s+to\\s+kiss|amenaza\\s+con\\s+besar)/i.test(line))return "El prompt habla de un intento o amenaza, no de un beso consumado.";
- if(key==="veneno"&&/^(?:r|do|mentira|supuesta)/i.test(after.trim()))return "No hay certeza suficiente sobre el envenenamiento.";
+ if(["veneno","muerte","parto","beso"].includes(key)&&/(?:no|nunca|jam[aá]s|never|not|almost|casi|iba a|going to)\s*$/.test(before))return "La narración niega o no consuma el acontecimiento.";
+ if(key==="beso"&&/(?:intenta\s+besar|tries?\s+to\s+kiss|attempts?\s+to\s+kiss|amenaza\s+con\s+besar)/i.test(line))return "El prompt habla de un intento o amenaza, no de un beso consumado.";
  return null;
 }
 
