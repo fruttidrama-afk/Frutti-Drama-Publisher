@@ -338,3 +338,73 @@ assert(actualProblem.title.startsWith("PRUEBA TÓXICA: Don Melón recibe"),"exac
 assert(!/Fresia|Mango|SOSPECHA ABIERTA/.test(actualProblem.title+" "+actualProblem.description),"previous beat contaminated metadata");
 assert(actualProblem.description.includes("Uva Reyes comprende que no fue una muerte natural"),"current plot conclusion missing");
 console.log("PASS CANONICAL-COLLAPSED-20: 20 canonical episodes, 100 variants, fail-closed previous-beat guards");
+
+
+// LONG-FLOW-20-BLOCKS: regression of real iPad incident (CURRENT_STORY_TOO_LONG).
+// 20 canonical episodes × 6 Flow layout variants × 2500-6000 chars of
+// production guidance after STORY. These archived prompts are testing fixtures,
+// not verified mappings to 20 of the 31 original MP4 files.
+const longAfterStory=[
+ "NARRATIVE NOVELTY LOCK",
+ "This must be a materially new plot event, not a paraphrase of a previous episode. ".repeat(12),
+ "EXACT 10-SECOND / 2–3 BEAT RHYTHM",
+ "Beat 1 (0.0–2.5s): immediate first-second dramatic visual hook. ".repeat(12),
+ "DIALOGUE",
+ "One speaker at a time, no overlapping lines. ".repeat(13),
+ "STRICT ANTI-GLITCH",
+ "Never duplicate characters or rewrite past beats. ".repeat(13),
+ "OUTPUT CONSTRAINTS",
+ "9:16 vertical, 10s. ".repeat(20)
+].join("\n");
+const altLongAfterStory=[
+ "CHARACTER REFERENCE LOCK",
+ "Preserve exact subject visual identity. ".repeat(22),
+ "SHOT-BY-SHOT TIMING:",
+ "Scene 1 (0–3s): no mutation. ".repeat(20),
+ "SCENE 2 (3–8s): keep the same actors. ".repeat(25),
+ "SOUND DESIGN:",
+ "Continuous roomtone. ".repeat(30),
+ "TECHNICAL INSTRUCTIONS:",
+ "Match the supplied fixed reference sheets. ".repeat(25)
+].join("\n");
+const longVariants=[
+ (p,r)=>"CONTINUITY\nPrevious canonical beat: "+p.hook+" — "+p.story+"\nSTORY / ACTION\nHOOK: "+r.hook+"\nSTORY: "+r.story+"\n"+longAfterStory,
+ (p,r)=>"CONTINUITY Previous canonical beat: "+p.hook+" — "+p.story+"\nSTORY / ACTION HOOK: "+r.hook+" STORY: "+r.story+"\n"+longAfterStory,
+ (p,r)=>"CONTINUITY Previous canonical beat: "+p.hook+" — "+p.story+" STORY / ACTION HOOK: "+r.hook+" STORY: "+r.story+" CAMERA: closeups. "+"No duplicate characters. ".repeat(125),
+ (p,r)=>"## CONTINUITY\nPrevious canonical beat: "+p.hook+" — "+p.story+"\n## STORY / ACTION:\n**HOOK:** "+r.hook+"\n**STORY:** "+r.story+"\n## CINEMATOGRAPHY:\n"+altLongAfterStory,
+ (p,r)=>"CONTINUITY\nHOOK: "+p.hook+"\nSTORY: "+p.story+"\nSTORY / ACTION:\nHOOK: "+r.hook+"\nSTORY: "+r.story+"\n"+altLongAfterStory,
+ (p,r)=>"CONTINUITY Previous canonical beat: "+p.hook+" — "+p.story+"\nSTORY / ACTION HOOK: "+r.hook+" STORY: "+r.story+"\n\nEXACT 10-SECOND / 2–3 BEAT RHYTHM\n0–2s — immediate dramatic hook.\n2–6.5s — development of conflict.\n"+altLongAfterStory
+];
+const hookReshape={"ORDEN DE SALIDA":"SALIDA FORZADA","FURIA DEL PATRÓN":"FURIA PATRONAL"};
+let longCount=0;
+for(let i=13;i<33;i++){
+ const previous=archive.prompts[i-1],current=archive.prompts[i];
+ for(let variant=0;variant<6;variant++){
+  const prompt=longVariants[variant](previous,current),out=generate(prompt);
+  const id="LONG-FLOW-20-BLOCKS T"+current.season+"E"+current.episode+" variant "+variant;
+  assert(prompt.length>1800,id+": invalid stress fixture length");
+  assert(!out.error,id+": extraction error "+JSON.stringify(out));
+  assert.equal(out.source_story,current.story,id+": wrong source narrative");
+  assert(out.title.startsWith((hookReshape[current.hook]||current.hook)+": "),id+": title incorrectly uses previous beat");
+  assert(out.title.length<=100,id+": YouTube title limit");
+  assert(out.description.includes(current.story),id+": full current narrative missing");
+  assert(!out.description.includes(previous.story),id+": previous beat contaminates description");
+  assert(!/NARRATIVE NOVELTY LOCK|STRICT ANTI.GLITCH|SHOT.BY.SHOT TIMING|TECHNICAL INSTRUCTIONS/.test(out.description),id+": copied production instruction");
+  longCount++;
+ }
+}
+assert.equal(longCount,120,"20 distinct episodes × 6 long layouts");
+const screenshotPrompt=[
+ "CONTINUITY",
+ "Previous canonical beat: SOSPECHA ABIERTA — Fresia confronta a Mango Del Rio por su reacción ante la muerte de Banana. Mango evita responder y deja a Fresia convencida de que esconde algo grave.",
+ "STORY / ACTION",
+ "HOOK: PRUEBA TÓXICA",
+ "STORY: Don Melón recibe una prueba médica que confirma que la muerte de Banana estuvo relacionada con un envenenamiento. Uva Reyes comprende que no fue una muerte natural.",
+ longAfterStory
+].join("\n");
+const screenshotCopy=generate(screenshotPrompt);
+assert(!screenshotCopy.error,"screenshot-style prompt must not trigger CURRENT_STORY_TOO_LONG");
+assert(screenshotCopy.title.startsWith("PRUEBA TÓXICA: Don Melón recibe"),"screenshot-style title changes narrative");
+assert(screenshotCopy.description.includes("Uva Reyes comprende que no fue una muerte natural"),"screenshot-style final story sentence lost");
+assert(!/Mango|Fresia/.test(screenshotCopy.title+" "+screenshotCopy.description),"previous canonical beat used as current story");
+console.log("PASS LONG-FLOW-20-BLOCKS: 20 canonical episodes x 6 long-format variants, 120/120; 1 screenshot regression");
