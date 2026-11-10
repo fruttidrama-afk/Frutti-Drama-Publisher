@@ -2,7 +2,7 @@
 export function initFruttiRecap({session,udText}){
  const $=s=>document.querySelector(s);
  const endpoint="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-frutti-recap";
- let files=[],records=new Map(),drafts=new Map(),selected=null,aiStatus={connected:null,provider:null};
+ let files=[],records=new Map(),drafts=new Map(),storyEvidence=new Map(),selected=null,aiStatus={connected:null,provider:null};
  const showAIResult=(message,type="error")=>{
   const area=$("#udRecapAiResult");
   if(!area)return;
@@ -43,7 +43,9 @@ export function initFruttiRecap({session,udText}){
   const fields=[["udRecapSeason","season"],["udRecapEpisode","episode"],["udRecapPrompt","generation_prompt"],["udRecapTitle","title"],["udRecapDescription","description"],["udRecapNote","note"],["udRecapOperatorStory","operator_story"]];
   for(const [id,key] of fields)$("#"+id).value=data[key]??"";
   $("#udRecapStatus").textContent=previous?"Esta ficha ya existe: podés corregirla sin tocar YouTube.":"Pegá el prompt real y prepará la ficha de este video.";
-  $("#udRecapEvidence").textContent="Acción narrativa extraída: pendiente de analizar el prompt.";
+  const evidence=storyEvidence.get(index)||{story:previous?.episode_story_evidence||"",method:previous?.episode_story_extraction_method||""};
+  storyEvidence.set(index,evidence);
+  $("#udRecapEvidence").textContent=evidence.story?"NARRATIVA CONSERVADA (sin convertirla en canon): "+evidence.story:"Acción narrativa extraída: pendiente de analizar el prompt.";
   $("#udRecapStoryFallback").hidden=!data.operator_story;
   render();
   if(switchPane&&window.matchMedia("(max-width:900px)").matches){
@@ -125,7 +127,9 @@ export function initFruttiRecap({session,udText}){
    if(!data.title||!data.description)throw Error("No se pudieron crear metadatos narrativos completos.");
    $("#udRecapTitle").value=data.title;
    $("#udRecapDescription").value=data.description;
-   $("#udRecapEvidence").textContent="NARRATIVA EXTRAÍDA DEL PROMPT (compará con el video): "+String(data.source_story||data.episode_excerpt||"sin detalle");
+   const evidence={story:String(data.source_story||data.episode_excerpt||""),method:String(data.method||"")};
+   storyEvidence.set(selected,evidence);
+   $("#udRecapEvidence").textContent="NARRATIVA EXTRAÍDA DEL PROMPT (compará con el video): "+(evidence.story||"sin detalle");
    $("#udRecapStoryFallback").hidden=true;
    remember();
    showAIResult("✓ Borrador editorial generado; los nombres y acontecimientos deben contrastarse con el prompt y el video antes de guardarlo. No se modificó el archivo original.","success");
@@ -150,7 +154,8 @@ export function initFruttiRecap({session,udText}){
   const btn=$("#udRecapSave");btn.disabled=true;btn.textContent="GUARDANDO…";
   try{
    const old=records.get(selected);
-   const answer=await request("POST",{action:"save",file_index:selected,source_sha256:f.source_sha256,season,episode,generation_prompt:v.generation_prompt,title:v.title,description:v.description,note:v.note,expected_revision:old?.revision??null});
+   const evidence=storyEvidence.get(selected)||{story:"",method:""};
+   const answer=await request("POST",{action:"save",file_index:selected,source_sha256:f.source_sha256,season,episode,generation_prompt:v.generation_prompt,title:v.title,description:v.description,note:v.note,episode_story_evidence:evidence.story,episode_story_extraction_method:evidence.method,expected_revision:old?.revision??null});
    if(!answer.saved)throw Error("El servidor no confirmó el guardado");
    drafts.delete(selected);
    await load(files);
@@ -159,7 +164,7 @@ export function initFruttiRecap({session,udText}){
   finally{btn.disabled=false;btn.textContent="GUARDAR EN STOCK RECONSTRUIDO"}
  }
  for(const id of ["udRecapSeason","udRecapEpisode","udRecapPrompt","udRecapTitle","udRecapDescription","udRecapNote","udRecapOperatorStory"])$("#"+id).addEventListener("input",remember);
- $("#udRecapPrompt").addEventListener("input",()=>{$("#udRecapOperatorStory").value="";$("#udRecapStoryFallback").hidden=true;remember()});
+ $("#udRecapPrompt").addEventListener("input",()=>{$("#udRecapOperatorStory").value="";$("#udRecapStoryFallback").hidden=true;if(selected!==null)storyEvidence.set(selected,{story:"",method:""});remember()});
  $("#udRecapSuggest").onclick=suggest;$("#udRecapSave").onclick=save;
  return {load,render};
 }
