@@ -729,7 +729,7 @@ function extractCollapsedCurrentStory(input) {
  if(story.length>1800)return {error:"CURRENT_STORY_BOUNDARY_AMBIGUOUS",
   detail:"No pude separar STORY de las instrucciones posteriores sin arriesgar la narrativa. El beat anterior queda excluido."};
  return {hook,story,evidence:"HOOK: "+hook+" | STORY: "+story,
-  method:"story_action_v30",extraction_boundary:offset,engine_revision:"story_action_v30"};
+  method:"story_action_v34",extraction_boundary:offset,engine_revision:"story_action_v34"};
 }
 
 export function generateFruttiRecapCopy(fullPrompt){
