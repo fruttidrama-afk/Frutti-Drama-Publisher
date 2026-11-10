@@ -67,7 +67,17 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
  if(!fs.readFileSync(pathToRecap,"utf8").includes("publisher-frutti-recap"))throw Error(name+" missing recap backend binding");
  const recapJs=fs.readFileSync(pathToRecap,"utf8");
  if(!recapJs.includes('story_action_v33'))throw Error(name+" missing v33 current-episode extractor revision lock");
- if(!html.includes('frutti-recap.js?v=20261110-story-action-v33-safe-boundary'))throw Error(name+" references stale Safari recap module");
+ if(!html.includes('frutti-recap.js?v=20261110-v33-engine-label-corrected'))throw Error(name+" references stale Safari recap module");
+ if(/Extractor de episodio actual v(?:28|30)/.test(recapJs))throw Error(name+" misleading hardcoded visible v28/v30 label");
+ const recapModule=await import("data:text/javascript;base64,"+Buffer.from(recapJs).toString("base64"));
+ const deployedIndex=fs.readFileSync("supabase/functions/publisher-frutti-recap/index.ts","utf8");
+ const deployedRevisions=[...deployedIndex.matchAll(/engine_revision:"(story_action_v\d+)"/g)].map(m=>m[1]);
+ if(deployedRevisions.length!==2||deployedRevisions.some(rev=>rev!==recapModule.FRUTTI_EXPECTED_ENGINE_REVISION))
+   throw Error(name+" backend/client engine_revision mismatch: "+JSON.stringify(deployedRevisions));
+ if(recapModule.fruttiEngineLabel(recapModule.FRUTTI_EXPECTED_ENGINE_REVISION)!=="Extractor de episodio actual v33")
+   throw Error(name+" reports the wrong visible engine version");
+ if(recapModule.fruttiEngineLabel("story_action_v28")!=="versión no confirmada")
+   throw Error(name+" does not reject obsolete v28 backend labels");
  for(const id of ['id="udRecapAiState"','id="udRecapAiResult"','id="udRecapSuggest"']){
   if(!html.includes(id))throw Error(name+" missing visible AI diagnostic "+id);
  }
