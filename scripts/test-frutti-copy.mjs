@@ -127,3 +127,21 @@ assert(irrelevant.error,"technical-only prompt must be rejected");
 const canonOnly=generate("CANON\nMango envenena a Banana.\nCREATIVE BIBLE\nDrama for 10 seconds. Camera close-ups. Character identity fixed.");
 assert(canonOnly.error,"CANON-only prompt must never become the episode story");
 console.log("PASS production instructions and canon excluded; no network or AI credentials");
+
+// Narrative fidelity regression 2026-11-09: do not confuse witnessing with interrupting,
+// a suspected assault with a completed assault, or an attempted kiss with a kiss.
+const merelyFinds=generate("Fresia encuentra a Uva y Limón conversando románticamente en el jardín de la hacienda.");
+assert(!merelyFinds.error,"mere discovery must be usable");
+assert(/Fresia encuentra a Uva y Limón/.test(merelyFinds.title),"finding must not become interruption");
+assert(!/INTERRUMPIDO|interrumpe|irrumpe/.test(merelyFinds.title+" "+merelyFinds.description),"finding must not become interruption in copy");
+assert(merelyFinds.description.includes("conversación romántica"),"romanticity explicitly in the prompt must be preserved");
+const deniesInterruption=generate("Fresia no interrumpe a Uva y Limón, que mantienen una conversación romántica.");
+assert(deniesInterruption.error,"explicit negation must block incorrect interruption copy");
+const merelyAccuses=generate("Fresia acusa a Mango de envenenar a Banana delante de Uva.");
+assert(merelyAccuses.error||!/Fresia envenena a Mango/.test(merelyAccuses.title),"accusation must never become the poisoning event");
+const kissAttempt=generate("Fresia intenta besar a Limón, pero él se aleja.");
+assert(kissAttempt.error||!/Fresia besa a Limón/.test(kissAttempt.title),"attempted kiss must never become consummated kiss");
+const mereWitness=generate("Fresia enfrenta a Uva frente a Limón que observa.");
+assert(!mereWitness.error,"ordinary confrontation should still be usable");
+assert(!/por Limón/.test(mereWitness.title),"witness cannot be rewritten as romantic motive");
+console.log("PASS post-recovery narrative fidelity guards");
