@@ -28,7 +28,7 @@ Deno.serve(async(req:Request)=>{
   if(pubError||!pub)return json({error:"FORBIDDEN"},403);
   if(req.method==="GET"){
    const {data,error}=await admin.from(TABLE).select("file_index,source_sha256,season,episode,generation_prompt,prompt_provenance,title,description,metadata_method,episode_story_evidence,episode_story_extraction_method,note,record_status,publication_status,revision,updated_at,created_at").eq("publisher_id",PID).order("season").order("episode");
-   return error?json({error:"READ_FAILED"},503):json({items:data||[],publication_boundary:{season:2,episode:8},publication_queue_unchanged:true,ai_status:{connected:true,provider:"Extractor editorial verificable · local",engine_revision:"story_action_v33",method:"deterministic_rules",semantic_model:false,review_required:true,free_only:true,billing_automation_disabled:true,external_ai_required:false}});
+   return error?json({error:"READ_FAILED"},503):json({items:data||[],publication_boundary:{season:2,episode:8},publication_queue_unchanged:true,ai_status:{connected:true,provider:"Extractor editorial verificable · local",engine_revision:"story_action_v34",method:"deterministic_rules",semantic_model:false,review_required:true,free_only:true,billing_automation_disabled:true,external_ai_required:false}});
   }
   const b=await req.json().catch(()=>null);
   if(!b||typeof b!=="object")return json({error:"INVALID_BODY"},400);
@@ -42,7 +42,7 @@ Deno.serve(async(req:Request)=>{
    // structured 'story' field. Never overwrite the actual Google Flow prompt.
    const source=summary?"OPERATOR_VERIFIED_STORY: "+tidy(summary):prompt;
    const answer=generateFruttiRecapCopy(source);
-   return json({...answer,engine_revision:"story_action_v33"},answer.error?422:200);
+   return json({...answer,engine_revision:"story_action_v34"},answer.error?422:200);
   }
   if(b.action!=="save")return json({error:"UNKNOWN_ACTION"},400);
   const idx=b.file_index,season=b.season,episode=b.episode;
