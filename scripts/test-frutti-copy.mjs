@@ -448,3 +448,44 @@ assert(unknownReal.title.startsWith("PRUEBA TÓXICA: Don Melón recibe"),"Prueba
 assert(unknownReal.description.includes("Uva Reyes comprende que no fue una muerte natural"),"Second current story beat lost");
 assert(!/Fresia|Mango/.test(unknownReal.title+" "+unknownReal.description),"Previous canonical beat leaked");
 console.log("PASS UNKNOWN-HEADING-CANONICAL-20: 20 episodes x 6 long formats = 120/120; technical-only fail-close and screenshot incident");
+
+
+// v34 regression: twenty different canonical episode stories x ten
+// nonstandard technical-boundary layouts, including collapsed one-line Flow
+// copy. Historical Prompt Studio rows are fixtures, never verified MP4 links.
+const boundary20=archive.prompts.slice(13,33);
+const boundaryProduction="Match the locked character identity and facial fruit material, avoid duplicate subjects and lip sync errors, maintain static camera and lighting. ".repeat(25);
+const boundaryLayouts=[
+ (previous,current)=>"CONTINUITY Previous canonical beat: "+previous.story+"\nSTORY / ACTION HOOK: "+current.hook+" STORY: "+current.story+"\nThe characters are the same fixed assets, enforce identity fidelity. "+boundaryProduction,
+ (previous,current)=>"CONTINUITY Previous canonical beat: "+previous.story+" STORY / ACTION HOOK: "+current.hook+" STORY: "+current.story+" The characters are the same fixed assets, enforce identity fidelity. "+boundaryProduction,
+ (previous,current)=>"CONTINUITY Previous canonical beat: "+previous.story+"\nSTORY / ACTION\nHOOK: "+current.hook+"\nSTORY: "+current.story+"\nEnsure every shot preserves reference sheets. "+boundaryProduction,
+ (previous,current)=>"CONTINUITY Previous canonical beat: "+previous.story+"\nSTORY / ACTION\nHOOK: "+current.hook+"\nSTORY: "+current.story+"\nDirector intent: enforce correct asset identity. "+boundaryProduction,
+ (previous,current)=>"CONTINUITY Previous canonical beat: "+previous.story+"\nSTORY / ACTION\nHOOK: "+current.hook+"\nSTORY: "+current.story+"\n## DIRECTOR INSTRUCTIONS\n"+boundaryProduction,
+ (previous,current)=>"CONTINUITY Previous canonical beat: "+previous.story+"\nSTORY / ACTION\nHOOK: "+current.hook+"\nSTORY: "+current.story+" The performance should preserve actor identity and shot consistency. "+boundaryProduction,
+ (previous,current)=>"CONTINUITY Previous canonical beat: "+previous.story+"\nSTORY / ACTION\nHOOK: "+current.hook+"\nSTORY: "+current.story+" Preserve exact character reference assets and avoid glitches. "+boundaryProduction,
+ (previous,current)=>"CONTINUITY Previous canonical beat: "+previous.story+"\nSTORY / ACTION\nHOOK: "+current.hook+"\nSTORY: "+current.story+" Mantener la identidad de los personajes y el render original. "+boundaryProduction,
+ (previous,current)=>"CONTINUITY Previous canonical beat: "+previous.story+"\nSTORY / ACTION\nHOOK: "+current.hook+"\nSTORY: "+current.story+"\nCAMERA: "+boundaryProduction,
+ (previous,current)=>"CONTINUITY Previous canonical beat: "+previous.story+"\nSTORY / ACTION\nHOOK: "+current.hook+"\nSTORY: "+current.story+"\n\nCamera choreography and acting: "+boundaryProduction
+];
+let boundaryProof=0;
+for(let i=13;i<33;i++)for(let variant=0;variant<boundaryLayouts.length;variant++){
+ const previous=archive.prompts[i-1],current=archive.prompts[i];
+ const prompt=boundaryLayouts[variant](previous,current),copy=generate(prompt);
+ const label="V34 current-only T"+current.season+"E"+current.episode+" boundary="+variant;
+ assert(prompt.length>1800,label+" malformed stress fixture");
+ assert(!copy.error,label+" rejected: "+JSON.stringify(copy));
+ assert.equal(copy.source_story,current.story,label+" trimmed story or copied technical guidance");
+ assert(!copy.description.includes(previous.story),label+" leaked previous beat");
+ assert(copy.description.includes(current.story),label+" dropped current plot");
+ assert(!copy.description.includes("locked character identity"),label+" leaked technical instructions");
+ assert(copy.title.length<=100,label+" YouTube length");
+ boundaryProof++;
+}
+assert.equal(boundaryProof,200,"v34 must pass twenty episodes x ten variants");
+const technicalStoryOnly=generate("CONTINUITY Previous canonical beat: Fresia acusa a Mango. STORY / ACTION HOOK: PRUEBA TÓXICA STORY: Use fixed character reference sheets and render the entire scene. The characters are the same fixed assets. "+boundaryProduction);
+assert(technicalStoryOnly.error,"v34 cannot mistake technical instructions alone for a plot");
+const threeBeatCurrent=generate("CONTINUITY Previous canonical beat: Mango acusa a Fresia. STORY / ACTION HOOK: ROMANCE INTERRUMPIDO STORY: Fresia interrumpe una conversación romántica entre Uva Reyes y Limón Duarte. Uva y Limón permanecen en silencio. The characters are the same fixed assets and preserve shot identity. "+boundaryProduction);
+assert(!threeBeatCurrent.error,"v34 three-actor romance failed: "+JSON.stringify(threeBeatCurrent));
+assert(threeBeatCurrent.source_story.includes("Uva y Limón permanecen en silencio"),"v34 dropped second narrative beat");
+assert(!threeBeatCurrent.source_story.includes("fixed assets"),"v34 included production instruction");
+console.log("PASS V34-COLLAPSED-BOUNDARY: 20 canonical stories x 10 layouts = 200/200 plus negative and multi-beat guards");
