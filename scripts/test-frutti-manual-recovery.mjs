@@ -85,6 +85,11 @@ check(provider.includes('row=await authorFruttiSourceEpisode(db,row);'),"Every f
 check(provider.indexOf('row=await authorFruttiSourceEpisode(db,row);')<provider.indexOf('const cp=preparePromptIfNeeded(db,row);',provider.indexOf('async function processRow(db,row)')),"Source creative author must run BEFORE prompt builder and Flow");
 check(provider.includes("FRUTTI_SOURCE_REWRITE_AFTER_PROMPT_FORBIDDEN"),"Do not rewrite an existing prompt or media");
 check(provider.includes("FRUTTI_SHOWRUNNER_CONCURRENT_SOURCE_CHANGE"),"Source writer preserves once-only atomic guard");
+check(provider.includes('SELECT COUNT(*) AS n FROM factory_generations WHERE itemId=?'),"Historic render record blocks source story replacement");
+check(provider.includes("function packageMatches(db,row)")&&provider.includes("packageMatches(db,fresh)")&&provider.includes("packageMatches(db,row)"),"Every Frutti creative archive check receives scoped SQLite");
+check(!provider.includes("function packageMatches(row)"),"Removed bad undefined SQLite reference");
+check(publication.includes("SELECT id,episode,hook,story,prompt,title,description,creativePackageHash,creativePackageId,flowResult FROM factory_items WHERE id=?"),"Reconciliation includes factory ID for immutable archive lookup");
+
 
 check(provider.includes("FRUTTI_REWRITE_MUST_AUTHOR_FULL_CREATIVE_PACKAGE")&&provider.includes("new_publication_hook")&&provider.includes("new_title_core")&&provider.includes("new_description_core"),"Creative-rewrite AI must author all copy at the same time as new episode intent");
 check(server.includes("FRUTTI_CREATIVE_PACKAGE_LEDGER_REQUIRED"),"Review approval cannot invent missing copy");
