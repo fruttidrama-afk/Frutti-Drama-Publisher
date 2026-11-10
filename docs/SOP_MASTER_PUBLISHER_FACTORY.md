@@ -611,3 +611,17 @@ Cambios 2026-11-09: `free-browser-provider.js` preserva IndexedDB y actualiza sn
 **Implementación verificada por contrato:** `scripts/flow-unusual-cooldown.mjs`, `free-browser-provider.js`, `scripts/free-runtime-runner-v2.mjs`, Supabase Edge `publisher-free-runtime` v11, `publisher-unified-read` v10, y las dos versiones de UI Factory. `scripts/check-flow-unusual-cooldown.mjs` y `scripts/check-google-security-guard.mjs` prueban las reglas sin pedir una alerta real ni consumir créditos. Documento específico: `docs/FLOW_COOLDOWN_EDGE_CONTRACT_2026-11-09.md`.
 
 **Fuentes externas:** Google Flow Help Center [FAQ oficial](https://support.google.com/flow/answer/16353333) reconoce el mensaje 'We noticed some unusual activity' y aconseja reintentar después de unos minutos; no presenta una escala oficial de 30 min–24 h. Para cuentas personales, [Google Account Help](https://support.google.com/accounts/answer/140921?hl=es) trata las alertas de actividad sospechosa de login de manera diferente.
+
+---
+
+## 2026-11-10 — FruttiDrama recap: fidelidad narrativa y corrección de títulos
+
+**SOP obligatorio:** [FRUTTI_RECAP_NARRATIVE_FIDELITY_SOP_2026-11-10.md](FRUTTI_RECAP_NARRATIVE_FIDELITY_SOP_2026-11-10.md).
+
+**Síntoma real confirmado:** en T2E9 (registro histórico `file_index=0`) se tituló falsamente «Fresia interrumpe a Uva» aunque el Google Flow prompt describe a **Uva y Limón conversando juntos**; Fresia entra, humilla verbalmente a Uva y se retira mientras ninguno responde. El viejo extractor keyword/template ignoraba el diálogo y al segundo interlocutor y presentaba resultados como si los hubiera comprendido una IA.
+
+**Contrato de solución:** prioridad trama central explícita actual > narrativa exacta provista por la operadora > análisis contextual del diálogo/acciones en prosa no etiquetada > fallo seguro cuando falta evidencia. Nunca mezclar canon, historia anterior ni referencias técnicas; no convertir intento, sospecha, negación ni acusación en acontecimiento consumado. En el campo manual `operator_story`, reproducir **literalmente** los hechos (el hook de dos palabras puede clasificarse, pero no cambiar los hechos). El generador es un extractor editorial, no un modelo de lenguaje de comprensión general. El borrador no se guarda ni aprueba automáticamente.
+
+**Pruebas:** `scripts/test-frutti-copy.mjs`: 50 prompts históricos × ruta explícita + resumen manual, más regresión de prosa sin encabezado con @Uva/@Limón/@Fresia y diálogo insultante; **698 aserciones aprobadas** en prueba local. Edge `publisher-frutti-recap` versión **20** desplegada. Estos casos de prueba no autorizan a mapear ninguno de los 31 MP4 ni prueban rendimiento de toda narrativa futura. La ficha T2E9 guardada antes de la reparación requiere que la operadora la abra y regenere/revise metadatos; no sobrescribir silenciosamente.
+
+**Dependencias:** bloqueo `historical_reconciliation_pending=true` de Frutti se mantiene hasta conciliación humana; no Generate/publicación antes. Patrón de copia literal y extracción contextual es transferible a Publisher Factory, pero los cambios de contenido entre publishers requieren tests de su canon y formato propios.
