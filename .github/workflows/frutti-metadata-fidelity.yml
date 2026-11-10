@@ -1,4 +1,4 @@
-name: FruttiDrama Metadata Fidelity
+name: FruttiDrama Human Recovery and Creative Package
 
 on:
   push:
@@ -6,7 +6,17 @@ on:
     paths:
       - "supabase/functions/publisher-frutti-recap/**"
       - "scripts/test-frutti-copy.mjs"
-      - "docs/data/frutti-prompt-studio-active.json"
+      - "docs/frutti-recap.js"
+      - "factory-web/public/frutti-recap.js"
+      - "docs/index.html"
+      - "factory-web/public/index.html"
+      - "runtime-config.js"
+      - "runtime-init.js"
+      - "frutti-creative-package.js"
+      - "free-browser-provider.js"
+      - "publication.js"
+      - "server.js"
+      - "scripts/test-frutti-manual-recovery.mjs"
       - ".github/workflows/frutti-metadata-fidelity.yml"
   workflow_dispatch:
 
@@ -18,7 +28,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  narrative-fidelity:
+  human-and-source-fidelity:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -29,6 +39,12 @@ jobs:
       - name: Syntax
         run: |
           node --check scripts/test-frutti-copy.mjs
-          node --check supabase/functions/publisher-frutti-recap/frutti-recap-copy.js
-      - name: Full editorial regression corpus
-        run: node scripts/test-frutti-copy.mjs
+          node --check scripts/test-frutti-manual-recovery.mjs
+          node --check frutti-creative-package.js
+          node --check runtime-config.js
+          node --check free-browser-provider.js
+          node --check publication.js
+          node --check server.js
+          node --check docs/frutti-recap.js
+      - name: Historical/manual copy and source-package regression
+        run: node scripts/test-frutti-manual-recovery.mjs
