@@ -513,15 +513,56 @@ assert.equal(historical.find(x=>x.episode===9).title,"CRIADA ATREVIDA: Fresia hu
 assert(historical.find(x=>x.episode===9).description.includes("Fresia irrumpe en la conversación entre Uva y Limón"),"T2E9 legacy description must be intact");
 assert(!historical.some(x=>x.episode===14||x.season===3),"do not invent metadata for unverified episodes");
 const recapAPI=fs.readFileSync("supabase/functions/publisher-frutti-recap/index.ts","utf8");
-assert(recapAPI.includes("historical_metadata:LEGACY_FRUTTI_METADATA"),"owner scoped GET must return archive");
-assert(recapAPI.includes('metadata_method:exactLegacy?"legacy_canonical_operator_reviewed":"operator_reviewed"'),"archival metadata must carry provenance on save");
-assert(recapAPI.includes('(!exactLegacy&&('),"new title rules may only allow old exceptions for exact historical title and description pairs");
+assert(recapAPI.includes("historical_metadata:[...LEGACY_FRUTTI_METADATA,...FRUTTI_S3_STORY_METADATA]"),"owner scoped GET must merge canonical T2 and story-derived T3 with preserved source distinctions");
+assert(recapAPI.includes('metadata_method:exactLegacy?"legacy_canonical_operator_reviewed":exactS3Story?"s3_story_derived_operator_reviewed":"operator_reviewed"'),"archival metadata and derived T3 copy must carry distinct provenance on save");
+assert(recapAPI.includes('(!sourceMatched&&('),"new title rules may only allow exceptions for exact registered title and description pairs");
 assert(historical.find(x=>x.episode===2).title.includes("…"),"old T2E2 title had ellipsis and must not be silently rewritten");
 assert(historical.find(x=>x.episode===12).title.startsWith("MUERTE DE BANANA:"),"old T2E12 hook used three uppercase words and must be preserved");
-assert(recapAPI.indexOf("const owner=")<recapAPI.indexOf("historical_metadata:LEGACY_FRUTTI_METADATA"),"archive must not bypass owner authorization");
+assert(recapAPI.indexOf("const owner=")<recapAPI.indexOf("historical_metadata:[...LEGACY_FRUTTI_METADATA"),"archive must not bypass owner authorization");
 for(const client of ["docs/frutti-recap.js","factory-web/public/frutti-recap.js"]){
  const script=fs.readFileSync(client,"utf8");
- for(const token of ["udRecapRestoreHistorical","historical_metadata","currentHistorical","recoverHistorical(false)","if(currentHistorical())"])
+ for(const token of ["udRecapRestoreHistorical","historical_metadata","currentHistorical","recoverHistorical(false)","currentHistorical()&&"])
   assert(script.includes(token),client+": missing first-class historical recovery: "+token);
 }
-console.log("PASS RECOVER-HISTORICAL-METADATA-12: 12 original-source T2 episodes, API provenance, both UI clients, zero inferred S3 metadata");
+console.log("PASS RECOVER-HISTORICAL-METADATA-12: 12 original-source T2 episodes preserved with provenance and strict original exceptions");
+
+
+// RECOVER-S3-STORY-METADATA-12: Story/hook source persisted in Supabase;
+// title/description RECOMPUTED by historical queue.js logic, NOT copied final
+// metadata from old DB or YouTube. E1–E6 in Review, E7–E12 story plans.
+const s3Script=fs.readFileSync("supabase/functions/publisher-frutti-recap/season3-story-metadata.js","utf8");
+const s3Meta=await import("data:text/javascript;base64,"+Buffer.from(s3Script).toString("base64"));
+const season3=s3Meta.FRUTTI_S3_STORY_METADATA;
+assert.equal(season3.length,12,"T3 must recover exactly 12 preserved story records");
+assert(s3Meta.FRUTTI_S3_STORY_SOURCE.includes("initial_episodes"),"T3 must identify the actual Supabase source");
+assert.equal(season3.filter(x=>x.workflow_stage==="review").length,6,"six migrated Season 3 episodes are in Review");
+assert.equal(season3.filter(x=>x.workflow_stage==="story_plan_no_verified_review").length,6,"six later entries are only plans");
+for(const [i,entry] of season3.entries()){
+ const label="T3E"+(i+1);
+ assert.equal(entry.season,3,label+" correct season");
+ assert.equal(entry.episode,i+1,label+" contiguous verified source index");
+ assert(entry.story.length>35,label+" actual stored story required");
+ assert(entry.hook.length>4,label+" actual hook required");
+ assert.equal(entry.metadata_origin,"derived_from_preserved_story_via_legacy_rules",label+" must never claim recovered final title");
+ assert.equal(entry.youtube_copy_verified,false,label+" YouTube final copy NOT verified");
+ assert(entry.title.length<=100,label+" <=100 YouTube title");
+ assert(entry.description.includes(entry.story),label+" source story must remain intact and visible");
+ assert(entry.description.endsWith("#Shorts #ViralShorts #FruttiDrama"),label+" genre hashtags");
+ assert(!/one continuous|reference sheet|camera shot|technical prompt/i.test(entry.description),label+" technical material leakage");
+ if(i<6)assert.equal(entry.workflow_stage,"review",label+" migrated Review");
+ else assert.equal(entry.workflow_stage,"story_plan_no_verified_review",label+" storyboard only, not rendered");
+}
+assert.equal(season3[0].hook,"NUEVO COMIENZO","T3E1 stored hook");
+assert.equal(season3[5].hook,"FRESIA CONTRAATACA","T3E6 stored hook");
+assert(!season3.some(x=>x.episode>=13),"do not infer T3E13–E15 titles from older plans");
+assert(recapAPI.includes("season3-story-metadata.js"),"T3 must be imported in authenticated endpoint");
+assert(recapAPI.includes('metadata_method:exactLegacy?"legacy_canonical_operator_reviewed":exactS3Story?"s3_story_derived_operator_reviewed":"operator_reviewed"'),"T3 source tagged distinct from T2");
+assert(recapAPI.includes("const sourceMatched=Boolean(exactLegacy||exactS3Story)"),"title format exceptions allowed only for exact archived pairs");
+assert(recapAPI.includes("&&entry.title===title&&entry.description===description"),"do not accept unrelated three-word or ellipsis titles");
+for(const client of ["docs/frutti-recap.js","factory-web/public/frutti-recap.js"]){
+ const body=fs.readFileSync(client,"utf8");
+ assert(body.includes("derived_from_preserved_story_via_legacy_rules"),client+" must disclose derived status");
+ assert(body.includes('entry.workflow_stage!=="review"&&!force'),client+" must not auto-fill draft-only story");
+ assert(body.includes("NO se recuperó el texto final de YouTube"),client+" must not claim recovered final YouTube text");
+}
+console.log("PASS RECOVER-S3-STORY-METADATA-12: 12 preserved hooks/stories, 6 Review and 6 plans, truthful recomputation not final-YouTube copy");
