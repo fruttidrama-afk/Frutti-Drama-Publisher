@@ -72,3 +72,19 @@ La v27 seguía fallando en prompts que, después de copiarse desde el editor, qu
 **Veracidad:** los 20 son prompts con estructura canónica del corpus de pruebas, **no** 20 correspondencias autenticadas MP4↔prompt. Solo la ficha T2E9 es una asociación auténtica guardada. El prompt específico que seguía sin guardar en el iPad no fue inspeccionado directamente; requiere comprobación humana final en la UI.
 
 **Guardas:** no tocar Generate, publicación, aprobación, stock, créditos, fichas, MP4 ni hash; `historical_reconciliation_pending=true` permanece.
+
+## Incidente persistente del iPad y reparación estructural v33 (10 de noviembre de 2026)
+
+**Evidencia:** la captura nueva de las 00:28 mostró `CURRENT_STORY_BOUNDARY_AMBIGUOUS` después del despliegue v30; simultáneamente, el panel de Safari seguía mostrando el módulo v28, y una pestaña nueva abrió el formulario de ingreso sin la sesión existente. El backend y el módulo del navegador pueden tener revisiones diferentes; el usuario puede estar viendo mensajes de ambas versiones.
+
+**Causa:** el extractor v30 solo reconocía un conjunto finito de encabezados técnicos. Aunque ya descartaba `Previous canonical beat`, no separaba algunas secciones de producción que seguían al `STORY` cuando sus rótulos eran genéricos, por ejemplo `Camera choreography and acting:`, `Action choreography:`, `EDITORIAL EXECUTION PLAN:`, ni cuando la siguiente línea no tenía un encabezado explícito. Algunas líneas de guion estaban partidas en dos renglones. Esto hacía que el parser excediera 1800 caracteres y rechazara el prompt.
+
+**Reparación:** v32 añadió detección de encabezados desconocidos, separadores de párrafos y extracción limitada de la primera línea narrativa completa cuando no existen delimitadores. v33 amplió la detección de rótulos en formato Title Case en la misma línea y permite conservar narrativas válidas que continúan en la línea siguiente. Esta extracción nunca recurre a la continuidad anterior y tampoco acepta instrucciones técnicas solas como hechos del episodio.
+
+**Pruebas verificadas ANTES de cada despliegue:** sobre 20 historias canónicas independientes, 120 variantes (6 por historia) de encabezados desconocidos, instrucciones largas, texto colapsado, guion multilinea, párrafos y separadores. v31 fallaba 100 de las primeras 120; v33 aprobó 120/120 de las nuevas variantes y los 100 casos de regresión originales. Se comprobó además el auténtico prompt vinculado a T2E9 y el caso `PRUEBA TÓXICA` con Don Melón, la prueba médica y la reacción de Uva, sin introducir a Fresia/Mango como actores del episodio. Los 20 prompts de prueba NO son 20 MP4 vinculados verificados.
+
+**Persistencia y distribución:** `scripts/test-frutti-copy.mjs` ahora contiene `UNKNOWN-HEADING-CANONICAL-20`, además de `LONG-FLOW-20-BLOCKS` y `CANONICAL-COLLAPSED-20`, con CI en GitHub. Backend `publisher-frutti-recap` activo en Supabase Edge v34, indicador de motor `story_action_v33`. Ambos módulos UI y los imports HTML se actualizaron a v33 para invalidar el recurso JS cacheado en Safari. Las pruebas automatizadas de UI y editor han pasado.
+
+**Intervención pendiente:** el texto exacto del prompt sin guardar solo existe en el Safari del usuario, no en la base de datos. Para validar la reparación, copiar el prompt, refrescar la **misma pestaña autenticada** (no abrir obligatoriamente una pestaña nueva que muestre Login), volver a pegarlo y comprobar que el indicador sea `Extractor de episodio actual v33`; revisar título y descripción contra el video y guardar solo si es correcto. Si persiste el fallo, solicitar el prompt completo para reproducirlo sin volver a adivinar etiquetas.
+
+**Seguridad:** sin tocar hashes de video, títulos guardados, stock aprobado, MP4, créditos de Flow ni publicaciones; `historical_reconciliation_pending=true` permanece.
