@@ -670,6 +670,23 @@ function extractCollapsedCurrentStory(input) {
  // when the prompt is copied as one long paragraph from Flow.
  stop(/\s+(?:CAMERA|C[AÁ]MARA|LIGHTING|ILUMINACI[OÓ]N|CINEMATOGRAPHY|VISUAL\s+STYLE|OUTPUT(?:\s+CONSTRAINTS?)?|RENDER|ANTI.GLITCH|NEGATIVE\s+PROMPT|SOUND\s+DESIGN|AUDIO|DIALOGUE(?:\s+RULES)?|CHARACTER\s+(?:LOCK|REFERENCES?|SHEETS?)|PRODUCTION\s+NOTES|TECHNICAL\s+INSTRUCTIONS|SHOT\s+PLAN|SCENE\s+PLAN|BEATS?\s*[/&]\s*TIMING|NARRATIVE\s+NOVELTY\s+LOCK|STRICT\s+ANTI.GLITCH|TIMELINE|EXACT\s+10.SECOND|CONSTRAINTS?)\s*[:：]/gi);
 
+
+ // v34: when copied Flow text collapses into one paragraph, a technical
+ // instruction can immediately follow a complete STORY sentence without a
+ // recognizable heading. Only cut at sentence boundaries with corroborating
+ // production language; leave every genuine dramatic sentence intact.
+ const nonStoryInstruction=/^(?:the\s+(?:characters?|performances?|camera|shots?|video|visuals?|renders?|lighting|voices?|actors?)\b|(?:ensure|maintain|preserve|match|keep|use|avoid|never|do\s+not|generate|render|enforce|verify|respect|lock)\b|(?:los|las|el|la)\s+(?:personajes?|c[aá]maras?|planos?|voces?|referencias?|iluminaci[oó]n)\b|(?:mantener|preservar|asegurar|evitar|utilizar|respetar|conservar|generar|verificar|no\s+(?:agregar|duplicar|mostrar))\b)/iu;
+ const technicalEvidence=/\b(?:character|characters|performance|actor|identity|asset|assets|reference|references|sheet|sheets|frame|frames|glitch|camera|lighting|render|rendering|shot|shots|duplicate|duplicates|voice|lip.?sync|video|visual|model|constraints?|continuity|fixed|locked|consistent|consistency|framing|background|foreground|output|instructions?|generation|personajes?|identidad|referencias?|encuadre|fotogramas?|iluminaci[oó]n|c[aá]mara|planos?|voces?|duplicados?|fijos?|instrucciones?|generaci[oó]n)\b/giu;
+ for(const m of narrative.matchAll(/(?<=[.!?…])[ \t\n]+(?=\S)/gu)){
+  const preceding=narrative.slice(0,m.index).trimEnd();
+  const upcoming=narrative.slice(m.index+m[0].length).trimStart();
+  const sentence=upcoming.slice(0,220).split(/(?<=[.!?…])\s+/u)[0];
+  const technicalHits=[...sentence.matchAll(technicalEvidence)].length;
+  const first=preceding.trimStart().slice(0,160);
+  const firstLooksTechnical=nonStoryInstruction.test(first)&&TECH.test(first);
+  if(preceding.length>=28&&preceding.length<=1800&&!firstLooksTechnical&&
+     nonStoryInstruction.test(sentence)&&technicalHits>=2)cuts.push(m.index);
+ }
  // Generic noncanonical headings and paragraph separators.
  stop(/\n\s*(?:#{1,6}\s*)?[\p{L}][\p{L}\d /&+().,-]{2,84}\s*[:：]\s*/giu);
  stop(/[ \t]+[A-ZÁÉÍÓÚÜÑ0-9]{2,}(?:[ /&+().-]+[A-ZÁÉÍÓÚÜÑ0-9]{2,}){1,8}\s*[:：]\s*/g);
