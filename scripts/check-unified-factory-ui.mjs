@@ -67,7 +67,8 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
  if(!fs.readFileSync(pathToRecap,"utf8").includes("publisher-frutti-recap"))throw Error(name+" missing recap backend binding");
  const recapJs=fs.readFileSync(pathToRecap,"utf8");
  if(!recapJs.includes('story_action_v34'))throw Error(name+" missing v33 current-episode extractor revision lock");
- if(!html.includes('frutti-recap.js?v=20261110-v34-story-boundary'))throw Error(name+" references stale Safari recap module");
+ if(!recapJs.includes('udRecapRestoreHistorical')||!recapJs.includes('historical_metadata'))throw Error(name+" lacks historical episode metadata recovery before extractor");
+ if(!html.includes('frutti-recap.js?v=20261110-legacy-metadata-recovery'))throw Error(name+" references stale Safari recap module");
  if(/Extractor de episodio actual v(?:28|30)/.test(recapJs))throw Error(name+" misleading hardcoded visible v28/v30 label");
  const recapModule=await import("data:text/javascript;base64,"+Buffer.from(recapJs).toString("base64"));
  const deployedIndex=fs.readFileSync("supabase/functions/publisher-frutti-recap/index.ts","utf8");
