@@ -6,6 +6,8 @@ on:
     paths:
       - "docs/index.html"
       - "factory-web/public/index.html"
+      - "docs/frutti-recap.js"
+      - "factory-web/public/frutti-recap.js"
       - "scripts/check-unified-factory-ui.mjs"
       - "scripts/test-frutti-copy.mjs"
       - "scripts/check-publication-safety.mjs"
