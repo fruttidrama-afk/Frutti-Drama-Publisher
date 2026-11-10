@@ -471,6 +471,7 @@ function proseSceneCopy(prompt){
   [/abre|opens?/i,"HALLAZGO ABIERTO","abre",54],
   [/holds?|sostiene/i,"OBJETO REVELADOR","sostiene",53],
   [/looks? at|stares? at|watches?|mira|observa/i,"ESCENA REVELADORA","observa",52],
+  [/talks?\s+to|conversa\s+con|habla\s+con|speaks?\s+with/i,"CONVERSACIÓN IMPORTANTE","habla",65],
   [/speaks?|says?|tells?|whispers?|shouts?|dice|responde|grita/i,"PALABRAS DECISIVAS","habla",48],
   [/enters?|walks? into|walks? in|entra|aparece|arrives?/i,"LLEGADA INESPERADA","aparece",35]
  ];
@@ -519,16 +520,17 @@ function proseSceneCopy(prompt){
  const verb=best.verb;
  const objectFirst=["lee","examina","muestra","entrega","recibe","roba","esconde","abre","sostiene","encuentra","observa"].includes(verb);
  const withTarget=best.target?((verb==="habla"?" con ":" a ")+best.target):"";
- const event=best.actor+" "+verb+(objectFirst&&best.obj?" "+best.obj:best.target?withTarget:best.obj?" "+best.obj:"");
+ const event=best.actor+" "+verb+(objectFirst&&best.obj?" "+best.obj:best.target?withTarget:best.obj?" "+best.obj:"")+(verb==="observa"&&/from the window|desde la ventana/i.test(best.chunk)?" desde la ventana":"");
  const title=makeTitle(best.hook,event);if(!title)return null;
  const evidence=[...new Set(candidates.sort((a,b)=>a.order-b.order).filter(v=>v.score>=55).slice(0,5).map(v=>v.chunk))].join(" ").slice(0,1800);
  const quote=best.quote?" En el episodio se escucha: «"+best.quote.replace(/[«»“”"]/g,"").trim()+"».":"";
+ const fromWindow=/from the window|desde la ventana/i.test(best.chunk)?" desde la ventana":"";
  const evidenceDetails=[];
- if(/(?:about|sobre)\\s+Banana/i.test(evidence)&&/informe|report|reads?|lee/i.test(evidence))evidenceDetails.push("El documento menciona a Banana.");
+ if(/(?:about|sobre)\s+Banana/i.test(evidence)&&/informe|report|reads?|lee/i.test(evidence))evidenceDetails.push("El documento menciona a Banana.");
  if(/looks? devastated|visiblemente devastad[oa]/i.test(evidence))evidenceDetails.push(best.actor+" se muestra devastado.");
  if(/hands? trembl|shaking hands?|le tiemblan las manos|manos temblorosas/i.test(evidence))evidenceDetails.push("Le tiemblan las manos.");
  if(/walks? away|se retira|se marcha/i.test(evidence))evidenceDetails.push("Después se retira.");
- const desc=event.charAt(0).toUpperCase()+event.slice(1)+"."+quote+(evidenceDetails.length?" "+[...new Set(evidenceDetails)].join(" "):"")+"\\n\\n¿Qué sucederá después?\\n\\n"+TAGS;
+ const desc=event.charAt(0).toUpperCase()+event.slice(1)+"."+quote+(evidenceDetails.length?" "+[...new Set(evidenceDetails)].join(" "):"")+"\n\n¿Qué sucederá después?\n\n"+TAGS;
  return {title,description:desc,episode_excerpt:best.chunk.slice(0,500),source_story:evidence,
   method:"unstructured_scene_action_evidence",grounding:"literal_scene_actions_requires_review",
   warning:"Propuesta extraída de acciones explícitas de una escena libre. Se muestran los fragmentos fuente; verificá que el evento principal corresponda al video."};
