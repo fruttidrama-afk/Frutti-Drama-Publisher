@@ -123,6 +123,29 @@ CREATE TABLE IF NOT EXISTS factory_items(
  updatedAt TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS factory_status_idx ON factory_items(status,nextTry,episode);
+CREATE TABLE IF NOT EXISTS factory_creative_packages(
+ packageId TEXT PRIMARY KEY,
+ itemId TEXT NOT NULL,
+ season INTEGER NOT NULL,
+ episode INTEGER NOT NULL,
+ hook TEXT NOT NULL,
+ story TEXT NOT NULL,
+ prompt TEXT NOT NULL,
+ title TEXT NOT NULL,
+ description TEXT NOT NULL,
+ promptHash TEXT NOT NULL,
+ packageHash TEXT NOT NULL,
+ packageSchema TEXT NOT NULL,
+ sourceMethod TEXT NOT NULL,
+ createdAt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS factory_creative_packages_item_created_idx ON factory_creative_packages(itemId,createdAt);
+CREATE TRIGGER IF NOT EXISTS factory_creative_packages_no_update
+ BEFORE UPDATE ON factory_creative_packages
+ BEGIN SELECT RAISE(ABORT,'CREATIVE_PACKAGE_APPEND_ONLY'); END;
+CREATE TRIGGER IF NOT EXISTS factory_creative_packages_no_delete
+ BEFORE DELETE ON factory_creative_packages
+ BEGIN SELECT RAISE(ABORT,'CREATIVE_PACKAGE_APPEND_ONLY'); END;
 CREATE TABLE IF NOT EXISTS factory_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS runtime_knowledge(
  key TEXT PRIMARY KEY,
