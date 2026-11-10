@@ -145,3 +145,30 @@ const mereWitness=generate("Fresia enfrenta a Uva frente a Limón que observa.")
 assert(!mereWitness.error,"ordinary confrontation should still be usable");
 assert(!/por Limón/.test(mereWitness.title),"witness cannot be rewritten as romantic motive");
 console.log("PASS post-recovery narrative fidelity guards");
+
+// Explicit episode and operator-story fidelity corpus. These 50 Prompt Studio
+// examples are TEST CASES ONLY, NOT proven mappings for the 31 real MP4s.
+const archive=JSON.parse(fs.readFileSync("docs/data/frutti-prompt-studio-active.json","utf8"));
+assert.equal(archive.prompts.length,50,"expected complete test corpus");
+for(const row of archive.prompts){
+ const source=String(row.full_prompt||"");
+ const canonical=String(row.story||"").trim();
+ const origin=generate(source);
+ const operator=generate("OPERATOR_VERIFIED_STORY: "+canonical);
+ for(const [mode,copy] of [["prompt",origin],["operator",operator]]){
+  const label=mode+" T"+row.season+"E"+row.episode;
+  assert(!copy.error,label+" must generate from explicit narrative: "+JSON.stringify(copy));
+  assert(copy.title.length<=100,label+" YouTube character limit");
+  assert(/^[A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+:/.test(copy.title),label+" exactly two uppercase hook words");
+  assert(copy.description.includes(canonical),label+" must contain EVERY word and relationship of original central narrative");
+  assert(copy.description.endsWith("#Shorts #ViralShorts #FruttiDrama"),label+" hashtags in ready-to-copy description");
+  assert(!/creative bible|character reference sheets|no duplicates|one continuous take/i.test(copy.description),label+" must not leak production instructions");
+ }
+}
+const allegedPoison=generate("OPERATOR_VERIFIED_STORY: Fresia acusa a Mango de envenenar a Banana delante de Uva.");
+assert(allegedPoison.title.startsWith("ACUSACIÓN DIRECTA: Fresia acusa"),"operator story must NOT become an actual poisoning");
+const attemptedKiss=generate("OPERATOR_VERIFIED_STORY: Fresia intenta besar a Limón, pero él se aleja.");
+assert(attemptedKiss.title.startsWith("BESO INTENTADO: Fresia intenta"),"operator story must NOT become a consummated kiss");
+const explicitlyDenied=generate("OPERATOR_VERIFIED_STORY: Fresia no interrumpe a Uva y Limón durante su conversación romántica.");
+assert(explicitlyDenied.title.startsWith("HECHO NEGADO: Fresia no interrumpe"),"negative clause must not become positive event");
+console.log("PASS 50 archived story probes × prompt and operator-summary paths; no historical MP4 mapping inferred");
