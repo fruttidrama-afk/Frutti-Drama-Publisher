@@ -52,6 +52,7 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
  for(const marker of [
   'name="publication_platform"',
   'selected_provider:platform',
+  'upload_lead_minutes:platform==="youtube"?390:0',
   'providers:[publicationProvider]',
   'deployment_state:"profile_required"',
   'provider:"supabase-github"',
