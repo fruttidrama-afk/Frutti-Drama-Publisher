@@ -50,11 +50,12 @@ Deno.serve(async(req:Request)=>{
   if(!Number.isInteger(idx)||idx<0||idx>30||!Number.isInteger(season)||season<2||season>6||!Number.isInteger(episode)||episode<1||episode>25)return json({error:"IDENTIFICATION_INVALID"},400);
   if(prompt.length<20||prompt.length>50000)return json({error:"PROMPT_LENGTH_INVALID"},400);
   const title=tidy(String(b.title||"")),description=String(b.description||"").trim(),note=String(b.note||"").trim();
+  const exactLegacy=LEGACY_FRUTTI_METADATA.find((entry:any)=>entry.season===season&&entry.episode===episode&&entry.title===title&&entry.description===description);
   const episode_story_evidence=tidy(String(b.episode_story_evidence||"")).slice(0,2000);
   const episode_story_extraction_method=tidy(String(b.episode_story_extraction_method||"")).slice(0,100);
   if(/^DRAMA FAMILIAR:|^GIRO IMPACTANTE:/i.test(title)||/\b(?:one continuous scene|unbroken take|cinematic shot|camera movement|character reference sheets|9:16 vertical|no duplicates|ambient audio)\b/i.test(description))
    return json({error:"COPY_NOT_NARRATIVE",hint:"El título debe explicar el suceso real, y la descripción debe narrar la trama, sin copiar instrucciones técnicas."},400);
-  if(title.length<12||title.length>100||!/^([A-ZÁÉÍÓÚÜÑ0-9]+) ([A-ZÁÉÍÓÚÜÑ0-9]+):\s+.+/.test(title)||title.includes("…")||title.includes("..."))return json({error:"TITLE_FORMAT_INVALID",hint:"DOS PALABRAS EN MAYÚSCULAS: oración completa. Máximo 100 caracteres."},400);
+  if(title.length<12||title.length>100||(!exactLegacy&&(!/^([A-ZÁÉÍÓÚÜÑ0-9]+) ([A-ZÁÉÍÓÚÜÑ0-9]+):\s+.+/.test(title)||title.includes("…")||title.includes("..."))))return json({error:"TITLE_FORMAT_INVALID",hint:"DOS PALABRAS EN MAYÚSCULAS: oración completa. Máximo 100 caracteres. Los títulos históricos exactos son excepciones documentadas."},400);
   if(description.length<12||description.length>4000)return json({error:"DESCRIPTION_INVALID"},400);
   if(note.length>700)return json({error:"NOTE_TOO_LONG"},400);
   const {data:src,error:srcErr}=await admin.from("publisher_factory_knowledge").select("content").eq("key",MANIFEST).eq("active",false).single();
@@ -69,8 +70,7 @@ Deno.serve(async(req:Request)=>{
   if(old&&old.source_sha256!==digest)return json({error:"VIDEO_REPLACEMENT_FORBIDDEN"},409);
   if(old&&b.expected_revision!==old.revision)return json({error:"STALE_EDIT_REFRESH_REQUIRED"},409);
   if(!old&&b.expected_revision!=null)return json({error:"STALE_EDIT_REFRESH_REQUIRED"},409);
-  const legacyMatch=LEGACY_FRUTTI_METADATA.find((entry:any)=>entry.season===season&&entry.episode===episode&&entry.title===title&&entry.description===description);
-  const row={publisher_id:PID,file_index:idx,source_sha256:digest,season,episode,generation_prompt:prompt,prompt_provenance:"operator_copied_google_flow",title,description,metadata_method:legacyMatch?"legacy_canonical_operator_reviewed":"operator_reviewed",episode_story_evidence,episode_story_extraction_method,note,record_status:"reconstructed_unapproved",publication_status:"unverified",assigned_by:owner,revision:old?old.revision+1:1,updated_at:new Date().toISOString()};
+  const row={publisher_id:PID,file_index:idx,source_sha256:digest,season,episode,generation_prompt:prompt,prompt_provenance:"operator_copied_google_flow",title,description,metadata_method:exactLegacy?"legacy_canonical_operator_reviewed":"operator_reviewed",episode_story_evidence,episode_story_extraction_method,note,record_status:"reconstructed_unapproved",publication_status:"unverified",assigned_by:owner,revision:old?old.revision+1:1,updated_at:new Date().toISOString()};
   const {data:saved,error:saveError}=await admin.from(TABLE).upsert(row,{onConflict:"publisher_id,file_index"}).select("file_index,season,episode,revision,updated_at,title,description").single();
   if(saveError){if(saveError.code==="23505")return json({error:"EPISODE_ALREADY_ASSIGNED_TO_ANOTHER_VIDEO"},409);return json({error:"RECONSTRUCTED_STOCK_SAVE_FAILED"},503)}
   return json({saved:true,record:saved,reconstructed_stock:true,publication_queue_unchanged:true,media_unmodified:true});
