@@ -630,32 +630,55 @@ function literalCurrentCopy(e){
 // v28: text can arrive with CONTINUITY, STORY / ACTION, HOOK and STORY
 // on the SAME line after copying from Flow. Heading boundaries are semantic
 // delimiters, NEVER a newline requirement. Previous beat is always excluded.
-function extractCollapsedCurrentStory(input){
- const raw=String(input||"").replace(/\r\n?/g,"\n").replace(/[\u2028\u2029]/g,"\n").replace(/\u00a0/g," ").replace(/\*\*/g,"");
- const heading=/\bSTORY\s*[/&+]\s*ACTION\b/gi;
- const matches=[...raw.matchAll(heading)];
+
+// FruttiDrama v30: Section boundaries are parsed BEFORE story whitespace is
+// collapsed. When prompts are copied as paragraphs, old render/camera sections
+// must never be included in STORY or force a spurious >1800-character rejection.
+function extractCollapsedCurrentStory(input) {
+ const raw=String(input||"").replace(/\r\n?/g,"\n")
+  .replace(/[\u2028\u2029]/g,"\n").replace(/[\u00a0\u200b]/g," ").replace(/\*\*/g,"");
+ const matches=[...raw.matchAll(/\bSTORY\s*[/&+]\s*ACTION\b/gi)];
  if(!matches.length)return null;
- const pos=matches[matches.length-1];
- const after=raw.slice(pos.index+pos[0].length);
- const technical=/(?:\n\s*|\s{1,})(?:#{1,5}\s*)?(?:CAMERA|C[AÁ]MARA|LIGHTING|ILUMINACI[OÓ]N|VISUAL STYLE|CINEMATOGRAPHY|AUDIO|SOUND DESIGN|OUTPUT(?: CONSTRAINTS?)?|CONSTRAINTS?|ANTI.GLITCH|NEGATIVE PROMPT|RENDER|GENERATION|CHARACTER REFERENCES?|DIALOGUE RULES|IDIOMA|LANGUAGE)\s*(?:[:：]|\n|$)/i;
- const cut=after.match(technical);
- let section=cut?after.slice(0,cut.index):after;
- section=section.replace(/^[:：\s#-]+/,"").trim();
+ // The current episode is after the FINAL explicit STORY / ACTION heading.
+ const marker=matches[matches.length-1];
+ let section=raw.slice(marker.index+marker[0].length);
  const hookTag=section.match(/\bHOOK\s*[:：]\s*/i);
- if(!hookTag)return {error:"CURRENT_HOOK_NOT_FOUND",detail:"Identifiqué STORY / ACTION pero no el HOOK actual. No se usó Previous canonical beat."};
- const rest=section.slice(hookTag.index+hookTag[0].length);
- const storyTag=rest.match(/\bSTORY\s*[:：]\s*/i);
- if(!storyTag)return {error:"CURRENT_STORY_NOT_FOUND",detail:"Encontré HOOK del episodio actual, pero falta STORY. No usé CONTINUITY."};
- const rawHook=rest.slice(0,storyTag.index).replace(/^[\s*:#-]+|[\s*:#-]+$/g,"").replace(/\s+/g," ").trim().toLocaleUpperCase("es");
- let hook=rawHook;
- if(hook==="ORDEN DE SALIDA")hook="SALIDA FORZADA";
- if(hook==="FURIA DEL PATRÓN")hook="FURIA PATRONAL";
+ if(!hookTag)return {error:"CURRENT_HOOK_NOT_FOUND",
+  detail:"Encontré STORY / ACTION, pero falta HOOK del episodio actual. Nunca se usa Previous canonical beat."};
+ const hookRest=section.slice(hookTag.index+hookTag[0].length);
+ const storyTag=hookRest.match(/\bSTORY\s*[:：]\s*/i);
+ if(!storyTag)return {error:"CURRENT_STORY_NOT_FOUND",
+  detail:"Encontré HOOK actual pero falta STORY; nunca se utilizará CONTINUITY."};
+ const rawHook=hookRest.slice(0,storyTag.index).replace(/^[\s*:#-]+|[\s*:#-]+$/g,"")
+  .replace(/\s+/g," ").trim().toLocaleUpperCase("es");
+ const hook=rawHook==="ORDEN DE SALIDA"?"SALIDA FORZADA":
+            rawHook==="FURIA DEL PATRÓN"?"FURIA PATRONAL":rawHook;
  if(!/^[A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+$/.test(hook))
-  return {error:"HOOK_FORMAT_INVALID",detail:"HOOK no tiene dos palabras y no posee una adaptación segura: "+rawHook};
- let story=rest.slice(storyTag.index+storyTag[0].length).replace(/^\s*[-•]\s*/,"").replace(/\s+/g," ").trim();
- if(story.length<22)return {error:"CURRENT_STORY_NOT_FOUND",detail:"STORY actual está vacío. No se tomó el episodio anterior."};
- if(story.length>1800)return {error:"CURRENT_STORY_TOO_LONG",detail:"STORY del episodio actual supera los 1800 caracteres."};
- return {hook,story,evidence:"HOOK: "+hook+" | STORY: "+story,method:"story_action_v28"};
+  return {error:"HOOK_FORMAT_INVALID",detail:"HOOK no tiene exactamente dos palabras: "+rawHook};
+ let narrative=hookRest.slice(storyTag.index+storyTag[0].length);
+ const cuts=[];
+ const stop=(re)=>{for(const match of narrative.matchAll(re))if(match.index!==undefined&&match.index>0)cuts.push(match.index)};
+ // Never flatten whitespace before finding the next heading. Covers full
+ // uppercase Markdown section headings and ordinary named production blocks.
+ stop(/(?:^|\n)\s*(?:#{1,6}\s*)?(?:CAMERA(?:\s*\/\s*LIGHTING)?|C[AÁ]MARA|LIGHTING|ILUMINACI[OÓ]N|CINEMATOGRAPHY|CINEMATOGRAF[IÍ]A|VISUALS?|VISUAL STYLE|CHARACTER(?:S|\s+LOCK|\s+REFERENCES?|\s+SHEETS?|\s+DESIGN)?|REFERENCE(?:\s+SHEETS?|\s+IMAGES?)?|ASSET(?:\s+LOCK)?|LOCATION(?:\s+LOCK)?|AMBIENT(?:\s+AUDIO)?|AUDIO|SOUND(?:\s+DESIGN)?|MUSIC|DIALOGUE(?:\s+RULES)?|DI[AÁ]LOGO|VOICE(?:\s+ASSIGNMENT|\s+RULES)?|ACTING|BLOCKING|TIMING|TIMELINE|TIME(?:\s+MAP)?|SHOT(?:\s+LIST|\s+PLAN|\s+BREAKDOWN)?|SCENE(?:\s+BREAKDOWN|\s+PLAN)?|BEAT(?:S|\s*[/&]\s*TIMING)?|EXACT\s+10.SECOND|NARRATIVE\s+NOVELTY\s+LOCK|STRICT\s+ANTI.GLITCH|ANTI.GLITCH(?:\s*\/\s*PREFLIGHT)?|NEGATIVE(?:\s+PROMPT)?|OUTPUT(?:\s+CONSTRAINTS?)?|CONSTRAINTS?|GENERATION(?:\s+RULES)?|RENDER(?:\s+SETTINGS)?|TECHNICAL(?:\s+INSTRUCTIONS|\s+RULES)?|PRODUCTION(?:\s+NOTES|\s+RULES)?|DELIVERY(?:\s+SPECS)?|EDITING|CONTINUITY|CANON|PREVIOUS\s+CANONICAL\s+BEAT|NEXT\s+EPISODE|END(?:\s+STATE)?|RESTRICTIONS?|FINAL(?:\s+PROMPT)?|ESTRUCTURA\s+OBLIGATORIA|PREFLIGHT|REGLAS|NOTAS)(?:\s+\d+(?:\s*[-–]\s*\d+)?)?\s*(?:[:：\n]|$)/gim);
+ // Canonical prompt templates commonly use independent ALL-CAPS headings with
+ // no colon, and "2–6.5 s —" as shot instructions.
+ stop(/\n\s*(?:#{1,6}\s*)?[A-ZÁÉÍÓÚÜÑ0-9][A-ZÁÉÍÓÚÜÑ0-9\s/&+().,:;—–-]{5,115}\s*(?::|$)/gm);
+ stop(/\n\s*(?:\d+(?:\.\d+)?\s*[-–]\s*\d+(?:\.\d+)?\s*(?:s|sec|seg)\b|\d+\s*(?:s|sec|seg)\s*[-–:]|\d+\s*[-.)]\s*(?:SCENE|SHOT|BEAT|ESCENA|PLANO))[\s\S]{0,5}/gim);
+ stop(/\n\s*(?:-{3,}|={3,}|\*{3,})\s*(?:\n|$)/gm);
+ // Also handle collapsed inline headings, e.g. "... STORY: ... CAMERA: ...",
+ // when the prompt is copied as one long paragraph from Flow.
+ stop(/\s+(?:CAMERA|C[AÁ]MARA|LIGHTING|ILUMINACI[OÓ]N|CINEMATOGRAPHY|VISUAL\s+STYLE|OUTPUT(?:\s+CONSTRAINTS?)?|RENDER|ANTI.GLITCH|NEGATIVE\s+PROMPT|SOUND\s+DESIGN|AUDIO|DIALOGUE(?:\s+RULES)?|CHARACTER\s+(?:LOCK|REFERENCES?|SHEETS?)|PRODUCTION\s+NOTES|TECHNICAL\s+INSTRUCTIONS|SHOT\s+PLAN|SCENE\s+PLAN|BEATS?\s*[/&]\s*TIMING|NARRATIVE\s+NOVELTY\s+LOCK|STRICT\s+ANTI.GLITCH|TIMELINE|EXACT\s+10.SECOND|CONSTRAINTS?)\s*[:：]/gi);
+ const offset=cuts.length?Math.min(...cuts):narrative.length;
+ let story=narrative.slice(0,offset).replace(/^\s*[-•*]\s*/,"").replace(/\s+/g," ").trim();
+ // Be conservative: a 10-second current STORY is typically 1–3 sentences.
+ // If truly >1800 without a verifiable heading, do not invent a boundary.
+ if(story.length<22)return {error:"CURRENT_STORY_NOT_FOUND",
+  detail:"El bloque STORY actual está vacío. No se tomó la continuidad."};
+ if(story.length>1800)return {error:"CURRENT_STORY_BOUNDARY_AMBIGUOUS",
+  detail:"No pude separar STORY de las instrucciones posteriores sin arriesgar la narrativa. El beat anterior queda excluido."};
+ return {hook,story,evidence:"HOOK: "+hook+" | STORY: "+story,
+  method:"story_action_v30",extraction_boundary:offset,engine_revision:"story_action_v30"};
 }
 
 export function generateFruttiRecapCopy(fullPrompt){
