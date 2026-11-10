@@ -1525,6 +1525,10 @@ function sourceIdeaMissing(row){
 }
 async function authorFruttiSourceEpisode(db,row){
  if(!sourceIdeaMissing(row))return row;
+ // Once a Flow generation has been recorded, even if a later crash or
+ // recovery reset erased prompt fields, it is not safe to re-author this job.
+ const submitted=db.prepare("SELECT COUNT(*) AS n FROM factory_generations WHERE itemId=?").get(row.id);
+ if(Number(submitted?.n||0)>0)throw Error("FRUTTI_SOURCE_REWRITE_AFTER_GENERATION_RECORD_FORBIDDEN");
  if(!["draft","regen_wait"].includes(String(row.status||"")))
    throw Error("FRUTTI_SHOWRUNNER_SOURCE_STAGE_ONLY");
  const previous=db.prepare("SELECT episode,hook,story,status FROM factory_items WHERE season=? AND episode<? ORDER BY episode DESC LIMIT 12")
