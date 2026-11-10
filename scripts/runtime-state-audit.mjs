@@ -112,9 +112,12 @@ for(const [name,id] of targets){
   generation:table('factory_generations')?countRow("SELECT COUNT(*) n FROM factory_generations WHERE status IN ('review','completed') AND COALESCE(credits,1)>0"):0
  };
  const activeSeason=Number(meta.find(x=>x.key==='automation:activeSeason')?.value||0)||null;
- const inventory={source_updated_at:new Date(fs.statSync(tar).mtimeMs).toISOString(),source_bytes:fs.statSync(tar).size,review_items:reviewItems,stock_items:stockItems,counts:totals,active_season:activeSeason};
+ // This local tar mtime is the AUDIT DOWNLOAD time, not the authoritative
+ // remote state-object update time. Do not overwrite inventory freshness here.
+ // The dedicated runtime-inventory-sync job reads Storage object metadata.
+ const inventory={source_updated_at:null,source_bytes:fs.statSync(tar).size,review_items:reviewItems,stock_items:stockItems,counts:totals,active_season:activeSeason};
  db.close();
- try{
+ if(process.env.RUNTIME_AUDIT_SYNC_INVENTORY==='1')try{
   const sync=await fetch(EDGE+'?publisher_id='+encodeURIComponent(id)+'&type=inventory',{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify(inventory)});
   const response=await sync.json().catch(()=>({}));
   console.log('UNIFIED_INVENTORY_SYNC',JSON.stringify({name,ok:sync.ok,review:reviewItems.length,stock:stockItems.length,reason:sync.ok?'':String(response.error||sync.status).slice(0,250)}));
