@@ -180,7 +180,7 @@ function narrative(ev,story){
   const core=a+(ev.interrupted?" interrumpe a ":" sorprende a ")+first+" y "+second;
   const type=ev.romantic?"una conversación romántica":"una conversación";
   const description=(ev.interrupted?a+" irrumpe en medio de "+type+" entre "+first+" y "+second+".":a+" encuentra a "+first+" y "+second+" durante "+type+".")+
-   " La inesperada aparición de "+a+" interrumpe el momento y deja a los tres en una situación incómoda."+
+   " La aparición de "+a+" cambia el curso de la conversación."+
    "\n\n¿Cómo reaccionarán "+first+" y "+second+" ante la llegada de "+a+"?\n\n"+TAGS;
   return {hook,core,description};
  }
@@ -203,7 +203,7 @@ function narrative(ev,story){
   if(rule.key==="humilla")desc=a+" humilla a "+nameAfter+". El ataque verbal rompe cualquier apariencia de cordialidad.";
   if(rule.key==="enfrenta")desc=a+" encara a "+nameAfter+". La discusión deja al descubierto un conflicto que ya no pueden evitar.";
   if(rule.key==="beso")desc=a+" besa a "+nameAfter+". Ese acercamiento marca un giro en su relación.";
-  if(rule.key==="enfrenta"&&secondary){
+  if(rule.key==="enfrenta"&&secondary&&new RegExp("(?:por|because of|over|due to|a causa de)\\s+(?:(?:su|el|la)\\s+)?(?:v[ií]nculo\\s+(?:con|entre)\\s+)?"+secondary,"i").test(story)){
    hook="CELOS EXPUESTOS";core=a+" enfrenta a "+nameAfter+" por "+secondary;
    desc=a+" encara a "+nameAfter+" por su vínculo con "+secondary+".";
   }
@@ -272,6 +272,24 @@ function narrative(ev,story){
  }
  return {hook,core,description:desc+"\n\n"+question+"\n\n"+TAGS};
 }
+// Fail closed for unconfirmed, negated, attempted, or merely alleged events.
+// A plausible telenovela title is NOT acceptable if it changes who did what.
+function riskyEvent(ev){
+ const line=clean(ev.line);
+ const key=ev.rule.key;
+ if(key==="interrupcion_con_contexto")return null;
+ const hit=line.match(ev.rule.re);
+ if(!hit)return "No hay evidencia literal del acontecimiento seleccionado.";
+ const before=line.slice(Math.max(0,hit.index-95),hit.index);
+ const after=line.slice(hit.index+hit[0].length);
+ const allegation=/(?:acusa(?:ba)?(?:\\s+a\\s+\\w+){0,4}\\s+de|sospecha(?:\\s+que)?|cree\\s+que|teme\\s+que|rumores?\\s+(?:de|sobre)|niega(?:\\s+haber)?|denies?|suspects?|accuses?|rumou?rs?|no\\s+ha|never|jam[aá]s)\\s*(?:.{0,45})$/i;
+ if(["veneno","muerte","parto","beso","embarazo"].includes(key)&&allegation.test(before))return "El prompt menciona una acusación, sospecha o negación; no confirma ese hecho.";
+ if(["veneno","muerte","parto","beso"].includes(key)&&/(?:no|nunca|jam[aá]s|never|not|almost|casi|iba a|going to)\\s*$/.test(before))return "La narración niega o no consuma el acontecimiento.";
+ if(key==="beso"&&/(?:intenta\\s+besar|tries?\\s+to\\s+kiss|attempts?\\s+to\\s+kiss|amenaza\\s+con\\s+besar)/i.test(line))return "El prompt habla de un intento o amenaza, no de un beso consumado.";
+ if(key==="veneno"&&/^(?:r|do|mentira|supuesta)/i.test(after.trim()))return "No hay certeza suficiente sobre el envenenamiento.";
+ return null;
+}
+
 function makeTitle(hook,core){
  const capital=clean(hook).toLocaleUpperCase("es");
  if(!/^[A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+$/.test(capital))return null;
@@ -283,11 +301,13 @@ export function generateFruttiRecapCopy(fullPrompt){
  if(input.error)return input;
  const ev=episodeEvent(input.story);
  if(!ev)return {error:"EPISODE_ACTION_UNCLEAR",detail:"No pude reconocer una acción concreta con personajes en el episodio. No inventé un título ni copié el prompt."};
+ const uncertainty=riskyEvent(ev);
+ if(uncertainty)return {error:"NARRATIVE_GROUNDING_REQUIRED",detail:uncertainty,episode_excerpt:clean(ev.line).slice(0,500)};
  const copy=narrative(ev,input.story);
  if(!copy)return {error:"EPISODE_ACTION_UNCLEAR",detail:"No pude identificar con certeza quién actúa y a quién afecta. Podés completar el título y la descripción manualmente."};
  const originalHook=clean(input.hook).toUpperCase();
  const usable=/^[A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+$/.test(originalHook)&&!/(DRAMA FAMILIAR|NUEVA CRISIS|GIRO IMPACTANTE)/.test(originalHook);
  const title=makeTitle(usable&&ev.rule.key!=="interrupcion_con_contexto"?originalHook:copy.hook,copy.core)||makeTitle(copy.hook,copy.core);
  if(!title)return {error:"TITLE_LENGTH_INVALID",detail:"No hay espacio suficiente para un título completo de hasta 100 caracteres."};
- return {title,description:copy.description,episode_excerpt:clean(ev.line).slice(0,300),method:"historical_editorial_hook_story_templates",warning:"Texto generado mediante la estructura histórica de FruttiDrama, sin proveedores externos. Contrastalo con el video antes de guardar."};
+ return {title,description:copy.description,episode_excerpt:clean(ev.line).slice(0,300),method:"historical_editorial_hook_story_templates",warning:"Borrador por reglas editoriales locales; NO hay un modelo de lenguaje verificando la narrativa. Contrastá cada acontecimiento con el prompt y el video antes de guardar.",grounding:"heuristic_operator_review_required",source_story:input.story.slice(0,1800)};
 }
