@@ -104,6 +104,9 @@ CREATE TABLE IF NOT EXISTS factory_items(
  promptPayloadLength INTEGER,
  creativePackageHash TEXT,
  creativePackageId TEXT,
+ sourcePublicationHook TEXT,
+ sourceTitleCore TEXT,
+ sourceDescriptionCore TEXT,
  transportPreflight TEXT,
  runtimeAttemptCount INTEGER NOT NULL DEFAULT 0,
  lastProgressAt TEXT,
@@ -204,6 +207,9 @@ CREATE INDEX IF NOT EXISTS publication_status_idx ON publication_items(status,re
 for(const sql of [
   "ALTER TABLE factory_items ADD COLUMN creativePackageHash TEXT",
   "ALTER TABLE factory_items ADD COLUMN creativePackageId TEXT",
+  "ALTER TABLE factory_items ADD COLUMN sourcePublicationHook TEXT",
+  "ALTER TABLE factory_items ADD COLUMN sourceTitleCore TEXT",
+  "ALTER TABLE factory_items ADD COLUMN sourceDescriptionCore TEXT",
   "ALTER TABLE factory_items ADD COLUMN reviewInterpretation TEXT",
   "ALTER TABLE factory_items ADD COLUMN reviewInterpretationAt TEXT"
 ]){try{db.exec(sql)}catch{}}
