@@ -1,3 +1,8 @@
+# CONTRATO SUPERADO — archivo histórico, NO operativo
+Esta guía describía un extractor de narrativa desde el prompt que resultó disfuncional. **NO reutilizar.** Se reemplaza íntegramente por `docs/FRUTTI_MANUAL_RECOVERY_AND_CREATIVE_PACKAGE_CONTRACT_2026-11-10.md` y por los controles de API/UI que desactivan la sugerencia.
+
+---
+
 # FruttiDrama — SOP ACTUAL de conciliación manual y paquetes creativos integrados
 **Versión operativa: 2026-11-10.** Sustituye íntegramente el procedimiento anterior de extracción de narrativa desde prompts.
 
