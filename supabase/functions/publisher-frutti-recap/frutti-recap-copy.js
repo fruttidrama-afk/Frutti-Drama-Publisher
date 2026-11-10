@@ -526,6 +526,8 @@ function proseSceneCopy(prompt){
  const quote=best.quote?" En el episodio se escucha: «"+best.quote.replace(/[«»“”"]/g,"").trim()+"».":"";
  const fromWindow=/from the window|desde la ventana/i.test(best.chunk)?" desde la ventana":"";
  const evidenceDetails=[];
+ const witness=candidates.find(v=>v.actor!==best.actor&&v.verb==="observa"&&/from the window|desde la ventana/i.test(v.chunk));
+ if(witness)evidenceDetails.push(witness.actor+" observa desde la ventana.");
  if(/(?:about|sobre)\s+Banana/i.test(evidence)&&/informe|report|reads?|lee/i.test(evidence))evidenceDetails.push("El documento menciona a Banana.");
  if(/looks? devastated|visiblemente devastad[oa]/i.test(evidence))evidenceDetails.push(best.actor+" se muestra devastado.");
  if(/hands? trembl|shaking hands?|le tiemblan las manos|manos temblorosas/i.test(evidence))evidenceDetails.push("Le tiemblan las manos.");
@@ -547,7 +549,11 @@ export function generateFruttiRecapCopy(fullPrompt){
  const ev=episodeEvent(input.story);
  if(!ev)return proseSceneCopy(fullPrompt)||{error:"EPISODE_ACTION_UNCLEAR",detail:"No pude reconocer una acción concreta con personajes en el episodio. No inventé un título ni copié el prompt."};
  const uncertainty=riskyEvent(ev);
- if(uncertainty)return {error:"NARRATIVE_GROUNDING_REQUIRED",detail:uncertainty,episode_excerpt:clean(ev.line).slice(0,500)};
+ if(uncertainty){
+  const safe=proseSceneCopy(fullPrompt);
+  if(safe&&/^(?:BESO INTENTADO|ACUSACIÓN DIRECTA|HECHO NEGADO):/.test(safe.title))return safe;
+  return {error:"NARRATIVE_GROUNDING_REQUIRED",detail:uncertainty,episode_excerpt:clean(ev.line).slice(0,500)};
+ }
  const copy=narrative(ev,input.story);
  if(!copy)return proseSceneCopy(fullPrompt)||{error:"EPISODE_ACTION_UNCLEAR",detail:"No pude identificar con certeza quién actúa y a quién afecta. Podés completar el título y la descripción manualmente."};
  const originalHook=clean(input.hook).toUpperCase();
