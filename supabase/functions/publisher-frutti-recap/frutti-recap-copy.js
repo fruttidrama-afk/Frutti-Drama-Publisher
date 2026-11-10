@@ -346,8 +346,16 @@ function explicitEpisodeCopy(explicit){
    /\b(?:sigue|persigue)\b/i.test(story)?"SEGUIMIENTO VEHICULAR":"";
  if(!hook)return {error:"HOOK_NOT_GROUNDED",detail:"El encabezado del episodio no tiene dos palabras y no se pudo derivar otro sin alterar la trama.",source_story:explicit.story};
  const candidates=[story];
- const cuts=story.split(/\s*;\s*|\s+\bpero\b\s+|\s+\by\b\s+(?=[A-ZÁÉÍÓÚÑ])/i).map(x=>x.trim()).filter(Boolean);
+ // Never cut at "y [proper name]": it would turn "Uva y Limón" into only Uva.
+ const cuts=story.split(/\s*;\s*|\s+\bpero\b\s+/i).map(x=>x.trim()).filter(Boolean);
  candidates.push(...cuts);
+ const participants=names(story);
+ // Only verified semantic contractions. Never omit the second member of
+ // a paired conversation; never turn an accusation/suspicion into a fact.
+ if(participants.length>=3&&/\binterrumpe\b/i.test(story)&&/\bconversaci[oó]n\s+entre\b/i.test(story))
+  candidates.splice(1,0,participants[0]+" interrumpe a "+participants[1]+" y "+participants[2]);
+ if(participants.length>=3&&/\bconfronts?\b/i.test(story)&&/\babout\s+(?:her|his|their)\s+relationship\s+with\b/i.test(story))
+  candidates.splice(1,0,participants[0]+" enfrenta a "+participants[1]+" por su relación con "+participants[2]);
  const secondEvent=story.match(/^((?:El|La|Don)\s+[A-ZÁÉÍÓÚÑ][^\s,;]+|[A-ZÁÉÍÓÚÑ][^\s,;]+)\s+.+?\s+y\s+(revela|confiesa|descubre|encuentra|advierte|anuncia|demuestra|declara)\s+(.+)$/i);
  if(secondEvent)candidates.splice(1,0,secondEvent[1]+" "+secondEvent[2]+" "+secondEvent[3]);
  let title=null,coveredStory="";
