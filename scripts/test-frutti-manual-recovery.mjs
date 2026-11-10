@@ -88,7 +88,7 @@ const database=new DatabaseSync(":memory:");
 database.exec(schemaBlock);
 database.prepare("INSERT INTO factory_creative_packages(packageId,itemId,season,episode,hook,story,prompt,title,description,promptHash,packageHash,packageSchema,sourceMethod,createdAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
 .run("pkg-1","item-1",3,13,idea.hook,idea.story,"FLOW PROMPT",produced.title,produced.description,"prompt-hash","package-hash","v1","episode_source_authored",new Date().toISOString());
-same(database.prepare("SELECT title,description FROM factory_creative_packages WHERE packageId='pkg-1'").get(),{title:produced.title,description:produced.description},"Stored package roundtrips");
+same({...database.prepare("SELECT title,description FROM factory_creative_packages WHERE packageId='pkg-1'").get()},{title:produced.title,description:produced.description},"Stored package roundtrips");
 let updateBlocked=false,deleteBlocked=false;
 try{database.exec("UPDATE factory_creative_packages SET title='altered' WHERE packageId='pkg-1'")}catch{updateBlocked=true}
 try{database.exec("DELETE FROM factory_creative_packages WHERE packageId='pkg-1'")}catch{deleteBlocked=true}
