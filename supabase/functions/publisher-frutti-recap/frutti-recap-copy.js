@@ -463,7 +463,7 @@ function proseSceneCopy(prompt){
   [/reads?|reading|lee|examina|examines?|studies?|reviews?/i,"DOCUMENTO REVELADOR","examina",77],
   [/muestra|shows?|entrega|hands? over/i,"PRUEBA ENTREGADA","muestra",75],
   [/encuentra|encuentran|finds?|found/i,"HALLAZGO INESPERADO","encuentra",72],
-  [/ordena|orders?|exige|demands?/i,"ORDEN DIRECTA","ordena",70],
+  [/ordena|orders?|exige|demands?/i,"ORDEN TERMINANTE","ordena",70],
   [/recibe|receives?/i,"NOTICIA INESPERADA","recibe",66],
   [/esconde|oculta|hides?|conceals?/i,"SECRETO OCULTO","esconde",63],
   [/llora|cries?|sobs?/i,"DOLOR PROFUNDO","llora",58],
@@ -497,11 +497,12 @@ function proseSceneCopy(prompt){
     const before=chunk.slice(0,hit.index),after=chunk.slice(hit.index+hit[0].length);
     if(/\b(?:no|nunca|not|never|almost|casi)\s*$/i.test(before))continue;
     if(/\b(?:attempts?|tries?|intenta)\s+(?:to\s+)?$/i.test(before)&&hook!=="BESO INTENTADO")continue;
-    const pre=names(before),actor=pre.at(-1)||people[0];
+    const pre=names(before);
+    const actor=pre[0]||people[0];
     if(!actor)continue;
     const target=names(after).find(n=>n!==actor)||"";
     const obj=objects.find(([re])=>re.test(after))?.[1]||"";
-    if(["examina","muestra","recibe","roba","esconde"].includes(verb)&&!target&&!obj)continue;
+    if(["examina","muestra","recibe","roba","esconde"].includes(verb)&&!obj)continue;
     const quote=chunk.match(/[«“"]([^»”"]{10,200})[»”"]/);
     const score=rank+(pre.length?12:0)+(target?5:0)+(obj?4:0)-(chunk.startsWith("Use the attached")?9:0);
     candidates.push({chunk,actor,target,obj,hook,verb,score,order:i,quote:quote?.[1]||""});
@@ -512,8 +513,10 @@ function proseSceneCopy(prompt){
  if(!candidates.length)return null;
  candidates.sort((a,b)=>b.score-a.score||a.order-b.order);
  const best=candidates[0];if(best.score<55)return null;
- const verb=best.verb,withTarget=best.target?((verb==="habla"?" con ":" a ")+best.target):"";
- const event=best.actor+" "+verb+(best.target?withTarget:best.obj?" "+best.obj:"");
+ const verb=best.verb;
+ const objectFirst=["examina","muestra","recibe","roba","esconde","encuentra","observa"].includes(verb);
+ const withTarget=best.target?((verb==="habla"?" con ":" a ")+best.target):"";
+ const event=best.actor+" "+verb+(objectFirst&&best.obj?" "+best.obj:best.target?withTarget:best.obj?" "+best.obj:"");
  const title=makeTitle(best.hook,event);if(!title)return null;
  const evidence=[...new Set(candidates.sort((a,b)=>a.order-b.order).filter(v=>v.score>=55).slice(0,5).map(v=>v.chunk))].join(" ").slice(0,1800);
  const quote=best.quote?" En el episodio se escucha: «"+best.quote.replace(/[«»“”"]/g,"").trim()+"».":"";
@@ -529,12 +532,10 @@ export function generateFruttiRecapCopy(fullPrompt){
  if(explicit)return explicitEpisodeCopy(explicit);
  const richScene=warmConversationInterruptedByFresia(fullPrompt);
  if(richScene)return richScene;
- const scene=proseSceneCopy(fullPrompt);
- if(scene)return scene;
  const input=extract(fullPrompt);
- if(input.error)return input;
+ if(input.error)return proseSceneCopy(fullPrompt)||input;
  const ev=episodeEvent(input.story);
- if(!ev)return {error:"EPISODE_ACTION_UNCLEAR",detail:"No pude reconocer una acción concreta con personajes en el episodio. No inventé un título ni copié el prompt."};
+ if(!ev)return proseSceneCopy(fullPrompt)||{error:"EPISODE_ACTION_UNCLEAR",detail:"No pude reconocer una acción concreta con personajes en el episodio. No inventé un título ni copié el prompt."};
  const uncertainty=riskyEvent(ev);
  if(uncertainty)return {error:"NARRATIVE_GROUNDING_REQUIRED",detail:uncertainty,episode_excerpt:clean(ev.line).slice(0,500)};
  const copy=narrative(ev,input.story);
