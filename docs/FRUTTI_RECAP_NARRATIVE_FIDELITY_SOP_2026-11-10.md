@@ -1,3 +1,5 @@
+> **OBSOLETO — NO EJECUTAR.** Este documento es únicamente un registro de la falla del extractor de narrativa desde Google Flow. El 10 de noviembre de 2026 se eliminó dicho extractor del código y del backend, y se prohibió su reintroducción. El procedimiento vigente es `docs/FRUTTI_METADATA_RECOVERY_SOP_2026-11-10.md`: dos opciones humanas de conciliación y paquetes creativos atómicos en el generador original.
+
 # FruttiDrama — SOP de fidelidad narrativa en reconstrucción histórica
 **Actualización:** 2026-11-10. **Aplica a:** estación temporal de reconstrucción de 31 MP4 de FruttiDrama, Edge `publisher-frutti-recap`, UI Factory. **Tipo:** control editorial + fuente verificable; NO sustituye aprobación humana.
 
