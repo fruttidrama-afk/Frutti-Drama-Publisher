@@ -58,7 +58,9 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
   'status:"migrating_free_runtime"',
   'railway_connection_id:null',
   '.select("id").single()',
-  'if(created?.id)await udOpen(created.id)'
+  'if(created?.id)await udOpen(created.id)',
+  'payload.error==="UNKNOWN_PUBLISHER"',
+  'GOOGLE FLOW · ALTA DE NUEVA CUENTA PENDIENTE'
  ])if(!html.includes(marker))throw Error(name+" new publisher free-runtime onboarding missing "+marker);
  for(const obsolete of ['if(!rc)throw Error("Elegí una cuenta de Railway.")','status:"configured",config,runtime_version:"publisher-runtime-v1",railway_connection_id:rc.id']){
   if(html.includes(obsolete))throw Error(name+" still requires Railway to create a Publisher: "+obsolete);
