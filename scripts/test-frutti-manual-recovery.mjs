@@ -74,12 +74,13 @@ for(let i=0;i<20;i++){
  check(out.title.length<=100&&out.description.endsWith(FRUTTI_TITLE_TAGS),"Source editorial package "+i);
 }
 
-check(runtime.includes('selectFruttiSourceIdea(row,ideaForEpisode(Number(row.episode)))'),"Runtime uses full upstream episode idea, not prompt parser");
+check(runtime.includes('selectFruttiSourceIdea(row,fruttiSource)')&&runtime.includes('ideaForEpisode(Number(row.episode))'),"Runtime uses complete source-authored idea or source-authored rewrite, never prompt parser");
 check(runtime.includes('db.exec("BEGIN IMMEDIATE")')&&runtime.includes('db.exec("COMMIT")')&&runtime.includes('db.exec("ROLLBACK")'),"Creative package and ledger atomic transaction");
 check(runtime.includes("INSERT INTO factory_creative_packages("),"Archive captures complete source package");
 check(runtime.includes("FRUTTI_SOURCE_IDEA_NOT_MATCHED")===false,"Only source-contract module owns exact-intent error");
 check(provider.includes("FRUTTI_COPY_MUST_ORIGINATE_WITH_EPISODE_SOURCE"),"Provider disallows fallback title generator");
 check(provider.includes("FRUTTI_METADATA_REPAIR_FORBIDDEN"),"Review cannot reconstruct failed source copy");
+check(provider.includes("FRUTTI_REWRITE_MUST_AUTHOR_FULL_CREATIVE_PACKAGE")&&provider.includes("new_publication_hook")&&provider.includes("new_title_core")&&provider.includes("new_description_core"),"Creative-rewrite AI must author all copy at the same time as new episode intent");
 check(server.includes("FRUTTI_CREATIVE_PACKAGE_LEDGER_REQUIRED"),"Review approval cannot invent missing copy");
 check(publication.includes("FRUTTI_CREATIVE_PACKAGE_ARCHIVE_REQUIRED"),"Publishing requires archived copy, not Flow inference");
 check(init.includes("factory_creative_packages_no_update")&&init.includes("factory_creative_packages_no_delete"),"Ledger append-only enforced");
