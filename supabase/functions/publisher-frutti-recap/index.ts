@@ -40,7 +40,7 @@ Deno.serve(async(req:Request)=>{
     return json({error:"PLOT_SUMMARY_INVALID",detail:"Escribí en una sola frase qué personaje hace qué en el video (22–900 caracteres). El prompt original no se modifica."},400);
    // Optional operator-authored narrative is equivalent to the original factory's
    // structured 'story' field. Never overwrite the actual Google Flow prompt.
-   const source=summary?"STORY\nEPISODE INTENT: "+summary:prompt;
+   const source=summary?"OPERATOR_VERIFIED_STORY: "+tidy(summary):prompt;
    const answer=generateFruttiRecapCopy(source);
    return json(answer,answer.error?422:200);
   }
