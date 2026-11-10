@@ -172,3 +172,24 @@ assert(attemptedKiss.title.startsWith("BESO INTENTADO: Fresia intenta"),"operato
 const explicitlyDenied=generate("OPERATOR_VERIFIED_STORY: Fresia no interrumpe a Uva y Limón durante su conversación romántica.");
 assert(explicitlyDenied.title.startsWith("HECHO NEGADO: Fresia no interrumpe"),"negative clause must not become positive event");
 console.log("PASS 50 archived story probes × prompt and operator-summary paths; no historical MP4 mapping inferred");
+
+// A genuine real-world Flow layout has technical @character reference sheets,
+// scene action inside the same paragraphs and speech as direct quoted dialogue,
+// with NO EPISODE/STORY section. Never drop Limón from the couple.
+const originalStylePrompt=[
+ "One continuous scene, hacienda garden at dusk.",
+ "Use attached @Limón Duarte character reference sheet. Limón Duarte sits close beside Uva on the garden bench.",
+ "Use attached @Uva Reyes reference sheet. Uva Reyes sits beside him, the two talking warmly, softly laughing together.",
+ "Use attached @Fresia reference sheet. Fresia walks into frame and freezes. Fresia is the ONLY one who speaks:",
+ "«¡Uva! Qué criada tan atrevida... ...ni las sobras se te escapan, ¿no?» Fresia turns and walks away.",
+ "Limón Duarte and Uva both look up startled but neither speaks.",
+ "Cámara: dramatic static wide shot, no subtitles. Constraints: no duplicate characters."
+].join("\n");
+const recoveredRealStyle=generate(originalStylePrompt);
+assert(!recoveredRealStyle.error,"real Flow prose with dialogue must be recoverable");
+assert(/Fresia interrumpe a Uva y Limón/.test(recoveredRealStyle.title),"interruption must have BOTH interlocutors");
+assert(recoveredRealStyle.title.length<=100,"real Flow prose title must fit YouTube");
+assert(/criada tan atrevida/.test(recoveredRealStyle.description),"actual verbal aggression must not be discarded");
+assert(/Uva y Limón permanecen en silencio/.test(recoveredRealStyle.description),"must preserve no-response fact");
+assert(!/interrumpe a Uva(?! y Limón)/.test(recoveredRealStyle.title),"no one-sided interruption");
+console.log("PASS unlabeled original Flow prose with both witnesses, spoken insult and exit");
