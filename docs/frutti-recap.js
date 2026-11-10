@@ -50,7 +50,7 @@ export function initFruttiRecap({session,udText}){
   const derived=entry?.metadata_origin==="derived_from_preserved_story_via_legacy_rules";
   const planned=derived&&entry.workflow_stage!=="review";
   originalRecoveryButton.textContent=derived?"UTILIZAR METADATOS RECONSTRUIDOS DESDE LA HISTORIA":"RECUPERAR TÍTULO Y DESCRIPCIÓN HISTÓRICOS";
-  if(derived){originalRecoveryStatus.textContent="T"+season+"E"+episode+" · "+(planned?"HISTORIA PLANIFICADA, SIN VIDEO EN REVIEW CONFIRMADO":"HISTORIA GUARDADA, EPISODIO EN REVIEW")+". El título y la descripción fueron calculados con el algoritmo del publisher original; NO se recuperó el texto final de YouTube. "+(planned?"No se completarán automáticamente: elegí la propuesta solo si comprobaste que corresponde al video.":"Se completan si están vacíos; comparalos con el video.")}
+  if(derived){originalRecoveryStatus.textContent="T"+season+"E"+episode+" · "+(planned?"HISTORIA PLANIFICADA, SIN VIDEO EN REVIEW CONFIRMADO":"HISTORIA GUARDADA, EPISODIO EN REVIEW")+". El título y la descripción fueron calculados con el algoritmo del publisher original; NO se recuperó el texto final de YouTube. "+"No se completarán automáticamente: elegí la propuesta solo si comprobaste que corresponde al video."}
   else if(entry){originalRecoveryStatus.textContent="✓ T"+season+"E"+episode+": título y descripción encontrados en el código canónico original. No se ha verificado que coincidan con la última edición de YouTube. Recuperalos sin regeneración.";}
   else if(Number.isInteger(season)&&season>0&&Number.isInteger(episode)&&episode>0){originalRecoveryStatus.textContent="T"+season+"E"+episode+": sin copia histórica verificada en las fuentes recuperadas. No se inventarán metadatos. Podés completar manualmente o recurrir al extractor opcional.";}
   else originalRecoveryStatus.textContent="Seleccioná la temporada y el episodio para consultar los metadatos históricos. No se necesita generar un título nuevo cuando exista el original.";
@@ -58,7 +58,9 @@ export function initFruttiRecap({session,udText}){
  function recoverHistorical(force=false){
   const entry=currentHistorical();if(!entry){showHistoricalAvailability();return false}
   const derived=entry.metadata_origin==="derived_from_preserved_story_via_legacy_rules";
-  if(derived&&entry.workflow_stage!=="review"&&!force)return false;
+  // A preserved story is not a verified final YouTube title, even when the episode is in Review.
+  // Require an explicit operator click for ALL reconstructed Season 3 copy; never auto-fill it on selection.
+  if(derived&&!force)return false;
   const title=$("#udRecapTitle"),description=$("#udRecapDescription");
   if(!force&&(title.value.trim()||description.value.trim()))return false;
   title.value=entry.title;description.value=entry.description;
