@@ -283,3 +283,12 @@ assert(currentAttempt.title.startsWith("BESO INTENTADO: Fresia intenta"),"Attemp
 const canonFieldsOnly = generate("CONTINUITY\nHOOK: SOSPECHA ABIERTA\nSTORY: Mango envenena a Banana.\nCAMERA\nOne unbroken take.");
 assert(canonFieldsOnly.error,"Never use HOOK/STORY fields inside CONTINUITY");
 console.log("PASS v26 exact current episode structural precedence + literal event contract + canon-only safety");
+
+
+const operatorClinical=generate("OPERATOR_VERIFIED_STORY: Don Melón recibe una prueba médica que confirma que la muerte de Banana estuvo relacionada con un envenenamiento. Uva Reyes comprende que no fue una muerte natural.");
+assert(!operatorClinical.error,"operator clinical story must generate: "+JSON.stringify(operatorClinical));
+assert(operatorClinical.title.startsWith("PRUEBA TÓXICA: Don Melón recibe"),"operator story must not become a poisoning by Banana");
+assert(operatorClinical.description.includes("Uva Reyes comprende que no fue una muerte natural"),"complete operator medical story must survive");
+assert(!/Banana envenena a Don Melón|Mango|Fresia/.test(operatorClinical.title+" "+operatorClinical.description),"operator medical story must not hallucinate a perpetrator");
+assert(operatorClinical.method==="operator_story_literal_v27","operator input must use literal path, not old heuristic");
+console.log("PASS operator-supplied medical story factual fidelity; no poisoning reassignment");
