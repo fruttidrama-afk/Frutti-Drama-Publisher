@@ -10,6 +10,7 @@ export function initFruttiRecap({session,udText}){
  const $=s=>document.querySelector(s);
  const endpoint="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-frutti-recap";
  let files=[],records=new Map(),drafts=new Map(),storyEvidence=new Map(),selected=null,aiStatus={connected:null,provider:null};
+ let historicalMetadata=new Map(),autoRecovered=new Map();
  const showAIResult=(message,type="error")=>{
   const area=$("#udRecapAiResult");
   if(!area)return;
@@ -23,7 +24,7 @@ export function initFruttiRecap({session,udText}){
   const link=$("#udRecapFreeAiSetup");if(link)link.hidden=true;
   if(aiStatus.connected===true){
    el.dataset.status="connected";
-   el.textContent="✓ Asistente editorial local activo · "+fruttiEngineLabel(aiStatus.engine_revision)+". Usa reglas verificables sobre el prompt (no un modelo de lenguaje). Cada título y descripción requiere cotejo con el video antes de guardar.";
+   el.textContent="✓ Recuperación histórica prioritaria. Si existe un título y una descripción canónicos, no hace falta generarlos. Extractor local opcional · "+fruttiEngineLabel(aiStatus.engine_revision)+". Revisá siempre el video antes de guardar.";
   }else if(aiStatus.connected===false){
    el.dataset.status="missing";
    el.textContent="No pude comprobar el estado del generador editorial. Actualizá la página; no necesitás claves ni cuentas externas.";
@@ -34,6 +35,39 @@ export function initFruttiRecap({session,udText}){
  };
  const values=()=>({season:$("#udRecapSeason").value,episode:$("#udRecapEpisode").value,generation_prompt:$("#udRecapPrompt").value,title:$("#udRecapTitle").value,description:$("#udRecapDescription").value,note:$("#udRecapNote").value,operator_story:$("#udRecapOperatorStory").value});
  const remember=()=>{if(selected!==null)drafts.set(selected,values())};
+ const historicalKey=(season,episode)=>String(Number(season))+":"+String(Number(episode));
+ const currentHistorical=()=>historicalMetadata.get(historicalKey($("#udRecapSeason").value,$("#udRecapEpisode").value))||null;
+ const originalRecoveryButton=document.createElement("button");
+ originalRecoveryButton.type="button";originalRecoveryButton.id="udRecapRestoreHistorical";originalRecoveryButton.className="ud-small-button";
+ originalRecoveryButton.textContent="RECUPERAR TÍTULO Y DESCRIPCIÓN HISTÓRICOS";
+ const originalRecoveryStatus=document.createElement("p");originalRecoveryStatus.id="udRecapHistoricalStatus";originalRecoveryStatus.className="udmuted";
+ const originalRecoveryArea=document.createElement("div");originalRecoveryArea.className="ud-recap-historical-recovery";
+ originalRecoveryArea.append(originalRecoveryButton,originalRecoveryStatus);
+ $("#udRecapSuggest").before(originalRecoveryArea);
+ function showHistoricalAvailability(){
+  const season=Number($("#udRecapSeason").value),episode=Number($("#udRecapEpisode").value),entry=currentHistorical();
+  originalRecoveryButton.disabled=!entry;
+  if(entry){originalRecoveryStatus.textContent="✓ T"+season+"E"+episode+": título y descripción encontrados en el código canónico original. No se ha verificado que coincidan con la última edición de YouTube. Recuperalos sin regeneración.";}
+  else if(Number.isInteger(season)&&season>0&&Number.isInteger(episode)&&episode>0){originalRecoveryStatus.textContent="T"+season+"E"+episode+": sin copia histórica verificada en las fuentes recuperadas. No se inventarán metadatos. Podés completar manualmente o recurrir al extractor opcional.";}
+  else originalRecoveryStatus.textContent="Seleccioná la temporada y el episodio para consultar los metadatos históricos. No se necesita generar un título nuevo cuando exista el original.";
+ }
+ function recoverHistorical(force=false){
+  const entry=currentHistorical();if(!entry){showHistoricalAvailability();return false}
+  const title=$("#udRecapTitle"),description=$("#udRecapDescription");
+  if(!force&&(title.value.trim()||description.value.trim()))return false;
+  title.value=entry.title;description.value=entry.description;
+  if(selected!==null)autoRecovered.set(selected,{key:historicalKey(entry.season,entry.episode),title:entry.title,description:entry.description});
+  remember();
+  originalRecoveryStatus.textContent="✓ Metadatos históricos canónicos de T"+entry.season+"E"+entry.episode+" recuperados. Aún no se guardaron. Revisá si hubo modificaciones posteriores en YouTube y compará con el video.";
+  return true;
+ }
+ function onEpisodeSelection(){
+  if(selected!==null){const prior=autoRecovered.get(selected);
+   if(prior&&prior.key!==historicalKey($("#udRecapSeason").value,$("#udRecapEpisode").value)&&$("#udRecapTitle").value===prior.title&&$("#udRecapDescription").value===prior.description){$("#udRecapTitle").value="";$("#udRecapDescription").value="";autoRecovered.delete(selected)}
+  }
+  showHistoricalAvailability();recoverHistorical(false);remember();
+ }
+ originalRecoveryButton.onclick=()=>recoverHistorical(true);
  async function request(method,body){
   const s=await session();if(!s?.access_token)throw Error("Volvé a ingresar: sesión no disponible.");
   const r=await fetch(endpoint,{method,headers:{"authorization":"Bearer "+s.access_token,"content-type":"application/json"},body:body?JSON.stringify(body):undefined,cache:"no-store"});
@@ -54,6 +88,7 @@ export function initFruttiRecap({session,udText}){
   storyEvidence.set(index,evidence);
   $("#udRecapEvidence").textContent=evidence.story?(/operator/i.test(evidence.method)?"NARRATIVA APORTADA POR VOS (sin convertirla en canon): ":"NARRATIVA EXTRAÍDA DEL PROMPT (sin convertirla en canon): ")+evidence.story:"Acción narrativa extraída: pendiente de analizar el prompt.";
   $("#udRecapStoryFallback").hidden=!data.operator_story;
+  showHistoricalAvailability();
   render();
   if(switchPane&&window.matchMedia("(max-width:900px)").matches){
    $("#udRecoveryPanels").classList.add("ud-show-prompts");
@@ -105,15 +140,19 @@ export function initFruttiRecap({session,udText}){
  async function load(input){
   files=input||[];
   const response=await request("GET");records=new Map((response.items||[]).map(v=>[v.file_index,v]));
+  historicalMetadata=new Map((response.historical_metadata||[]).map(v=>[historicalKey(v.season,v.episode),v]));
   summary();render();renderStock();
   aiStatus=response.ai_status||{connected:null,provider:null};
   showAIState();
   $("#udRecapStatus").textContent="El guardado en stock reconstruido no publica ni modifica videos en YouTube.";
   $("#udForensicStatus").textContent="Listo. Los prompts de planificación fueron retirados de esta sección. Seleccioná un archivo y pegá el verdadero prompt.";
-  if(selected!==null)selectFile(selected,false);
+  if(selected!==null)selectFile(selected,false);else showHistoricalAvailability();
   $("#udForensicFilter").onchange=render;$("#udForensicSearch").oninput=render;
  }
  async function suggest(){
+  if(currentHistorical()){
+   showAIResult("Este episodio ya tiene título y descripción canónicos recuperables. Usá RECUPERAR TÍTULO Y DESCRIPCIÓN HISTÓRICOS: no hace falta volver a generarlos. Podés editarlos manualmente si el video o YouTube muestran una versión posterior.","success");return;
+  }
   if(selected===null){
    showAIResult("Primero seleccioná uno de los videos originales de la izquierda.");
    return;
@@ -172,6 +211,7 @@ export function initFruttiRecap({session,udText}){
   finally{btn.disabled=false;btn.textContent="GUARDAR EN STOCK RECONSTRUIDO"}
  }
  for(const id of ["udRecapSeason","udRecapEpisode","udRecapPrompt","udRecapTitle","udRecapDescription","udRecapNote","udRecapOperatorStory"])$("#"+id).addEventListener("input",remember);
+ for(const id of ["udRecapSeason","udRecapEpisode"]){$("#"+id).addEventListener("input",onEpisodeSelection);$("#"+id).addEventListener("change",onEpisodeSelection)}
  $("#udRecapPrompt").addEventListener("input",()=>{$("#udRecapOperatorStory").value="";$("#udRecapStoryFallback").hidden=true;if(selected!==null)storyEvidence.set(selected,{story:"",method:""});remember()});
  $("#udRecapSuggest").onclick=suggest;$("#udRecapSave").onclick=save;
  return {load,render};
