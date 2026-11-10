@@ -65,28 +65,27 @@ function eachDay(start:string,end:string){
   for(let i=0;d<=e&&i<370;i++){out.push(d.toISOString().slice(0,10));d=new Date(d.getTime()+86400000)}
   return out;
 }
+// Only today's obligations are eligible for new work. Historic obligations
+// are durable already; recreating 30-370 days of missed rows on every cron
+// wastes API calls and must never become an implicit catch-up authorization.
+// One bulk conflict-ignoring insert preserves ALL prior status, claim and IDs.
 async function materialize(){
   const {data:pubs,error}=await db.from("publisher_runtime_publishers").select("*").eq("enabled",true);
   if(error)throw error;
+  const rows:any[]=[];
   for(const p of pubs||[]){
     const today=localDay(String(p.timezone||"America/Argentina/Buenos_Aires"));
-    const days=eachDay(String(p.activation_day||today),today);
-    for(const day of days){
-      const historical=day<today;
-      for(let n=1;n<=Number(p.generation_target||3);n++){
-        await db.from("publisher_runtime_obligations").upsert({
-          publisher_id:p.id,local_day:day,kind:"generation",ordinal:n,
-          status:historical?"missed":"pending",updated_at:now()
-        },{onConflict:"publisher_id,local_day,kind,ordinal",ignoreDuplicates:true});
-      }
-      for(let n=1;n<=Number(p.publication_target||1);n++){
-        await db.from("publisher_runtime_obligations").upsert({
-          publisher_id:p.id,local_day:day,kind:"publication",ordinal:n,
-          status:historical?"missed":"pending",updated_at:now()
-        },{onConflict:"publisher_id,local_day,kind,ordinal",ignoreDuplicates:true});
-      }
-    }
+    if(String(p.activation_day||today)>today)continue;
+    for(let n=1;n<=Number(p.generation_target||3);n++)
+      rows.push({publisher_id:p.id,local_day:today,kind:"generation",ordinal:n,status:"pending",updated_at:now()});
+    for(let n=1;n<=Number(p.publication_target||1);n++)
+      rows.push({publisher_id:p.id,local_day:today,kind:"publication",ordinal:n,status:"pending",updated_at:now()});
   }
+  if(!rows.length)return;
+  const {error:insertError}=await db.from("publisher_runtime_obligations").upsert(rows,{
+    onConflict:"publisher_id,local_day,kind,ordinal",ignoreDuplicates:true
+  });
+  if(insertError)throw insertError;
 }
 async function releaseExpired(){
   // A crashed runner might have ALREADY clicked Generate/upload/release.
