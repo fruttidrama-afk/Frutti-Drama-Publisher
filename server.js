@@ -948,7 +948,13 @@ repairLegacyEarthReviewMetadata();
 
 function auditReviewMetadata(){
  const rows=db.prepare("SELECT * FROM factory_items WHERE status='review' ORDER BY episode").all(),report=[];
- for(const row of rows){const fixed=ensureCopy(row);report.push({episode:fixed.episode,title:fixed.title});}
+ for(const row of rows){
+  try{const fixed=ensureCopy(row);report.push({episode:fixed.episode,title:fixed.title,source:"immutable-package-verified"});}
+  catch(error){
+   if(!/frutti\s*drama|fruttidrama/i.test(String(CONFIG.identity?.show_name||"")))throw error;
+   report.push({episode:row.episode,title:row.title||"",source:"legacy-review-unreconciled",blocked:true});
+  }
+ }
  if(report.length)console.log('[REVIEW COPY AUDIT]',JSON.stringify(report));
 }
 setTimeout(()=>{try{auditReviewMetadata()}catch(e){console.error('[REVIEW COPY AUDIT ERROR]',String(e?.message||e))}},1100).unref?.();
