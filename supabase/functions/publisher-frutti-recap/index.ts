@@ -10,7 +10,7 @@ const TABLE="publisher_frutti_reconstructed_stock";
 const cors={"access-control-allow-origin":"*","access-control-allow-methods":"GET,POST,OPTIONS","access-control-allow-headers":"authorization,content-type,apikey,x-client-info","cache-control":"no-store"};
 function json(data:any,status=200){return new Response(JSON.stringify(data),{status,headers:{...cors,"content-type":"application/json;charset=utf-8"}})}
 const tidy=(s:string)=>s.replace(/\s+/g," ").trim();
-// The recap never uses deterministic word matching; a model must return specific narrative copy.
+// Current metadata assistant is a deterministic editorial extractor, NOT a semantic AI model; manual cross-check remains mandatory.
 
 
 // Original FruttiDrama hook/story creative package, adapted to verified pasted Flow prompts.
@@ -28,7 +28,7 @@ Deno.serve(async(req:Request)=>{
   if(pubError||!pub)return json({error:"FORBIDDEN"},403);
   if(req.method==="GET"){
    const {data,error}=await admin.from(TABLE).select("file_index,source_sha256,season,episode,generation_prompt,prompt_provenance,title,description,metadata_method,note,record_status,publication_status,revision,updated_at,created_at").eq("publisher_id",PID).order("season").order("episode");
-   return error?json({error:"READ_FAILED"},503):json({items:data||[],publication_boundary:{season:2,episode:8},publication_queue_unchanged:true,ai_status:{connected:true,provider:"Editorial FruttiDrama · local",free_only:true,billing_automation_disabled:true,external_ai_required:false}});
+   return error?json({error:"READ_FAILED"},503):json({items:data||[],publication_boundary:{season:2,episode:8},publication_queue_unchanged:true,ai_status:{connected:true,provider:"Extractor editorial verificable · local",method:"deterministic_rules",semantic_model:false,review_required:true,free_only:true,billing_automation_disabled:true,external_ai_required:false}});
   }
   const b=await req.json().catch(()=>null);
   if(!b||typeof b!=="object")return json({error:"INVALID_BODY"},400);
