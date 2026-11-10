@@ -176,12 +176,12 @@ function narrative(ev,story){
  const rule=ev.rule,a=ev.actor,b=ev.target;
  if(rule.key==="interrupcion_con_contexto"){
   const [first,second]=ev.pair.includes("Uva")&&ev.pair.includes("Limón")?["Uva","Limón"]:ev.pair;
-  const hook=ev.romantic?"ROMANCE INTERRUMPIDO":"ENCUENTRO INESPERADO";
-  const core=a+(ev.interrupted?" interrumpe a ":" sorprende a ")+first+" y "+second;
+  const hook=ev.interrupted?(ev.romantic?"ROMANCE INTERRUMPIDO":"ENCUENTRO INTERRUMPIDO"):"ENCUENTRO INESPERADO";
+  const core=a+(ev.interrupted?" interrumpe a ":" encuentra a ")+first+" y "+second;
   const type=ev.romantic?"una conversación romántica":"una conversación";
   const description=(ev.interrupted?a+" irrumpe en medio de "+type+" entre "+first+" y "+second+".":a+" encuentra a "+first+" y "+second+" durante "+type+".")+
-   " La aparición de "+a+" cambia el curso de la conversación."+
-   "\n\n¿Cómo reaccionarán "+first+" y "+second+" ante la llegada de "+a+"?\n\n"+TAGS;
+   (ev.interrupted?" La llegada de "+a+" interrumpe ese momento.":"")+
+   (ev.interrupted?"\n\n¿Cómo reaccionarán "+first+" y "+second+" ante la llegada de "+a+"?":"\n\n¿Qué hará "+a+" después de encontrarlos?")+"\n\n"+TAGS;
   return {hook,core,description};
  }
  const secondary=names(story).find(n=>n!==a&&n!==b)||"";
@@ -278,7 +278,7 @@ function riskyEvent(ev){
  const line=clean(ev.line);
  const key=ev.rule.key;
  if(key==="interrupcion_con_contexto"){
-  if(/\\b(?:no|nunca|never|not)\\s+(?:interrumpe|interrupts?)\\b/i.test(line))return "El episodio niega la interrupción.";
+  if(/\b(?:no|nunca|never|not)\s+(?:interrumpe|interrupts?)\b/i.test(line))return "El episodio niega la interrupción.";
   return null;
  }
  const hit=line.match(ev.rule.re);
