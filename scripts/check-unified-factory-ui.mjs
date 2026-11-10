@@ -46,6 +46,23 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
   'youtube_upload_policy:"same-day-private-1230-then-public-1900-no-publishat"',
   'credit_refresh_fallback_hours:24'
  ])if(!html.includes(marker))throw Error(name+" stale unsafe new-publisher policy: "+marker);
+ // New publishers must be created as disabled, owner-scoped Supabase/GitHub
+ // runtime records by the existing transactional trigger. Never require
+ // Railway credentials or launch a remote deploy as a side effect.
+ for(const marker of [
+  'name="publication_platform"',
+  'selected_provider:platform',
+  'providers:[publicationProvider]',
+  'deployment_state:"profile_required"',
+  'provider:"supabase-github"',
+  'status:"migrating_free_runtime"',
+  'railway_connection_id:null',
+  '.select("id").single()',
+  'if(created?.id)await udOpen(created.id)'
+ ])if(!html.includes(marker))throw Error(name+" new publisher free-runtime onboarding missing "+marker);
+ for(const obsolete of ['if(!rc)throw Error("Elegí una cuenta de Railway.")','status:"configured",config,runtime_version:"publisher-runtime-v1",railway_connection_id:rc.id']){
+  if(html.includes(obsolete))throw Error(name+" still requires Railway to create a Publisher: "+obsolete);
+ }
  for(const obsolete of [
   'private_then_public_at_posting_time',
   'direct_public_at_posting_time',
