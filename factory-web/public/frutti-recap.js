@@ -16,7 +16,7 @@ export function initFruttiRecap({session,udText}){
   const link=$("#udRecapFreeAiSetup");if(link)link.hidden=true;
   if(aiStatus.connected===true){
    el.dataset.status="connected";
-   el.textContent="✓ Generador editorial original de FruttiDrama activo. Título y descripción basados en la trama del episodio, sin claves, sin cuentas externas y sin costo.";
+   el.textContent="✓ Asistente editorial local activo. Usa reglas verificables sobre el prompt (no un modelo de lenguaje). Cada título y descripción requiere cotejo con el video antes de guardar.";
   }else if(aiStatus.connected===false){
    el.dataset.status="missing";
    el.textContent="No pude comprobar el estado del generador editorial. Actualizá la página; no necesitás claves ni cuentas externas.";
@@ -117,7 +117,7 @@ export function initFruttiRecap({session,udText}){
   // The local historical creative package needs no API credentials.
   const btn=$("#udRecapSuggest");
   btn.disabled=true;btn.textContent="REDACTANDO PROPUESTA…";
-  showAIResult("Identificando la trama del episodio y preparando el título y la descripción con las plantillas narrativas originales…","progress");
+  showAIResult("Extrayendo las acciones del episodio y verificando quién actúa y a quién afecta…","progress");
   try{
    const summary=$("#udRecapOperatorStory").value.trim();
    const data=await request("POST",{action:"suggest",generation_prompt:prompt,operator_story:summary});
@@ -125,14 +125,14 @@ export function initFruttiRecap({session,udText}){
    if(!data.title||!data.description)throw Error("No se pudieron crear metadatos narrativos completos.");
    $("#udRecapTitle").value=data.title;
    $("#udRecapDescription").value=data.description;
-   $("#udRecapEvidence").textContent="Acontecimiento identificado (verificá que suceda en el video): "+String(data.episode_excerpt||"sin detalle");
+   $("#udRecapEvidence").textContent="NARRATIVA EXTRAÍDA DEL PROMPT (compará con el video): "+String(data.source_story||data.episode_excerpt||"sin detalle");
    $("#udRecapStoryFallback").hidden=true;
    remember();
-   showAIResult("✓ Propuesta generada con el formato editorial original de FruttiDrama. Revisá que el título y la descripción narren exactamente lo que ocurre en el video.","success");
+   showAIResult("✓ Borrador editorial generado; los nombres y acontecimientos deben contrastarse con el prompt y el video antes de guardarlo. No se modificó el archivo original.","success");
   }catch(e){
    const detail=String(e?.message||e||"Error desconocido");
    $("#udRecapStoryFallback").hidden=false;
-   showAIResult("No se pudo identificar suficientemente la trama. Motivo: "+detail+" Podés editar el título y la descripción manualmente sin perder el prompt.","error");
+   showAIResult("No generé un título que pudiera alterar la historia. Motivo: "+detail+" La narrativa y el prompt permanecen intactos; podés corregir el resumen o editar los metadatos manualmente.","error");
    $("#udRecapEvidence").textContent="No se modificaron los metadatos ni el stock. El prompt original permanece en el formulario.";
   }finally{
    btn.disabled=false;
