@@ -596,6 +596,7 @@ function creativePackageHash(row,prompt,title,description){
   }));
 }
 function buildCreativePackage(row,prompt){
+  if(/frutti\s*drama|fruttidrama/i.test(String(CONFIG.identity?.show_name||SHOW||"")))throw Error("FRUTTI_COPY_MUST_ORIGINATE_WITH_EPISODE_SOURCE");
   const providers=CONFIG.publication?.providers||[],provider=providers.find(x=>x.type===CONFIG.publication?.selected_provider)||providers[0]||{};
   const copy=buildPublicationCopy({
     hook:row.hook,
@@ -616,6 +617,12 @@ function packageMatches(row){
   const prompt=String(row?.prompt||''),title=String(row?.title||''),description=String(row?.description||'');
   if(!prompt||!title||!description||!String(row?.creativePackageHash||''))return false;
   if(String(row.creativePackageHash)!==creativePackageHash(row,prompt,title,description))return false;
+  if(/frutti\s*drama|fruttidrama/i.test(String(CONFIG.identity?.show_name||SHOW||""))){
+    const ledger=db.prepare("SELECT hook,story,prompt,title,description,packageHash FROM factory_creative_packages WHERE packageId=? AND itemId=?")
+      .get(String(row.creativePackageId||""),row.id);
+    if(!ledger||ledger.packageHash!==row.creativePackageHash||ledger.hook!==row.hook||ledger.story!==row.story||
+       ledger.prompt!==prompt||ledger.title!==title||ledger.description!==description)return false;
+  }
   if(/earth\s*in\s*10/i.test(String(CONFIG.identity?.show_name||SHOW||''))){
     const provider=(CONFIG.publication?.providers||[]).find(x=>x.type==='youtube')||{};
     const expected=buildPublicationCopy({
@@ -642,6 +649,10 @@ function preparePromptIfNeeded(db,row){
 }
 
 function reviewMetadata(row,flowResult={}){
+  if(/frutti\s*drama|fruttidrama/i.test(String(CONFIG.identity?.show_name||SHOW||""))){
+    if(!packageMatches(row))throw Error("FRUTTI_CREATIVE_PACKAGE_LEDGER_REQUIRED: never derive copy from Flow prompt after generation");
+    return{title:String(row.title),description:String(row.description)};
+  }
   const provider=(CONFIG.publication?.providers||[]).find(x=>x.type==='youtube')||{};
   const terms=Array.isArray(flowResult?.matched_terms)?flowResult.matched_terms:[];
   const override=flowResult?.publication_override;
@@ -668,6 +679,8 @@ function persistReviewMetadata(db,row,flowResult={}){
       publish('REVIEW_METADATA_READY',{episode:'E'+fresh.episode,job_id:fresh.id,title:m.title,source:'creative-package',package_hash:fresh.creativePackageHash});
       return m;
     }
+    if(/frutti\s*drama|fruttidrama/i.test(String(CONFIG.identity?.show_name||SHOW||"")))
+      throw Error("FRUTTI_METADATA_REPAIR_FORBIDDEN: original creative package missing; retain video for operator review");
     const m=reviewMetadata(fresh,flowResult),pkgHash=creativePackageHash(fresh,fresh.prompt,m.title,m.description);
     db.prepare('UPDATE factory_items SET title=?,description=?,creativePackageHash=?,creativePackageId=?,updatedAt=? WHERE id=?')
       .run(m.title,m.description,pkgHash,'creative-package-legacy-'+randomUUID(),now(),fresh.id);
