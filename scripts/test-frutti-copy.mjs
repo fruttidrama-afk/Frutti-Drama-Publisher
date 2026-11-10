@@ -562,7 +562,8 @@ assert(recapAPI.includes("&&entry.title===title&&entry.description===description
 for(const client of ["docs/frutti-recap.js","factory-web/public/frutti-recap.js"]){
  const body=fs.readFileSync(client,"utf8");
  assert(body.includes("derived_from_preserved_story_via_legacy_rules"),client+" must disclose derived status");
- assert(body.includes('entry.workflow_stage!=="review"&&!force'),client+" must not auto-fill draft-only story");
+ assert(body.includes("if(derived&&!force)return false"),client+" must not auto-fill any unverified Season 3 derived title");
+ assert(body.includes("No se completarán automáticamente: elegí la propuesta solo si comprobaste que corresponde al video."),client+" must tell the operator that all derived metadata requires an explicit choice");
  assert(body.includes("NO se recuperó el texto final de YouTube"),client+" must not claim recovered final YouTube text");
 }
 console.log("PASS RECOVER-S3-STORY-METADATA-12: 12 preserved hooks/stories, 6 Review and 6 plans, truthful recomputation not final-YouTube copy");
