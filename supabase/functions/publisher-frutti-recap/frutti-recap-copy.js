@@ -626,13 +626,49 @@ function literalCurrentCopy(e){
  return {error:"TITLE_LENGTH_INVALID",detail:"No se encontró un fragmento literal para un título fiel de hasta 100 caracteres.",source_story:story};
 }
 
+
+// v28: text can arrive with CONTINUITY, STORY / ACTION, HOOK and STORY
+// on the SAME line after copying from Flow. Heading boundaries are semantic
+// delimiters, NEVER a newline requirement. Previous beat is always excluded.
+function extractCollapsedCurrentStory(input){
+ const raw=String(input||"").replace(/\r\n?/g,"\n").replace(/[\u2028\u2029]/g,"\n").replace(/\u00a0/g," ").replace(/\*\*/g,"");
+ const heading=/\bSTORY\s*[/&+]\s*ACTION\b/gi;
+ const matches=[...raw.matchAll(heading)];
+ if(!matches.length)return null;
+ const pos=matches[matches.length-1];
+ const after=raw.slice(pos.index+pos[0].length);
+ const technical=/(?:\n\s*|\s{1,})(?:#{1,5}\s*)?(?:CAMERA|C[AÁ]MARA|LIGHTING|ILUMINACI[OÓ]N|VISUAL STYLE|CINEMATOGRAPHY|AUDIO|SOUND DESIGN|OUTPUT(?: CONSTRAINTS?)?|CONSTRAINTS?|ANTI.GLITCH|NEGATIVE PROMPT|RENDER|GENERATION|CHARACTER REFERENCES?|DIALOGUE RULES|IDIOMA|LANGUAGE)\s*(?:[:：]|\n|$)/i;
+ const cut=after.match(technical);
+ let section=cut?after.slice(0,cut.index):after;
+ section=section.replace(/^[:：\s#-]+/,"").trim();
+ const hookTag=section.match(/\bHOOK\s*[:：]\s*/i);
+ if(!hookTag)return {error:"CURRENT_HOOK_NOT_FOUND",detail:"Identifiqué STORY / ACTION pero no el HOOK actual. No se usó Previous canonical beat."};
+ const rest=section.slice(hookTag.index+hookTag[0].length);
+ const storyTag=rest.match(/\bSTORY\s*[:：]\s*/i);
+ if(!storyTag)return {error:"CURRENT_STORY_NOT_FOUND",detail:"Encontré HOOK del episodio actual, pero falta STORY. No usé CONTINUITY."};
+ const rawHook=rest.slice(0,storyTag.index).replace(/^[\s*:#-]+|[\s*:#-]+$/g,"").replace(/\s+/g," ").trim().toLocaleUpperCase("es");
+ let hook=rawHook;
+ if(hook==="ORDEN DE SALIDA")hook="SALIDA FORZADA";
+ if(hook==="FURIA DEL PATRÓN")hook="FURIA PATRONAL";
+ if(!/^[A-ZÁÉÍÓÚÜÑ0-9]+ [A-ZÁÉÍÓÚÜÑ0-9]+$/.test(hook))
+  return {error:"HOOK_FORMAT_INVALID",detail:"HOOK no tiene dos palabras y no posee una adaptación segura: "+rawHook};
+ let story=rest.slice(storyTag.index+storyTag[0].length).replace(/^\s*[-•]\s*/,"").replace(/\s+/g," ").trim();
+ if(story.length<22)return {error:"CURRENT_STORY_NOT_FOUND",detail:"STORY actual está vacío. No se tomó el episodio anterior."};
+ if(story.length>1800)return {error:"CURRENT_STORY_TOO_LONG",detail:"STORY del episodio actual supera los 1800 caracteres."};
+ return {hook,story,evidence:"HOOK: "+hook+" | STORY: "+story,method:"story_action_v28"};
+}
+
 export function generateFruttiRecapCopy(fullPrompt){
  const operator=operatorStoryCopy(fullPrompt);
  if(operator)return operator;
+ const v28=extractCollapsedCurrentStory(fullPrompt);
+ if(v28)return v28.error?v28:literalCurrentCopy(v28);
  const strict=authoritativeCurrentStory(fullPrompt);
  if(strict)return strict.error?strict:literalCurrentCopy(strict);
  const explicit=extractExplicitEpisodeStory(fullPrompt);
  if(explicit)return explicitEpisodeCopy(explicit);
+ if(/\b(?:Previous canonical beat|Previous episode beat|CONTINUITY Previous|CONTINUIDAD Previous)\b/i.test(String(fullPrompt||"")))
+  return {error:"CURRENT_EPISODE_SECTION_NOT_FOUND",detail:"Solo encontré referencia al episodio anterior; falta una sección STORY / ACTION recuperable. No se generan metadatos a partir de Previous canonical beat."};
  const richScene=warmConversationInterruptedByFresia(fullPrompt);
  if(richScene)return richScene;
  const input=extract(fullPrompt);
