@@ -173,19 +173,24 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
   <textarea id="udRecapPrompt" maxlength="50000" spellcheck="false" placeholder="Pegá el prompt completo y exacto usado para generar este video."></textarea>
  </label>
  <div class="ud-recap-copy">
-  <strong>Metadatos de YouTube Shorts</strong>
-  <p class="udmuted">El sistema original usaba el hook y la historia del episodio, guardados antes de generar en Flow. En la reconstrucción intentamos recuperar esa narrativa del prompt real y mostramos el fragmento utilizado. Es un extractor local, no una IA semántica: verificá cada propuesta antes de guardarla.</p>
-  <div id="udRecapAiState" class="ud-recap-ai-state" role="status" aria-live="polite">Cargando generador editorial local…</div>
-  
-  <div class="ud-recap-actions"><button type="button" id="udRecapSuggest">GENERAR PROPUESTA DESDE PROMPT</button></div>
-  <p id="udRecapAiResult" class="ud-recap-ai-result" role="alert" aria-live="assertive" hidden></p>
-  <p id="udRecapEvidence" class="ud-recap-notice" aria-live="polite">La interpretación de la trama aparecerá aquí cuando se genere la propuesta.</p><div id="udRecapStoryFallback" hidden><label>Historia del episodio (solo si falta en el prompt)<textarea id="udRecapOperatorStory" maxlength="900" rows="3" placeholder="Qué personaje hace qué en esta escena"></textarea></label><p class="udmuted">Una frase alcanza; el prompt original no cambia.</p></div>
-  <label>Título · dos primeras palabras en MAYÚSCULAS
-   <textarea id="udRecapTitle" maxlength="100" rows="2" placeholder="PRUEBA POSITIVA: Uva descubre un embarazo que cambia todo #Shorts #FruttiDrama"></textarea>
+  <strong>Título y descripción · edición manual</strong>
+  <p class="udmuted">Elegí una de dos opciones: <b>1.</b> recuperar el título y la descripción del registro histórico original, si existe, o <b>2.</b> usar una plantilla canónica y escribirlos vos después de ver el video. <b>No se analiza el prompt ni se genera narrativa automáticamente.</b></p>
+  <p id="udRecapMethodStatus" class="ud-recap-notice" role="status" aria-live="polite">Seleccioná un video, temporada y episodio.</p>
+  <div class="ud-recap-actions">
+   <button type="button" id="udRecapRestoreHistorical">1 · RECUPERAR METADATOS HISTÓRICOS</button>
+   <button type="button" id="udRecapTemplate">2 · PLANTILLA CANÓNICA MANUAL</button>
+  </div>
+  <p class="udmuted"><b>Título:</b> dos primeras palabras EN MAYÚSCULAS, dos puntos y el hecho que realmente sucede. Termina con <code>#Shorts #ViralShorts #FruttiDrama</code>. Máximo 100 caracteres, incluidos los hashtags.</p>
+  <label>Título (lo redactás vos)
+   <textarea id="udRecapTitle" maxlength="100" rows="2" spellcheck="true" placeholder="SECRETO REVELADO: Fresia encuentra la carta #Shorts #ViralShorts #FruttiDrama"></textarea>
   </label>
-  <label>Descripción del episodio
-   <textarea id="udRecapDescription" maxlength="4000" rows="5" placeholder="Sinopsis melodramática real + hashtags del canal."></textarea>
+  <small class="udmuted" id="udRecapTitleCounter">0/100 caracteres, incluidos los hashtags</small>
+  <p class="udmuted"><b>Descripción:</b> una o dos frases sobre quién hace qué y cuál es el desenlace. Al final, en otra línea: <code>#Shorts #ViralShorts #FruttiDrama</code>.</p>
+  <label>Descripción (la redactás vos)
+   <textarea id="udRecapDescription" maxlength="4000" rows="5" spellcheck="true" placeholder="Fresia encuentra una carta que cambia todo en la hacienda.&#10;&#10;#Shorts #ViralShorts #FruttiDrama"></textarea>
   </label>
+  <small class="udmuted" id="udRecapDescriptionCounter">0/4000 caracteres</small>
+  <p class="udmuted">Reemplazá los textos entre corchetes antes de guardar. No se modifica el stock de publicación, YouTube ni Google Flow.</p>
  </div>
  <label>Nota opcional sobre la versión
   <input type="text" id="udRecapNote" maxlength="700" placeholder="Ej. Este es el render definitivo, no la versión alternativa">
@@ -294,7 +299,7 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 
 <script type="module">
 import{createClient}from"https://esm.sh/@supabase/supabase-js@2.105.0";
-import{initFruttiRecap}from"./frutti-recap.js?v=20261110-season3-provenance-safe-v2";
+import{initFruttiRecap}from"./frutti-recap.js?v=20261110-manual-recap-v1";
 import JSZip from"https://esm.sh/jszip@3.10.1";
 const sb=createClient("https://wrflttnmlrsuzuukdhtf.supabase.co","sb_publishable_xa4-lNIcfBku4CtgKKI97w_r-VmFcaV",{auth:{persistSession:true,autoRefreshToken:true,experimental:{passkey:true}}});
 const API="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory-railway",$=s=>document.querySelector(s);let user=null,signup=false,createStep=0,referenceFile=null,logoFile=null,brandDraft=null,modPublisher=null,modScreenshot=null,railwayConnections=[],selectedRailwayConnectionId=null,deployWatchTimer=null;
