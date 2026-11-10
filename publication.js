@@ -411,7 +411,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     }
     let corrected=0,factoryCorrected=0,synced=0,quotaRetryAt=0;const report=[];
     for(const item of items){
-      const row=db.prepare('SELECT episode,hook,story,prompt,title,description,creativePackageHash,creativePackageId,flowResult FROM factory_items WHERE id=?').get(item.itemId);
+      const row=db.prepare('SELECT id,episode,hook,story,prompt,title,description,creativePackageHash,creativePackageId,flowResult FROM factory_items WHERE id=?').get(item.itemId);
       if(!row)continue;
       const legacyRepair=legacyEarthPublicationRepair(row,item,config,episode1Title);
       const copy=legacyRepair||metadata(row,config,db),description=copy.description;
