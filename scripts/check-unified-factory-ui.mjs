@@ -86,30 +86,27 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
  if(!fs.existsSync(pathToRecap))throw Error(name+" missing isolated Frutti recap module");
  if(!fs.readFileSync(pathToRecap,"utf8").includes("publisher-frutti-recap"))throw Error(name+" missing recap backend binding");
  const recapJs=fs.readFileSync(pathToRecap,"utf8");
- if(!recapJs.includes('story_action_v34'))throw Error(name+" missing v33 current-episode extractor revision lock");
- if(!recapJs.includes('udRecapRestoreHistorical')||!recapJs.includes('historical_metadata'))throw Error(name+" lacks historical episode metadata recovery before extractor");
- if(!recapJs.includes("derived_from_preserved_story_via_legacy_rules")||!recapJs.includes('entry.workflow_stage!=="review"')||!recapJs.includes("HISTORIA PLANIFICADA, SIN VIDEO EN REVIEW CONFIRMADO"))throw Error(name+" missing Season 3 source-provenance separation");
- const season3Data=fs.readFileSync("supabase/functions/publisher-frutti-recap/season3-story-metadata.js","utf8");
- if(!season3Data.includes('"workflow_stage": "story_plan_no_verified_review"')||!season3Data.includes('"workflow_stage": "review"')||!season3Data.includes('"youtube_copy_verified": false'))throw Error(name+" backend Season 3 evidence/proposal stages missing");
- if(!html.includes('frutti-recap.js?v=20261110-season3-provenance-safe-v2'))throw Error(name+" references stale Safari recap module");
- if(/Extractor de episodio actual v(?:28|30)/.test(recapJs))throw Error(name+" misleading hardcoded visible v28/v30 label");
+ // The failed story extractor and its button must not be reachable.
+ for(const old of ['id="udRecapSuggest"','id="udRecapAiState"','id="udRecapOperatorStory"','GENERAR PROPUESTA DESDE PROMPT']){
+  if(html.includes(old)||recapJs.includes(old))throw Error(name+" obsolete AI narrative extractor still reachable: "+old);
+ }
+ for(const id of ['id="udRecapRestoreHistorical"','id="udRecapTemplate"','id="udRecapTitleCounter"','id="udRecapDescriptionCounter"','id="udRecapMethodStatus"']){
+  if(!html.includes(id))throw Error(name+" missing one of the two manual recovery methods: "+id);
+ }
+ if(!html.includes('frutti-recap.js?v=20261110-manual-recap-v1'))throw Error(name+" stale Safari recap module");
+ if(!recapJs.includes("FRUTTI_MANUAL_TITLE")||!recapJs.includes("FRUTTI_MANUAL_DESCRIPTION")||
+    !recapJs.includes("historical_metadata")||!recapJs.includes("udRecapRestoreHistorical")||
+    !recapJs.includes("udRecapTemplate"))throw Error(name+" absent historical/manual copy alternatives");
+ const api=fs.readFileSync("supabase/functions/publisher-frutti-recap/index.ts","utf8");
+ if(api.includes('import {generateFruttiRecapCopy}')||api.includes('FRUTTI_S3_STORY_METADATA')||
+    !api.includes("NARRATIVE_EXTRACTOR_RETIRED")||
+    !api.includes("historical_metadata:LEGACY_FRUTTI_METADATA"))
+    throw Error(name+" backend still uses AI narrative extraction or unverified S3 story proposals");
  const recapModule=await import("data:text/javascript;base64,"+Buffer.from(recapJs).toString("base64"));
- const deployedIndex=fs.readFileSync("supabase/functions/publisher-frutti-recap/index.ts","utf8");
- const deployedRevisions=[...deployedIndex.matchAll(/engine_revision:"(story_action_v\d+)"/g)].map(m=>m[1]);
- if(deployedRevisions.length!==2||deployedRevisions.some(rev=>rev!==recapModule.FRUTTI_EXPECTED_ENGINE_REVISION))
-   throw Error(name+" backend/client engine_revision mismatch: "+JSON.stringify(deployedRevisions));
- if(recapModule.fruttiEngineLabel(recapModule.FRUTTI_EXPECTED_ENGINE_REVISION)!=="Extractor de episodio actual v34")
-   throw Error(name+" reports the wrong visible engine version");
- if(recapModule.fruttiEngineLabel("story_action_v28")!=="versión no confirmada")
-   throw Error(name+" does not reject obsolete v28 backend labels");
- for(const id of ['id="udRecapAiState"','id="udRecapAiResult"','id="udRecapSuggest"']){
-  if(!html.includes(id))throw Error(name+" missing visible AI diagnostic "+id);
- }
- if(!(html.indexOf('id="udRecapAiState"')<html.indexOf('id="udRecapSuggest"')&&html.indexOf('id="udRecapSuggest"')<html.indexOf('id="udRecapAiResult"')))throw Error(name+" AI error is not beside button");
- for(const phrase of ['response.ai_status','No generé un título que pudiera alterar la historia','GENERAR PROPUESTA DESDE PROMPT','El guardado en stock reconstruido no publica ni modifica videos en YouTube.']){
-  if(!recapJs.includes(phrase))throw Error(name+" missing historical editorial recap handling: "+phrase);
- }
-
+ if(recapModule.FRUTTI_MANUAL_TITLE!=="GANCHO CENTRAL: [describí el hecho] #Shorts #ViralShorts #FruttiDrama")
+    throw Error(name+" incorrect canonical title template");
+ if(!recapModule.FRUTTI_MANUAL_DESCRIPTION.endsWith("#Shorts #ViralShorts #FruttiDrama"))
+    throw Error(name+" incorrect canonical description template");
  const r=spawnSync(process.execPath,["--check",pathToRecap],{encoding:"utf8"});
  if(r.status!==0)throw Error(name+" recap module syntax invalid: "+r.stderr);
  if(!html.includes("#udPromptBrowser{display:none!important}"))throw Error(name+" still exposes unverified Prompt Studio plans");
