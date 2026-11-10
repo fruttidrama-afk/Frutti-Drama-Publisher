@@ -660,6 +660,17 @@ async function udFlowConnection(publisherId,accessToken){
   const endpoint="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-flow-operator";
   const response=await fetch(endpoint+"?publisher_id="+encodeURIComponent(publisherId),{headers:{Authorization:"Bearer "+accessToken},cache:"no-store"});
   const payload=await response.json().catch(()=>({}));
+  if(!response.ok&&payload.error==="UNKNOWN_PUBLISHER"){
+   // Newly created publishers are deliberately disabled until a generic,
+   // project-verified Flow account bootstrap is installed. Never pretend that
+   // the three hardcoded legacy account reconnectors support this new ID.
+   target.replaceChildren(
+    udText("strong","","GOOGLE FLOW · ALTA DE NUEVA CUENTA PENDIENTE"),
+    udText("p","udmuted","El Publisher se creó en el runtime gratuito y permanece INACTIVO. La conexión de Google Flow para nuevos publishers todavía no está habilitada; no se enviarán Generate, REDO ni publicaciones."),
+    udText("p","udmuted","No necesitás volver a autenticar FruttiDrama, EARTH IN 10 ni Dinnie.")
+   );
+   return;
+  }
   if(!response.ok)throw Error(payload.error||"No se pudo consultar la reconexión");
   if(activeUnifiedPublisher!==publisherId)return;
   target.replaceChildren();
