@@ -203,7 +203,7 @@ function narrative(ev,story){
   if(rule.key==="humilla")desc=a+" humilla a "+nameAfter+". El ataque verbal rompe cualquier apariencia de cordialidad.";
   if(rule.key==="enfrenta")desc=a+" encara a "+nameAfter+". La discusión deja al descubierto un conflicto que ya no pueden evitar.";
   if(rule.key==="beso")desc=a+" besa a "+nameAfter+". Ese acercamiento marca un giro en su relación.";
-  if(rule.key==="enfrenta"&&secondary&&new RegExp("(?:por|because of|over|due to|a causa de)\\s+(?:(?:su|el|la)\\s+)?(?:v[ií]nculo\\s+(?:con|entre)\\s+)?"+secondary,"i").test(story)){
+  if(rule.key==="enfrenta"&&secondary&&new RegExp("(?:about\\s+(?:(?:her|his|their)\\s+)?(?:relationship|connection)\\s+with|por\\s+(?:(?:su|el|la)\\s+)?(?:v[ií]nculo|relaci[oó]n)\\s+con|(?:because\\s+of|over)\\s+(?:(?:her|his|their)\\s+)?(?:relationship|connection)\\s+with)\\s+"+secondary,"i").test(story)){
    hook="CELOS EXPUESTOS";core=a+" enfrenta a "+nameAfter+" por "+secondary;
    desc=a+" encara a "+nameAfter+" por su vínculo con "+secondary+".";
   }
