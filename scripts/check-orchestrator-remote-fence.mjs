@@ -115,4 +115,30 @@ await testMaterialize();
 console.log('PASS idempotent today-only materialization with preserved historic/claimed obligations; zero remote calls.');
 
 
+// Public runtime health must not expose publisher names, errors, status,
+// stock or obligations. Execute the exact production function with a mock DB.
+const healthStart=src.indexOf('async function health(){');
+const healthEnd=src.indexOf('\nDeno.serve(',healthStart);
+assert.ok(healthStart>0&&healthEnd>healthStart,'public health implementation present');
+const healthSource=src.slice(healthStart,healthEnd);
+assert.ok(!/last_error|approved_stock|last_generation_at|last_publication_at|obligations|p\.data/.test(healthSource),
+  'anonymous health must not return private publisher state');
+assert.match(healthSource,/head:true,count:"exact"/,'health verifies DB with HEAD-only probe');
+let healthProbes=0;
+const healthDb={from(table){
+ assert.equal(table,'publisher_runtime_publishers');
+ return {select(column,options){
+  assert.equal(column,'id');assert.equal(options.head,true);healthProbes++;
+  return Promise.resolve({error:null});
+ }};
+}};
+const healthFn=vm.runInNewContext(healthSource+'\nhealth',{
+ db:healthDb,now:()=> '2026-11-10T22:00:00Z',
+ J:(payload)=>payload
+});
+const healthPayload=await healthFn();
+assert.deepEqual(Object.keys(healthPayload).sort(),['at','ok','version'],'health exposes liveness only');
+assert.equal(healthProbes,1,'health performs exactly one read-only database probe');
+console.log('PASS anonymous health privacy and DB liveness; no network calls.');
+
 console.log('PASS 11 real Edge guard cases: cross-day, cross-kind, publisher isolation, no-charge and fail-closed; zero remote calls.');
