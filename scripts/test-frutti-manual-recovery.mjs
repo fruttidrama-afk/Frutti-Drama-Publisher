@@ -25,6 +25,26 @@ check(api.includes("checkFruttiMetadata("),"Backend verifies manual formats");
 check(api.includes('metadata_method:exactLegacy?"legacy_canonical_operator_reviewed":"operator_manual_copy"'),"Provenance distinguishes human from original");
 check(api.includes('publication_queue_unchanged:true'),"Publication queue unchanged");
 check(api.includes('historical_prompt_not_yet_available'),"Missing source Flow prompt is never invented");
+
+const migratedConstraints=read("supabase/migrations/20261111_frutti_recap_manual_stock_constraints.sql");
+for(const allowedMethod of ["operator_reviewed","ai_draft_reviewed","rules_draft_reviewed",
+ "legacy_canonical_operator_reviewed","operator_manual_copy"]){
+ check(migratedConstraints.includes("'"+allowedMethod+"'"),"Migration permits original or manual metadata method "+allowedMethod);
+}
+for(const provenance of ["operator_copied_google_flow","historical_prompt_not_yet_available"]){
+ check(migratedConstraints.includes("'"+provenance+"'"),"Migration permits actual Flow prompt provenance "+provenance);
+}
+check(migratedConstraints.includes("generation_prompt = '' AND prompt_provenance = 'historical_prompt_not_yet_available'"),"DB allows optional Flow prompt without placeholder content");
+check(migratedConstraints.includes("char_length(generation_prompt) BETWEEN 20 AND 50000"),"DB rejects partial or oversized Flow prompts");
+check(migratedConstraints.includes("publisher_frutti_reconstructed_stock_metadata_method_check"),"DB migration updates method constraint");
+check(migratedConstraints.includes("publisher_frutti_reconstructed_stock_prompt_provenance_check"),"DB migration updates provenance constraint");
+check(migratedConstraints.includes("publisher_frutti_reconstructed_stock_generation_prompt_check"),"DB migration updates prompt constraint");
+check(api.includes('metadata_method:exactLegacy?"legacy_canonical_operator_reviewed":"operator_manual_copy"'),"API methods match persisted DB");
+check(api.includes('prompt?"operator_copied_google_flow":"historical_prompt_not_yet_available"'),"API provenance matches persisted DB");
+check(api.includes('code==="23514"')&&api.includes("RECONSTRUCTED_STOCK_SCHEMA_MISMATCH"),"DB check violation must not be hidden behind generic error");
+check(api.includes('console.error("FRUTTI_RECAP_STOCK_WRITE_REJECTED"'),"DB save failure diagnostics must be available without exposing user copy");
+check(!api.includes("JSON.stringify(saveError)")&&!api.includes("saveError.details"),"Never log original prompt, title, description via Postgres details");
+
 check(api.includes('prompt.length>0&&prompt.length<20'),"Historical prompt optional, but partial copy rejected");
 same(LEGACY_FRUTTI_METADATA.length,12,"Only 12 source-backed T2 pairs");
 check(LEGACY_FRUTTI_METADATA.every(x=>x.season===2&&x.episode>=2&&x.episode<=13),"No invented T3 historical metadata");
