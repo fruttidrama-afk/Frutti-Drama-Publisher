@@ -68,9 +68,23 @@ if(process.argv.includes("--selftest")){
   process.exit(0);
 }
 try {
+  // Verify live unauthenticated behavior without exposing account data.
+  // Neither request mutates Flow, stock, social platforms or credentials.
+  const publicHealth=await fetch(STATUS_URL.replace(/\/status$/,"/health"),{
+    signal:AbortSignal.timeout(15000),headers:{"accept":"application/json"}
+  });
+  if(!publicHealth.ok)throw Error("PUBLIC_HEALTH_HTTP_"+publicHealth.status);
+  const publicBody=await publicHealth.json();
+  if(publicBody.ok!==true||Object.keys(publicBody).sort().join(",")!=="at,ok,version")
+    throw Error("PUBLIC_HEALTH_PRIVACY_CONTRACT_FAILED");
+  const anonymousStatus=await fetch(STATUS_URL,{
+    signal:AbortSignal.timeout(15000),headers:{"accept":"application/json"}
+  });
+  if(anonymousStatus.status!==401)throw Error("PRIVATE_STATUS_ACCESS_CONTROL_FAILED_"+anonymousStatus.status);
+  summary.push("Live privacy check: anonymous /health is redacted; anonymous /status denied.");
   const token=await githubOidcToken();
   const response = await fetch(STATUS_URL, {signal: AbortSignal.timeout(15000), headers: {"accept":"application/json","cache-control":"no-cache","authorization":"Bearer "+token}});
-  if (!response.ok) throw Error("Health endpoint returned HTTP " + response.status);
+  if (!response.ok) throw Error("Private status endpoint returned HTTP " + response.status);
   const body = await response.json();
   if (body.ok !== true || !Array.isArray(body.publishers)) throw Error("Invalid health response");
   const names=new Set(body.publishers.map(p=>String(p.name||"")));
@@ -96,7 +110,7 @@ try {
   summary.push("Do not re-submit a Google Flow prompt after an ambiguous timeout. Reconcile the exact Flow asset ID first.");
 } catch (error) {
   failed = true;
-  summary.push("**HEALTH ENDPOINT UNAVAILABLE**: " + String(error?.message || error).slice(0,240));
+  summary.push("**PRODUCTIVITY AUDIT UNAVAILABLE**: " + String(error?.message || error).slice(0,240));
 }
 const report = summary.join("\n") + "\n";
 console.log(report);
