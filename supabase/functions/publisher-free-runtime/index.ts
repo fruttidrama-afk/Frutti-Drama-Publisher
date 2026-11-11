@@ -30,7 +30,7 @@ async function githubKeys(){
   oidcCache={at:Date.now(),keys:Array.isArray(jwks.keys)?jwks.keys:[]};
   return oidcCache.keys;
 }
-async function githubIdentity(req:Request){
+async function githubIdentity(req:Request,workflowPath=WORKFLOW_PATH){
   const h=String(req.headers.get("authorization")||"");
   if(!h.startsWith("Bearer "))throw new Error("OIDC_REQUIRED");
   const jwt=h.slice(7),parts=jwt.split(".");
@@ -52,7 +52,7 @@ async function githubIdentity(req:Request){
   if(String(claims.repository)!==REPO)throw new Error("OIDC_REPO");
   if(String(claims.ref)!=="refs/heads/main")throw new Error("OIDC_REF");
   const wf=String(claims.workflow_ref||"");
-  if(!wf.includes(REPO+"/"+WORKFLOW_PATH+"@refs/heads/main"))throw new Error("OIDC_WORKFLOW");
+  if(wf!==REPO+"/"+workflowPath+"@refs/heads/main")throw new Error("OIDC_WORKFLOW");
   return claims;
 }
 function localDay(tz:string){
@@ -353,10 +353,26 @@ async function health(){
   return J({ok:true,version:"publisher-free-runtime-supabase-v1",at:now()});
 }
 
+// Owner-restricted productivity data for the dedicated GitHub watchdog.
+// Never return these rows from the public liveness endpoint. The watchdog
+// workflow has read-only database access through a workflow-scoped OIDC token,
+// not access to generation, publication, profile blobs or callback mutations.
+async function privateStatus(){
+  const {data,error}=await db.from("publisher_runtime_publishers")
+    .select("name,enabled,migration_state,last_generation_at,last_publication_at,approved_stock")
+    .order("name");
+  if(error)throw error;
+  return J({ok:true,publishers:data||[]});
+}
+
 Deno.serve(async(req:Request)=>{
   try{
     const u=new URL(req.url),suffix=u.pathname.split("/publisher-free-runtime")[1]||"/";
     if(suffix==="/health"&&req.method==="GET")return await health();
+    if(suffix==="/status"&&req.method==="GET"){
+      await githubIdentity(req,".github/workflows/publisher-productivity-watchdog.yml");
+      return await privateStatus();
+    }
     const claims=await githubIdentity(req);
     if(suffix==="/claim"&&req.method==="POST"){
       const body=await req.json().catch(()=>({}));
