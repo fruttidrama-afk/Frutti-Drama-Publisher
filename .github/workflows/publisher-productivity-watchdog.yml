@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: publisher-productivity-watchdog
@@ -26,5 +27,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24.14.0"
+      - name: Verify watchdog decision rules without any network or video action
+        run: node scripts/publisher-productivity-watchdog.mjs --selftest
       - name: Verify real output rather than scheduled workflow status
         run: node scripts/publisher-productivity-watchdog.mjs
