@@ -2,7 +2,7 @@ import fs from "node:fs";
 
 // Private OIDC-protected endpoint. Public /health intentionally redacts all
 // publisher information; never reverse that privacy fix to satisfy this check.
-const URL = "https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-free-runtime/status";
+const STATUS_URL = "https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-free-runtime/status";
 const AUDIENCE = "publisher-factory-free-runtime";
 const CANONICAL = ["FruttiDrama","EARTH IN 10","Dinnie The Dinosaur"];
 const MAX_GENERATION_GAP_HOURS = 36;
@@ -54,7 +54,7 @@ if(process.argv.includes("--selftest")){
   assert.equal(classify({...base,enabled:false},t).status,"DISABLED");
   assert.equal(classify({...base,name:"New publisher",enabled:false,migration_state:"profile_required"},t).status,"ONBOARDING_DISABLED");
   assert.equal(classify({...base,migration_state:"profile_required"},t).status,"MIGRATION_INCOMPLETE");
-  assert.ok(URL.endsWith("/status")&&!URL.endsWith("/health"));
+  assert.ok(STATUS_URL.endsWith("/status")&&!STATUS_URL.endsWith("/health"));
   const edge=fs.readFileSync(new URL("../supabase/functions/publisher-free-runtime/index.ts",import.meta.url),"utf8");
   const workflow=fs.readFileSync(new URL("../.github/workflows/publisher-productivity-watchdog.yml",import.meta.url),"utf8");
   assert.ok(edge.includes('if(suffix==="/health"&&req.method==="GET")return await health();'));
@@ -69,7 +69,7 @@ if(process.argv.includes("--selftest")){
 }
 try {
   const token=await githubOidcToken();
-  const response = await fetch(URL, {signal: AbortSignal.timeout(15000), headers: {"accept":"application/json","cache-control":"no-cache","authorization":"Bearer "+token}});
+  const response = await fetch(STATUS_URL, {signal: AbortSignal.timeout(15000), headers: {"accept":"application/json","cache-control":"no-cache","authorization":"Bearer "+token}});
   if (!response.ok) throw Error("Health endpoint returned HTTP " + response.status);
   const body = await response.json();
   if (body.ok !== true || !Array.isArray(body.publishers)) throw Error("Invalid health response");
