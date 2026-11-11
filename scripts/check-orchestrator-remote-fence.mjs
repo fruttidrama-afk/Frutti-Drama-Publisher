@@ -118,7 +118,7 @@ console.log('PASS idempotent today-only materialization with preserved historic/
 // Public runtime health must not expose publisher names, errors, status,
 // stock or obligations. Execute the exact production function with a mock DB.
 const healthStart=src.indexOf('async function health(){');
-const healthEnd=src.indexOf('\nDeno.serve(',healthStart);
+const healthEnd=src.indexOf('\n// Owner-restricted productivity',healthStart);
 assert.ok(healthStart>0&&healthEnd>healthStart,'public health implementation present');
 const healthSource=src.slice(healthStart,healthEnd);
 assert.ok(!/last_error|approved_stock|last_generation_at|last_publication_at|obligations|p\.data/.test(healthSource),
@@ -140,5 +140,25 @@ const healthPayload=await healthFn();
 assert.deepEqual(Object.keys(healthPayload).sort(),['at','ok','version'],'health exposes liveness only');
 assert.equal(healthProbes,1,'health performs exactly one read-only database probe');
 console.log('PASS anonymous health privacy and DB liveness; no network calls.');
+// The private watchdog status is deliberately NOT part of public /health.
+// It is exposed only to the dedicated workflow-scoped GitHub OIDC identity.
+assert.match(src,/if\(suffix==="\/status"&&req\.method==="GET"\)\{/);
+assert.match(src,/await githubIdentity\(req,"\.github\/workflows\/publisher-productivity-watchdog\.yml"\)/);
+assert.match(src,/const claims=await githubIdentity\(req\);/,'production mutations still require the runner identity');
+assert.match(src,/if\(wf!==REPO\+"\/"\+workflowPath\+"@refs\/heads\/main"\)/);
+const privateStart=src.indexOf('async function privateStatus(){');
+const privateEnd=src.indexOf('\nDeno.serve(',privateStart);
+assert.ok(privateStart>healthEnd&&privateEnd>privateStart);
+const privateFn=vm.runInNewContext(src.slice(privateStart,privateEnd)+'\nprivateStatus',{
+ db:{from(table){
+  assert.equal(table,'publisher_runtime_publishers');
+  return {select(columns){
+   assert.equal(columns,'name,enabled,migration_state,last_generation_at,last_publication_at,approved_stock');
+   return {order(field){assert.equal(field,'name');return Promise.resolve({data:[{name:'FruttiDrama',enabled:true}],error:null})}};
+  }};
+ }},J:x=>x
+});
+assert.deepEqual(JSON.parse(JSON.stringify(await privateFn())),{ok:true,publishers:[{name:'FruttiDrama',enabled:true}]});
+console.log('PASS OIDC-isolated watchdog status, public health remains redacted; no remote calls.');
 
 console.log('PASS 11 real Edge guard cases: cross-day, cross-kind, publisher isolation, no-charge and fail-closed; zero remote calls.');
