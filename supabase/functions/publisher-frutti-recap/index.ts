@@ -61,7 +61,27 @@ Deno.serve(async(req:Request)=>{
   if(!old&&b.expected_revision!=null)return json({error:"STALE_EDIT_REFRESH_REQUIRED"},409);
   const row={publisher_id:PID,file_index:idx,source_sha256:digest,season,episode,generation_prompt:prompt,prompt_provenance:prompt?"operator_copied_google_flow":"historical_prompt_not_yet_available",title,description,metadata_method:exactLegacy?"legacy_canonical_operator_reviewed":"operator_manual_copy",episode_story_evidence,episode_story_extraction_method,note,record_status:"reconstructed_unapproved",publication_status:"unverified",assigned_by:owner,revision:old?old.revision+1:1,updated_at:new Date().toISOString()};
   const {data:saved,error:saveError}=await admin.from(TABLE).upsert(row,{onConflict:"publisher_id,file_index"}).select("file_index,season,episode,revision,updated_at,title,description").single();
-  if(saveError){if(saveError.code==="23505")return json({error:"EPISODE_ALREADY_ASSIGNED_TO_ANOTHER_VIDEO"},409);return json({error:"RECONSTRUCTED_STOCK_SAVE_FAILED"},503)}
+  if(saveError){
+    // Report diagnostic codes without ever logging the user's unpublished
+    // title, description, Flow prompt or the PostgREST "details" row dump.
+    const code=String(saveError.code||"UNKNOWN");
+    const constraint=String(saveError.message||"").match(/constraint\s+"([a-z0-9_]+)"/i)?.[1]||null;
+    console.error("FRUTTI_RECAP_STOCK_WRITE_REJECTED",JSON.stringify({
+      code,constraint,file_index:idx,season,episode,revision:row.revision,
+      metadata_method:row.metadata_method,prompt_provenance:row.prompt_provenance
+    }));
+    if(code==="23505")return json({
+      error:"EPISODE_ALREADY_ASSIGNED_TO_ANOTHER_VIDEO",
+      hint:"Ese episodio o archivo ya tiene una ficha. No se modificó el texto del formulario."
+    },409);
+    if(code==="23514"||code==="23502")return json({
+      error:"RECONSTRUCTED_STOCK_SCHEMA_MISMATCH",
+      constraint,
+      hint:"Una validación de la base de datos rechazó el guardado. Conservá el título y la descripción en el formulario; no se borraron."
+    },500);
+    return json({error:"RECONSTRUCTED_STOCK_SAVE_FAILED",db_error_code:code,
+      hint:"Falló la conexión o escritura del stock. El formulario conserva los datos; podés intentar nuevamente sin reescribirlos."},503);
+  }
   return json({saved:true,record:saved,reconstructed_stock:true,publication_queue_unchanged:true,media_unmodified:true});
  }catch(_){return json({error:"UNEXPECTED_RECAP_ERROR"},500)}
 });
