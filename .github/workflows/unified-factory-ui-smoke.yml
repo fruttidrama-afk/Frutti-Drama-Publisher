@@ -20,6 +20,8 @@ on:
       - "scripts/flow-unusual-cooldown.mjs"
       - "scripts/check-flow-unusual-cooldown.mjs"
       - "scripts/check-orchestrator-remote-fence.mjs"
+      - "scripts/publisher-productivity-watchdog.mjs"
+      - ".github/workflows/publisher-productivity-watchdog.yml"
       - "supabase/functions/publisher-free-runtime/index.ts"
       - "docs/FLOW_COOLDOWN_EDGE_CONTRACT_2026-11-09.md"
       - "scripts/dispatch-one-flow-cold-check.mjs"
@@ -62,6 +64,8 @@ jobs:
         run: node scripts/check-unified-factory-ui.mjs
       - name: Validate FruttiDrama narrative metadata without production writes
         run: node scripts/test-frutti-copy.mjs
+      - name: Verify OIDC productivity watchdog contract without network
+        run: node scripts/publisher-productivity-watchdog.mjs --selftest
       - name: Validate syntax and anti-spam two-stage publication contract
         run: |
           node --check publication.js
