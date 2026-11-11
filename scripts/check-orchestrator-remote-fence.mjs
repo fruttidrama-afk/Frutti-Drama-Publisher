@@ -8,7 +8,7 @@ const src=fs.readFileSync(new URL('../supabase/functions/publisher-free-runtime/
 const start=src.indexOf('async function unresolvedRemoteMutation(');
 const end=src.indexOf('\nasync function claim(',start);
 assert.ok(start>0&&end>start,'deployed guard must be defined before claim');
-const functionSource=src.slice(start,end).replace('publisherId:string,kind:string','publisherId,kind');
+const functionSource=src.slice(start,end).replace('publisherId:string,kind:string','publisherId,kind').replace('videoId:string,itemId:string','videoId,itemId');
 assert.match(src,/if\(await unresolvedRemoteMutation\(String\(p\.id\),kind\)\)continue;/);
 assert.match(src,/historical_reconciliation_pending===true\)continue;/);
 assert.match(src,/if\(String\(p\.migration_state\|\|""\)!=="ready"\)continue;/,
