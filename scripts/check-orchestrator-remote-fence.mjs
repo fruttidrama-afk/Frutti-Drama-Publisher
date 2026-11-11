@@ -11,6 +11,13 @@ assert.ok(start>0&&end>start,'deployed guard must be defined before claim');
 const functionSource=src.slice(start,end).replace('publisherId:string,kind:string','publisherId,kind');
 assert.match(src,/if\(await unresolvedRemoteMutation\(String\(p\.id\),kind\)\)continue;/);
 assert.match(src,/historical_reconciliation_pending===true\)continue;/);
+assert.match(src,/if\(String\(p\.migration_state\|\|""\)!=="ready"\)continue;/,
+  'only independently validated ready publishers can be claimed');
+assert.doesNotMatch(src,/\["ready","profile_uploaded","auth_verified"\]\.includes\(migrationState\)/,
+  'scheduler must not auto-promote unverified publisher profiles');
+assert.doesNotMatch(src,/p\.migration_state="ready"/,
+  'claim cannot mutate migration state without a cold restore');
+
 assert.match(src,/LEASE_EXPIRED_REMOTE_RECONCILIATION_REQUIRED/);
 assert.match(src,/\.eq\("status","pending"\)\.eq\("last_error","RUNNER_LEASE_EXPIRED"\)/);
 
