@@ -24,24 +24,39 @@ const checks=[
 for(const [name,pass] of checks){assert.ok(pass,'FAILED: '+name);console.log('PASS '+name)}
 console.log('PASS '+checks.length+' static safety invariants; no network calls, uploads, or generation.');
 
+const identityStart=worker.indexOf('function verifiedYoutubeStageIdentityFromRows(');
+const identityEnd=worker.indexOf('\nfunction youtubePrivateStageIdentity(',identityStart);
+assert.ok(identityStart>0&&identityEnd>identityStart,'YouTube remote identity extractor exists');
+const identityFn=vm.runInNewContext(worker.slice(identityStart,identityEnd)+'\nverifiedYoutubeStageIdentityFromRows');
+const video='abCDeF123_-',item='11111111-1111-4111-8111-111111111111';
+const row={id:item,videoId:video,remoteStatusCheckedAt:'2026-11-11T15:31:00Z',remotePublishAt:null};
+const stage={remote_video_id:video,remote_item_id:item};
+assert.equal(JSON.stringify(identityFn([row])),JSON.stringify(stage),'one remotely checked private stage is identified');
+for(const rows of [[],[row,row],[{...row,videoId:'wrong'}],[{...row,id:'not-a-uuid'}],[{...row,remoteStatusCheckedAt:null}],[{...row,remotePublishAt:'2026-11-11T22:00:00Z'}]])
+ assert.equal(identityFn(rows),null,'ambiguous, unverified or scheduled stage must fail closed');
 const safetyStart=worker.indexOf('function youtubeStagingSafety(');
 const safetyEnd=worker.indexOf('\nfunction killTree(',safetyStart);
 assert.ok(safetyStart>0&&safetyEnd>safetyStart,'pre-worker YouTube stage identity guard exists');
 const safety=vm.runInNewContext(worker.slice(safetyStart,safetyEnd)+'\nyoutubeStagingSafety');
-for(const [kind,platform,clock,count,expected] of [
- ['publication','youtube','12:30',0,null],
- ['publication','youtube','12:59',0,null],
- ['publication','youtube','12:30',1,'YOUTUBE_PREEXISTING_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
- ['publication','youtube','12:45',2,'YOUTUBE_PREEXISTING_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
- ['publication','youtube','19:00',1,null],
- ['publication','youtube','19:00',0,'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
- ['publication','youtube','19:00',2,'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
- ['publication','youtube','23:59',1,null],
- ['publication','facebook','19:00',0,null],
- ['generation','youtube','12:30',1,null],
- ['publication','youtube','12:30',NaN,'YOUTUBE_PRIVATE_STAGE_METRIC_INVALID_RECONCILIATION_REQUIRED']
-])assert.equal(safety(kind,platform,clock,count),expected,'YouTube preflight '+clock+' count='+count);
+for(const [kind,platform,clock,count,identity,obligation,expected] of [
+ ['publication','youtube','12:30',0,null,null,null],
+ ['publication','youtube','12:59',0,null,null,null],
+ ['publication','youtube','12:30',1,null,null,'YOUTUBE_PREEXISTING_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
+ ['publication','youtube','12:45',2,null,null,'YOUTUBE_PREEXISTING_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
+ ['publication','youtube','19:00',1,stage,stage,null],
+ ['publication','youtube','19:00',1,null,stage,'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
+ ['publication','youtube','19:00',1,stage,null,'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
+ ['publication','youtube','19:00',1,stage,{...stage,remote_video_id:'different01'},'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
+ ['publication','youtube','19:00',1,stage,{...stage,remote_item_id:'22222222-2222-4222-8222-222222222222'},'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
+ ['publication','youtube','19:00',0,stage,stage,'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
+ ['publication','youtube','19:00',2,stage,stage,'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
+ ['publication','youtube','23:59',1,stage,stage,null],
+ ['publication','facebook','19:00',0,null,null,null],
+ ['generation','youtube','12:30',1,null,null,null],
+ ['publication','youtube','12:30',NaN,null,null,'YOUTUBE_PRIVATE_STAGE_METRIC_INVALID_RECONCILIATION_REQUIRED']
+])assert.equal(safety(kind,platform,clock,count,identity,obligation),expected,'YouTube preflight '+clock+' count='+count);
 assert.ok(worker.indexOf('const stagedSafety=youtubeStagingSafety(')<worker.indexOf("child=spawn('npm'"),'identity guard runs BEFORE any publication child starts');
 assert.ok(worker.includes('last.privateStaged>baseline.privateStaged'),'new PRIVATE stage must be observed, not a preexisting tile');
 assert.ok(worker.includes("YOUTUBE_MULTIPLE_PRIVATE_STAGES_REMOTE_ID_RECONCILIATION_REQUIRED"),'multiple staged videos require reconciliation');
-console.log('PASS 11 pre-worker YouTube stage identity cases; prevents duplicate upload and wrong-video release, no remote calls.');
+assert.ok(worker.includes("error:'YOUTUBE_PRIVATE_STAGED_WAITING_19',...stageIdentity"),'12:30 callback persists exact ID');
+console.log('PASS 15 pre-worker identity cases and 7 extraction guards; no network, upload or video actions.');

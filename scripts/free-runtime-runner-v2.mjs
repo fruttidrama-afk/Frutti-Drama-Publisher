@@ -143,12 +143,41 @@ function metrics(){
 // PRIVATE YouTube stage cannot be bound to exactly one durable obligation.
 // A private tile from an older/unknown attempt is not proof that THIS claim
 // staged a new video; never upload again to discover which one it was.
-function youtubeStagingSafety(kind,platform,clock,privateStaged){
+
+function verifiedYoutubeStageIdentityFromRows(rows){
+  if(!Array.isArray(rows)||rows.length!==1)return null;
+  const r=rows[0]||{},videoId=String(r.videoId||''),itemId=String(r.id||'');
+  if(!/^[A-Za-z0-9_-]{11}$/.test(videoId)||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(itemId))return null;
+  // A local PRIVATE flag alone is not evidence. Require a successful
+  // remote status read and refuse legacy YouTube publishAt.
+  if(!String(r.remoteStatusCheckedAt||'').trim()||String(r.remotePublishAt||'').trim())return null;
+  return{remote_video_id:videoId,remote_item_id:itemId};
+}
+function youtubePrivateStageIdentity(){
+  const file=dbPath();if(!fs.existsSync(file))return null;
+  const db=new DatabaseSync(file,{timeout:5000,readOnly:true});
+  try{
+    if(!tableExists(db,'publication_items'))return null;
+    const cols=new Set(db.prepare('PRAGMA table_info(publication_items)').all().map(c=>String(c.name)));
+    if(!['id','videoId','remotePrivacyStatus','remoteStatusCheckedAt','remotePublishAt','scheduledAt','status'].every(k=>cols.has(k)))return null;
+    const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Argentina/Buenos_Aires',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+    const day=Object.fromEntries(parts.filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
+    const today=day.year+'-'+day.month+'-'+day.day;
+    const provider=cols.has('provider')?" AND COALESCE(provider,'youtube')='youtube'":"";
+    const rows=db.prepare("SELECT id,videoId,remoteStatusCheckedAt,remotePublishAt FROM publication_items WHERE videoId IS NOT NULL AND remotePrivacyStatus='private' AND substr(scheduledAt,1,10)=? AND status NOT IN ('published','cancelled','deleted')"+provider).all(today);
+    return verifiedYoutubeStageIdentityFromRows(rows);
+  }finally{db.close()}
+}
+function youtubeStagingSafety(kind,platform,clock,privateStaged,identity=null,obligation=null){
   if(kind!=='publication'||String(platform||'').toLowerCase()!=='youtube')return null;
   const n=Number(privateStaged);
   if(!Number.isSafeInteger(n)||n<0)return 'YOUTUBE_PRIVATE_STAGE_METRIC_INVALID_RECONCILIATION_REQUIRED';
   if(clock>='12:30'&&clock<'13:00'&&n!==0)return 'YOUTUBE_PREEXISTING_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED';
-  if(clock>='19:00'&&n!==1)return 'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED';
+  if(clock>='19:00'){
+    if(n!==1)return 'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED';
+    if(!identity||!obligation||identity.remote_video_id!==String(obligation.remote_video_id||'')||identity.remote_item_id!==String(obligation.remote_item_id||''))
+      return 'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED';
+  }
   return null;
 }
 function killTree(child){
@@ -343,7 +372,7 @@ try{
 
   const baseline=metrics();
   const localClock=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Argentina/Buenos_Aires',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
-  const stagedSafety=youtubeStagingSafety(kind,p.platform,localClock,baseline.privateStaged);
+  const stagedSafety=youtubeStagingSafety(kind,p.platform,localClock,baseline.privateStaged,youtubePrivateStageIdentity(),o);
   if(stagedSafety){
     await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',error:stagedSafety,approved_stock:baseline.stock});
     console.error(stagedSafety+'; no YouTube upload or privacy mutation attempted.');
@@ -465,7 +494,15 @@ try{
     process.exit(0);
   }
   if(privateStagedWait){
-    await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',error:'YOUTUBE_PRIVATE_STAGED_WAITING_19',approved_stock:last.stock});
+    const stageIdentity=youtubePrivateStageIdentity();
+    if(!stageIdentity){
+      await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',
+        error:'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED',approved_stock:last.stock});
+      console.error('PRIVATE stage not tied to one remotely verified YouTube video and publication row; release frozen.');
+      process.exit(0);
+    }
+    await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',
+      error:'YOUTUBE_PRIVATE_STAGED_WAITING_19',...stageIdentity,approved_stock:last.stock});
     console.log('YouTube private staging verified. Will explicitly change privacy at 19:00 ART; no new upload permitted.');
     process.exit(0);
   }

@@ -86,6 +86,10 @@ assert.equal(evaluatePhase('19:00',facebook(1)).due,true,'Facebook schedule stil
 assert.match(src,/const youtubePhase=kind==="publication"/,'claim distinguishes YouTube phases');
 assert.match(src,/if\(!q\.data && youtubePhase!=="release"\)\{/,'19:00 may never claim fresh pending upload');
 assert.match(src,/if\(!q\.data && youtubePhase==="release"\)\{/,'19:00 reclaims staged PRIVATE video');
+assert.match(src,/if\(youtubePhase==="release"&&!validYoutubeStageIdentity\(/,'19:00 requires exact saved remote identity');
+assert.match(src,/YOUTUBE_STAGE_IDENTITY_PROOF_REQUIRED/,'12:30 callback requires verified video ID and SQLite item ID');
+assert.match(src,/stageProof\.remote_video_id=remoteVideoId/,'stage ID is saved durably on obligation');
+assert.match(src,/YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED/,'legacy or mismatched release is frozen');
 assert.match(src,/\.eq\("status","blocked"\)\.eq\("last_error","YOUTUBE_PRIVATE_STAGED_WAITING_19"\)/,'only exact staged obligation is eligible');
 console.log('PASS 11 mocked YouTube/Facebook clock-stock cases plus four phase fences; zero remote calls.');
 // Exercise the exact Edge materializer without a network connection.

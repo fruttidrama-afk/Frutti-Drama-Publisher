@@ -161,6 +161,9 @@ async function unresolvedRemoteMutation(publisherId:string,kind:string){
   if(legacy.error)throw legacy.error;
   return (legacy.data||[]).length>0;
 }
+function validYoutubeStageIdentity(videoId:string,itemId:string){
+  return /^[A-Za-z0-9_-]{11}$/.test(videoId)&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(itemId);
+}
 async function claim(filterPublisher="",filterKind=""){
   await releaseExpired();await materialize();
   const {data:pubs,error}=await db.from("publisher_runtime_publishers").select("*").eq("enabled",true)
@@ -234,6 +237,15 @@ async function claim(filterPublisher="",filterKind=""){
         if(q.error)throw q.error;
       }
       if(!q.data)continue;
+      // A count of one PRIVATE video is insufficient: the 19:00 release must
+      // refer to the exact video and SQLite publication row saved at 12:30.
+      if(youtubePhase==="release"&&!validYoutubeStageIdentity(String(q.data.remote_video_id||""),String(q.data.remote_item_id||""))){
+        const quarantine=await db.from("publisher_runtime_obligations").update({
+          last_error:"YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED",updated_at:now()
+        }).eq("id",q.data.id).eq("status","blocked");
+        if(quarantine.error)throw quarantine.error;
+        continue;
+      }
       // Defensive migration: old builds requeued expired/ambiguous work as
       // pending with RUNNER_LEASE_EXPIRED. Freeze these rows rather than
       // executing a possibly duplicate Flow Generate or YouTube upload.
@@ -279,7 +291,14 @@ async function callback(body:any){
   }
   if(o.kind==="generation"&&status==="blocked"&&err==="FLOW_UNUSUAL_ACTIVITY_COOLDOWN")
     await recordUnusualActivity(o,claimId,body);
-  const u=await db.from("publisher_runtime_obligations").update({status,lease_until:lease,last_error:err,updated_at:now()}).eq("id",id).eq("claim_id",claimId);
+  const stageProof:any={};
+  if(o.kind==="publication"&&status==="blocked"&&err==="YOUTUBE_PRIVATE_STAGED_WAITING_19"){
+    const remoteVideoId=String(body.remote_video_id||""),remoteItemId=String(body.remote_item_id||"");
+    if(!validYoutubeStageIdentity(remoteVideoId,remoteItemId))throw new Error("YOUTUBE_STAGE_IDENTITY_PROOF_REQUIRED");
+    stageProof.remote_video_id=remoteVideoId;
+    stageProof.remote_item_id=remoteItemId;
+  }
+  const u=await db.from("publisher_runtime_obligations").update({status,lease_until:lease,last_error:err,updated_at:now(),...stageProof}).eq("id",id).eq("claim_id",claimId);
   if(u.error)throw u.error;
 
   if(o.kind==="generation" && status==="blocked" && err==="WAITING_DAILY_FLOW_CREDIT_REFRESH"){
