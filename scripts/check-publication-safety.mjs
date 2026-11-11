@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 
 const read=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 const yt=read('publication.js');
@@ -22,3 +23,25 @@ const checks=[
 ];
 for(const [name,pass] of checks){assert.ok(pass,'FAILED: '+name);console.log('PASS '+name)}
 console.log('PASS '+checks.length+' static safety invariants; no network calls, uploads, or generation.');
+
+const safetyStart=worker.indexOf('function youtubeStagingSafety(');
+const safetyEnd=worker.indexOf('\nfunction killTree(',safetyStart);
+assert.ok(safetyStart>0&&safetyEnd>safetyStart,'pre-worker YouTube stage identity guard exists');
+const safety=vm.runInNewContext(worker.slice(safetyStart,safetyEnd)+'\nyoutubeStagingSafety');
+for(const [kind,platform,clock,count,expected] of [
+ ['publication','youtube','12:30',0,null],
+ ['publication','youtube','12:59',0,null],
+ ['publication','youtube','12:30',1,'YOUTUBE_PREEXISTING_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
+ ['publication','youtube','12:45',2,'YOUTUBE_PREEXISTING_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
+ ['publication','youtube','19:00',1,null],
+ ['publication','youtube','19:00',0,'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
+ ['publication','youtube','19:00',2,'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED'],
+ ['publication','youtube','23:59',1,null],
+ ['publication','facebook','19:00',0,null],
+ ['generation','youtube','12:30',1,null],
+ ['publication','youtube','12:30',NaN,'YOUTUBE_PRIVATE_STAGE_METRIC_INVALID_RECONCILIATION_REQUIRED']
+])assert.equal(safety(kind,platform,clock,count),expected,'YouTube preflight '+clock+' count='+count);
+assert.ok(worker.indexOf('const stagedSafety=youtubeStagingSafety(')<worker.indexOf("child=spawn('npm'"),'identity guard runs BEFORE any publication child starts');
+assert.ok(worker.includes('last.privateStaged>baseline.privateStaged'),'new PRIVATE stage must be observed, not a preexisting tile');
+assert.ok(worker.includes("YOUTUBE_MULTIPLE_PRIVATE_STAGES_REMOTE_ID_RECONCILIATION_REQUIRED"),'multiple staged videos require reconciliation');
+console.log('PASS 11 pre-worker YouTube stage identity cases; prevents duplicate upload and wrong-video release, no remote calls.');
