@@ -175,15 +175,12 @@ async function claim(filterPublisher="",filterKind=""){
     // migration. Never spend free Flow credits from an unverified episode
     // mapping, even when a Google login itself has been verified.
     if(p.config?.automation?.historical_reconciliation_pending===true)continue;
-    const migrationState=String(p.migration_state||"");
-    if(!["ready","profile_uploaded","auth_verified"].includes(migrationState))continue;
-    if(migrationState!=="ready"){
-      const promote=await db.from("publisher_runtime_publishers")
-        .update({migration_state:"ready",updated_at:now()})
-        .eq("id",p.id).eq("enabled",true);
-      if(promote.error)throw promote.error;
-      p.migration_state="ready";
-    }
+    // Fail closed: only an explicit, independently verified migration can
+    // transition a publisher to ready. A scheduler claim must NEVER promote
+    // profile_uploaded or auth_verified into ready on its own. In particular,
+    // a new publisher with no Flow project/cold-restore evidence cannot become
+    // production-eligible merely by setting an intermediate state.
+    if(String(p.migration_state||"")!=="ready")continue;
     const active=await db.from("publisher_runtime_obligations").select("id").eq("publisher_id",p.id).in("status",["claimed","running"]).limit(1).maybeSingle();
     if(active.error)throw active.error;
     if(active.data)continue;
