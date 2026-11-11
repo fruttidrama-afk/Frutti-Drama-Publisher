@@ -139,6 +139,18 @@ function metrics(){
     return{generation,publication,stock,review,privateStaged};
   }finally{db.close()}
 }
+// Fail closed before launching a publication worker when the local-day
+// PRIVATE YouTube stage cannot be bound to exactly one durable obligation.
+// A private tile from an older/unknown attempt is not proof that THIS claim
+// staged a new video; never upload again to discover which one it was.
+function youtubeStagingSafety(kind,platform,clock,privateStaged){
+  if(kind!=='publication'||String(platform||'').toLowerCase()!=='youtube')return null;
+  const n=Number(privateStaged);
+  if(!Number.isSafeInteger(n)||n<0)return 'YOUTUBE_PRIVATE_STAGE_METRIC_INVALID_RECONCILIATION_REQUIRED';
+  if(clock>='12:30'&&clock<'13:00'&&n!==0)return 'YOUTUBE_PREEXISTING_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED';
+  if(clock>='19:00'&&n!==1)return 'YOUTUBE_STAGED_PRIVATE_REMOTE_ID_RECONCILIATION_REQUIRED';
+  return null;
+}
 function killTree(child){
   if(!child?.pid)return;
   try{process.kill(-child.pid,'SIGTERM')}catch{}
@@ -330,6 +342,13 @@ try{
   }
 
   const baseline=metrics();
+  const localClock=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Argentina/Buenos_Aires',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
+  const stagedSafety=youtubeStagingSafety(kind,p.platform,localClock,baseline.privateStaged);
+  if(stagedSafety){
+    await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',error:stagedSafety,approved_stock:baseline.stock});
+    console.error(stagedSafety+'; no YouTube upload or privacy mutation attempted.');
+    process.exit(0);
+  }
   const fd=fs.openSync(LOG,'a');
   const env={
     ...process.env,
@@ -364,7 +383,8 @@ try{
         break;
       }
     }
-    if(kind==='publication'&&String(p.platform||'')==='youtube'&&last.privateStaged>0){
+    if(kind==='publication'&&String(p.platform||'').toLowerCase()==='youtube'&&last.privateStaged>baseline.privateStaged){
+      if(last.privateStaged!==1){childFatal='YOUTUBE_MULTIPLE_PRIVATE_STAGES_REMOTE_ID_RECONCILIATION_REQUIRED';break}
       const h=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Argentina/Buenos_Aires',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
       if(h<'19:00'){privateStagedWait=true;break}
     }
