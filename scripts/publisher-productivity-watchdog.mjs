@@ -55,7 +55,16 @@ if(process.argv.includes("--selftest")){
   assert.equal(classify({...base,name:"New publisher",enabled:false,migration_state:"profile_required"},t).status,"ONBOARDING_DISABLED");
   assert.equal(classify({...base,migration_state:"profile_required"},t).status,"MIGRATION_INCOMPLETE");
   assert.ok(URL.endsWith("/status")&&!URL.endsWith("/health"));
-  console.log("PASS 9 watchdog checks: authenticated status, no false success, safe onboarding; no network or production actions");
+  const edge=fs.readFileSync(new URL("../supabase/functions/publisher-free-runtime/index.ts",import.meta.url),"utf8");
+  const workflow=fs.readFileSync(new URL("../.github/workflows/publisher-productivity-watchdog.yml",import.meta.url),"utf8");
+  assert.ok(edge.includes('if(suffix==="/health"&&req.method==="GET")return await health();'));
+  assert.ok(edge.includes('if(suffix==="/status"&&req.method==="GET"){'));
+  assert.ok(edge.includes('await githubIdentity(req,".github/workflows/publisher-productivity-watchdog.yml")'));
+  assert.ok(edge.includes('const claims=await githubIdentity(req);'),"runner retains distinct mutation authorization");
+  assert.ok(edge.includes('if(wf!==REPO+"/"+workflowPath+"@refs/heads/main")'));
+  assert.ok(!edge.slice(edge.indexOf("async function health(){"),edge.indexOf("// Owner-restricted productivity")).includes("publishers:"));
+  assert.ok(workflow.includes("id-token: write"));
+  console.log("PASS 16 watchdog checks: private OIDC status, mutation isolation, no false success, safe onboarding; no network or production actions");
   process.exit(0);
 }
 try {
