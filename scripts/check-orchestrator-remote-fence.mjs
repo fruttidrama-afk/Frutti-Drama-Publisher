@@ -63,7 +63,7 @@ await assert.rejects(()=>run([], 'dinnie','generation',true),/DATABASE_READ_FAIL
 const phaseStart=src.indexOf('function youtubePublicationPhase(');
 const phaseEnd=src.indexOf('\nconst FLOW_BACKOFF_MINUTES',phaseStart);
 assert.ok(phaseStart>0&&phaseEnd>phaseStart,'YouTube two-stage functions are present');
-const phaseSource=src.slice(phaseStart,phaseEnd).replaceAll('p:any','p');
+const phaseSource=src.slice(phaseStart,phaseEnd).replaceAll('p:any','p').replace('videoId:string,itemId:string','videoId,itemId');
 function evaluatePhase(clock,p){
  const functions=vm.runInNewContext(phaseSource+'\n({youtubePublicationPhase,publicationDue})',{localClock:()=>clock});
  return {phase:functions.youtubePublicationPhase(p),due:functions.publicationDue(p)};
