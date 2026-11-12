@@ -121,10 +121,14 @@ function publicationDue(p:any){
   return clock>=posted;
 }
 const FLOW_BACKOFF_MINUTES=[30,60,120,240,480,1440] as const;
-async function flowCooldown(publisherId:string){
+async function flowCooldown(_publisherId:string){
+ // A no-charge rejection by ANY show freezes all Flow generations.
+ // Read the factory-wide latest deadline, including a show added later.
  const x=await db.from("publisher_runtime_flow_cooldowns")
   .select("streak,not_before,last_alert_at,last_alert_claim_id,status")
-  .eq("publisher_id",publisherId).maybeSingle();
+  .neq("status","clear")
+  .order("not_before",{ascending:false,nullsFirst:false})
+  .limit(1).maybeSingle();
  if(x.error)throw x.error;
  return x.data;
 }
@@ -308,10 +312,11 @@ async function callback(body:any){
     if(siblings.error)throw siblings.error;
   }
   if(o.kind==="generation" && status==="completed"){
-    const clear=await db.from("publisher_runtime_flow_cooldowns").update({
-      streak:0,not_before:null,last_alert_at:null,last_alert_claim_id:null,
-      status:"clear",updated_at:now()
-    }).eq("publisher_id",o.publisher_id);
+    // Clear the GLOBAL streak only after a confirmed newer generation.
+    // A stale in-flight success cannot erase another show's newer alert.
+    const clear=await db.rpc("publisher_flow_clear_after_success",{
+      p_publisher_id:o.publisher_id,p_claim_id:claimId,p_claimed_at:o.claimed_at
+    });
     if(clear.error)throw clear.error;
     const reopen=await db.from("publisher_runtime_obligations").update({
       status:"pending",last_error:null,claim_id:null,claimed_at:null,lease_until:null,updated_at:now()
