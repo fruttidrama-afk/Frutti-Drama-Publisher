@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 import {flowNoChargeDelayMs,flowNoChargeDeadline,FLOW_NO_CHARGE_BACKOFF_MINUTES} from './flow-unusual-cooldown.mjs';
 const repoFile=p=>fs.readFileSync(new URL('../'+p,import.meta.url),'utf8');
 
@@ -52,4 +53,50 @@ for(const [label,ok] of [
 ]){
  assert.ok(ok,'FAILED '+label); console.log('PASS',label);
 }
+
+const globalMigration=repoFile('supabase/migrations/20261112_flow_factory_global_no_charge_cooldown.sql');
+// A per-publisher cooldown is NOT a global pause: an alert from Earth must
+// block Frutti and Dinnie, and successive alerts must share one streak.
+assert.match(globalMigration,/pg_advisory_xact_lock\(20261112, 91341\)/,'one global transaction lock');
+assert.match(globalMigration,/SELECT COALESCE\(MAX\(c\.streak\),0\),MAX\(c\.not_before\)/,'global streak and deadline');
+assert.match(globalMigration,/UPDATE public\.publisher_runtime_flow_cooldowns c\s+SET streak=next_streak/,'global fan-out to all shows');
+assert.match(globalMigration,/SELECT id,0,'clear',now\(\) FROM public\.publisher_runtime_publishers/,'include all existing publishers');
+assert.match(globalMigration,/WHEN next_streak=1 THEN 30/);
+assert.match(globalMigration,/WHEN next_streak=2 THEN 60/);
+assert.match(globalMigration,/WHEN next_streak=3 THEN 120/);
+assert.match(globalMigration,/WHEN next_streak=4 THEN 240/);
+assert.match(globalMigration,/WHEN next_streak=5 THEN 480/);
+assert.match(globalMigration,/ELSE 1440 END/);
+assert.match(globalMigration,/p_claimed_at <= latest_alert/,'stale completion cannot erase newer pause');
+assert.match(globalMigration,/o\.kind='generation' AND o\.status='completed'/,'reset requires completed generation');
+assert.match(globalMigration,/REVOKE ALL ON FUNCTION public\.publisher_flow_clear_after_success\(uuid,uuid,timestamptz\) FROM PUBLIC, anon, authenticated/);
+assert.match(globalMigration,/GRANT EXECUTE ON FUNCTION public\.publisher_flow_clear_after_success\(uuid,uuid,timestamptz\) TO service_role/);
+const cooldownStart=edge.indexOf('async function flowCooldown(');
+const cooldownEnd=edge.indexOf('\nasync function recordUnusualActivity(',cooldownStart);
+assert.ok(cooldownStart>0&&cooldownEnd>cooldownStart,'global cooldown reader present');
+const globalReader=edge.slice(cooldownStart,cooldownEnd).replace('_publisherId:string','_publisherId');
+assert.doesNotMatch(globalReader,/\.eq\("publisher_id"/,'must not filter by current show');
+assert.match(globalReader,/\.order\("not_before",\{ascending:false,nullsFirst:false\}\)/,'choose longest factory-wide deadline');
+let reads=0;
+const globalRead=vm.runInNewContext(globalReader+'\nflowCooldown',{
+ db:{from(table){
+  assert.equal(table,'publisher_runtime_flow_cooldowns');
+  return {
+   select(){return this},
+   neq(k,v){assert.equal(k,'status');assert.equal(v,'clear');return this},
+   order(k,opts){assert.equal(k,'not_before');assert.equal(opts.ascending,false);return this},
+   limit(n){assert.equal(n,1);return this},
+   maybeSingle(){reads++;return Promise.resolve({data:{streak:2,not_before:'2026-11-12T23:00:00Z',status:'cooldown'},error:null})}
+  };
+ }}
+});
+for(const publisher of ['frutti','earth','dinnie','new-publisher']){
+ const result=await globalRead(publisher);
+ assert.equal(result.streak,2,'all publishers see the same global streak');
+ assert.equal(result.not_before,'2026-11-12T23:00:00Z');
+}
+assert.equal(reads,4,'every show consults the global deadline');
+assert.match(edge,/db\.rpc\("publisher_flow_clear_after_success"/,'successful generation uses guarded global reset');
+console.log('PASS factory-wide no-charge clock: four mocked publishers, global 30m→24h streak, stale-safe reset, service-role only.');
+
 console.log('PASS account-wide 30m,1h,2h,4h,8h,24h+ schedule; 24h repeats, no skip, no video calls');
