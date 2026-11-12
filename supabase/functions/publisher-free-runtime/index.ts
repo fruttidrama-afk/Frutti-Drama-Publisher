@@ -328,6 +328,11 @@ async function callback(body:any){
   if(p.error)throw p.error;
   return {ok:true};
 }
+function nextMigrationStateAfterProfileUpload(current:string){
+  if(current==="ready")return "ready";
+  if(current==="auth_verified")return "auth_verified";
+  return "profile_uploaded";
+}
 function objectPath(id:string,type:string){return id+"/"+type+".tgz"}
 async function blob(req:Request,id:string,type:string){
   if(!["state","profile"].includes(type))return J({error:"bad blob type"},400);
@@ -348,9 +353,11 @@ async function blob(req:Request,id:string,type:string){
     if(type==="profile"){
       const cur=await db.from("publisher_runtime_publishers").select("enabled,migration_state").eq("id",id).maybeSingle();
       if(cur.error)throw cur.error;
-      const next=cur.data?.enabled===true && ["ready","profile_uploaded","auth_verified"].includes(String(cur.data?.migration_state||""))
-        ? "ready"
-        : "profile_uploaded";
+      // A profile blob is only evidence of bytes uploaded, not of a verified
+      // Google session or an exact-project cold restore. Preserve an existing
+      // independently verified ready state, but never promote an intermediate
+      // state to ready merely because a runner uploaded a profile.
+      const next=nextMigrationStateAfterProfileUpload(String(cur.data?.migration_state||""));
       const upd=await db.from("publisher_runtime_publishers").update({migration_state:next,updated_at:now()}).eq("id",id);
       if(upd.error)throw upd.error;
     }
