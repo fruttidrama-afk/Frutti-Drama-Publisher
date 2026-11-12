@@ -97,3 +97,44 @@ No paid credits, TinyFish, operative Railway, test generations, test publication
 - Remaining gates: verified YouTube/Meta OAuth identities and permissions, historical video/prompt reconciliation, Review-to-Stock approval, actual complete YouTube PRIVATE 12:30 ART -> same ID PUBLIC 19:00 ART and Facebook one-approved/day cycles, reliable scheduling, and new-publisher cold-restore/activation. Direct public HTTP reachability of the Edge could not be independently tested from the execution environment (DNS unavailable); live source/deployment state and CI were verified via connectors. Do not infer end-to-end success.
 - No paid credit, TinyFish, operative Railway, test video generation, test publication, ambiguous remote retry, original-media modification, or historical pause release.
 
+## Recovery continuation — 12 November 2026, 19:36 ART (22:36 UTC)
+- Re-read live GitHub `main`, Actions logs, Supabase tables, obligations,
+  incidents, inventory, migration state, Flow bootstrap records and Edge
+  source. At the start of this run `main` was `352071ec`, Edge v19.
+  The most recent scheduled runtime [43317907247](https://github.com/fruttidrama-afk/Frutti-Drama-Publisher/actions/runs/43317907247)
+  ended at 22:13:57 UTC with `No durable obligation is due` and all
+  three reconnection dispatches idle. No completed generation or
+  publication can be inferred.
+- **Fixed a real cross-publisher safety gap:** the existing
+  `publisher_flow_record_no_charge` RPC and `flowCooldown(publisherId)`
+  were scoped to one publisher, despite the operator's **GLOBAL** Flow
+  no-charge backoff. A confirmed alert on Earth could therefore leave
+  Dinnie eligible. Added
+  [factory-global migration](../supabase/migrations/20261112_flow_factory_global_no_charge_cooldown.sql):
+  one serialized shared 30m→1h→2h→4h→8h→24h streak/deadline,
+  mirrored to all publishers for UI, with a stale-safe global reset only
+  after a newer confirmed completed generation. No automatic retry, REDO
+  bypass, paid-credit use or test Flow submit was introduced. A new
+  publisher also sees the global deadline via the Edge read.
+- [CI 43321340997](https://github.com/fruttidrama-afk/Frutti-Drama-Publisher/actions/runs/43321340997)
+  passed including four mocked publisher identities and the existing
+  anti-duplication, Flow security and publication contract tests. Applied
+  the migration successfully to Supabase and deployed
+  `publisher-free-runtime` **v20**; fetched live source and confirmed
+  byte-for-byte match with GitHub. Both cooldown RPCs are serialized
+  and executable by `service_role` but **not** by `anon` or
+  `authenticated`. No cooldown rows or incident data were fabricated.
+- Post-deployment live state: three original publishers still `ready`
+  with `approved_stock=0` and NULL generation/publication timestamps;
+  Frutti `historical_reconciliation_pending=true`. The 6 unresolved
+  stock/backup incidents and legacy ambiguous obligations remain intact.
+  Inventory source archives remain older than the 12 November read;
+  Frutti 6 Review/9 drafts, Earth and Dinnie 9 drafts each, all
+  migrated stock zero. Three November 10 fresh-runner cold restores
+  remain verified, including Earth; no new login evidence was created.
+- OAuth YouTube/Meta, real Review→Stock→publication, new publisher
+  activation, exact YouTube 12:30 PRIVATE→19:00 same-ID PUBLIC and
+  Dinnie one-approved-Reel/day remain unverified. GitHub scheduled
+  execution timing is still unreliable. No Google Flow Generate,
+  test video, upload, remote ambiguous retry, paid credit, TinyFish,
+  operative Railway, historical media change or pause release occurred.
