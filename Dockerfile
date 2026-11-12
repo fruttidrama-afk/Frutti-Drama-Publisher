@@ -15,7 +15,9 @@ RUN npm install --omit=dev
 COPY unattended-supervisor.js runtime-config.js runtime-init.js free-browser-provider.js flow-bootstrap.js server.js publication.js publication-facebook.js publication-copy.js frutti-creative-package.js frutti-autonomous-source.js review-storage.js publisher-selftest.mjs facebook-publication-selftest.mjs verify-runtime-contract.mjs runtime-fresh-start-selftest.mjs publisher.config.schema.json ./
 COPY scripts/flow-security-signals.mjs scripts/flow-unusual-cooldown.mjs ./scripts/
 COPY GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md GOOGLE_FLOW_AUTOMATION_SOP.json FLOW_AI_IMPLEMENTATION_BRIEF.md FLOW_RECOVERY_RUNBOOK.md FLOW_GOLDEN_TEST.md FLOW_FAILURE_CATALOG.md FLOW_CHANGELOG.md FLOW_SOP_KNOWLEDGE_MANIFEST.json ./
-RUN node --check unattended-supervisor.js \
+RUN node --check scripts/flow-unusual-cooldown.mjs \
+  && node --check scripts/flow-security-signals.mjs \
+  && node --check unattended-supervisor.js \
   && node --check runtime-config.js \
   && node --check runtime-init.js \
   && node --check free-browser-provider.js \
