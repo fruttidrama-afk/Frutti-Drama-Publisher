@@ -18,6 +18,25 @@ assert.doesNotMatch(src,/\["ready","profile_uploaded","auth_verified"\]\.include
 assert.doesNotMatch(src,/p\.migration_state="ready"/,
   'claim cannot mutate migration state without a cold restore');
 
+// A profile PUT must not bypass cold-restore verification. Exercise the exact
+// Edge state-transition helper with no network, profile or production writes.
+const migrationStart=src.indexOf('function nextMigrationStateAfterProfileUpload(');
+const migrationEnd=src.indexOf('\nfunction objectPath(',migrationStart);
+assert.ok(migrationStart>0&&migrationEnd>migrationStart,'profile upload gate must exist');
+const migrationSource=src.slice(migrationStart,migrationEnd).replace('current:string','current');
+const migrationFn=vm.runInNewContext(migrationSource+'\nnextMigrationStateAfterProfileUpload');
+for(const [before,after] of [
+ ['profile_required','profile_uploaded'],
+ ['profile_uploaded','profile_uploaded'],
+ ['auth_verified','auth_verified'],
+ ['ready','ready'],
+ ['','profile_uploaded'],
+ ['unknown','profile_uploaded']
+])assert.equal(migrationFn(before),after,'profile upload cannot grant ready from '+before);
+assert.match(src,/const next=nextMigrationStateAfterProfileUpload\(String\(cur\.data\?\.migration_state\|\|""\)\)/,
+ 'profile PUT must call the guarded state-transition helper');
+console.log('PASS six profile-upload migration gates: only preverified ready remains ready; no remote calls.');
+
 assert.match(src,/LEASE_EXPIRED_REMOTE_RECONCILIATION_REQUIRED/);
 assert.match(src,/\.eq\("status","pending"\)\.eq\("last_error","RUNNER_LEASE_EXPIRED"\)/);
 
