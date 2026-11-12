@@ -1,5 +1,17 @@
 # MASTER SOP — Publisher Factory / Shared Publisher Runtime
 
+## Canonical override — verified Flow profile required before activation (2026-11-12)
+
+**Supersedes the 2026-10-09 free-runtime durability rule 1 wherever it allows automatic promotion of `profile_uploaded` or `auth_verified` to `ready`.** Those intermediate states are not proof of a successful fresh-runner Google Flow cold restore to the exact project. No automatic publisher activation is permitted from a profile PUT or a scheduler claim.
+
+- Symptom: the Edge `/blob/profile/:publisherId` handler accepted an uploaded browser archive and promoted any enabled publisher in `profile_uploaded` or `auth_verified` to `ready`, bypassing the independently verified restore gate. A new publisher could therefore become eligible for production without verified project identity.
+- Root cause: the profile refresh path retained an older auto-promotion rule after the claim path was hardened. The migration gate existed only at claim time and trusted `ready` as already verified.
+- Fix: profile upload retains `ready` only if the publisher was **already** `ready`; preserves `auth_verified` as intermediate; all other states become `profile_uploaded`. The scheduler only accepts `migration_state=ready`. A separate, owner-authorized exact-project cold-restore validation is required before promotion to `ready`.
+- Regression: `scripts/check-orchestrator-remote-fence.mjs` executes the exact Edge transition helper against six migration states, with no network or video mutations. Existing ready FruttiDrama, EARTH IN 10 and Dinnie remain ready on profile refresh.
+- Production verification: confirm the UI/security CI passes, deploy the matching Edge source, compare live source bytes with GitHub, then read the three original publisher migration states and confirm no unverified publisher was activated. Do **not** test with Generate, uploads, or publications.
+- Recovery: revert only the Edge transition helper if an independently verified regression is established; never automatically mark an unverified publisher ready as a workaround. Preserve all profile archives, historical media and Flow identities.
+
+
 Status: ACTIVE
 Owner: Publisher Factory
 Purpose: make every solved production problem reusable across all existing and future publishers.
