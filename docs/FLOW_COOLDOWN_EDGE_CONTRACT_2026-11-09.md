@@ -27,3 +27,30 @@ The old September incident of **128 rapid no-charge retries** and E5/E6/E11 subm
 
 ## Testing and limitations
 `scripts/check-flow-unusual-cooldown.mjs` verifies exact timing, no reduction of deadline, account-wide gates, original obligation first and 24h panel notice (static contract tests). A real Flow 'Unusual Activity' response has not been deliberately triggered: do not induce one to test. Google account security challenges remain manual.
+
+## Superseding implementation — 12 November 2026, 19:36 ART
+The original per-publisher Edge lookup and SQL streak did **not** implement a
+factory-global cooldown across different publishers: an alert from one show
+could leave another show eligible. This is now corrected by
+[`20261112_flow_factory_global_no_charge_cooldown.sql`](../supabase/migrations/20261112_flow_factory_global_no_charge_cooldown.sql)
+and `publisher-free-runtime` Edge v20.
+
+The authoritative conservative policy is factory-wide: **one explicit
+no-charge Flow rejection pauses generation in FruttiDrama, EARTH IN 10,
+Dinnie and any newly onboarded publisher**. The SQL RPC serializes alerts
+under one transaction advisory lock, escalates one shared 30m / 1h / 2h /
+4h / 8h / 24h streak, never shortens an existing deadline and mirrors the
+same deadline to each publisher for the panel. The Edge reads the latest
+non-clear cooldown globally, not merely the currently selected publisher.
+Only a later confirmed completed generation with a claim timestamp after
+the latest alert may reset the shared streak; an older in-flight callback
+cannot erase a newer warning. The SQL RPCs remain executable by
+`service_role` only. Publication obligations remain separately governed
+by stock, OAuth and exact remote-ID safety checks.
+
+The new offline regression exercises four distinct publishers and verifies
+global lookup, the SQL serialization contract, escalation and stale-safe
+reset. [CI 43321340997](https://github.com/fruttidrama-afk/Frutti-Drama-Publisher/actions/runs/43321340997)
+passed. The production migration is applied and Edge v20 source matches
+GitHub exactly. No live anti-abuse response was intentionally triggered,
+and no generation, OAuth or social publication was attempted.
