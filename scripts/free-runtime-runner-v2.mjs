@@ -153,6 +153,34 @@ function verifiedYoutubeStageIdentityFromRows(rows){
   if(!String(r.remoteStatusCheckedAt||'').trim()||String(r.remotePublishAt||'').trim())return null;
   return{remote_video_id:videoId,remote_item_id:itemId};
 }
+// A changed aggregate published count is NOT proof that the 19:00 worker
+// released the SAME YouTube video staged PRIVATE at 12:30. Bind success to
+// the durable publication row and a fresh remote PUBLIC verification.
+function youtubePublicReleaseProofFromRows(rows,obligation){
+  if(!Array.isArray(rows)||rows.length!==1||!obligation)return false;
+  const row=rows[0]||{};
+  const expectedVideo=String(obligation.remote_video_id||'');
+  const expectedItem=String(obligation.remote_item_id||'');
+  const checked=Date.parse(String(row.remoteStatusCheckedAt||''));
+  const claimed=Date.parse(String(obligation.claimed_at||''));
+  return /^[A-Za-z0-9_-]{11}$/.test(expectedVideo)&&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(expectedItem)&&
+    String(row.id||'')===expectedItem&&String(row.videoId||'')===expectedVideo&&
+    String(row.status||'')==='published'&&String(row.remotePrivacyStatus||'')==='public'&&
+    !String(row.remotePublishAt||'').trim()&&
+    Number.isFinite(checked)&&Number.isFinite(claimed)&&checked>=claimed;
+}
+function youtubePublicReleaseProof(obligation){
+  const file=dbPath();if(!fs.existsSync(file))return false;
+  const db=new DatabaseSync(file,{timeout:5000,readOnly:true});
+  try{
+    if(!tableExists(db,'publication_items'))return false;
+    const cols=new Set(db.prepare('PRAGMA table_info(publication_items)').all().map(c=>String(c.name)));
+    if(!['id','videoId','status','remotePrivacyStatus','remoteStatusCheckedAt','remotePublishAt'].every(k=>cols.has(k)))return false;
+    const row=db.prepare('SELECT id,videoId,status,remotePrivacyStatus,remoteStatusCheckedAt,remotePublishAt FROM publication_items WHERE id=?').get(String(obligation?.remote_item_id||''));
+    return youtubePublicReleaseProofFromRows(row?[row]:[],obligation);
+  }finally{db.close()}
+}
 function youtubePrivateStageIdentity(){
   const file=dbPath();if(!fs.existsSync(file))return null;
   const db=new DatabaseSync(file,{timeout:5000,readOnly:true});
@@ -402,7 +430,17 @@ try{
     await sleep(5000);
     last=metrics();
     if(kind==='generation'&&(last.generation>baseline.generation||last.review>baseline.review)){success=true;break}
-    if(kind==='publication'&&last.publication>baseline.publication){success=true;break}
+    if(kind==='publication'&&last.publication>baseline.publication){
+      // Another row becoming published must never complete THIS obligation.
+      // At 12:30 any PUBLIC transition is forbidden; at 19:00 require exactly
+      // one new PUBLIC row, the exact staged ID, and fresh remote confirmation.
+      if(String(p.platform||'').toLowerCase()==='youtube'&&
+        (localClock<'19:00'||last.publication!==baseline.publication+1||!youtubePublicReleaseProof(o))){
+        childFatal='YOUTUBE_PUBLIC_RELEASE_REMOTE_ID_RECONCILIATION_REQUIRED';
+        break;
+      }
+      success=true;break;
+    }
     if(kind==='generation'){
       flowNoCharge=confirmedFlowNoChargeCooldown();
       if(flowNoCharge){
