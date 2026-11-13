@@ -40,6 +40,7 @@ on:
       - ".github/workflows/bootstrap-flow-dinnie-v2.yml"
       - "publication.js"
       - "publication-facebook.js"
+      - "facebook-publication-selftest.mjs"
       - "free-browser-provider.js"
       - "runtime-config.js"
       - "scripts/free-runtime-runner-v2.mjs"
@@ -74,6 +75,7 @@ jobs:
           node --check free-browser-provider.js
           node --check scripts/free-runtime-runner-v2.mjs
           node scripts/check-publication-safety.mjs
+          node facebook-publication-selftest.mjs
           node scripts/check-flow-auth-persistence.mjs
           node --check scripts/flow-security-signals.mjs
           node --check scripts/verify-flow-auth-cold-restore.mjs
