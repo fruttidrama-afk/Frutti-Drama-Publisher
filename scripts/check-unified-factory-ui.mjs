@@ -113,3 +113,32 @@ for(const name of ["docs/index.html","factory-web/public/index.html"]){
  if(!html.includes("#udPromptBrowser{display:none!important}"))throw Error(name+" still exposes unverified Prompt Studio plans");
  console.log("PASS",name,"module syntax + private recap controls + no automatic publication");
 }
+
+
+// The Flow anti-abuse pause is factory-global. A new publisher added after
+// an alert must see the same 24h panel warning as an existing show, without
+// exposing another owner's cooldown or requiring a video-generation probe.
+{
+ const source=fs.readFileSync("supabase/functions/publisher-unified-read/index.ts","utf8");
+ for(const marker of [
+  'authClient.auth.getUser(token)',
+  '.eq("owner_id",ownerId)',
+  'const ownedPublisherIds=(publisherRows||[]).map',
+  '.filter((row:any)=>!id||String(row.id)===id)',
+  '.in("publisher_id",ownedPublisherIds).neq("status","clear")',
+  '.order("not_before",{ascending:false,nullsFirst:false}).limit(1).maybeSingle()'
+ ])if(!source.includes(marker))throw Error("global Flow panel owner-scoped contract missing: "+marker);
+ if(source.includes('if(id)query=query.eq("id",id)'))
+  throw Error("global Flow panel cannot load only the selected publisher's cooldown");
+ const ownerA=["original-show","new-show"];
+ const ownerB=["unrelated-owner-show"];
+ const cooldowns=[
+  {publisher_id:"original-show",status:"attention_24h",not_before:"2026-11-14T08:00:00Z",streak:6},
+  {publisher_id:"unrelated-owner-show",status:"cooldown",not_before:"2026-11-15T08:00:00Z",streak:3}
+ ];
+ const activeFor=ids=>cooldowns.filter(x=>ids.includes(x.publisher_id)&&x.status!=="clear")
+  .sort((a,b)=>Date.parse(b.not_before)-Date.parse(a.not_before))[0]||null;
+ if(activeFor(ownerA)?.streak!==6||activeFor(ownerB)?.streak!==3)
+  throw Error("global Flow panel must show the owner's existing alert to a new publisher, with tenant isolation");
+ console.log("PASS owner-scoped global Flow cooldown panel contract (including post-alert onboarding)");
+}
