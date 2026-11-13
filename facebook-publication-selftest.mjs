@@ -20,6 +20,7 @@ const config={
  schedule:{timezone:'America/Argentina/Buenos_Aires',posting_times:['23:59'],upload_lead_minutes:0},
  publication:{selected_provider:'facebook',ai_disclosure_required:true,providers:[{type:'facebook',contains_synthetic_media:true,hashtags:['#DinnieTheDinosaur','#KidsAnimation','#Reels','#Viral']}]}
 };
+let publishPhase='in_progress';
 const calls=[];
 const realFetch=globalThis.fetch;
 globalThis.fetch=async (url,opt={})=>{
@@ -27,7 +28,7 @@ globalThis.fetch=async (url,opt={})=>{
   if(u.includes('/me/video_reels')&&u.includes('upload_phase=start'))return new Response(JSON.stringify({video_id:'fb-video-1',upload_url:'https://rupload.facebook.com/video-upload/v25.0/fb-video-1'}),{status:200,headers:{'content-type':'application/json'}});
   if(u.startsWith('https://rupload.facebook.com/'))return new Response(JSON.stringify({success:true,status:{video_status:'processing'}}),{status:200,headers:{'content-type':'application/json'}});
   if(u.includes('/me/video_reels')&&u.includes('upload_phase=finish'))return new Response(JSON.stringify({success:true}),{status:200,headers:{'content-type':'application/json'}});
-  if(u.includes('/fb-video-1?')&&u.includes('fields=status'))return new Response(JSON.stringify({id:'fb-video-1',status:{video_status:'ready',publishing_phase:{status:'complete'}}}),{status:200,headers:{'content-type':'application/json'}});
+  if(u.includes('/fb-video-1?')&&u.includes('fields=status'))return new Response(JSON.stringify({id:'fb-video-1',status:{video_status:'ready',publishing_phase:{status:publishPhase,publish_status:publishPhase==='complete'?'published':'draft'}}}),{status:200,headers:{'content-type':'application/json'}});
   return new Response(JSON.stringify({error:{message:'unexpected selftest request '+u,code:100}}),{status:400,headers:{'content-type':'application/json'}});
 };
 const runtime=installFacebookPublication({
@@ -47,11 +48,22 @@ try{
 
   db.prepare("UPDATE publication_items SET scheduledAt=?,uploadAt=? WHERE id=?").run(new Date(Date.now()-1000).toISOString(),new Date(Date.now()-1000).toISOString(),item.id);
   await runtime.tick();
+  // Meta may report a transcoded, upload-ready video while the Reel's
+  // publishing phase is still incomplete. That is NOT proof of publication.
+  const notPublic=db.prepare('SELECT * FROM publication_items WHERE id=?').get(item.id);
+  if(notPublic.status==='published'||notPublic.remotePrivacyStatus==='public')
+    throw new Error('Facebook video_status=ready was falsely accepted as PUBLIC.');
+  if(!notPublic.filePath||!fs.existsSync(notPublic.filePath))
+    throw new Error('Facebook deleted the only approved MP4 before publication was verified.');
+  publishPhase='complete';
+  await runtime.tick();
   const out=db.prepare('SELECT * FROM publication_items WHERE id=?').get(item.id);
   if(out.status!=='published'||out.videoId!=='fb-video-1'||out.remotePrivacyStatus!=='public')throw new Error('Facebook Reel did not reach published state.');
   if(out.filePath)throw new Error('Published Facebook media was not cleaned up.');
   const urls=calls.map(x=>x.url);
   if(!urls.some(x=>x.includes('upload_phase=start'))||!urls.some(x=>x.startsWith('https://rupload.facebook.com/'))||!urls.some(x=>x.includes('upload_phase=finish')))throw new Error('Facebook Reels three-phase upload flow incomplete.');
+  if(urls.filter(x=>x.includes('upload_phase=finish')).length!==1)
+    throw new Error('Facebook retried a finish request while waiting for publication confirmation.');
   console.log('[FACEBOOK PUBLICATION SELFTEST] PASS',JSON.stringify({calls:calls.length,videoId:out.videoId,status:out.status}));
 }finally{
   runtime.close();
