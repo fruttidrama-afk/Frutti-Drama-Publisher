@@ -99,4 +99,39 @@ assert.equal(reads,4,'every show consults the global deadline');
 assert.match(edge,/db\.rpc\("publisher_flow_clear_after_success"/,'successful generation uses guarded global reset');
 console.log('PASS factory-wide no-charge clock: four mocked publishers, global 30m→24h streak, stale-safe reset, service-role only.');
 
+// A repeated callback for claim A can arrive AFTER claim B. The old global
+// projection remembers only B and would incorrectly escalate A again.
+// Require a durable primary-key ledger rather than last_alert_claim_id alone.
+const durable=repoFile('supabase/migrations/20261113_flow_no_charge_durable_claim_idempotency.sql');
+assert.match(durable,/CREATE TABLE IF NOT EXISTS public\\.publisher_flow_no_charge_claim_events/);
+assert.match(durable,/claim_id uuid PRIMARY KEY/);
+assert.match(durable,/pg_advisory_xact_lock\\(20261112, 91341\\)/);
+assert.match(durable,/o\\.kind='generation' AND o\\.status IN \\('claimed','running','blocked'\\)/);
+assert.match(durable,/ON CONFLICT\\(claim_id\\) DO NOTHING/);
+assert.match(durable,/GET DIAGNOSTICS inserted_events = ROW_COUNT/);
+assert.match(durable,/IF inserted_events=0 THEN/);
+assert.ok(durable.indexOf('IF inserted_events=0 THEN')<durable.indexOf('next_streak:=LEAST('),
+ 'deduplicate before extending the factory-wide deadline');
+assert.match(durable,/FLOW_NO_CHARGE_CLAIM_PUBLISHER_MISMATCH/);
+assert.match(durable,/ENABLE ROW LEVEL SECURITY/);
+assert.match(durable,/REVOKE ALL ON TABLE public\\.publisher_flow_no_charge_claim_events FROM PUBLIC, anon, authenticated/);
+assert.match(durable,/REVOKE ALL ON FUNCTION public\\.publisher_flow_record_no_charge\\(uuid,uuid,text\\) FROM PUBLIC, anon, authenticated/);
+// Offline sequence model: the same claim must never consume two backoff steps,
+// including after a newer alert or a later successful reset.
+const seenClaims=new Set();
+let globalStreak=0;
+function recordClaim(claim){
+ if(seenClaims.has(claim))return globalStreak;
+ seenClaims.add(claim);
+ return ++globalStreak;
+}
+assert.equal(recordClaim('earth-A'),1);
+assert.equal(recordClaim('earth-A'),1);
+assert.equal(recordClaim('dinnie-B'),2);
+assert.equal(recordClaim('earth-A'),2,'older replay after a newer claim is not a third alert');
+globalStreak=0; // a genuine later generation completed
+assert.equal(recordClaim('earth-A'),0,'successful reset does not re-arm an old claim');
+assert.equal(recordClaim('frutti-C'),1,'a new claim begins a new streak');
+console.log('PASS durable claim ledger and A→B→A replay/reset regression model; no provider calls or database writes.');
+
 console.log('PASS account-wide 30m,1h,2h,4h,8h,24h+ schedule; 24h repeats, no skip, no video calls');
