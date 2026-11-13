@@ -103,19 +103,19 @@ console.log('PASS factory-wide no-charge clock: four mocked publishers, global 3
 // projection remembers only B and would incorrectly escalate A again.
 // Require a durable primary-key ledger rather than last_alert_claim_id alone.
 const durable=repoFile('supabase/migrations/20261113_flow_no_charge_durable_claim_idempotency.sql');
-assert.match(durable,/CREATE TABLE IF NOT EXISTS public\\.publisher_flow_no_charge_claim_events/);
+assert.match(durable,/CREATE TABLE IF NOT EXISTS public\.publisher_flow_no_charge_claim_events/);
 assert.match(durable,/claim_id uuid PRIMARY KEY/);
-assert.match(durable,/pg_advisory_xact_lock\\(20261112, 91341\\)/);
-assert.match(durable,/o\\.kind='generation' AND o\\.status IN \\('claimed','running','blocked'\\)/);
-assert.match(durable,/ON CONFLICT\\(claim_id\\) DO NOTHING/);
+assert.match(durable,/pg_advisory_xact_lock\(20261112, 91341\)/);
+assert.match(durable,/o\.kind='generation' AND o\.status IN \('claimed','running','blocked'\)/);
+assert.match(durable,/ON CONFLICT\(claim_id\) DO NOTHING/);
 assert.match(durable,/GET DIAGNOSTICS inserted_events = ROW_COUNT/);
 assert.match(durable,/IF inserted_events=0 THEN/);
 assert.ok(durable.indexOf('IF inserted_events=0 THEN')<durable.indexOf('next_streak:=LEAST('),
  'deduplicate before extending the factory-wide deadline');
 assert.match(durable,/FLOW_NO_CHARGE_CLAIM_PUBLISHER_MISMATCH/);
 assert.match(durable,/ENABLE ROW LEVEL SECURITY/);
-assert.match(durable,/REVOKE ALL ON TABLE public\\.publisher_flow_no_charge_claim_events FROM PUBLIC, anon, authenticated/);
-assert.match(durable,/REVOKE ALL ON FUNCTION public\\.publisher_flow_record_no_charge\\(uuid,uuid,text\\) FROM PUBLIC, anon, authenticated/);
+assert.match(durable,/REVOKE ALL ON TABLE public\.publisher_flow_no_charge_claim_events FROM PUBLIC, anon, authenticated/);
+assert.match(durable,/REVOKE ALL ON FUNCTION public\.publisher_flow_record_no_charge\(uuid,uuid,text\) FROM PUBLIC, anon, authenticated/);
 // Offline sequence model: the same claim must never consume two backoff steps,
 // including after a newer alert or a later successful reset.
 const seenClaims=new Set();
