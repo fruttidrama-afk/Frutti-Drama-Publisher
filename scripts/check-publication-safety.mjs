@@ -60,3 +60,35 @@ assert.ok(worker.includes('last.privateStaged>baseline.privateStaged'),'new PRIV
 assert.ok(worker.includes("YOUTUBE_MULTIPLE_PRIVATE_STAGES_REMOTE_ID_RECONCILIATION_REQUIRED"),'multiple staged videos require reconciliation');
 assert.ok(worker.includes("error:'YOUTUBE_PRIVATE_STAGED_WAITING_19',...stageIdentity"),'12:30 callback persists exact ID');
 console.log('PASS 15 pre-worker identity cases and 7 extraction guards; no network, upload or video actions.');
+
+
+// A different video becoming PUBLIC must never mark the 19:00 obligation
+// complete. Exercise the exact runner's post-publication identity predicate.
+const releaseStart=worker.indexOf('function youtubePublicReleaseProofFromRows(');
+const releaseEnd=worker.indexOf('\nfunction youtubePublicReleaseProof(obligation)',releaseStart);
+assert.ok(releaseStart>0&&releaseEnd>releaseStart,'post-release remote identity predicate exists');
+const releaseFn=vm.runInNewContext(worker.slice(releaseStart,releaseEnd)+'\nyoutubePublicReleaseProofFromRows');
+const released={id:item,videoId:video,status:'published',remotePrivacyStatus:'public',
+ remoteStatusCheckedAt:'2026-11-13T22:00:05Z',remotePublishAt:null};
+const releaseClaim={...stage,claimed_at:'2026-11-13T22:00:00Z'};
+assert.equal(releaseFn([released],releaseClaim),true,'fresh exact PUBLIC remote ID can complete');
+for(const [rows,obligation] of [
+ [[],releaseClaim],[[released,released],releaseClaim],
+ [[{...released,id:'22222222-2222-4222-8222-222222222222'}],releaseClaim],
+ [[{...released,videoId:'otherID123_'}],releaseClaim],
+ [[{...released,status:'uploaded'}],releaseClaim],
+ [[{...released,remotePrivacyStatus:'private'}],releaseClaim],
+ [[{...released,remotePublishAt:'2026-11-13T22:00:00Z'}],releaseClaim],
+ [[{...released,remoteStatusCheckedAt:null}],releaseClaim],
+ [[{...released,remoteStatusCheckedAt:'2026-11-13T21:59:59Z'}],releaseClaim],
+ [[released],{...releaseClaim,claimed_at:null}],
+ [[released],{...releaseClaim,remote_video_id:'otherID123_'}]
+])assert.equal(releaseFn(rows,obligation),false,'wrong, stale or ambiguous YouTube release must fail closed');
+assert.match(worker,/last\.publication!==baseline\.publication\+1\|\|!youtubePublicReleaseProof\(o\)/,
+ 'aggregate publication count is insufficient without exact release proof');
+assert.match(worker,/localClock<'19:00'/,'PUBLIC before 19:00 must not complete a stage');
+assert.match(worker,/YOUTUBE_PUBLIC_RELEASE_REMOTE_ID_RECONCILIATION_REQUIRED/,
+ 'unverified PUBLIC release must quarantine for remote reconciliation');
+assert.ok(worker.indexOf('youtubePublicReleaseProof(o)')<worker.indexOf("if(privateStagedWait){"),
+ 'post-release proof must run before callback completion');
+console.log('PASS 12 YouTube post-release identity cases and 4 fail-closed runtime guards; no remote calls.');
