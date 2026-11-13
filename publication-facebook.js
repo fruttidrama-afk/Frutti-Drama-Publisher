@@ -146,8 +146,14 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
       hist(item,item.status||'processing','Facebook confirms native AI-generated disclosure is enabled.');
       save(item);
     }
-    const st=j?.status||{},publishing=String(st?.publishing_phase?.status||'').toLowerCase(),video=String(st?.video_status||'').toLowerCase();
-    if(publishing==='complete'||video==='ready'){
+    const st=j?.status||{},publishing=String(st?.publishing_phase?.status||'').toLowerCase();
+    const publishStatus=String(st?.publishing_phase?.publish_status||'').toLowerCase();
+    // video_status=ready proves only that the upload/encoding is ready, NOT that
+    // Facebook completed the Reel's publishing phase. This distinction is
+    // critical after an ambiguous finish request: never delete the only MP4
+    // or mark a Reel PUBLIC based on processing readiness alone.
+    const remotelyPublished=publishing==='complete'&&(!publishStatus||publishStatus==='published');
+    if(remotelyPublished){
       item.remotePrivacyStatus='public';item.remotePublishAt=item.remotePublishAt||now();item.error=null;item.retryAt=0;
       if(item.status!=='published')hist(item,'published','Facebook Reels API confirms publishing/processing complete.');
       save(item);
