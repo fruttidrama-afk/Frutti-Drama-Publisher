@@ -22,6 +22,14 @@ function zonedLocal(dateStr,timeStr,tz){
   }
   return new Date(guess);
 }
+// Reconnecting Facebook is not permission to reschedule a missed Reel into
+// a new day. Keep future/same-day slots unchanged; quarantine past/invalid
+// slots, including remote-ambiguous attempts, for explicit reconciliation.
+function facebookReconnectDayDecision(scheduledAt,today,tz){
+  const stamp=Date.parse(String(scheduledAt||''));
+  if(!Number.isFinite(stamp))return 'quarantine';
+  return dayKey(new Date(stamp),tz)<today?'quarantine':'resume';
+}
 function postingTimes(config){
   const x=Array.isArray(config.schedule?.posting_times)?config.schedule.posting_times:[];
   const valid=[...new Set(x.map(v=>String(v).trim()).filter(v=>/^\d{2}:\d{2}$/.test(v)))].sort();
@@ -348,17 +356,27 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     finally{lastHeartbeat=now();running=false}
   }
   function resumeAuthWait(){
-    const stamp=now();
+    const tz=config.schedule?.timezone||config.identity?.timezone||'America/Argentina/Buenos_Aires';
+    const today=dayKey(new Date(),tz);
     const rows=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'')='facebook' AND status IN ('auth_wait','error') AND status NOT IN ('published','cancelled','deleted') ORDER BY scheduledAt").all();
+    let resumed=0;
     for(const item of rows){
+      if(facebookReconnectDayDecision(item.scheduledAt,today,tz)==='quarantine'){
+        item.error=item.videoId?'FACEBOOK_MISSED_DAY_REMOTE_ID_RECONCILIATION_REQUIRED':'FACEBOOK_MISSED_DAY_NO_CATCHUP';
+        item.retryAt=0;
+        hist(item,'attention',item.error);
+        save(item);
+        continue;
+      }
+      // Never overwrite scheduledAt or uploadAt on reconnection: doing so
+      // silently publishes stale approved media on another calendar day.
       item.status='queued';item.error=null;item.retryAt=0;
-      if(Date.parse(String(item.scheduledAt||''))<=Date.now())item.scheduledAt=stamp;
-      item.uploadAt=item.scheduledAt;
-      hist(item,'queued','Facebook authorization refreshed; publication retry armed immediately.');
+      hist(item,'queued','Facebook authorization refreshed; original publication slot preserved.');
       save(item);
+      resumed++;
     }
-    if(rows.length)setTimeout(()=>void tick(),250).unref?.();
-    return rows.length;
+    if(resumed)setTimeout(()=>void tick(),250).unref?.();
+    return resumed;
   }
   const timer=setInterval(()=>void tick(),30000);timer.unref?.();
   setTimeout(()=>void tick(),1200).unref?.();
