@@ -196,6 +196,68 @@ function youtubePrivateStageIdentity(){
     return verifiedYoutubeStageIdentityFromRows(rows);
   }finally{db.close()}
 }
+// A Facebook Reel cannot complete a durable obligation merely because SOME
+// publication_items row became published. Bind the claimed day to exactly one
+// approved, due, persisted SQLite row before launching the worker.
+function facebookLocalDay(date,tz){
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date);
+  const p=Object.fromEntries(parts.filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
+  return p.year+'-'+p.month+'-'+p.day;
+}
+function facebookCandidateIdFromRows(rows,nowMs,tz){
+  if(!Array.isArray(rows)||!Number.isFinite(nowMs))return null;
+  const day=facebookLocalDay(new Date(nowMs),tz);
+  const due=rows.filter(row=>{
+    const scheduled=Date.parse(String(row.scheduledAt||''));
+    return Number.isFinite(scheduled)&&scheduled<=nowMs&&
+      facebookLocalDay(new Date(scheduled),tz)===day;
+  });
+  if(due.length!==1)return null;
+  const row=due[0],id=String(row.id||''),itemId=String(row.itemId||'');
+  const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if(!uuid.test(id)||!uuid.test(itemId))return null;
+  return{id,itemId};
+}
+function facebookPublicationCandidateId(tz){
+  const file=dbPath();if(!fs.existsSync(file))return null;
+  const db=new DatabaseSync(file,{timeout:5000,readOnly:true});
+  try{
+    if(!tableExists(db,'publication_items'))return null;
+    const cols=new Set(db.prepare('PRAGMA table_info(publication_items)').all().map(c=>String(c.name)));
+    if(!['id','itemId','provider','scheduledAt','status'].every(k=>cols.has(k)))return null;
+    const rows=db.prepare("SELECT id,itemId,scheduledAt FROM publication_items WHERE provider='facebook' AND status IN ('queued','publishing','processing','error')").all();
+    return facebookCandidateIdFromRows(rows,Date.now(),tz);
+  }finally{db.close()}
+}
+function facebookPublishedProofFromRows(rows,expected,obligation,tz){
+  if(!Array.isArray(rows)||rows.length!==1||!expected||!obligation)return false;
+  const row=rows[0]||{},checked=Date.parse(String(row.remoteStatusCheckedAt||''));
+  const claimed=Date.parse(String(obligation.claimed_at||''));
+  const scheduled=Date.parse(String(row.scheduledAt||''));
+  return String(row.id||'')===String(expected.id||'')&&
+    String(row.itemId||'')===String(expected.itemId||'')&&
+    /^\d+$/.test(String(row.videoId||''))&&
+    String(row.status||'')==='published'&&
+    String(row.remotePrivacyStatus||'')==='public'&&
+    Boolean(String(row.aiDisclosureSyncedAt||'').trim())&&
+    Number.isFinite(checked)&&Number.isFinite(claimed)&&Number.isFinite(scheduled)&&
+    checked>=claimed&&
+    facebookLocalDay(new Date(scheduled),tz)===facebookLocalDay(new Date(claimed),tz);
+}
+function facebookPublishedProof(expected,obligation,tz){
+  if(!expected)return false;
+  const file=dbPath();if(!fs.existsSync(file))return false;
+  const db=new DatabaseSync(file,{timeout:5000,readOnly:true});
+  try{
+    if(!tableExists(db,'publication_items'))return false;
+    const cols=new Set(db.prepare('PRAGMA table_info(publication_items)').all().map(c=>String(c.name)));
+    const fields=['id','itemId','videoId','status','remotePrivacyStatus','remoteStatusCheckedAt','aiDisclosureSyncedAt','scheduledAt'];
+    if(!fields.every(k=>cols.has(k)))return false;
+    const row=db.prepare('SELECT '+fields.join(',')+' FROM publication_items WHERE id=?').get(expected.id);
+    return facebookPublishedProofFromRows(row?[row]:[],expected,obligation,tz);
+  }finally{db.close()}
+}
+
 function youtubeStagingSafety(kind,platform,clock,privateStaged,identity=null,obligation=null){
   if(kind!=='publication'||String(platform||'').toLowerCase()!=='youtube')return null;
   const n=Number(privateStaged);
@@ -406,6 +468,14 @@ try{
     console.error(stagedSafety+'; no YouTube upload or privacy mutation attempted.');
     process.exit(0);
   }
+  const facebookExpectedItem=kind==='publication'&&String(p.platform||'').toLowerCase()==='facebook'
+    ?facebookPublicationCandidateId(String(p.timezone||'America/Argentina/Buenos_Aires')):null;
+  if(kind==='publication'&&String(p.platform||'').toLowerCase()==='facebook'&&!facebookExpectedItem){
+    await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',
+      error:'FACEBOOK_DUE_APPROVED_ITEM_ID_RECONCILIATION_REQUIRED',approved_stock:baseline.stock});
+    console.error('No unique due Facebook approved publication item; no Meta mutation attempted.');
+    process.exit(0);
+  }
   const fd=fs.openSync(LOG,'a');
   const env={
     ...process.env,
@@ -437,6 +507,12 @@ try{
       if(String(p.platform||'').toLowerCase()==='youtube'&&
         (localClock<'19:00'||last.publication!==baseline.publication+1||!youtubePublicReleaseProof(o))){
         childFatal='YOUTUBE_PUBLIC_RELEASE_REMOTE_ID_RECONCILIATION_REQUIRED';
+        break;
+      }
+      if(String(p.platform||'').toLowerCase()==='facebook'&&
+        (last.publication!==baseline.publication+1||
+          !facebookPublishedProof(facebookExpectedItem,o,String(p.timezone||'America/Argentina/Buenos_Aires')))){
+        childFatal='FACEBOOK_PUBLIC_RELEASE_REMOTE_ID_RECONCILIATION_REQUIRED';
         break;
       }
       success=true;break;
