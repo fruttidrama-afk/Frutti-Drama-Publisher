@@ -219,3 +219,57 @@ for(const [scenario,watchBody] of [
   assert.equal(deletions,0,scenario+' must not delete the MP4');
 }
 console.log('PASS 3 YouTube oEmbed/watch ambiguity cases: no false PUBLIC, no status writes, no media deletion.');
+
+
+// The Facebook runner must bind success to the exact approved Reel selected
+// before spawning the worker, not an unrelated aggregate published count.
+const fbStart=worker.indexOf('function facebookLocalDay(');
+const fbEnd=worker.indexOf('\nfunction youtubeStagingSafety(',fbStart);
+assert.ok(fbStart>0&&fbEnd>fbStart,'Facebook identity proof helpers exist');
+const fbIdentity=vm.runInNewContext(worker.slice(fbStart,fbEnd)+
+  '\n({facebookCandidateIdFromRows,facebookPublishedProofFromRows})');
+const fbId='33333333-3333-4333-8333-333333333333';
+const reviewId='44444444-4444-4444-8444-444444444444';
+const dueAt='2026-11-14T22:00:00Z',claimAt='2026-11-14T22:05:00Z';
+const nowMs=Date.parse(claimAt);
+const fbRow={id:fbId,itemId:reviewId,scheduledAt:dueAt};
+const fbExpected={id:fbId,itemId:reviewId};
+assert.equal(JSON.stringify(fbIdentity.facebookCandidateIdFromRows([fbRow],nowMs,art)),
+ JSON.stringify(fbExpected),'exactly one due approved Facebook row binds identity');
+for(const rows of [
+ [],[fbRow,fbRow],
+ [{...fbRow,scheduledAt:'2026-11-13T22:00:00Z'}],
+ [{...fbRow,scheduledAt:'2026-11-14T22:10:00Z'}],
+ [{...fbRow,id:'bad-id'}],
+ [{...fbRow,itemId:'bad-id'}]
+])assert.equal(fbIdentity.facebookCandidateIdFromRows(rows,nowMs,art),null,
+ 'missing, duplicate, stale, future or invalid Facebook candidate fails closed');
+const fbPublished={...fbRow,videoId:'1234567890123456',status:'published',
+ remotePrivacyStatus:'public',remoteStatusCheckedAt:'2026-11-14T22:05:10Z',
+ aiDisclosureSyncedAt:'2026-11-14T22:05:08Z'};
+const fbClaim={claimed_at:claimAt};
+assert.equal(fbIdentity.facebookPublishedProofFromRows([fbPublished],fbExpected,fbClaim,art),true,
+ 'exact Meta video with fresh PUBLIC and AI disclosure proves Facebook release');
+for(const [rows,expected,claim] of [
+ [[],fbExpected,fbClaim],[[fbPublished,fbPublished],fbExpected,fbClaim],
+ [[{...fbPublished,id:'55555555-5555-4555-8555-555555555555'}],fbExpected,fbClaim],
+ [[{...fbPublished,itemId:'55555555-5555-4555-8555-555555555555'}],fbExpected,fbClaim],
+ [[{...fbPublished,videoId:''}],fbExpected,fbClaim],
+ [[{...fbPublished,status:'processing'}],fbExpected,fbClaim],
+ [[{...fbPublished,remotePrivacyStatus:'processing'}],fbExpected,fbClaim],
+ [[{...fbPublished,remoteStatusCheckedAt:'2026-11-14T22:04:59Z'}],fbExpected,fbClaim],
+ [[{...fbPublished,remoteStatusCheckedAt:null}],fbExpected,fbClaim],
+ [[{...fbPublished,aiDisclosureSyncedAt:null}],fbExpected,fbClaim],
+ [[{...fbPublished,scheduledAt:'2026-11-13T22:00:00Z'}],fbExpected,fbClaim],
+ [[fbPublished],fbExpected,{claimed_at:null}]
+])assert.equal(fbIdentity.facebookPublishedProofFromRows(rows,expected,claim,art),false,
+ 'unrelated, stale, ambiguous, non-public or undisclosed Meta Reel cannot complete');
+assert.ok(worker.indexOf('const facebookExpectedItem=')<worker.indexOf("child=spawn('npm'"),
+ 'Facebook candidate is bound before any Meta worker starts');
+assert.match(worker,/FACEBOOK_DUE_APPROVED_ITEM_ID_RECONCILIATION_REQUIRED/,
+ 'missing unique approved Facebook row blocks before remote mutation');
+assert.match(worker,/last\.publication!==baseline\.publication\+1\|\|\s*!facebookPublishedProof\(facebookExpectedItem,o/,
+ 'Facebook aggregate count alone cannot complete publication');
+assert.match(worker,/FACEBOOK_PUBLIC_RELEASE_REMOTE_ID_RECONCILIATION_REQUIRED/,
+ 'Facebook mismatched release quarantines remote ambiguity');
+console.log('PASS 19 Facebook exact-identity cases and 4 runtime guards; no remote calls or videos.');
