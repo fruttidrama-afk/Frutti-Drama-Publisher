@@ -182,3 +182,40 @@ for(let i=0;i<cases.length;i++){
 }
 console.log('PASS Facebook reconnect integration mock: 6 rows, 3 quarantines, 3 eligible, all identities/media/slots preserved.');
 
+
+
+// A public watch page and oEmbed also work for some UNLISTED YouTube videos.
+// During Data API quota exhaustion they are never proof of privacyStatus=public.
+// Execute the EXACT production fallback with mocked HTTP responses; ensure
+// zero persisted status changes and zero deletion of the human-approved MP4.
+const fallbackStart=yt.indexOf('  async function publicPageFallback(item){');
+const fallbackEnd=yt.indexOf('\\n  async function stageMetadata(',fallbackStart);
+assert.ok(fallbackStart>0&&fallbackEnd>fallbackStart,'public-page diagnostic fallback exists');
+const fallbackSource=yt.slice(fallbackStart,fallbackEnd);
+assert.ok(!fallbackSource.includes("item.remotePrivacyStatus='public'"),'oEmbed cannot promote to PUBLIC');
+assert.ok(!fallbackSource.includes("cleanupPublicationMedia(item)"),'oEmbed cannot delete approved media');
+for(const [scenario,watchBody] of [
+ ['reachable_public','<html><title>Video</title></html>'],
+ ['unlisted_explicit','<html>"isUnlisted":true</html>'],
+ ['unlisted_without_marker','<html><title>Video</title></html>']
+]){
+  let writes=0,deletions=0;
+  const mockFetch=async url=>url.includes('/oembed?')
+    ?{ok:true,status:200,json:async()=>({title:'A reachable video'})}
+    :{ok:true,status:200,text:async()=>watchBody};
+  const context={
+    fetch:mockFetch,AbortSignal:{timeout:()=>({})},encodeURIComponent,
+    console:{log:()=>{}},
+    now:()=>{writes++;return '2026-11-14T11:00:00Z'},
+    hist:()=>{writes++},save:()=>{writes++},
+    cleanupPublicationMedia:async()=>{deletions++}
+  };
+  const fallback=vm.runInNewContext(fallbackSource+'\\npublicPageFallback',context);
+  const record={id:'stock-1',episode:7,videoId:'abCDeF123_-',status:'uploaded',remotePrivacyStatus:'private',remoteStatusCheckedAt:null,filePath:'/preserved/approved.mp4'};
+  const snapshot=JSON.stringify(record);
+  assert.equal(await fallback(record),false,scenario+' must remain unverified');
+  assert.equal(JSON.stringify(record),snapshot,scenario+' must preserve exact remote/local state');
+  assert.equal(writes,0,scenario+' must not write an inferred PUBLIC status');
+  assert.equal(deletions,0,scenario+' must not delete the MP4');
+}
+console.log('PASS 3 YouTube oEmbed/watch ambiguity cases: no false PUBLIC, no status writes, no media deletion.');
