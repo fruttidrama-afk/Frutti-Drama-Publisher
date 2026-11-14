@@ -189,7 +189,7 @@ console.log('PASS Facebook reconnect integration mock: 6 rows, 3 quarantines, 3 
 // Execute the EXACT production fallback with mocked HTTP responses; ensure
 // zero persisted status changes and zero deletion of the human-approved MP4.
 const fallbackStart=yt.indexOf('  async function publicPageFallback(item){');
-const fallbackEnd=yt.indexOf('\\n  async function stageMetadata(',fallbackStart);
+const fallbackEnd=yt.indexOf('\n  async function stageMetadata(',fallbackStart);
 assert.ok(fallbackStart>0&&fallbackEnd>fallbackStart,'public-page diagnostic fallback exists');
 const fallbackSource=yt.slice(fallbackStart,fallbackEnd);
 assert.ok(!fallbackSource.includes("item.remotePrivacyStatus='public'"),'oEmbed cannot promote to PUBLIC');
@@ -210,7 +210,7 @@ for(const [scenario,watchBody] of [
     hist:()=>{writes++},save:()=>{writes++},
     cleanupPublicationMedia:async()=>{deletions++}
   };
-  const fallback=vm.runInNewContext(fallbackSource+'\\npublicPageFallback',context);
+  const fallback=vm.runInNewContext(fallbackSource+'\npublicPageFallback',context);
   const record={id:'stock-1',episode:7,videoId:'abCDeF123_-',status:'uploaded',remotePrivacyStatus:'private',remoteStatusCheckedAt:null,filePath:'/preserved/approved.mp4'};
   const snapshot=JSON.stringify(record);
   assert.equal(await fallback(record),false,scenario+' must remain unverified');
