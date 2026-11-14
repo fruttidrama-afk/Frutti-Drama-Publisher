@@ -137,3 +137,48 @@ assert.ok(!reconnectBody.includes('item.scheduledAt='),'OAuth reconnect never re
 assert.ok(!reconnectBody.includes('item.uploadAt='),'OAuth reconnect never rewrites upload day');
 assert.ok(reconnectBody.includes('if(resumed)setTimeout'),'only eligible same/future-day items wake worker');
 console.log('PASS 20 Facebook reconnect calendar-day cases and 6 no-catchup guards; no Meta API or media mutations.');
+
+// Exercise the actual resumeAuthWait loop against a fake SQLite cursor:
+// no network, timers, file deletion, OAuth mutation, or Meta calls.
+const makeRow=(id,scheduledAt,videoId=null)=>({
+ id,scheduledAt,uploadAt:scheduledAt,videoId,status:'auth_wait',retryAt:999,
+ error:'FACEBOOK_AUTH_REQUIRED',filePath:'/preserved/'+id+'.mp4'
+});
+const cases=[
+ makeRow('past-unsent','2026-11-13T22:00:00Z'),
+ makeRow('past-remote','2026-11-13T22:00:00Z','123456789012345'),
+ makeRow('today-due','2026-11-14T03:00:00Z'),
+ makeRow('today-future','2026-11-14T22:00:00Z'),
+ makeRow('future','2026-11-15T22:00:00Z'),
+ makeRow('invalid','invalid')
+];
+const snapshots=cases.map(x=>({...x}));
+const saved=[],wake=[];
+const ctx={
+ config:{schedule:{timezone:art}},
+ db:{prepare:()=>({all:()=>cases})},
+ dayKey:localDay,facebookReconnectDayDecision:reconnectDecision,
+ hist:(item,status,message)=>{item.status=status;item.message=message},
+ save:item=>saved.push({...item}),
+ tick:()=>{throw Error('tick must not execute during offline test')},
+ setTimeout:(fn,ms)=>{wake.push(ms);return{unref(){}}},
+ Date
+};
+const actualResume=vm.runInNewContext(reconnectBody+'\nresumeAuthWait',ctx);
+assert.equal(actualResume(),3,'only current/future-day items rearmed');
+assert.equal(saved.length,6,'all six rows persisted with explicit disposition');
+assert.equal(wake.length,1,'only one wake-up scheduled for eligible items');
+assert.equal(cases[0].status,'attention');
+assert.equal(cases[0].error,'FACEBOOK_MISSED_DAY_NO_CATCHUP');
+assert.equal(cases[1].status,'attention');
+assert.equal(cases[1].error,'FACEBOOK_MISSED_DAY_REMOTE_ID_RECONCILIATION_REQUIRED');
+assert.equal(cases[5].status,'attention','invalid schedule is not silently repaired');
+for(const index of [2,3,4])assert.equal(cases[index].status,'queued','eligible day resumes');
+for(let i=0;i<cases.length;i++){
+ assert.equal(cases[i].scheduledAt,snapshots[i].scheduledAt,'original calendar slot never rewritten');
+ assert.equal(cases[i].uploadAt,snapshots[i].uploadAt,'original upload slot never rewritten');
+ assert.equal(cases[i].filePath,snapshots[i].filePath,'approved original MP4 never deleted');
+ assert.equal(cases[i].videoId,snapshots[i].videoId,'remote identity never changed');
+}
+console.log('PASS Facebook reconnect integration mock: 6 rows, 3 quarantines, 3 eligible, all identities/media/slots preserved.');
+
