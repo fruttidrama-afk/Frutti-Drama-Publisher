@@ -318,13 +318,13 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       const title=String(oembed?.title||'').trim();
       console.log('[PUBLICATION PUBLIC FALLBACK CHECK]',JSON.stringify({episode:item.episode,videoId:item.videoId,oembedStatus:o?.status||0,watchStatus:w?.status||0,title:title.slice(0,120),unlisted,privateMarker,unavailable}));
       if(!oembed||!title||unlisted||privateMarker||unavailable)return false;
-      item.remotePrivacyStatus='public';
-      item.remoteStatusCheckedAt=now();
-      if(String(item.status)!=='published')hist(item,'published','YouTube public oEmbed/watch page confirms the video is publicly reachable while Data API quota is unavailable.');
-      item.error=null;item.retryAt=0;save(db,item);
-      console.log('[PUBLICATION PUBLIC FALLBACK]',JSON.stringify({episode:item.episode,videoId:item.videoId,state:'published',evidence:'oembed+watch-public'}));
-      await cleanupPublicationMedia(item);
-      return true;
+      // Publicly reachable is NOT proof of privacyStatus=public: YouTube
+      // UNLISTED videos can return the same oEmbed/watch responses. Never
+      // convert a public-page heuristic into a persisted PUBLIC state or
+      // delete the approved MP4. Only an authenticated videos.list(status)
+      // response for this exact videoId can confirm publication.
+      console.log('[PUBLICATION PUBLIC PAGE UNVERIFIED]',JSON.stringify({episode:item.episode,videoId:item.videoId,reason:'WATCH_PAGE_CANNOT_PROVE_PUBLIC_VS_UNLISTED'}));
+      return false;
     }catch(e){
       console.log('[PUBLICATION PUBLIC FALLBACK ERROR]',JSON.stringify({episode:item.episode,videoId:item.videoId,error:String(e?.message||e).slice(0,300)}));
       return false;
