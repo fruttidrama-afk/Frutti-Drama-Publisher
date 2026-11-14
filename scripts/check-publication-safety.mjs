@@ -93,3 +93,47 @@ assert.match(worker,/YOUTUBE_PUBLIC_RELEASE_REMOTE_ID_RECONCILIATION_REQUIRED/,
 assert.ok(worker.indexOf('youtubePublicReleaseProof(o)')<worker.indexOf("if(privateStagedWait){"),
  'post-release proof must run before callback completion');
 console.log('PASS 12 YouTube post-release identity cases and 4 fail-closed runtime guards; no remote calls.');
+
+
+// Reconnecting Meta after midnight must never turn a missed-day Reel into
+// a fresh-day upload. This tests the actual production day-decision function.
+const reconnectStart=fb.indexOf('function facebookReconnectDayDecision(');
+const reconnectEnd=fb.indexOf('\nfunction postingTimes(',reconnectStart);
+assert.ok(reconnectStart>0&&reconnectEnd>reconnectStart,'Facebook reconnect day guard exists');
+const localDay=(date,tz)=>{
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date);
+  const p=Object.fromEntries(parts.filter(x=>x.type!=='literal').map(x=>[x.type,x.value]));
+  return p.year+'-'+p.month+'-'+p.day;
+};
+const reconnectDecision=vm.runInNewContext(fb.slice(reconnectStart,reconnectEnd)+'\nfacebookReconnectDayDecision',{dayKey:localDay});
+const art='America/Argentina/Buenos_Aires';
+for(const [scheduled,today,expected] of [
+ ['2026-11-13T02:59:59Z','2026-11-14','quarantine'],
+ ['2026-11-13T03:00:00Z','2026-11-14','quarantine'],
+ ['2026-11-14T02:59:59Z','2026-11-14','quarantine'],
+ ['2026-11-14T03:00:00Z','2026-11-14','resume'],
+ ['2026-11-14T18:00:00Z','2026-11-14','resume'],
+ ['2026-11-15T02:59:59Z','2026-11-14','resume'],
+ ['2026-11-15T03:00:00Z','2026-11-14','resume'],
+ ['2026-11-16T03:00:00Z','2026-11-14','resume'],
+ ['2026-11-13T23:59:59Z','2026-11-15','quarantine'],
+ ['2026-11-15T02:59:59Z','2026-11-15','quarantine'],
+ ['2026-11-15T03:00:00Z','2026-11-15','resume'],
+ ['2026-11-15T22:00:00Z','2026-11-15','resume'],
+ ['2026-11-16T02:59:59Z','2026-11-15','resume'],
+ ['2026-11-16T03:00:00Z','2026-11-15','resume'],
+ ['2026-11-13T22:00:00Z','2026-11-13','resume'],
+ ['2026-11-12T22:00:00Z','2026-11-13','quarantine'],
+ ['','2026-11-14','quarantine'],
+ ['invalid','2026-11-14','quarantine'],
+ ['2026-11-14','2026-11-14','quarantine'],
+ ['2026-11-14T03:00:00Z','2026-11-15','quarantine']
+])assert.equal(reconnectDecision(scheduled,today,art),expected,'Meta reconnect day decision '+scheduled);
+const reconnectBody=fb.slice(fb.indexOf('  function resumeAuthWait(){'),fb.indexOf('\n  const timer=setInterval',fb.indexOf('  function resumeAuthWait(){')));
+assert.ok(reconnectBody.includes("facebookReconnectDayDecision(item.scheduledAt,today,tz)==='quarantine'"),'stale-day items quarantined');
+assert.ok(reconnectBody.includes("FACEBOOK_MISSED_DAY_REMOTE_ID_RECONCILIATION_REQUIRED"),'ambiguous remote ID remains quarantined');
+assert.ok(reconnectBody.includes("hist(item,'attention',item.error)"),'stale items visibly require attention');
+assert.ok(!reconnectBody.includes('item.scheduledAt='),'OAuth reconnect never rewrites the original publication day');
+assert.ok(!reconnectBody.includes('item.uploadAt='),'OAuth reconnect never rewrites upload day');
+assert.ok(reconnectBody.includes('if(resumed)setTimeout'),'only eligible same/future-day items wake worker');
+console.log('PASS 20 Facebook reconnect calendar-day cases and 6 no-catchup guards; no Meta API or media mutations.');
