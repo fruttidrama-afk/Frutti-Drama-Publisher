@@ -128,6 +128,25 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 #unifiedDashboard .ud-recap-ai-result[hidden]{display:none!important}
 #unifiedDashboard #udRecapFreeAiSetup{display:inline-block;font-weight:700;font-size:12px;color:#16537e;text-decoration:underline;padding:2px 0 6px}#unifiedDashboard #udRecapFreeAiSetup[hidden]{display:none!important}
 #udRecapStoryFallback[hidden]{display:none!important}
+
+/* Factory global activation panel. Automation never starts from page load. */
+#factoryActivationSection{padding-top:18px}
+#factoryActivationSection .factory-control{background:#fff;border:1px solid #ddd6c9;border-radius:14px;padding:clamp(18px,2.8vw,30px)}
+#factoryActivationSection .fc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+#factoryActivationSection h2{font:400 clamp(30px,4vw,44px) Georgia,serif;color:#103755;margin:4px 0 9px}
+#factoryActivationSection .fc-state{font-weight:700;color:#183a53;font-size:15px;margin-top:6px}
+#factoryActivationSection .fc-note{font-size:13px;color:#66645e;line-height:1.6}
+#factoryActivationSection .fc-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0}
+#factoryActivationSection .fc-actions button:disabled{opacity:.52;cursor:not-allowed}
+#factoryActivationSection .fc-channels{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin-top:17px}
+#factoryActivationSection .fc-channel{border:1px solid #dfded9;border-radius:10px;padding:15px;background:#faf9f6;display:grid;gap:8px}
+#factoryActivationSection .fc-channel strong{font-size:17px;color:#183a53}
+#factoryActivationSection .fc-channel small{font-size:12px;color:#676866;line-height:1.4}
+#factoryActivationSection .fc-checks{border-top:1px solid #e9e7e0;padding-top:12px;margin-top:18px;display:grid;gap:7px}
+#factoryActivationSection .fc-check{display:flex;align-items:center;gap:10px;font-size:12px;color:#53565a}
+#factoryActivationSection .fc-check::before{content:"○";font-size:17px;color:#677785}
+#factoryActivationSection .fc-check.checked::before{content:"✓";color:#236647}
+@media(max-width:760px){#factoryActivationSection .fc-channels{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -136,6 +155,27 @@ footer{background:var(--n);color:#fff}.fi{max-width:1200px;margin:auto;padding:1
 <div id="app" class="hidden"><header><div class="hi"><div class="brand"><img src="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory?asset=logo"><span class="words">Publisher<br>Factory</span></div><nav><button id="railwayTop">FREE RUNTIME</button><button id="passkeysTop">PASSKEYS</button><button id="createTop">CREATE</button><button id="logout">SIGN OUT</button></nav></div></header><div class="rail-banner connected" id="railwayBanner"><div><strong id="railwayBannerTitle">Free runtime migration</strong><span id="railwayBannerText">Railway is disabled. Publisher Factory is moving to Supabase Free + GitHub Actions with no expiring trial dependency.</span></div><button class="btn rail-connected" id="railwayBannerBtn" type="button">FREE RUNTIME</button></div>
 <section class="hero"><div class="hs"><div class="visual"><div class="stack"><div class="s1"><span>01</span><b>STRATEGY</b></div><div class="s2"><span>02</span><b>GENERATE</b></div><div class="s3"><span>03</span><b>REVIEW</b></div><div class="s4"><span>04</span><b>PUBLISH</b></div></div></div><div class="copy"><div class="eye">PUBLISHER FACTORY</div><h1>WHERE CONTENT<br>FINDS ITS SYSTEM</h1><p>From idea to generation, review and publishing. Build an autonomous content operation once, then let the system keep working.</p><div class="actions"><button class="btn" id="createHero">CREATE YOUR PUBLISHER</button><button class="btn rail-connected" id="railwayHero">FREE RUNTIME</button></div></div></div></section>
 <div class="status"><button class="pill rail-status-btn ok" id="railwayStatus" type="button">FREE RUNTIME · MIGRATING</button><span class="pill ok" id="accountStatus">Account</span><button class="btn" id="refresh">Actualizar</button></div>
+<section class="section" id="factoryActivationSection" aria-label="Control general de automatización">
+ <div class="inner factory-control">
+  <div class="fc-head"><div>
+   <div class="eye">PUBLISHER FACTORY · CONTROL CENTRAL</div>
+   <h2>Estado de la fábrica</h2>
+   <div class="fc-state" id="factoryState" role="status" aria-live="polite">Comprobando bloqueo de automatización…</div>
+   <p class="fc-note" id="factoryStateDetail">Generación y publicación deben permanecer apagadas durante la reparación técnica. No necesitás conciliar videos todavía.</p>
+  </div><button class="btn" id="factoryRefresh" type="button">ACTUALIZAR ESTADO</button></div>
+  <div class="fc-actions">
+   <button class="btn primary" id="factoryActivate" disabled type="button">ACTIVAR AUTOMATIZACIÓN</button>
+   <button class="btn danger hidden" id="factoryPause" type="button">PAUSAR AUTOMATIZACIÓN</button>
+   <span class="fc-note" id="factoryActionNote">El botón se habilitará solo después de validar técnicamente la fábrica y completar la conciliación previa a la activación.</span>
+  </div>
+  <div class="fc-checks" aria-label="Etapas de reactivación">
+   <div id="factoryStageRepair" class="fc-check">Reparación y pruebas de seguridad de toda la fábrica</div>
+   <div id="factoryStageReconcile" class="fc-check">Conciliación histórica, continuidad y programación previa</div>
+   <div id="factoryStageActivate" class="fc-check">Activación exclusivamente por la propietaria</div>
+  </div>
+  <div class="fc-channels" id="factoryChannelGrid"><div class="fc-channel">Consultando canales…</div></div>
+ </div>
+</section>
 <section class="section"><div class="inner"><div class="head2"><div><div class="eye">MY PUBLISHERS</div><h2>Your autonomous channels</h2></div><p class="muted">Cada cuenta ve solamente sus Publishers. Railway quedó retirado del diseño: el runtime objetivo usa infraestructura gratuita sin trial expirante y estado externo portable.</p></div><div class="grid" id="cards"><div class="card empty">Cargando…</div></div></div></section>
 <section class="hidden" id="unifiedDashboard" aria-label="Publisher integrado"><div class="udwrap"><div class="udhead"><div><div class="udmuted">PUBLISHER FACTORY · PUBLISHER ACTIVO</div><h2 id="udName">Publisher</h2><div class="udmuted" id="udPlatform"></div></div><div class="toolbar"><button class="btn" id="udRefresh" type="button">ACTUALIZAR</button><button class="btn primary" id="udBack" type="button">VOLVER</button></div></div><nav class="ud-modebar" id="udModeTabs" aria-label="Secciones del publisher">
  <button id="udModeOverview" type="button" class="ud-selected" aria-pressed="true">RESUMEN GENERAL</button>
@@ -306,6 +346,97 @@ const sb=createClient("https://wrflttnmlrsuzuukdhtf.supabase.co","sb_publishable
 const API="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory-railway",$=s=>document.querySelector(s);let user=null,signup=false,createStep=0,referenceFile=null,logoFile=null,brandDraft=null,modPublisher=null,modScreenshot=null,railwayConnections=[],selectedRailwayConnectionId=null,deployWatchTimer=null;
 function showAuth(){$("#auth").classList.remove("hidden");$("#app").classList.add("hidden")}function showApp(){$("#auth").classList.add("hidden");$("#app").classList.remove("hidden")}
 async function session(){return(await sb.auth.getSession()).data.session}
+
+const factoryGateEndpoint="https://wrflttnmlrsuzuukdhtf.supabase.co/functions/v1/publisher-factory-control";
+let factoryGateState=null;
+function factoryStage(id,done){$("#"+id).classList.toggle("checked",Boolean(done))}
+function renderFactoryGate(state){
+ factoryGateState=state;
+ const phase=String(state.phase||"repair"),active=state.automation_enabled===true;
+ const phaseLabel={
+  repair:"REPARACIÓN TÉCNICA · AUTOMATIZACIÓN APAGADA",
+  ready_for_reconciliation:"FÁBRICA TÉCNICAMENTE LISTA · CONCILIACIÓN PREVIA PENDIENTE",
+  armed:"LISTA PARA ACTIVAR · ESPERANDO TU DECISIÓN",
+  active:"AUTOMATIZACIÓN ACTIVADA POR LA PROPIETARIA",
+  paused:"PAUSADA · AUTOMATIZACIÓN APAGADA"
+ };
+ $("#factoryState").textContent=phaseLabel[phase]||phaseLabel.repair;
+ const ready=state.technical_readiness===true,reconciled=state.historical_reconciliation_complete===true;
+ $("#factoryStateDetail").textContent=active
+   ?"La fábrica está habilitada. Podés revisar cada Publisher, sus aprobaciones y programación."
+   :ready&&!reconciled
+    ?"La reparación técnica está completada. Antes de encender la fábrica, corresponde revisar y preparar el stock histórico. Esto no genera ni publica nada."
+    :"Estamos reconstruyendo y probando la fábrica. La conciliación histórica se realizará cuando esté técnicamente lista; no es tu tarea ahora.";
+ const activate=$("#factoryActivate"),pause=$("#factoryPause");
+ activate.disabled=state.can_activate!==true;
+ activate.classList.toggle("hidden",active);
+ pause.classList.toggle("hidden",!active);
+ $("#factoryActionNote").textContent=active
+  ?"El botón Pausar bloquea nuevas autorizaciones de ejecución. Ningún video se genera ni publica desde este panel sin una acción habilitada."
+  :state.can_activate
+   ?"La fábrica está preparada. Solo tu clic y una confirmación explícita pueden activar generación y publicación."
+   :"Bloqueo vigente: ni el cron ni abrir un panel pueden activar Generate, Review automático o publicaciones.";
+ factoryStage("factoryStageRepair",ready);
+ factoryStage("factoryStageReconcile",reconciled);
+ factoryStage("factoryStageActivate",active);
+ const root=$("#factoryChannelGrid");root.replaceChildren();
+ for(const p of state.publishers||[]){
+  const tile=document.createElement("article");tile.className="fc-channel";
+  const name=udText("strong","",p.name);
+  const platform=udText("small","",p.platform==="facebook"?"Facebook Reels":"YouTube Shorts");
+  const status=udText("small","",p.enabled?"HABILITADO POR LA FÁBRICA":"EJECUCIÓN APAGADA");
+  const reason=udText("small","",p.historical_reconciliation_pending?
+    "Identidad histórica pendiente de revisión posterior":
+    "Panel disponible para inspección técnica y validaciones");
+  const open=udText("button","btn","ABRIR PANEL INDIVIDUAL");
+  open.type="button";open.onclick=()=>udOpen(p.id);
+  tile.append(name,platform,status,reason,open);root.append(tile);
+ }
+ if(!(state.publishers||[]).length)root.append(udText("p","fc-note","No se pudo confirmar ningún Publisher."));
+}
+async function factoryGateRequest(action,body={}){
+ const s=await session();if(!s?.access_token)throw Error("Sesión de Publisher Factory requerida");
+ const opts={method:action?"POST":"GET",cache:"no-store",headers:{"Authorization":"Bearer "+s.access_token}};
+ if(action){opts.headers["Content-Type"]="application/json";opts.body=JSON.stringify({action,...body})}
+ const res=await fetch(factoryGateEndpoint,opts),data=await res.json().catch(()=>({}));
+ if(!res.ok)throw Error(String(data.error||"FACTORY_CONTROL_HTTP_"+res.status));
+ return data;
+}
+async function refreshFactoryGate(){
+ $("#factoryActivate").disabled=true;
+ try{const state=await factoryGateRequest();renderFactoryGate(state)}
+ catch(e){
+  factoryGateState=null;$("#factoryState").textContent="ESTADO NO VERIFICABLE · ACTIVACIÓN BLOQUEADA";
+  $("#factoryStateDetail").textContent="No se pudo consultar el control central. Por seguridad el botón permanece deshabilitado.";
+  $("#factoryActionNote").textContent=String(e.message||e);
+  $("#factoryPause").classList.add("hidden");
+  $("#factoryActivate").classList.remove("hidden");
+  $("#factoryActivate").disabled=true;
+ }
+}
+$("#factoryRefresh").onclick=refreshFactoryGate;
+$("#factoryActivate").onclick=async()=>{
+ if(!factoryGateState||factoryGateState.can_activate!==true)return;
+ if(!window.confirm("¿Activar AHORA la generación y la publicación automáticas en los tres Publishers? Se iniciarán exclusivamente después de esta confirmación y de los controles del servidor."))return;
+ const b=$("#factoryActivate");b.disabled=true;
+ try{
+  const result=await factoryGateRequest("activate",{
+   expected_revision:factoryGateState.revision,
+   confirmation:"ACTIVAR AUTOMATIZACION"
+  });
+  if(!result.activated)throw Error("El servidor no confirmó la activación");
+  await refreshFactoryGate();
+ }catch(e){$("#factoryActionNote").textContent="No se activó: "+String(e.message||e);await refreshFactoryGate()}
+};
+$("#factoryPause").onclick=async()=>{
+ if(!factoryGateState?.automation_enabled)return;
+ if(!window.confirm("¿Pausar nuevas generaciones y publicaciones de todos los Publishers?"))return;
+ const b=$("#factoryPause");b.disabled=true;
+ try{await factoryGateRequest("pause",{confirmation:"PAUSAR AUTOMATIZACION"});await refreshFactoryGate()}
+ catch(e){$("#factoryActionNote").textContent="No se pudo confirmar la pausa: "+String(e.message||e)}
+ finally{b.disabled=false}
+};
+
 async function rail(action,opt={}){const s=await session();if(!s)throw Error("Ingresá nuevamente.");const qs=new URLSearchParams({action});if(opt.connectionId)qs.set("connectionId",opt.connectionId);const {connectionId,...fetchOpt}=opt;const r=await fetch(API+"?"+qs.toString(),{...fetchOpt,headers:{"Content-Type":"application/json","Authorization":"Bearer "+s.access_token,...(fetchOpt.headers||{})}}),d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||("HTTP "+r.status));return d}
 function paintRailway(connected,label=""){const status=$("#railwayStatus"),hero=$("#railwayHero"),top=$("#railwayTop"),banner=$("#railwayBanner"),bt=$("#railwayBannerTitle"),bx=$("#railwayBannerText"),bb=$("#railwayBannerBtn");if(connected){const who=label||"connected";status.textContent="Railway · "+who+" · connected";status.classList.add("ok","connection-pop");hero.textContent="RAILWAY CONNECTED ✓";hero.classList.add("rail-connected");top.textContent="RAILWAY ✓";top.style.fontWeight="700";banner.classList.add("connected");bt.textContent="Railway connected ✓";bx.textContent=who;bb.textContent="CONNECTED ✓";bb.classList.remove("primary");bb.classList.add("rail-connected");setTimeout(()=>status.classList.remove("connection-pop"),520)}else{const reconnect=label==="reconnect";status.textContent=reconnect?"RECONNECT RAILWAY":"CONNECT RAILWAY";status.classList.remove("ok");hero.textContent=reconnect?"RECONNECT RAILWAY":"CONNECT RAILWAY";hero.classList.remove("rail-connected");top.textContent="RAILWAY";top.style.fontWeight="";banner.classList.remove("connected");bt.textContent=reconnect?"Railway needs reconnecting":"Railway disconnected";bx.textContent="Connect Railway to deploy your Publishers.";bb.textContent=reconnect?"RECONNECT RAILWAY":"CONNECT RAILWAY";bb.classList.add("primary");bb.classList.remove("rail-connected")}}async function migrateLegacyRailwayToken(){const token=localStorage.getItem("pf_railway_token");if(!token)return;try{await rail("connect",{method:"POST",body:JSON.stringify({token,label:"Imported from this device"})});localStorage.removeItem("pf_railway_token")}catch(e){console.warn("Legacy Railway migration:",e.message)}}
 async function resumePendingDeletes(){const{data}=await sb.from("publishers").select("id,name").eq("status","delete_pending");for(const p of data||[]){try{await rail("delete",{method:"POST",body:JSON.stringify({publisherId:p.id})})}catch(e){console.warn("Pending Publisher deletion:",p.name,e.message)}}}
@@ -316,8 +447,9 @@ async function boot(prefetchedUser=null){
   showApp();$("#accountStatus").textContent=user.email||"Account";
   // Never block a successful login on Railway/list recovery. Authentication
   // must enter the app immediately; secondary startup work is best-effort.
-  try{await resumePendingDeletes()}catch(e){console.warn("Pending deletes:",e?.message||e)}
+  // No automatic deletes or recovery-side mutations during the factory repair phase.
   try{await list()}catch(e){console.warn("Publisher list:",e?.message||e)}
+  try{await refreshFactoryGate()}catch(e){console.warn("Factory gate:",e?.message||e)}
   const id=new URL(location.href).searchParams.get("publisher_id");if(id)udOpen(id,false);
 }
 async function factoryPasskeys(){
