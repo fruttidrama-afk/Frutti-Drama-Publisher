@@ -43,10 +43,11 @@ async function inspect(ch){
     if(!response.ok)throw Error('HTTP '+response.status);
     const body=await response.json();
     const enabled=body.operator_activated===true&&body.publisher_enabled===true;
-    return{...ch,state:enabled?'ACTIVA / INVESTIGAR':'PAUSADA',online:true,flowReady:Boolean(body.flow?.authenticated),publicationReady:Boolean(body.scheduler_alive),enabled};
+    return{...ch,state:enabled?'ACTIVA':'PAUSADA',online:true,flowReady:Boolean(body.flow?.authenticated&&body.flow?.configured),publicationReady:body.publication_connected===true,enabled};
   }catch(e){return{...ch,state:'SIN RESPUESTA',online:false,error:String(e.message||e).slice(0,100)}}
 }
-function readiness(chs){
+function readiness(chs,states=[]){
+  if(states.length!==chs.length||states.some(s=>s.online!==true||s.flowReady!==true||s.publicationReady!==true||s.enabled===true))return false;
   if(!ACTIVATION_ARMED||!GLOBAL_FILE||!chs.length)return false;
   try{
     const x=JSON.parse(fs.readFileSync(READY_FILE,'utf8'));
@@ -95,9 +96,10 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='POST'&&req.url==='/api/activate'){
     if(req.headers['x-publisher-operator']!=='explicit-click'||!String(req.headers['content-type']||'').startsWith('application/json')){res.writeHead(403);res.end('Forbidden');return}
     const origin=String(req.headers.origin||'');
-    if(origin&&new URL(origin).host!==String(req.headers.host||'')){res.writeHead(403);res.end('Origin mismatch');return}
-    const chs=channels();
-    if(!readiness(chs)){res.writeHead(423,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:'Pruebas, conciliación o habilitación pendiente'}));return}
+    let validOrigin=true;try{if(origin)validOrigin=new URL(origin).host===String(req.headers.host||'')}catch{validOrigin=false}
+    if(!validOrigin){res.writeHead(403);res.end('Origin mismatch');return}
+    const chs=channels(),states=await Promise.all(chs.map(inspect));
+    if(!readiness(chs,states)){res.writeHead(423,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:'Pruebas, conciliación o habilitación pendiente'}));return}
     let body='';for await(const part of req){body+=part;if(body.length>1000){res.writeHead(413);res.end('Too large');return}}
     let answer={};try{answer=JSON.parse(body)}catch{}
     if(answer.confirm!=='ACTIVAR AUTOMATIZACIÓN'){res.writeHead(400);res.end('Confirmation mismatch');return}
@@ -114,6 +116,6 @@ const server=http.createServer(async(req,res)=>{
   if(req.url==='/health'){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:true,phase:'reconstruction',activation_allowed:false}));return}
   if(req.url!=='/'){res.writeHead(404);res.end('Not found');return}
   const states=await Promise.all(channels().map(inspect));
-  res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(html(states,readiness(channels())));
+  res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(html(states,readiness(channels(),states)));
 });
 server.listen(PORT,String(process.env.HUB_LISTEN_HOST||'127.0.0.1'),()=>console.log('Publisher Factory read-only hub listening',PORT));
