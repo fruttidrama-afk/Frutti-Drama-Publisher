@@ -635,7 +635,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   normalizeTimedYoutubePublicationPolicy();
 
   async function tick(){
-    if(!isEnabled()||running)return;running=true;lastHeartbeat=now();lastError=null;
+    if(!isEnabled()||running||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;running=true;lastHeartbeat=now();lastError=null;
     await migratePendingPublicationMedia();
     try{
       const items=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'youtube')='youtube' AND status NOT IN ('cancelled','deleted') AND (status<>'published' OR aiDisclosureSyncedAt IS NULL) ORDER BY scheduledAt").all();
