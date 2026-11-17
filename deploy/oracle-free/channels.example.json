@@ -1,0 +1,10 @@
+{
+  "channels": [
+    {
+      "id": "fruttidrama",
+      "name": "FruttiDrama",
+      "status_url": "http://publisher:8080/factory/health",
+      "panel_url": ""
+    }
+  ]
+}
