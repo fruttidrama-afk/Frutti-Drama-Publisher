@@ -5,7 +5,8 @@
       "id": "fruttidrama",
       "name": "FruttiDrama",
       "status_url": "http://publisher:8080/factory/health",
-      "panel_url": ""
+      "panel_url": "",
+      "db_path": "/data/publisher/publisher-runtime/factory.sqlite"
     },
     {
       "id": "earth-in-10",
