@@ -632,7 +632,8 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       if(changed.length)console.log('[PUBLICATION_SAME_DAY_PRIVATE_TO_PUBLIC_NORMALIZED]',JSON.stringify({timezone:tz,changed}));
     }catch(e){console.log('[PUBLICATION TIMED POLICY NORMALIZE WARNING]',String(e?.message||e).slice(0,500))}
   }
-  normalizeTimedYoutubePublicationPolicy();
+  // Paused factory: never rewrite historical publication schedules at import time.
+  if(db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value==='true')normalizeTimedYoutubePublicationPolicy();
 
   async function tick(){
     if(!isEnabled()||running||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;running=true;lastHeartbeat=now();lastError=null;
