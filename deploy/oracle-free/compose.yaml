@@ -12,6 +12,7 @@ services:
       CHROMIUM_PATH: /usr/bin/chromium
       FLOW_CHROME_PATH: /usr/bin/chromium
       PUBLISHER_GLOBAL_FLOW_LOCK_PATH: /global/flow.lock
+      PUBLISHER_GLOBAL_ACTIVATION_FILE: /global/operator-activation.json
       NODE_ENV: production
     env_file:
       - .env
