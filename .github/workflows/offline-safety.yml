@@ -1,5 +1,7 @@
 name: Offline activation safety
 on:
+  push:
+    branches: [safety/manual-activation-gate-20261117]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -26,6 +28,7 @@ jobs:
           node --check publication-facebook.js
           node --check runtime-init.js
           node --check factory-hub.mjs
+          node --check activation-gate.mjs
       - name: Verify no cloud deployment secrets or host interaction
         run: |
           test ! -f deploy/oracle-free/.env
