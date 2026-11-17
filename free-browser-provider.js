@@ -3896,6 +3896,7 @@ async function processRow(db,row){
     // other row/process has consumed the window since preflight.
     const boundary=reserveGenerateBoundary(db,row,genId);
     if(!boundary.allowed)throw new Error('GENERATE_SUBMIT_BOUNDARY_THROTTLED:'+boundary.reason);
+    if(!centralGateOpen())throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE_BEFORE_FLOW_SUBMIT');
     const submit=await clickSubmitExactlyOnce(page,baselineInventory,baseline,baselineBusy);
     const submitMode=String(submit?.mode||'start-generation-direct');
     const priorConsent=meta(db,'flow:consentMode','UNKNOWN');
