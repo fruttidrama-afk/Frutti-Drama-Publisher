@@ -1,3 +1,4 @@
+import { centralGateOpen } from './activation-gate.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -314,7 +315,7 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     return{purged:items.length,remoteDeleted};
   }
   async function tick(){
-    if(!isEnabled()||running||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;
+    if(!centralGateOpen()||!isEnabled()||running||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;
     running=true;lastHeartbeat=now();lastError=null;
     try{
       const items=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'')='facebook' AND status NOT IN ('cancelled','deleted') AND (status<>'published' OR aiDisclosureSyncedAt IS NULL) ORDER BY scheduledAt").all();
