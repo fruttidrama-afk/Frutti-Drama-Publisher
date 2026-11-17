@@ -69,6 +69,17 @@ function eachDay(start:string,end:string){
 // are durable already; recreating 30-370 days of missed rows on every cron
 // wastes API calls and must never become an implicit catch-up authorization.
 // One bulk conflict-ignoring insert preserves ALL prior status, claim and IDs.
+// Owner-controlled factory-wide kill switch. An unreadable/absent state
+// always means STOP; individual publisher.enabled is insufficient.
+async function factoryAutomationAuthorized(){
+ const {data,error}=await db.from("publisher_factory_control")
+  .select("phase,automation_enabled,technical_readiness,historical_reconciliation_complete")
+  .eq("id",1).maybeSingle();
+ if(error||!data)return false;
+ return data.phase==="active"&&data.automation_enabled===true&&
+  data.technical_readiness===true&&data.historical_reconciliation_complete===true;
+}
+
 async function materialize(){
   const {data:pubs,error}=await db.from("publisher_runtime_publishers").select("*").eq("enabled",true);
   if(error)throw error;
@@ -169,6 +180,7 @@ function validYoutubeStageIdentity(videoId:string,itemId:string){
   return /^[A-Za-z0-9_-]{11}$/.test(videoId)&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(itemId);
 }
 async function claim(filterPublisher="",filterKind=""){
+  if(!await factoryAutomationAuthorized())return null;
   await releaseExpired();await materialize();
   const {data:pubs,error}=await db.from("publisher_runtime_publishers").select("*").eq("enabled",true)
     .order("last_runner_at",{ascending:true,nullsFirst:true}).order("name",{ascending:true});
@@ -406,6 +418,22 @@ Deno.serve(async(req:Request)=>{
       const body=await req.json().catch(()=>({}));
       const job=await claim(String(body.publisher_id||""),String(body.kind||"").toLowerCase());
       return J({ok:true,job,identity:{repository:claims.repository,run_id:claims.run_id||null}});
+    }
+    if(suffix==="/preflight"&&req.method==="POST"){
+      const body=await req.json().catch(()=>({}));
+      if(!await factoryAutomationAuthorized())return J({ok:true,authorized:false,reason:"FACTORY_REPAIR_PAUSE"});
+      const q=await db.from("publisher_runtime_obligations")
+        .select("publisher_id,status").eq("id",String(body.obligation_id||""))
+        .eq("claim_id",String(body.claim_id||"")).maybeSingle();
+      if(q.error)throw q.error;
+      if(!q.data||!["claimed","running"].includes(String(q.data.status)))
+        return J({ok:true,authorized:false,reason:"CLAIM_NOT_ACTIVE"});
+      const p=await db.from("publisher_runtime_publishers")
+        .select("enabled,migration_state,config").eq("id",q.data.publisher_id).maybeSingle();
+      if(p.error)throw p.error;
+      const valid=p.data?.enabled===true&&p.data?.migration_state==="ready"&&
+        p.data?.config?.automation?.historical_reconciliation_pending!==true;
+      return J({ok:true,authorized:valid,reason:valid?"ACTIVE_AND_VERIFIED":"PUBLISHER_NOT_READY"});
     }
     if(suffix==="/callback"&&req.method==="POST")return J(await callback(await req.json()));
     const m=suffix.match(/^\/blob\/(state|profile)\/([0-9a-f-]{36})$/i);
