@@ -1,3 +1,4 @@
+import { centralGateOpen } from './activation-gate.mjs';
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -633,10 +634,10 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     }catch(e){console.log('[PUBLICATION TIMED POLICY NORMALIZE WARNING]',String(e?.message||e).slice(0,500))}
   }
   // Paused factory: never rewrite historical publication schedules at import time.
-  if(db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value==='true')normalizeTimedYoutubePublicationPolicy();
+  if(centralGateOpen()&&db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value==='true')normalizeTimedYoutubePublicationPolicy();
 
   async function tick(){
-    if(!isEnabled()||running||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;running=true;lastHeartbeat=now();lastError=null;
+    if(!centralGateOpen()||!isEnabled()||running||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;running=true;lastHeartbeat=now();lastError=null;
     await migratePendingPublicationMedia();
     try{
       const items=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'youtube')='youtube' AND status NOT IN ('cancelled','deleted') AND (status<>'published' OR aiDisclosureSyncedAt IS NULL) ORDER BY scheduledAt").all();
@@ -807,6 +808,6 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
 
   app.get('/publication/items',(_req,res)=>res.json({items:db.prepare('SELECT * FROM publication_items ORDER BY scheduledAt').all().map(publicItem),scheduler:{alive:true,lastHeartbeat,lastError,indefinite:true}}));
   app.post('/publication/run',(_req,res)=>{setTimeout(()=>void tick(),0);res.status(202).json({ok:true})});
-  const timer=setInterval(()=>void tick(),30000);timer.unref?.();setTimeout(()=>{if(db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;void migratePendingPublicationMedia().then(()=>auditExistingMetadata()).then(()=>tick()).catch(e=>{lastError=String(e?.message||e)});},900).unref?.();
+  const timer=setInterval(()=>void tick(),30000);timer.unref?.();setTimeout(()=>{if(!centralGateOpen()||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;void migratePendingPublicationMedia().then(()=>auditExistingMetadata()).then(()=>tick()).catch(e=>{lastError=String(e?.message||e)});},900).unref?.();
   return{enqueue,purgeRejected,purgePrivateVideosByTitle,tick,status:()=>({alive:true,running,lastHeartbeat,lastError,indefinite:true}),close:()=>clearInterval(timer)};
 }
