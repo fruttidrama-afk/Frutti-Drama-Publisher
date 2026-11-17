@@ -32,11 +32,11 @@ async function inspect(ch){
   if(!/^https?:\/\//.test(ch.statusUrl))return{...ch,state:'sin-configurar'};
   try{
     const url=new URL(ch.statusUrl);
-    if(url.protocol!=='https:'&&url.hostname!=='127.0.0.1'&&url.hostname!=='localhost')throw Error('HTTPS required');
+    if(url.protocol!=='https:'&&url.hostname!=='127.0.0.1'&&url.hostname!=='localhost'&&url.hostname!=='publisher')throw Error('HTTPS required outside explicit Docker peer');
     const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(4000)});
     if(!response.ok)throw Error('HTTP '+response.status);
     const body=await response.json();
-    const enabled=Boolean(body.publisher_enabled);
+    const enabled=body.operator_activated===true&&body.publisher_enabled===true;
     return{...ch,state:enabled?'ACTIVA / INVESTIGAR':'PAUSADA',online:true,flowReady:Boolean(body.flow?.authenticated),publicationReady:Boolean(body.scheduler_alive),enabled};
   }catch(e){return{...ch,state:'SIN RESPUESTA',online:false,error:String(e.message||e).slice(0,100)}}
 }
@@ -61,4 +61,4 @@ const server=http.createServer(async(req,res)=>{
   const states=await Promise.all(channels().map(inspect));
   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(html(states));
 });
-server.listen(PORT,'127.0.0.1',()=>console.log('Publisher Factory read-only hub listening on loopback',PORT));
+server.listen(PORT,String(process.env.HUB_LISTEN_HOST||'127.0.0.1'),()=>console.log('Publisher Factory read-only hub listening',PORT));
