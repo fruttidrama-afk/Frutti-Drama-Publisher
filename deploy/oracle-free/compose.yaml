@@ -32,3 +32,23 @@ services:
       timeout: 10s
       retries: 3
       start_period: 90s
+
+  hub:
+    image: node:24-alpine
+    restart: unless-stopped
+    command: ["node","/app/factory-hub.mjs"]
+    environment:
+      HUB_PORT: "8081"
+      HUB_LISTEN_HOST: "0.0.0.0"
+      PUBLISHER_HUB_MANIFEST: /data/factory-hub/channels.json
+    env_file:
+      - .env
+    volumes:
+      - ../../factory-hub.mjs:/app/factory-hub.mjs:ro
+      - ./hub:/data/factory-hub:ro
+    ports:
+      - "127.0.0.1:8081:8081"
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: "256m"
+    cpus: "0.25"
