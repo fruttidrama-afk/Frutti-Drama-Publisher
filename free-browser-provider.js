@@ -4515,7 +4515,9 @@ async function runProvider(){
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();purgeRemovedProviderMetadata(db);ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);resumeRecoverableManualHold(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);repairProviderBackoffAfterConfirmedSuccessV2(db);normalizeLiveNoChargeCooldown(db);
+    db=dbOpen();
+    if(meta(db,'automation:operatorActivated','false')!=='true')return;
+    purgeRemovedProviderMetadata(db);ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);resumeRecoverableManualHold(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);repairProviderBackoffAfterConfirmedSuccessV2(db);normalizeLiveNoChargeCooldown(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
@@ -4658,6 +4660,8 @@ async function runProvider(){
 async function recoverApprovedPublicationMedia(){
   const raw=String(process.env.PUBLISHER_RECOVER_APPROVED_FLOW_JSON||'').trim();
   if(!raw)return;
+  if(!fs.existsSync(DB_PATH))return;
+  {const gateDb=dbOpen();try{if(meta(gateDb,'automation:operatorActivated','false')!=='true')return;}finally{gateDb.close();}}
   let spec={};try{spec=JSON.parse(raw)||{}}catch(e){publish('APPROVED_MEDIA_RECOVERY_CONFIG_ERROR',{message:compact(e?.message||e,400)});return}
   const targets=Object.entries(spec).map(([episode,v])=>({
     episode:Number(episode),
