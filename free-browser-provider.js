@@ -1,3 +1,4 @@
+import { centralGateOpen } from './activation-gate.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
@@ -3855,7 +3856,7 @@ async function processRow(db,row){
     }
     const envEnabled=String(process.env.PUBLISHER_ENABLED||'true').toLowerCase()!=='false';
     const pauseAllowsSubmit=!generationPauseActive();
-    const manualSubmit=envEnabled&&pauseAllowsSubmit&&meta(db,'automation:operatorActivated','false')==='true'&&meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true'&&meta(db,'automation:operatorActivated','false')==='true',creditCycleOpen=meta(db,'flow:dailyCreditBatchOpen','false')==='true',cycleUsed=creditCycleUsage(db),extraAuthorized=dailyProductionLimit(db)>Number(BASE_DAILY_PRODUCTION_LIMIT||1)&&effectiveDailyCount(db)<dailyProductionLimit(db),autoSubmit=envEnabled&&pauseAllowsSubmit&&runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||extraAuthorized||(creditCycleOpen&&cycleUsed<Number(BASE_DAILY_PRODUCTION_LIMIT||1))),submitAuthorized=manualSubmit||autoSubmit;
+    const manualSubmit=envEnabled&&pauseAllowsSubmit&&centralGateOpen()&&meta(db,'automation:operatorActivated','false')==='true'&&meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=centralGateOpen()&&meta(db,'automation:factoryEnabled','false')==='true'&&meta(db,'automation:operatorActivated','false')==='true',creditCycleOpen=meta(db,'flow:dailyCreditBatchOpen','false')==='true',cycleUsed=creditCycleUsage(db),extraAuthorized=dailyProductionLimit(db)>Number(BASE_DAILY_PRODUCTION_LIMIT||1)&&effectiveDailyCount(db)<dailyProductionLimit(db),autoSubmit=envEnabled&&pauseAllowsSubmit&&runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||extraAuthorized||(creditCycleOpen&&cycleUsed<Number(BASE_DAILY_PRODUCTION_LIMIT||1))),submitAuthorized=manualSubmit||autoSubmit;
     publish('PREFLIGHT',{episode:'E'+row.episode,job_id:row.id});
     const pf=await preflight(page,row,cp);
     db.prepare('UPDATE factory_items SET transportPreflight=?,error=NULL,updatedAt=? WHERE id=?').run(JSON.stringify(pf).slice(0,20000),now(),row.id);
@@ -4554,7 +4555,7 @@ async function runProvider(){
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
     db=dbOpen();
-    if(meta(db,'automation:operatorActivated','false')!=='true')return;
+    if(meta(db,'automation:operatorActivated','false')!=='true'||!centralGateOpen())return;
     if(!acquireGlobalFlowLock())return;
     purgeRemovedProviderMetadata(db);ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);resumeRecoverableManualHold(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);repairProviderBackoffAfterConfirmedSuccessV2(db);normalizeLiveNoChargeCooldown(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
@@ -4700,7 +4701,7 @@ async function recoverApprovedPublicationMedia(){
   const raw=String(process.env.PUBLISHER_RECOVER_APPROVED_FLOW_JSON||'').trim();
   if(!raw)return;
   if(!fs.existsSync(DB_PATH))return;
-  {const gateDb=dbOpen();try{if(meta(gateDb,'automation:operatorActivated','false')!=='true')return;}finally{gateDb.close();}}
+  {const gateDb=dbOpen();try{if(meta(gateDb,'automation:operatorActivated','false')!=='true'||!centralGateOpen())return;}finally{gateDb.close();}}
   let spec={};try{spec=JSON.parse(raw)||{}}catch(e){publish('APPROVED_MEDIA_RECOVERY_CONFIG_ERROR',{message:compact(e?.message||e,400)});return}
   const targets=Object.entries(spec).map(([episode,v])=>({
     episode:Number(episode),
