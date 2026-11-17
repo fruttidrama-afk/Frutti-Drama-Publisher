@@ -1,3 +1,4 @@
+import { centralGateOpen } from './activation-gate.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -172,7 +173,7 @@ async function tick(){
   try{
     db=new DatabaseSync(file,{timeout:5000});ensureSchema(db);setMeta(db,'automation:autonomySupervisorVersion',VERSION);
     // A paused factory must not silently re-enable itself, quarantine episodes, or reschedule stock.
-    if(meta(db,'automation:operatorActivated','false')!=='true'||meta(db,'automation:factoryEnabled','false')!=='true'){
+    if(!centralGateOpen()||meta(db,'automation:operatorActivated','false')!=='true'||meta(db,'automation:factoryEnabled','false')!=='true'){
       writeStatus({ok:true,version:VERSION,at:now(),paused:true,reason:'manual-operator-activation-required'});
       return;
     }
