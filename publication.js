@@ -362,6 +362,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   }
 
   async function ensureAiDisclosure(item){
+    if(!centralGateOpen())throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE_BEFORE_METADATA');
     if(!item?.videoId||item.aiDisclosureSyncedAt)return;
     const yt=youtubeApi(),current=(await yt.videos.list({part:['status'],id:[item.videoId]})).data.items?.[0];
     if(!current)throw new Error('YouTube video not found for AI disclosure.');
@@ -462,6 +463,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   }
 
   async function upload(item,privacyStatus='private'){
+    if(!centralGateOpen())throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE_BEFORE_UPLOAD');
     if(item.videoId)return;
     if(!item.filePath)throw new Error('Archivo de publicación ausente.');
     const cloudSource=isReviewStorageUri(item.filePath);
@@ -499,6 +501,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   }
 
   async function publishNowLikeManual(item){
+    if(!centralGateOpen())throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE_BEFORE_PUBLICATION');
     if(!item?.videoId)throw new Error('No hay videoId para publicar.');
     const yt=youtubeApi(),channel=await connectedChannel();
     const v=(await yt.videos.list({part:['snippet','status'],id:[item.videoId]})).data.items?.[0];
