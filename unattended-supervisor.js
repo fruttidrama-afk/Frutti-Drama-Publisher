@@ -171,7 +171,11 @@ async function tick(){
   let db;
   try{
     db=new DatabaseSync(file,{timeout:5000});ensureSchema(db);setMeta(db,'automation:autonomySupervisorVersion',VERSION);
-    if(String(process.env.PUBLISHER_ENABLED||'true').toLowerCase()!=='false')setMeta(db,'automation:factoryEnabled','true');
+    // A paused factory must not silently re-enable itself, quarantine episodes, or reschedule stock.
+    if(meta(db,'automation:operatorActivated','false')!=='true'||meta(db,'automation:factoryEnabled','false')!=='true'){
+      writeStatus({ok:true,version:VERSION,at:now(),paused:true,reason:'manual-operator-activation-required'});
+      return;
+    }
     const poison=supervisePoison(db),o=obligations(db),normalized=normalizePublicationQueue(db,o.publishedToday);
     const lastGeneration=tableExists(db,'factory_generations')?db.prepare("SELECT updatedAt,createdAt FROM factory_generations WHERE status IN ('review','completed') ORDER BY COALESCE(updatedAt,createdAt) DESC LIMIT 1").get():null;
     const lastPublication=tableExists(db,'publication_items')?db.prepare("SELECT updatedAt,remotePublishAt,status,videoId FROM publication_items WHERE status='published' ORDER BY COALESCE(remotePublishAt,updatedAt) DESC LIMIT 1").get():null;
