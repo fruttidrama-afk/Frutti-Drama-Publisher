@@ -1466,7 +1466,7 @@ async function launchLocal() {
     if(xvfb.exitCode!==null)throw new Error('XVFB_START_FAILED:'+compact(xvfbErr,700));
 
     const env={...process.env,DISPLAY:display};
-    chrome=spawn('/usr/bin/google-chrome-stable',[
+    chrome=spawn(String(process.env.FLOW_CHROME_PATH||process.env.CHROMIUM_PATH||'/usr/bin/chromium'),[
       '--user-data-dir='+PROFILE_DIR,
       '--remote-debugging-address=127.0.0.1','--remote-debugging-port='+port,'--remote-allow-origins=*',
       '--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-software-rasterizer',
