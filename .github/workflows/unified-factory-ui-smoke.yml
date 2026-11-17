@@ -9,6 +9,10 @@ on:
       - "docs/frutti-recap.js"
       - "factory-web/public/frutti-recap.js"
       - "scripts/check-unified-factory-ui.mjs"
+      - "scripts/check-factory-activation-gate.mjs"
+      - "supabase/functions/publisher-factory-control/index.ts"
+      - "supabase/migrations/20261117_publisher_factory_global_activation_gate.sql"
+
       - "scripts/test-frutti-copy.mjs"
       - "scripts/test-frutti-manual-recovery.mjs"
       - "frutti-creative-package.js"
@@ -63,6 +67,8 @@ jobs:
           node-version: "24"
       - name: Check both Factory UIs without browser, Flow or publication
         run: node scripts/check-unified-factory-ui.mjs
+      - name: Verify owner-only factory kill switch and activation button, no side effects
+        run: node scripts/check-factory-activation-gate.mjs
       - name: Validate FruttiDrama narrative metadata without production writes
         run: node scripts/test-frutti-copy.mjs
       - name: Verify OIDC productivity watchdog contract without network
