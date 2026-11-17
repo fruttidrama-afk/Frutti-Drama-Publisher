@@ -209,6 +209,7 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     item.fileSize=data.length;item.remotePrivacyStatus='uploaded';hist(item,'publishing','Facebook received the Reel binary.');save(item);
   }
   async function ensureAiDisclosure(item){
+    if(!centralGateOpen())throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE_BEFORE_FACEBOOK_METADATA');
     if(!item?.videoId||item.aiDisclosureSyncedAt)return true;
     const c=connection();
     const current=await graph(item.videoId,{params:{fields:'id,is_ai_generated'},token:c.page_access_token});
@@ -257,6 +258,7 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     save(item);
   }
   async function publish(item){
+    if(!centralGateOpen())throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE_BEFORE_FACEBOOK_PUBLICATION');
     let c=connection();
     const run=async()=>{
       // Restart-safe phase machine:
