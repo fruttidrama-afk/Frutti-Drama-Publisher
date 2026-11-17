@@ -314,7 +314,7 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     return{purged:items.length,remoteDeleted};
   }
   async function tick(){
-    if(!isEnabled()||running)return;
+    if(!isEnabled()||running||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;
     running=true;lastHeartbeat=now();lastError=null;
     try{
       const items=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'')='facebook' AND status NOT IN ('cancelled','deleted') AND (status<>'published' OR aiDisclosureSyncedAt IS NULL) ORDER BY scheduledAt").all();
