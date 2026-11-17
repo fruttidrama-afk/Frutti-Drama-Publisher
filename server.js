@@ -51,7 +51,7 @@ app.use(express.json({limit:'2mb'}));
 app.use(express.urlencoded({extended:false,limit:'256kb'}));
 
 function applyForcedNewIntentsAtStartup(){
-  if(db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;
+  if(!centralGateOpen()||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;
   let forced={};
   try{forced=JSON.parse(String(process.env.PUBLISHER_FORCE_NEW_INTENTS_JSON||'{}'))||{}}catch{return}
   for(const [episodeKey,intent] of Object.entries(forced)){
@@ -535,7 +535,7 @@ function diagnosticConfiguredEpisodes(){
 }
 setTimeout(()=>{try{diagnosticConfiguredEpisodes()}catch(e){console.error('[EPISODE RECOVERY DIAGNOSTIC ERROR]',String(e?.message||e))}},2500).unref?.();
 async function purgeConfiguredRejectedPrivateVideos(){
-  if(metaGet('automation:operatorActivated','false')!=='true')return;
+  if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return;
   const raw=String(process.env.PUBLISHER_PURGE_PRIVATE_TITLES||'').trim();
   if(!raw)return;
   const key='operator:purge-private-titles:'+createHash('sha256').update(raw).digest('hex').slice(0,20);
@@ -979,7 +979,7 @@ function repairPendingPublicationMetadata(){
 setTimeout(()=>{try{repairPendingPublicationMetadata()}catch(e){console.error('[PENDING PUBLICATION COPY REPAIR ERROR]',String(e?.message||e))}},1400).unref?.();
 
 function applyForcedPublicationNow(){
-  if(metaGet('automation:operatorActivated','false')!=='true')return;
+  if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return;
   const episode=Number(process.env.PUBLISHER_FORCE_PUBLICATION_NOW_EPISODE||0);
   const token=String(process.env.PUBLISHER_FORCE_PUBLICATION_NOW_TOKEN||'').trim();
   if(!Number.isInteger(episode)||episode<1||!token)return;
@@ -1137,7 +1137,7 @@ app.post('/factory/preflight',secure,(req,res)=>{metaSet('automation:allowSubmit
 app.post('/factory/test-generation',secure,(req,res)=>{res.status(409).json({ok:false,error:'Live Flow submit is forbidden during reconstruction. Use isolated mock tests.'})});
 app.post('/factory/run',secure,(req,res)=>{res.status(202).json({ok:true})});
 app.post('/factory/generate-extra',secure,(req,res)=>{
- if(metaGet('automation:operatorActivated','false')!=='true')return res.status(423).json({error:'Factory is paused until explicit operator activation.'});
+ if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return res.status(423).json({error:'Factory is paused until explicit operator activation.'});
  try{
   const count=Math.max(1,Math.min(20,Math.trunc(Number(req.body?.count)||1)));
   const day=publisherDay(),current=activeDailyTarget(day),target=current+count;
