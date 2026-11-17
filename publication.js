@@ -806,6 +806,6 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
 
   app.get('/publication/items',(_req,res)=>res.json({items:db.prepare('SELECT * FROM publication_items ORDER BY scheduledAt').all().map(publicItem),scheduler:{alive:true,lastHeartbeat,lastError,indefinite:true}}));
   app.post('/publication/run',(_req,res)=>{setTimeout(()=>void tick(),0);res.status(202).json({ok:true})});
-  const timer=setInterval(()=>void tick(),30000);timer.unref?.();setTimeout(()=>void migratePendingPublicationMedia().then(()=>auditExistingMetadata()).then(()=>tick()).catch(e=>{lastError=String(e?.message||e)}),900).unref?.();
+  const timer=setInterval(()=>void tick(),30000);timer.unref?.();setTimeout(()=>{if(db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;void migratePendingPublicationMedia().then(()=>auditExistingMetadata()).then(()=>tick()).catch(e=>{lastError=String(e?.message||e)});},900).unref?.();
   return{enqueue,purgeRejected,purgePrivateVideosByTitle,tick,status:()=>({alive:true,running,lastHeartbeat,lastError,indefinite:true}),close:()=>clearInterval(timer)};
 }
