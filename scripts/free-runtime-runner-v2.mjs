@@ -44,6 +44,14 @@ async function claim(){
   if(!r.ok)throw new Error('CLAIM_'+r.status+' '+(await r.text()).slice(0,500));
   return (await r.json()).job||null;
 }
+async function executionPreflight(job){
+ const r=await api('/preflight',{method:'POST',headers:{'content-type':'application/json'},
+   body:JSON.stringify({obligation_id:job.obligation.id,claim_id:job.claim_id})});
+ if(!r.ok)throw new Error('FACTORY_EXECUTION_PREFLIGHT_HTTP_'+r.status);
+ const data=await r.json().catch(()=>({}));
+ return data.authorized===true?null:String(data.reason||"FACTORY_REPAIR_PAUSE");
+}
+
 async function callback(payload){
   const r=await api('/callback',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
   if(!r.ok)throw new Error('CALLBACK_'+r.status+' '+(await r.text()).slice(0,500));
@@ -475,6 +483,15 @@ try{
       error:'FACEBOOK_DUE_APPROVED_ITEM_ID_RECONCILIATION_REQUIRED',approved_stock:baseline.stock});
     console.error('No unique due Facebook approved publication item; no Meta mutation attempted.');
     process.exit(0);
+  }
+  // Check again just before any browser process could Generate or Upload.
+  // A job claimed before an operator pause cannot run after that pause.
+  const stopped=await executionPreflight(job);
+  if(stopped){
+   console.warn('FACTORY_EXECUTION_ABORTED',stopped,'no_external_mutation=true');
+   await callback({obligation_id:o.id,claim_id:claimId,status:'blocked',
+     error:'FACTORY_PAUSED_BEFORE_EXECUTION',approved_stock:baseline.stock});
+   process.exit(0);
   }
   const fd=fs.openSync(LOG,'a');
   const env={
