@@ -1127,12 +1127,13 @@ app.post('/factory/:id/reject',async(req,res)=>{
  res.json({ok:true,regenerating:true,aiPending:true,retryStrategy:'ai_pending',retryToken:token});
  setTimeout(()=>{try{globalThis.__publisherRunProvider?.()}catch{}},50).unref?.();
 });
-app.post('/factory/enable',(req,res)=>{metaSet('automation:factoryEnabled','true');res.json({ok:true,enabled:true})});
-app.post('/factory/disable',(req,res)=>{metaSet('automation:factoryEnabled','false');res.json({ok:true,enabled:false})});
-app.post('/factory/preflight',(req,res)=>{metaSet('automation:allowSubmit','0');const r=db.prepare("SELECT id,episode,status FROM factory_items WHERE status IN ('draft','regen_wait') ORDER BY episode LIMIT 1").get();res.status(202).json({ok:true,next:r||null,note:'Provider will run preflight only; Generate remains disabled.'})});
-app.post('/factory/test-generation',(req,res)=>{metaSet('automation:factoryEnabled','false');metaSet('automation:allowSubmit','1');res.status(202).json({ok:true,one_test_submit_authorized:true})});
-app.post('/factory/run',(req,res)=>{res.status(202).json({ok:true})});
-app.post('/factory/generate-extra',(req,res)=>{
+app.post('/factory/enable',secure,(req,res)=>{res.status(409).json({ok:false,error:'La activación queda reservada al botón general después de la conciliación histórica.'})});
+app.post('/factory/disable',secure,(req,res)=>{metaSet('automation:operatorActivated','false');metaSet('automation:factoryEnabled','false');metaSet('automation:allowSubmit','0');res.json({ok:true,enabled:false})});
+app.post('/factory/preflight',secure,(req,res)=>{metaSet('automation:allowSubmit','0');const r=db.prepare("SELECT id,episode,status FROM factory_items WHERE status IN ('draft','regen_wait') ORDER BY episode LIMIT 1").get();res.status(202).json({ok:true,next:r||null,note:'Provider will run preflight only; Generate remains disabled.'})});
+app.post('/factory/test-generation',secure,(req,res)=>{res.status(409).json({ok:false,error:'Live Flow submit is forbidden during reconstruction. Use isolated mock tests.'})});
+app.post('/factory/run',secure,(req,res)=>{res.status(202).json({ok:true})});
+app.post('/factory/generate-extra',secure,(req,res)=>{
+ if(metaGet('automation:operatorActivated','false')!=='true')return res.status(423).json({error:'Factory is paused until explicit operator activation.'});
  try{
   const count=Math.max(1,Math.min(20,Math.trunc(Number(req.body?.count)||1)));
   const day=publisherDay(),current=activeDailyTarget(day),target=current+count;
@@ -1162,6 +1163,8 @@ function liveFlowConfig(){
 function metaGet(k,f=''){return db.prepare('SELECT value FROM factory_meta WHERE key=?').get(k)?.value??f}
 function metaSet(k,v){db.prepare("INSERT INTO factory_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k,String(v))}
 function activateReadyAutomation(){
+  // Readiness must NEVER be interpreted as authorization to start production.
+  if(metaGet('automation:operatorActivated','false')!=='true')return false;
   try{
     const lf=liveFlowConfig();
     const knowledgeReady=metaGet('knowledge:flowSopLoaded','false')==='true';
