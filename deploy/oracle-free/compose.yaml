@@ -42,11 +42,15 @@ services:
       HUB_PORT: "8081"
       HUB_LISTEN_HOST: "0.0.0.0"
       PUBLISHER_HUB_MANIFEST: /data/factory-hub/channels.json
+      PUBLISHER_GLOBAL_ACTIVATION_FILE: /global/operator-activation.json
+      PUBLISHER_HUB_ACTIVATION_ARMED: "false"
     env_file:
       - .env
     volumes:
       - ../../factory-hub.mjs:/app/factory-hub.mjs:ro
       - ./hub:/data/factory-hub:ro
+      - ./data:/data/publisher
+      - ./global:/global
     ports:
       - "127.0.0.1:8081:8081"
     security_opt:
