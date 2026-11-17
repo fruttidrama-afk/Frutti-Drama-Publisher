@@ -1,0 +1,32 @@
+name: Offline activation safety
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Assert default-deny activation safety
+        run: node scripts/safety-gate-selftest.mjs
+      - name: Syntax check modified Node modules
+        run: |
+          node --check server.js
+          node --check free-browser-provider.js
+          node --check unattended-supervisor.js
+          node --check flow-bootstrap.js
+          node --check publication.js
+          node --check publication-facebook.js
+          node --check runtime-init.js
+      - name: Verify no cloud deployment secrets or host interaction
+        run: |
+          test ! -f deploy/oracle-free/.env
+          test -f deploy/oracle-free/.env.example
+          echo "Offline checks only. No Flow, publication, Oracle or Railway actions."
