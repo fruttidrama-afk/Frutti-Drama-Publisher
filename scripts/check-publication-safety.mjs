@@ -154,6 +154,12 @@ const cases=[
 ];
 const snapshots=cases.map(x=>({...x}));
 const saved=[],wake=[];
+// The expected count is for the November 14 calendar-day scenario;
+// freeze time instead of letting CI fail on every later date.
+class FrozenScenarioDate extends Date{
+ constructor(...args){super(...(args.length?args:["2026-11-14T15:00:00Z"]))}
+ static now(){return Date.parse("2026-11-14T15:00:00Z")}
+}
 const ctx={
  config:{schedule:{timezone:art}},
  db:{prepare:()=>({all:()=>cases})},
@@ -162,7 +168,7 @@ const ctx={
  save:item=>saved.push({...item}),
  tick:()=>{throw Error('tick must not execute during offline test')},
  setTimeout:(fn,ms)=>{wake.push(ms);return{unref(){}}},
- Date
+ Date:FrozenScenarioDate
 };
 const actualResume=vm.runInNewContext(reconnectBody+'\nresumeAuthWait',ctx);
 assert.equal(actualResume(),3,'only current/future-day items rearmed');
