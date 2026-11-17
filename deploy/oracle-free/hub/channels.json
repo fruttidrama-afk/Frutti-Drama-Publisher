@@ -1,0 +1,23 @@
+{
+  "phase": "reconstruction",
+  "channels": [
+    {
+      "id": "fruttidrama",
+      "name": "FruttiDrama",
+      "status_url": "http://publisher:8080/factory/health",
+      "panel_url": ""
+    },
+    {
+      "id": "earth-in-10",
+      "name": "Earth in 10",
+      "status_url": "",
+      "panel_url": ""
+    },
+    {
+      "id": "dinnie",
+      "name": "Dinnie the Dinosaur",
+      "status_url": "",
+      "panel_url": ""
+    }
+  ]
+}
