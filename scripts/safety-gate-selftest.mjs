@@ -8,11 +8,13 @@ for(const [i,src] of [server,provider,supervisor,youtube,facebook].entries())
 assert(server.includes("app.post('/factory/enable',secure"),'Legacy enable route not secured');
 assert(server.includes('La activación queda reservada'),'Legacy enable route must be disabled');
 assert(server.includes('Live Flow submit is forbidden during reconstruction'),'Live test forbidden');
-assert(server.includes("if(metaGet('automation:operatorActivated','false')!=='true')return false"),'Readiness must not activate');
-assert(provider.includes("if(meta(db,'automation:operatorActivated','false')!=='true')return;"),'Flow worker must exit when paused');
-assert(provider.includes("runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true'&&meta(db,'automation:operatorActivated','false')==='true'"),'Submit boundary must be gated');
+assert(server.includes("if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return false"),'Readiness must not activate');
+assert(provider.includes("if(meta(db,'automation:operatorActivated','false')!=='true'||!centralGateOpen())return;"),'Flow worker must exit when paused');
+assert(provider.includes("runtimeEnabled=centralGateOpen()&&meta(db,'automation:factoryEnabled','false')==='true'&&meta(db,'automation:operatorActivated','false')==='true'"),'Submit boundary must be gated');
 assert(supervisor.includes("reason:'manual-operator-activation-required'"),'Supervisor must stay paused');
 assert(!supervisor.includes("setMeta(db,'automation:factoryEnabled','true')"),'Supervisor must never reactivate');
-assert(youtube.includes("if(db.prepare(\"SELECT value FROM factory_meta WHERE key='automation:operatorActivated'\").get()?.value==='true')normalizeTimedYoutubePublicationPolicy();"),'Paused startup must not alter YouTube schedule');
-for(const src of [youtube,facebook])assert(src.includes("||db.prepare(\"SELECT value FROM factory_meta WHERE key='automation:operatorActivated'\").get()?.value!=='true')return"),'Publication tick must check activation');
+assert(youtube.includes("if(centralGateOpen()&&db.prepare(\"SELECT value FROM factory_meta WHERE key='automation:operatorActivated'\").get()?.value==='true')normalizeTimedYoutubePublicationPolicy();"),'Paused startup must not alter YouTube schedule');
+for(const src of [youtube,facebook])assert(src.includes("if(!centralGateOpen()||!isEnabled()||running||db.prepare(\"SELECT value FROM factory_meta WHERE key='automation:operatorActivated'\").get()?.value!=='true')return"),'Publication tick must check activation');
+for(const src of [server,provider,supervisor,youtube,facebook])assert(src.includes("import { centralGateOpen } from './activation-gate.mjs'"),'Missing global operator gate import');
+const central=read('activation-gate.mjs');assert(central.includes('if(!file)return false')&&central.includes('x?.enabled===true'),'Global switch must fail closed');
 console.log('[SAFETY GATE] Static checks pass. No network, videos, or secrets used.');
