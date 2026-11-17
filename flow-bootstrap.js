@@ -83,7 +83,7 @@ async function start(){
  await sleep(550);
  if(xvfb.exitCode!==null){clear();throw new Error('No pude iniciar la pantalla remota. '+compact(xvfbErr,300))}
  let chromeErr='';
- chrome=spawn('/usr/bin/google-chrome-stable',[
+ chrome=spawn(String(process.env.FLOW_CHROME_PATH||process.env.CHROMIUM_PATH||'/usr/bin/chromium'),[
    '--user-data-dir='+PROFILE_DIR,
    '--remote-debugging-address=127.0.0.1','--remote-debugging-port='+DEBUG_PORT,'--remote-allow-origins=*',
    '--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-software-rasterizer',
