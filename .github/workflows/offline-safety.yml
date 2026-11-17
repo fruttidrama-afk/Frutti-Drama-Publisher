@@ -25,6 +25,7 @@ jobs:
           node --check publication.js
           node --check publication-facebook.js
           node --check runtime-init.js
+          node --check factory-hub.mjs
       - name: Verify no cloud deployment secrets or host interaction
         run: |
           test ! -f deploy/oracle-free/.env
