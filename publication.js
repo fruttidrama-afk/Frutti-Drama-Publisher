@@ -490,12 +490,15 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     };
     if(!centralGateOpen()||!isEnabled()||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')
       throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE_BEFORE_RELEASE');
-    const updated=(await yt.videos.update({part:['status'],requestBody:{id:item.videoId,status:next}})).data;
+    await yt.videos.update({part:['status'],requestBody:{id:item.videoId,status:next}});
     item.aiDisclosureSyncedAt=now();
     item.remotePublishAt=null;
-    hist(item,item.status||'uploaded','Release executed as a direct PRIVATE → PUBLIC transition at the configured posting time; no prior publishAt schedule.');
+    hist(item,item.status||'uploaded','YouTube PRIVATE-to-PUBLIC update requested once; remote verification pending.');
     save(db,item);
-    return await applyRemoteStatus(item,updated||{status:{privacyStatus:'public'}},'YouTube direct release');
+    // A successful update response alone is not definitive publication proof.
+    // Confirm PUBLIC on the *same channel and same ID* via a fresh API read
+    // before deleting the one approved source video.
+    return await readRemoteStatus(item);
   }
 
   async function verify(item){
