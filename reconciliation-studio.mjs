@@ -119,13 +119,20 @@ export async function handleReconciliation(req,res,{channels=[],mediaRoot='/data
        json(res,400,{error:'Temporada, episodio, video o prompt exacto inválidos'});return true
      }
      if(!(await videos(mediaRoot,id)).some(x=>x.hash===hash)){json(res,404,{error:'El MP4 ya no está disponible'});return true}
+     const sourceId=data.sourcePostId?String(data.sourcePostId).slice(0,150):null;
+     if(sourceId){
+       const ref=posts(storeRoot,id).find(p=>p.id===sourceId);
+       if(!ref||ref.prompt!==prompt){
+         json(res,422,{error:'El post original no corresponde exactamente al prompt ingresado; quitá la referencia o restaurá el texto original'});return true;
+       }
+     }
      const state=store(storeRoot,id);
      if(state.assignments.some(x=>x.season===season&&x.episode===episode&&x.videoHash!==hash)){
        json(res,409,{error:'Esa temporada y episodio ya corresponden a otro video'});return true
      }
      const at=new Date().toISOString();
      const row={videoHash:hash,season,episode,flowPrompt:prompt,flowPromptSha256:sha(prompt),
-       sourcePostId:data.sourcePostId?String(data.sourcePostId).slice(0,150):null,verifiedAt:at,
+       sourcePostId:sourceId,verifiedAt:at,
        provenance:'operator-verified-exact-prompt',metadataState:'pending-canonical-copy-review'};
      const existing=state.assignments.find(x=>x.videoHash===hash);
      state.assignments=state.assignments.filter(x=>x.videoHash!==hash).concat(row);
