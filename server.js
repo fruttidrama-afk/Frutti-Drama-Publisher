@@ -22,6 +22,15 @@ import { installFacebookPublication } from './publication-facebook.js';
 import { buildPublicationCopy } from './publication-copy.js';
 import { signedReviewUrl, deleteReviewObject, isReviewStorageUri, uploadReviewFile } from './review-storage.js';
 
+// Validate authentication before any historical SQLite migration or operator
+// override can touch persistent state; invalid secret means zero side effects.
+// Never use the previous publicly-known fallback signing/encryption key.
+// A missing or placeholder key must prevent the runtime from becoming reachable.
+const SESSION_SECRET=String(process.env.PUBLISHER_SESSION_SECRET||'').trim();
+if(SESSION_SECRET.length<32||/^REPLACE_WITH_/i.test(SESSION_SECRET)){
+  throw new Error('PUBLISHER_SESSION_SECRET_REQUIRED: configure a unique high-entropy secret before starting the runtime');
+}
+
 google.options({timeout:90000,retry:false});
 const app=express(),PORT=Number(process.env.PORT||8080);
 const ONESHOT_KIND=String(process.env.PUBLISHER_ONESHOT_KIND||'').trim().toLowerCase();
@@ -83,12 +92,6 @@ try{applyForcedNewIntentsAtStartup()}catch(e){console.error('[FORCED NEW EPISODE
 
 const now=()=>new Date().toISOString();
 const safeEq=(a,b)=>{const A=Buffer.from(String(a)),B=Buffer.from(String(b));return A.length===B.length&&timingSafeEqual(A,B)};
-// Never use the previous publicly-known fallback signing/encryption key.
-// A missing or placeholder key must prevent the runtime from becoming reachable.
-const SESSION_SECRET=String(process.env.PUBLISHER_SESSION_SECRET||'').trim();
-if(SESSION_SECRET.length<32||/^REPLACE_WITH_/i.test(SESSION_SECRET)){
-  throw new Error('PUBLISHER_SESSION_SECRET_REQUIRED: configure a unique high-entropy secret before starting the runtime');
-}
 const master=()=>createHash('sha256').update(SESSION_SECRET).digest();
 function seal(v){const iv=randomBytes(12),c=createCipheriv('aes-256-gcm',master(),iv),data=Buffer.concat([c.update(JSON.stringify(v),'utf8'),c.final()]);return{v:1,iv:iv.toString('base64url'),tag:c.getAuthTag().toString('base64url'),data:data.toString('base64url')}}
 function unseal(o){const d=createDecipheriv('aes-256-gcm',master(),Buffer.from(o.iv,'base64url'));d.setAuthTag(Buffer.from(o.tag,'base64url'));return JSON.parse(Buffer.concat([d.update(Buffer.from(o.data,'base64url')),d.final()]).toString('utf8'))}
