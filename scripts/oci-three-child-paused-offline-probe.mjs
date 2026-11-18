@@ -25,7 +25,7 @@ async function inspect(c){
  const health=await response.json();
  assert.equal(health.operator_activated,false,c.id+' operator gate open');
  assert.equal(health.publisher_enabled,false,c.id+' factory gate open');
- assert.equal(health.show,c.name,c.id+' wrong show');
+ assert.equal(Object.hasOwn(health,'show'),false,c.id+' public health must not disclose show identity');
  return health;
 }
 try{
@@ -70,6 +70,8 @@ try{
     const result=db.prepare('SELECT COUNT(*) AS n FROM '+table).get();
     assert.equal(result.n,0,row.c.id+': new unapproved record in '+table);
    }
+   const show=db.prepare("SELECT value FROM factory_meta WHERE key='runtime:show'").get()?.value;
+   assert.equal(show,row.c.name,row.c.id+' wrong show in private DB');
    const activated=db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value;
    assert.notEqual(activated,'true',row.c.id+' silently activated');
   }finally{db.close()}
