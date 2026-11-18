@@ -1,4 +1,4 @@
-import { centralGateOpen } from './activation-gate.mjs';
+import { centralGateOpen, operatorGenerationEnvEnabled } from './activation-gate.mjs';
 import { createFlowMutex } from './flow-global-mutex.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -3832,7 +3832,10 @@ async function processRow(db,row){
       publish('SERIAL_GATE_BLOCKED',{episode:'E'+row.episode,job_id:row.id,blocking_episode:'E'+otherActive.episode,blocking_job_id:otherActive.id});
       return false;
     }
-    const envEnabled=String(process.env.PUBLISHER_ENABLED||'true').toLowerCase()!=='false';
+    const envEnabled=operatorGenerationEnvEnabled({
+      operatorActivated:meta(db,'automation:operatorActivated','false')==='true',
+      factoryEnabled:meta(db,'automation:factoryEnabled','false')==='true'
+    });
     const pauseAllowsSubmit=!generationPauseActive();
     const manualSubmit=envEnabled&&pauseAllowsSubmit&&centralGateOpen()&&meta(db,'automation:operatorActivated','false')==='true'&&meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=centralGateOpen()&&meta(db,'automation:factoryEnabled','false')==='true'&&meta(db,'automation:operatorActivated','false')==='true',creditCycleOpen=meta(db,'flow:dailyCreditBatchOpen','false')==='true',cycleUsed=creditCycleUsage(db),extraAuthorized=dailyProductionLimit(db)>Number(BASE_DAILY_PRODUCTION_LIMIT||1)&&effectiveDailyCount(db)<dailyProductionLimit(db),autoSubmit=envEnabled&&pauseAllowsSubmit&&runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||extraAuthorized||(creditCycleOpen&&cycleUsed<Number(BASE_DAILY_PRODUCTION_LIMIT||1))),submitAuthorized=manualSubmit||autoSubmit;
     publish('PREFLIGHT',{episode:'E'+row.episode,job_id:row.id});
