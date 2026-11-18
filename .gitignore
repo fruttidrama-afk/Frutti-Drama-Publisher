@@ -28,6 +28,7 @@ deploy/oracle-free/data/
 deploy/oracle-free/activation/
 deploy/oracle-free/flow-lock/
 deploy/oracle-free/.env
+deploy/oracle-free/channels/*.env
 **/flow-profile/
 **/browser-profile/
 **/generated/
