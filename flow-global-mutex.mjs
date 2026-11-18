@@ -14,12 +14,11 @@ export function createFlowMutex(filePath,{acquireTimeoutMs=5000}={}){
     const prior=child;
     child=null;
     if(!prior)return;
-    try{
-      // flock forks the command; kill its whole private process group,
-      // including the sleeping FD holder, to release kernel flock reliably.
-      if(process.platform==='linux'&&prior.pid)process.kill(-prior.pid,'SIGTERM');
-      else prior.kill('SIGTERM');
-    }catch{try{prior.kill('SIGTERM')}catch{}}
+    // The lock holder is a *single* no-fork process reading the parent's
+    // stdin pipe. On normal release OR on sudden parent death, EOF closes
+    // that reader and releases its OS flock without stale-time heuristics.
+    try{prior.stdin?.end()}catch{}
+    try{prior.kill('SIGTERM')}catch{}
   };
   const acquire=async()=>{
     if(!file)return false;
@@ -29,9 +28,11 @@ export function createFlowMutex(filePath,{acquireTimeoutMs=5000}={}){
     if(process.platform!=='linux')return false;
     return new Promise(resolve=>{
       let settled=false,buffer='';
-      const job=spawn('flock',['-n','-E','73',file,'sh','-c',
-        'printf "FLOW_MUTEX_READY\\n"; exec sleep 2147483647'],
-        {detached:true,stdio:['ignore','pipe','pipe']});
+      // flock -F execs the holder WITHOUT forking; cat blocks on stdin.
+      // Parent death closes the pipe, so a crash never leaves an orphan lock.
+      const job=spawn('flock',['-F','-n','-E','73',file,'sh','-c',
+        'printf "FLOW_MUTEX_READY\\n"; exec cat >/dev/null'],
+        {stdio:['pipe','pipe','pipe']});
       child=job;
       const timeout=setTimeout(()=>finish(false),acquireTimeoutMs);
       timeout.unref?.();
@@ -39,7 +40,7 @@ export function createFlowMutex(filePath,{acquireTimeoutMs=5000}={}){
         if(settled)return;
         settled=true;
         clearTimeout(timeout);
-        if(!ok){if(child===job)release();else try{process.kill(-job.pid,'SIGTERM')}catch{}}
+        if(!ok){if(child===job)release();else try{job.kill('SIGTERM')}catch{}}
         resolve(ok);
       }
       job.on('error',()=>finish(false));
