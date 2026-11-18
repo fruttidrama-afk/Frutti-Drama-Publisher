@@ -20,7 +20,6 @@ services:
       PUBLISHER_GLOBAL_ACTIVATION_FILE: /activation/operator-activation.json
       NODE_ENV: production
     env_file:
-      - .env
       - ./channels/fruttidrama.env
     volumes:
       - ./data/fruttidrama:/data
@@ -59,7 +58,6 @@ services:
       PUBLISHER_GLOBAL_ACTIVATION_FILE: /activation/operator-activation.json
       NODE_ENV: production
     env_file:
-      - .env
       - ./channels/earth-in-10.env
     volumes:
       - ./data/earth-in-10:/data
@@ -98,7 +96,6 @@ services:
       PUBLISHER_GLOBAL_ACTIVATION_FILE: /activation/operator-activation.json
       NODE_ENV: production
     env_file:
-      - .env
       - ./channels/dinnie.env
     volumes:
       - ./data/dinnie:/data
