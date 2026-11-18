@@ -41,6 +41,9 @@ for(const endpoint of ["'/publication/run'","'/api/schedule'","'/api/show-bible'
   assert(server.includes(endpoint),'Paused mutation endpoint missing from route safety audit: '+endpoint);
 }
 assert(server.includes('const frozen=pathname'), 'No pre-activation freeze for manual stock/review/schedule mutation routes');
+assert(server.includes('// Unauthenticated health is consumed by the private Hub network.'),'Public machine health must be explicitly redacted');
+assert(server.includes('flow:{configured:Boolean(status.flow?.configured),authenticated:Boolean(status.flow?.authenticated)}'),'Machine health should reveal only Boolean Flow readiness');
+
 assert(server.includes("res.status(423).json({ok:false,error:'La reconstrucción"),'Paused mutation routes must explicitly reject');
 const facebookResume=facebook.indexOf('function resumeAuthWait(){');
 assert(facebookResume>=0&&facebook.slice(facebookResume,facebookResume+500).includes('if(!centralGateOpen()'), 'Facebook reconnect must not reschedule stock during pause');
