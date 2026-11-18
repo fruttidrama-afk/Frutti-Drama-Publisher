@@ -74,7 +74,7 @@ export async function handleReconciliation(req,res,{channels=[],mediaRoot='/data
  try{
    if(req.method==='GET'&&u.pathname==='/reconciliation'){
      res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});
-     res.end(fs.readFileSync(path.join(process.cwd(),'public','reconciliation.html'),'utf8'));return true;
+     res.end(fs.readFileSync(new URL('./public/reconciliation.html',import.meta.url),'utf8'));return true;
    }
    if(req.method==='GET'&&u.pathname==='/reconciliation/api/channels'){
      json(res,200,{channels:channels.map(c=>({id:c.id,name:c.name}))});return true;
