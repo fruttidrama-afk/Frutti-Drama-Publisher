@@ -15,6 +15,46 @@ Why not the other candidates as primary executable host:
 - GitHub Actions: CI/testing and scheduled short jobs, not a reliable persistent Google Flow profile; public-repo schedules can be disabled after 60 days inactivity.
 - Supabase Free: possible limited metadata/backup role, but dormant project pauses are a continuity risk.
 
+## YouTube publication policy — canonical two-stage contract
+
+For **FruttiDrama and EARTH IN 10 only** (Dinnie continues on Facebook), the
+publication scheduler retains approved MP4 in private Stock until the assigned
+local day. At **12:30 America/Argentina/Buenos_Aires**, exactly one approved
+video is uploaded to YouTube with `status.privacyStatus=private`. The videoId
+and resumable upload mode are persisted and cannot be initialized a second time.
+At **19:00 the same day**, YouTube's authenticated API must confirm that exact
+video belongs to the operator-verified destination channel; then exactly one
+explicit `videos.update` sets it to `public`. The same videoId is retained.
+Never use YouTube `publishAt`, never call a second videos.insert at 19:00,
+never publish an old unknown PRIVATE video automatically, and never catch up
+missed days without human reconciliation. The approved source file survives
+until publication is authoritatively confirmed. Both external mutations have
+durable one-time fences. The explicit expected YouTube channel ID is required
+in the later private channel config; the safety draft does not invent it.
+
+Regression tests run on synthetic SQLite, synthetic videos and intercepted
+network calls. They also verify paused mode, wrong OAuth destination, old
+PRIVATE records, old direct-PUBLIC fences and a foreign PUBLIC videoId. No
+real YouTube or Facebook access is performed by these tests.
+
+## Single-command host acceptance — still no production deployment
+
+After updating the safety branch on the existing ARM64 host, run:
+
+```bash
+bash scripts/oci-image-acceptance-offline.sh
+```
+
+This fail-closed script checks that the factory has no running publisher
+containers and no activation file, validates a disposable Compose fixture,
+builds the ARM64 image (public package downloads may occur), and runs Chromium
+and complete paused-runtime probes in containers with **`--network none`**,
+no production volumes, no tokens, and no forwarded ports. It does **not**
+start any production publisher, run Flow, create episodes, queue uploads,
+publish, reconcile history, or activate the Hub. Preserve the command's
+PASS/FAIL output for engineering acceptance. The old ARM image passed earlier
+smoke checks, but any new code revision needs fresh host validation.
+
 ## Hardware / browser caveat
 
 The old Dockerfile installed Google's amd64 Chrome build. This branch switches to Debian Chromium on ARM64, preserving Google Chrome Stable on amd64. The Flow composer, asset picker, authentication and download flows are still UNTESTED on ARM; this is a compatibility hypothesis, not confirmation.
