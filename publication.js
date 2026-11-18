@@ -442,25 +442,41 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     if(report.length)console.log('[PUBLICATION COPY AUDIT]',JSON.stringify({corrected,factoryCorrected,synced,quotaNormalized:Boolean(quotaRetryAt),items:report}));
   }
 
-  async function upload(item,privacyStatus='private'){
+  async function upload(item,privacyStatus='public'){
     if(!centralGateOpen())throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE_BEFORE_UPLOAD');
     if(item.videoId)return;
     if(!item.filePath)throw new Error('Archivo de publicación ausente.');
     const cloudSource=isReviewStorageUri(item.filePath);
     if(!cloudSource&&!fs.existsSync(item.filePath))throw new Error('Archivo de publicación ausente.');
-    if(String(privacyStatus)!=='private')throw new Error('YOUTUBE_DIRECT_PUBLIC_UPLOAD_FORBIDDEN');
+    if(String(privacyStatus)!=='public')throw new Error('YOUTUBE_PRIVATE_STAGING_FORBIDDEN');
+    if(item.resumableSession&&item.uploadMode!=='direct-public')
+      throw new Error('LEGACY_PRIVATE_UPLOAD_REQUIRES_MANUAL_RECONCILIATION');
+    if(!isSamePublicationDay(item))throw new Error('YOUTUBE_WRONG_PUBLICATION_DAY');
     if(!item.resumableSession){
-      if(!isSamePublicationDay(item))throw new Error('YOUTUBE_WRONG_PUBLICATION_DAY');
-      const stagingAt=Date.parse(String(item.uploadAt||''));
-      const elapsed=Date.now()-stagingAt;
-      if(!Number.isFinite(stagingAt)||elapsed<0||elapsed>30*60*1000)throw new Error('YOUTUBE_PRIVATE_UPLOAD_WINDOW_CLOSED');
-      reserveExternalAction('youtube-private-upload',dayKey(new Date(),config.schedule.timezone),item.id);
-      hist(item,'uploading','Private upload initialization reserved durably at 12:30 ART; never reinitialize on an ambiguous response.');
+      const releaseAt=Date.parse(String(item.scheduledAt||''));
+      const elapsed=Date.now()-releaseAt;
+      if(!Number.isFinite(releaseAt)||elapsed<0||elapsed>30*60*1000)
+        throw new Error('YOUTUBE_DIRECT_PUBLIC_UPLOAD_WINDOW_CLOSED');
+      // Fence the only external video insert for the configured posting day.
+      // A crash or ambiguous response must NEVER initialize a second upload.
+      reserveExternalAction('youtube-direct-public-upload',dayKey(new Date(),config.schedule.timezone),item.id);
+      item.uploadMode='direct-public';
+      hist(item,'uploading','Direct PUBLIC YouTube upload reserved at the posting slot; never stage PRIVATE.');
       save(db,item);
-      const r=await request('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',{method:'POST',headers:{'Content-Type':'application/json','X-Upload-Content-Length':String(item.fileSize),'X-Upload-Content-Type':'video/mp4'},body:JSON.stringify({snippet:{title:item.title,description:item.description,categoryId:'24',tags:['publisher-runtime-'+item.id]},status:{privacyStatus:'private',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}})});
-      if(!r.ok)throw new Error('YouTube resumable init failed ('+r.status+').');
-      const session=r.headers.get('location');if(!session||new URL(session).hostname!=='www.googleapis.com')throw new Error('YouTube returned an invalid resumable session.');
-      item.resumableSession=session;hist(item,'uploading','Resumable session persisted before bytes.');save(db,item);
+      const r=await request('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-Upload-Content-Length':String(item.fileSize),'X-Upload-Content-Type':'video/mp4'},
+        body:JSON.stringify({
+          snippet:{title:item.title,description:item.description,categoryId:'24',tags:['publisher-runtime-'+item.id]},
+          status:{privacyStatus:'public',selfDeclaredMadeForKids:false,containsSyntheticMedia:true}
+        })
+      });
+      if(!r.ok)throw new Error('YouTube direct public resumable init failed ('+r.status+').');
+      const session=r.headers.get('location');
+      if(!session||new URL(session).hostname!=='www.googleapis.com')throw new Error('YouTube returned an invalid resumable session.');
+      item.resumableSession=session;
+      hist(item,'uploading','Direct PUBLIC resumable session persisted before transferring video bytes.');
+      save(db,item);
     }
     let r=await request(item.resumableSession,{method:'PUT',headers:{'Content-Length':'0','Content-Range':'bytes */'+item.fileSize}});
     while(true){
