@@ -41,6 +41,14 @@ jobs:
           node --check scripts/oci-runtime-offline-probe.mjs
           node --check scripts/hub-offline-probe.mjs
           bash -n scripts/oci-host-preflight.sh
+      - name: Verify no credentials or private runtime artifacts are tracked
+        run: |
+          test -f .gitignore
+          if git ls-files | grep -Ei '(^|/)(\\.env|secrets\\.json|auth\\.json|youtube-token\\.json|flow-auth-verified\\.json|operator-activation\\.json|factory\\.sqlite|[^/]+\\.(pem|key|p12|pfx|mp4))
+; then
+            echo "Refusing tracked secrets or raw media in the repository."
+            exit 1
+          fi
       - name: Verify no cloud deployment secrets or host interaction
         run: |
           test ! -f deploy/oracle-free/.env
