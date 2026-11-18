@@ -48,6 +48,7 @@ jobs:
           node --check scripts/hub-activation-offline-probe.mjs
           node --check reconciliation-studio.mjs
           bash -n scripts/oci-host-preflight.sh
+          bash -n scripts/oci-compose-offline-probe.sh
       - name: Verify no credentials or private runtime artifacts are tracked
         run: |
           test -f .gitignore
