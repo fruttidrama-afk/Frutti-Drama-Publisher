@@ -16,6 +16,7 @@ const GLOBAL_FILE=String(process.env.PUBLISHER_GLOBAL_ACTIVATION_FILE||'').trim(
 const ACTIVATION_ARMED=String(process.env.PUBLISHER_HUB_ACTIVATION_ARMED||'false').toLowerCase()==='true';
 const RECON_MEDIA=String(process.env.PUBLISHER_RECONCILIATION_MEDIA_ROOT||'/data/reconciliation-media');
 const RECON_STORE=String(process.env.PUBLISHER_RECONCILIATION_STORE_ROOT||'/data/reconciliation');
+const AUDIT_FILE=String(process.env.PUBLISHER_HUB_AUDIT_FILE||(GLOBAL_FILE?path.join(path.dirname(GLOBAL_FILE),'operator-audit.ndjson'):'')).trim();
 const eq=(a,b)=>{const A=createHash('sha256').update(String(a)).digest(),B=createHash('sha256').update(String(b)).digest();return timingSafeEqual(A,B)};
 const escapeHtml=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;');
 function basic(req,res){
@@ -68,6 +69,30 @@ function writeActivation(enabled,activationId){
   fs.writeFileSync(file,JSON.stringify({schema:1,enabled,activated_by:'operator',activation_id:activationId,at:new Date().toISOString()}),{mode:0o600});
   fs.renameSync(file,GLOBAL_FILE);
 }
+// Hash-chained local audit provides accidental-tamper detection, not protection
+// against a malicious host administrator who can rewrite all local files.
+function auditHead(){
+  if(!AUDIT_FILE)throw Error('Operator audit storage is not configured');
+  if(!fs.existsSync(AUDIT_FILE))return '0'.repeat(64);
+  let prev='0'.repeat(64);
+  for(const line of fs.readFileSync(AUDIT_FILE,'utf8').split('\n').filter(Boolean)){
+    let row;try{row=JSON.parse(line)}catch{throw Error('Operator audit contains invalid JSON')}
+    const {recordHash,...data}=row;
+    if(data.schema!==1||data.previousHash!==prev||recordHash!==createHash('sha256').update(prev+'\n'+JSON.stringify(data)).digest('hex')){
+      throw Error('Operator audit chain invalid; activation is blocked');
+    }
+    prev=recordHash;
+  }
+  return prev;
+}
+function appendAudit(action,activationId,channelIds=[],details={}){
+  const previousHash=auditHead();
+  const data={schema:1,action,activationId,channelIds,details,at:new Date().toISOString(),previousHash};
+  const recordHash=createHash('sha256').update(previousHash+'\n'+JSON.stringify(data)).digest('hex');
+  fs.mkdirSync(path.dirname(AUDIT_FILE),{recursive:true,mode:0o700});
+  fs.appendFileSync(AUDIT_FILE,JSON.stringify({...data,recordHash})+'\n',{mode:0o600});
+  return recordHash;
+}
 function setChildGate(ch,enabled){
   if(!ch.dbPath.startsWith('/data/'))throw Error('Invalid child DB path');
   const db=new DatabaseSync(ch.dbPath,{timeout:5000});
@@ -111,6 +136,8 @@ const server=http.createServer(async(req,res)=>{
       // Global stop first: workers read this file at their external-action boundary.
       writeActivation(false,activationId);
       const errors=[];
+      try{appendAudit('emergency_stop',activationId,channels().map(x=>x.id))}catch(e){errors.push('audit:'+String(e.message||e))}
+
       for(const ch of channels())try{setChildGate(ch,false)}catch(e){errors.push(ch.id+':'+String(e.message||e))}
       res.writeHead(errors.length?207:200,{'Content-Type':'application/json'});
       res.end(JSON.stringify({ok:errors.length===0,global_stopped:true,errors}));
@@ -131,8 +158,13 @@ const server=http.createServer(async(req,res)=>{
     if(answer.confirm!=='ACTIVAR AUTOMATIZACIÓN'){res.writeHead(400);res.end('Confirmation mismatch');return}
     const activationId=randomUUID();
     try{
+      // Abort before changing child DBs unless we can persist an audit record.
+      appendAudit('activation_requested',activationId,chs.map(x=>x.id));
       writeActivation(false,activationId);
       for(const ch of chs)setChildGate(ch,true);
+      // Audit completion before opening the global gate. If the audit cannot
+      // be written the global gate remains OFF.
+      appendAudit('activation_authorized',activationId,chs.map(x=>x.id));
       writeActivation(true,activationId);
       res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:true,activation_id:activationId}));
     }catch(e){writeActivation(false,activationId);res.writeHead(500,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:false,error:String(e.message||e)}))}
