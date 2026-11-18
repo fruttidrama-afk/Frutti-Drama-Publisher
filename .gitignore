@@ -51,3 +51,7 @@ node_modules/
 *.mp4
 *.mov
 *.webm
+
+# Historical source archives and manual verified assignments (never in Git).
+deploy/oracle-free/reconciliation-media/
+deploy/oracle-free/reconciliation/
