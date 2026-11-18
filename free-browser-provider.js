@@ -4550,6 +4550,10 @@ async function configurePublisherFactorySupabasePasskeysIfRequested(db){
 }
 
 async function runProvider(){
+  // Freeze *all* provider activity while the operator has not activated the
+  // factory. Check before touching profile/bootstrap locks or opening a DB.
+  // The DB-level gate below remains a second independent authorization.
+  if(!centralGateOpen())return;
   if(ONESHOT_KIND==='publication'){publish('ONESHOT_PUBLICATION_ONLY',{message:'Generation worker disabled for publication-only ephemeral runner.'});return}
   if(bootstrapOwnsProfile()){publish('AUTH_BOOTSTRAP_ACTIVE',{message:'Flow bootstrap owns the persistent browser profile; provider is paused.'});return}
   if(!acquireLock())return;let db,row=null;
