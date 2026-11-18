@@ -626,8 +626,10 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
 
   async function tick(){
     if(!centralGateOpen()||!isEnabled()||running||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;running=true;lastHeartbeat=now();lastError=null;
-    await migratePendingPublicationMedia();
     try{
+      // A cloud-storage exception must not strand the publisher in running=true
+      // forever: the common finally block always releases the scheduler.
+      await migratePendingPublicationMedia();
       const items=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'youtube')='youtube' AND status NOT IN ('cancelled','deleted') AND (status<>'published' OR aiDisclosureSyncedAt IS NULL) ORDER BY scheduledAt").all();
       for(const item of items){
         try{
