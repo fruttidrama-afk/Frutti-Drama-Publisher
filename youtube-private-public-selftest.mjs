@@ -193,10 +193,24 @@ try{
  assert.equal(videoUpdates,1,'Foreign public video must never receive status updates');
  assert.equal(httpCalls.filter(x=>x.method==='POST').length,1,'Foreign public video triggered a fresh upload');
  assert.match(String(row(foreign.id).error||''),/YOUTUBE_REMOTE_VIDEO_CHANNEL_MISMATCH/);
+ // A remotely PUBLIC video before the 19:00 appointment is an anomaly,
+ // not authorization to erase the source or call this a normal publication.
+ clock=OriginalDate.parse('2026-11-22T15:33:00Z'); // 12:33 Buenos Aires
+ const earlyMedia=sourceFile('premature-public-source.mp4');
+ const early=item(6,earlyMedia,'PREMATURE PUBLIC TEST');
+ remotePrivacy.set('yt-premature-public','public');
+ db.prepare("UPDATE publication_items SET videoId='yt-premature-public',status='uploaded',uploadMode='private-staging-v1',scheduledAt=?,uploadAt=? WHERE id=?")
+  .run('2026-11-22T22:00:00Z','2026-11-22T15:30:00Z',early.id);
+ await runtime.tick();
+ assert.equal(row(early.id).status,'attention','Unexpected public video before 19:00 was silently counted as published');
+ assert.match(String(row(early.id).error||''),/YOUTUBE_PREMATURE_PUBLIC_BEFORE_1900_REQUIRES_OPERATOR/);
+ assert.equal(fs.existsSync(earlyMedia),true,'Premature YouTube public status erased the only approved source');
+ assert.equal(videoUpdates,1,'Premature YouTube public status triggered an extra release');
+ assert.equal(httpCalls.filter(x=>x.method==='POST').length,1,'Premature public status triggered a new insert');
  console.log('[YOUTUBE TWO-STAGE SELFTEST] PASS',JSON.stringify({
   private_inserts:1,release_updates:1,same_video_id:true,
   no_publishAt:true,wrong_oauth_channel:'blocked',
-  unrecognized_private:'quarantined',legacy_direct_insert:'fenced',foreign_public_id:'blocked_without_cleanup',offline:true
+  unrecognized_private:'quarantined',legacy_direct_insert:'fenced',foreign_public_id:'blocked_without_cleanup',premature_public:'held_source_preserved',offline:true
  }));
 }catch(e){
  console.error('[YOUTUBE PUBLICATION SELFTEST] FAIL',String(e?.stack||e));
