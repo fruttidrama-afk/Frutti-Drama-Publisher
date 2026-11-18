@@ -14,6 +14,11 @@ if(setup&&(/^REPLACE_WITH_/i.test(setup)||setup.length<32)){
 // accidentally use a generic fallback configuration after a redeployment.
 const channel=String(process.env.PUBLISHER_CHANNEL_ID||'').trim();
 if(channel){
+  // Three publishers sharing a Flow account must have the same kernel-backed
+  // lock volume; a missing path is not a valid production configuration.
+  if(!String(process.env.PUBLISHER_GLOBAL_FLOW_LOCK_PATH||'').startsWith('/flow-lock/')){
+    throw new Error('PUBLISHER_SHARED_FLOW_LOCK_REQUIRED');
+  }
   const expected={'fruttidrama':'FruttiDrama','earth-in-10':'Earth in 10','dinnie':'Dinnie the Dinosaur'};
   if(!Object.hasOwn(expected,channel))throw new Error('PUBLISHER_UNKNOWN_CHANNEL_ID');
   let config;
