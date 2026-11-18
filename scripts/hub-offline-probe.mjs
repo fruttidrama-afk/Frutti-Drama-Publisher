@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,createHash} from 'node:crypto';
 const folder=fs.mkdtempSync(path.join(os.tmpdir(),'publisher-hub-offline-'));
 const port=39200+Math.floor(Math.random()*20000);
 const pass='offline-'+randomBytes(20).toString('hex');
@@ -52,7 +52,18 @@ try{
  },body:JSON.stringify({confirm:'ACTIVAR AUTOMATIZACIÓN'})});
  assert.equal(attempt.status,423,'Activation must reject incomplete preactivation');
  assert.equal(fs.existsSync(activation),false,'Rejected activation modified the global gate');
- console.log('[HUB OFFLINE] PASS',JSON.stringify({unauthenticated:'401',wrong_password:'401',cards:2,activation:'locked',activation_file_created:false}));
+ const stop=await get('/api/stop',{method:'POST',headers:{authorization:auth,'X-Publisher-Operator':'explicit-click','Content-Type':'application/json'},body:'{}'});
+ assert.equal(stop.status,207,'Stop must report missing synthetic child DBs but still close the central gate');
+ const stopped=await stop.json();
+ assert.equal(stopped.global_stopped,true,'Emergency stop did not close the global gate');
+ assert.equal(JSON.parse(fs.readFileSync(activation,'utf8')).enabled,false,'Emergency stop left global gate enabled');
+ const auditFile=path.join(folder,'operator-audit.ndjson');
+ assert.ok(fs.existsSync(auditFile),'Operator stop audit was not persisted');
+ const audit=JSON.parse(fs.readFileSync(auditFile,'utf8').trim().split('\n')[0]);
+ const {recordHash,...data}=audit;
+ assert.equal(data.action,'emergency_stop','Wrong operator audit action');
+ assert.equal(recordHash,createHash('sha256').update(data.previousHash+'\n'+JSON.stringify(data)).digest('hex'),'Operator audit hash chain mismatch');
+ console.log('[HUB OFFLINE] PASS',JSON.stringify({unauthenticated:'401',wrong_password:'401',cards:2,activation:'locked',emergency_stop:'closed_global_gate',audit:'hash_verified'}));
 }catch(e){
  console.error('[HUB OFFLINE] FAIL',String(e?.stack||e));
  console.error('[HUB OFFLINE] PROCESS',output);
