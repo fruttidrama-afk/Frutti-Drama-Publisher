@@ -111,7 +111,7 @@ assert(compose.includes('profiles: ["explicit-publisher"]'),'Publisher must not 
 assert(compose.includes('profiles: ["reconstruction-dashboard"]'),'Hub must require intentional profile selection');
 const envRef=compose.split('env_file:').slice(1).filter(x=>x.trimStart().startsWith('- .env'));
 const childEnvRefs=(compose.match(/^\s+- \.\/channels\/(?:fruttidrama|earth-in-10|dinnie)\.env$/gm)||[]);
-assert.equal(envRef.length,4,'Three child publishers and the hub must each require the common private env file');
+assert.equal(envRef.length,1,'Only the Hub may read the Hub administration password env file; children must use isolated secrets');
 assert.equal(childEnvRefs.length,3,'Each child publisher must require its own private show config env file');
 for(const id of ['fruttidrama','earth-in-10','dinnie']){
   assert(compose.includes('publisher-'+id+':'),'All three established show publishers must have separate services: '+id);
