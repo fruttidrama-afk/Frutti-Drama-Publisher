@@ -14,6 +14,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 COPY package.json ./
 RUN npm install --omit=dev
+COPY Dockerfile ./Dockerfile
 COPY operator-preflight.mjs activation-gate.mjs factory-hub.mjs unattended-supervisor.js runtime-config.js runtime-init.js free-browser-provider.js flow-bootstrap.js server.js publication.js publication-facebook.js publication-copy.js frutti-creative-package.js frutti-autonomous-source.js review-storage.js publisher-selftest.mjs facebook-publication-selftest.mjs verify-runtime-contract.mjs runtime-fresh-start-selftest.mjs publisher.config.schema.json ./
 COPY reconciliation-studio.mjs ./
 COPY public/reconciliation.html ./public/reconciliation.html
