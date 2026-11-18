@@ -1,0 +1,54 @@
+name: ARM64 offline Publisher image acceptance
+on:
+  push:
+    branches: [safety/manual-activation-gate-20261117]
+    paths:
+      - ".github/workflows/arm64-offline-image.yml"
+      - "Dockerfile"
+      - "package.json"
+      - "publisher.config.schema.json"
+      - "publisher-selftest.mjs"
+      - "verify-runtime-contract.mjs"
+      - "youtube-private-public-selftest.mjs"
+      - "publication.js"
+      - "server.js"
+      - "runtime-config.js"
+      - "scripts/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: offline-arm64-image-validation
+  cancel-in-progress: true
+jobs:
+  native-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Assert native ARM64 and offline-only test entrypoints
+        run: |
+          test "$(uname -m)" = aarch64
+          docker --version
+          bash -n scripts/oci-image-acceptance-offline.sh
+          test ! -f deploy/oracle-free/.env
+      - name: Build OCI-compatible ARM64 image without production accounts
+        run: docker build --pull=false --tag publisher-factory-a1-safety:ci .
+      - name: Native ARM64 Chromium synthetic probe without network
+        run: |
+          docker run --rm --network none --cap-drop=ALL \
+            --security-opt no-new-privileges \
+            --entrypoint node publisher-factory-a1-safety:ci \
+            ./scripts/oci-browser-offline-probe.mjs
+      - name: Native ARM64 full paused runtime probe without network
+        run: |
+          docker run --rm --network none --cap-drop=ALL \
+            --security-opt no-new-privileges \
+            --entrypoint node publisher-factory-a1-safety:ci \
+            ./scripts/oci-runtime-offline-probe.mjs
+      - name: Verify no production activation or deployment occurred
+        run: |
+          test ! -e deploy/oracle-free/activation/operator-activation.json
+          echo "ARM64_OFFLINE_ACCEPTANCE_PASS: no credentials, Flow access, publishing, live containers or deployment"
