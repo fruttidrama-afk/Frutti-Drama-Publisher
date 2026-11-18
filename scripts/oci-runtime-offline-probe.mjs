@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn,spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import {randomBytes,createHash,createHmac} from 'node:crypto';
 
@@ -31,6 +31,16 @@ async function get(endpoint,accept='application/json'){
   return fetch('http://127.0.0.1:'+port+endpoint,{headers:{Accept:accept},redirect:'manual',signal:AbortSignal.timeout(1000)});
 }
 try{
+  // Missing signing key must abort before even creating a SQLite database.
+  const noSecretDir=path.join(temp,'reject-no-secret');
+  const denied=spawnSync(process.execPath,['server.js'],{
+    env:{...env,DATA_DIR:noSecretDir,PUBLISHER_SESSION_SECRET:''},
+    cwd:process.cwd(),encoding:'utf8',timeout:8000
+  });
+  assert.notEqual(denied.status,0,'Runtime accepted a missing operator session key');
+  assert.match(String(denied.stderr||''),/PUBLISHER_SESSION_SECRET_REQUIRED/);
+  assert.equal(fs.existsSync(path.join(noSecretDir,'publisher-runtime','factory.sqlite')),false,
+    'Runtime created historical database before rejecting an absent signing key');
   let ready=false;
   for(let i=0;i<120;i++){
     if(child.exitCode!==null)throw Error('Runtime exited during offline startup: '+child.exitCode);
