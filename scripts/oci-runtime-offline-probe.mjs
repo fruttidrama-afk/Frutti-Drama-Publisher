@@ -12,8 +12,9 @@ import {randomBytes,createHash,createHmac} from 'node:crypto';
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'oci-runtime-offline-'));
 const port=49881;
 const secret=randomBytes(48).toString('hex');
+const setupToken=randomBytes(32).toString('hex');
 const env={
-  ...process.env, DATA_DIR:temp, PORT:String(port), PUBLISHER_SESSION_SECRET:secret,
+  ...process.env, DATA_DIR:temp, PORT:String(port), PUBLISHER_SESSION_SECRET:secret, PUBLISHER_SETUP_TOKEN:setupToken,
   PUBLISHER_ENABLED:'false',PUBLISHER_GLOBAL_ACTIVATION_FILE:path.join(temp,'gate-not-present.json'),
   PUBLISHER_CONFIG_JSON:JSON.stringify({
     identity:{publisher_name:'Offline Probe',show_name:'Offline Probe',timezone:'UTC'},
@@ -51,6 +52,22 @@ try{
   const signature=createHmac('sha256',createHash('sha256').update(secret).digest()).update(payload).digest('base64url');
   const forged=await fetch('http://127.0.0.1:'+port+'/auth/sessions',{headers:{Cookie:'publisher_session='+payload+'.'+signature},redirect:'manual',signal:AbortSignal.timeout(1000)});
   assert.equal(forged.status,401,'Unknown signed session cookie must not auto-register itself');
+  // Only use synthetic credentials in this fully isolated ephemeral database.
+  const setup=await fetch('http://127.0.0.1:'+port+'/setup/activate',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({token:setupToken}),signal:AbortSignal.timeout(1000)});
+  assert.equal(setup.status,200,'Synthetic operator setup must be available');
+  const cookie=setup.headers.get('set-cookie')?.split(';')[0]||'';
+  assert.ok(cookie.includes('publisher_session='),'Synthetic session cookie missing');
+  const authenticated=await fetch('http://127.0.0.1:'+port+'/auth/sessions',{headers:{Cookie:cookie},signal:AbortSignal.timeout(1000)});
+  assert.equal(authenticated.status,200,'Issued signed session must be accepted');
+  for(const target of ['/factory/run','/publication/run','/api/schedule','/api/show-bible','/integrations/platform',
+    '/factory/example-id/approve','/factory/example-id/reject','/factory/import-stock/1','/publication/example-id/recover-video']){
+    const blocked=await fetch('http://127.0.0.1:'+port+target,{
+      method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},
+      body:JSON.stringify({}),signal:AbortSignal.timeout(1000)});
+    assert.equal(blocked.status,423,'Paused runtime accepted mutation '+target+': HTTP '+blocked.status);
+  }
+
   const dbFile=path.join(temp,'publisher-runtime','factory.sqlite');
   assert.ok(fs.existsSync(dbFile),'Factory offline fixture DB missing');
   const db=new DatabaseSync(dbFile);
@@ -63,7 +80,7 @@ try{
     assert.equal(Number(publications),0,'Synthetic offline factory created publications');
   }finally{db.close()}
   console.log('[OCI OFFLINE RUNTIME] PASS',JSON.stringify({
-    health:'reachable',operator_activated:false,flow_controls:'authenticated',new_generations:0,new_publications:0,network:'Docker none',flowVisited:false
+    health:'reachable',operator_activated:false,flow_controls:'authenticated',manual_mutation_endpoints:'locked',unknown_signed_cookies:'rejected',new_generations:0,new_publications:0,network:'Docker none',flowVisited:false
   }));
 }catch(e){
   console.error('[OCI OFFLINE RUNTIME] FAIL',String(e?.message||e));
