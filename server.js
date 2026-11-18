@@ -107,9 +107,27 @@ function cookie(req){const out={};for(const x of String(req.headers.cookie||'').
 function sign(v){return createHmac('sha256',master()).update(v).digest('base64url')}
 function sessionParse(req){const t=cookie(req)[SESSION_COOKIE];if(!t)return null;const p=t.split('.');if(p.length!==3)return null;const exp=Number(p[0]);if(!Number.isFinite(exp)||exp<Date.now()||!safeEq(p[2],sign(p[0]+'.'+p[1])))return null;return{id:createHash('sha256').update(p[1]).digest('base64url'),exp,nonce:p[1]}}
 function device(req){const ua=String(req.headers['user-agent']||'');if(/iPhone/i.test(ua))return'iPhone';if(/iPad/i.test(ua))return'iPad';if(/Android/i.test(ua))return /Mobile/i.test(ua)?'Android':'Android tablet';if(/Windows/i.test(ua))return'Windows PC';if(/Macintosh/i.test(ua))return'Mac';return'Browser'}
-function issue(req,res,method='pin'){const exp=Date.now()+TTL,nonce=randomBytes(18).toString('base64url'),payload=String(exp)+'.'+nonce;res.cookie(SESSION_COOKIE,payload+'.'+sign(payload),{httpOnly:true,sameSite:'lax',secure:Boolean(process.env.RAILWAY_ENVIRONMENT),path:'/',maxAge:TTL});const s=authState(),id=createHash('sha256').update(nonce).digest('base64url');s.sessions=(s.sessions||[]).filter(x=>x.expiresAt>Date.now()&&!x.revokedAt);s.sessions.push({id,device:device(req),createdAt:now(),lastSeenAt:now(),expiresAt:exp,method});saveAuth(s)}
+function issue(req,res,method='pin'){const exp=Date.now()+TTL,nonce=randomBytes(18).toString('base64url'),payload=String(exp)+'.'+nonce;res.cookie(SESSION_COOKIE,payload+'.'+sign(payload),{httpOnly:true,sameSite:'lax',secure:Boolean(req.secure||/^https:\/\//i.test(String(process.env.PUBLISHER_PUBLIC_URL||''))),path:'/',maxAge:TTL});const s=authState(),id=createHash('sha256').update(nonce).digest('base64url');s.sessions=(s.sessions||[]).filter(x=>x.expiresAt>Date.now()&&!x.revokedAt);s.sessions.push({id,device:device(req),createdAt:now(),lastSeenAt:now(),expiresAt:exp,method});saveAuth(s)}
 function valid(req){const x=sessionParse(req);if(!x)return false;const s=authState(),r=s.sessions.find(y=>y.id===x.id);if(!r||r.revokedAt||r.expiresAt<Date.now())return false;if(Date.now()-Date.parse(r.lastSeenAt||0)>5*60*1000){r.lastSeenAt=now();saveAuth(s)}return true}
 function configured(){const s=authState();return Boolean(s.pinHash||s.passkeys.length)}
+const pinFailures=new Map(),PIN_MAX_ATTEMPTS=6,PIN_WINDOW_MS=15*60*1000;
+function pinAttemptGuard(req,ok){
+  const key=String(req.socket?.remoteAddress||'unknown');
+  const t=Date.now(),prev=pinFailures.get(key);
+  const item=prev&&prev.until>t?prev:{count:0,until:t+PIN_WINDOW_MS};
+  if(ok){pinFailures.delete(key);return true}
+  item.count+=1;pinFailures.set(key,item);
+  if(pinFailures.size>2048){
+    for(const [k,v] of pinFailures){if(v.until<t)pinFailures.delete(k)}
+    if(pinFailures.size>2048)pinFailures.delete(pinFailures.keys().next().value);
+  }
+  return item.count<PIN_MAX_ATTEMPTS;
+}
+function pinBlocked(req){
+  const item=pinFailures.get(String(req.socket?.remoteAddress||'unknown'));
+  return Boolean(item&&item.until>Date.now()&&item.count>=PIN_MAX_ATTEMPTS);
+}
+
 function htmlReq(req){return req.method==='GET'&&String(req.headers.accept||'').includes('text/html')}
 function secure(req,res,next){
   if(valid(req))return next();
@@ -191,7 +209,16 @@ key.onclick=createKey;cont.onclick=()=>location.replace('/');
 app.post('/setup/activate',(req,res)=>{const expected=String(process.env.PUBLISHER_SETUP_TOKEN||''),token=String(req.body?.token||'');if(!expected||!safeEq(token,expected))return res.status(401).json({error:'Activation link is invalid or expired.'});if(!configured())setPin(String(randomInt(100000,1000000)));issue(req,res,'factory-open');res.json({ok:true,passkeysRegistered:authState().passkeys.length,device:device(req)})});
 app.get('/login',(req,res)=>res.sendFile('login.html',{root:'public'}));
 app.get('/auth/public-info',(req,res)=>{const a=authState();res.json({publisherName:CONFIG.identity.publisher_name,showName:CONFIG.identity.show_name,passkeysRegistered:a.passkeys.length,brand:brandPublic()})});
-app.post('/auth/pin',(req,res)=>{const pin=String(req.body.pin||'');if(!pinOk(pin))return res.status(401).json({error:'Incorrect PIN.'});issue(req,res,'pin');res.json({ok:true})});
+app.post('/auth/pin',(req,res)=>{
+  if(pinBlocked(req))return res.status(429).set('Retry-After','900').json({error:'Demasiados intentos; acceso con PIN temporalmente bloqueado.'});
+  const pin=String(req.body?.pin||'');
+  if(!pinOk(pin)){
+    const remaining=pinAttemptGuard(req,false);
+    return res.status(remaining?401:429).json({error:remaining?'Incorrect PIN.':'Demasiados intentos; acceso con PIN temporalmente bloqueado.'});
+  }
+  pinAttemptGuard(req,true);
+  issue(req,res,'pin');res.json({ok:true});
+});
 app.post('/auth/logout',secure,(req,res)=>{const x=sessionParse(req),s=authState();if(x){const r=s.sessions.find(y=>y.id===x.id);if(r)r.revokedAt=now();saveAuth(s)}res.clearCookie(SESSION_COOKIE,{path:'/'});res.json({ok:true})});
 
 app.post('/auth/passkeys/register/options',secure,async(req,res)=>{try{const s=authState();if(!s.webauthnUserID){s.webauthnUserID=randomBytes(32).toString('base64url');saveAuth(s)}const options=await generateRegistrationOptions({rpName:CONFIG.identity.publisher_name,rpID:rp(),userID:Buffer.from(s.webauthnUserID,'base64url'),userName:'publisher-owner',userDisplayName:CONFIG.identity.show_name,attestationType:'none',excludeCredentials:s.passkeys.map(x=>({id:x.id,transports:x.transports||[]})),authenticatorSelection:{residentKey:'required',userVerification:'required'}});const key=sessionParse(req)?.id||randomBytes(12).toString('hex');regChallenges.set(key,{challenge:options.challenge,expires:Date.now()+5*60*1000});res.json({...options,_binding:key})}catch(e){res.status(500).json({error:e.message})}});
