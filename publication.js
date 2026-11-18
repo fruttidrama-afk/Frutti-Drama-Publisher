@@ -344,6 +344,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     const yt=youtubeApi(),current=(await yt.videos.list({part:['status'],id:[item.videoId]})).data.items?.[0];
     if(!current)throw new Error('YouTube video not found for AI disclosure.');
     const st=current.status||{};
+    if(st.privacyStatus!=='public')throw new Error('LEGACY_PRIVATE_YOUTUBE_METADATA_MUTATION_DISABLED');
     const next={
       privacyStatus:st.privacyStatus||'private',
       license:st.license||'youtube',
@@ -623,7 +624,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
               }else console.log('[PUBLICATION REMOTE STATUS WARNING]',JSON.stringify({episode:item.episode,error:msg.slice(0,500)}));
             }
           }
-          if(item.videoId&&!item.aiDisclosureSyncedAt&&loadToken()&&Date.now()>=Number(aiDisclosureNext.get(item.id)||0)){
+          if(item.videoId&&String(item.remotePrivacyStatus||'')==='public'&&!item.aiDisclosureSyncedAt&&loadToken()&&Date.now()>=Number(aiDisclosureNext.get(item.id)||0)){
             try{await ensureAiDisclosure(item);aiDisclosureNext.delete(item.id)}
             catch(e){
               const quota=isQuotaExceeded(e);
