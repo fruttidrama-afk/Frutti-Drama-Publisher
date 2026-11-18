@@ -38,7 +38,12 @@ echo '[HUB PREVIEW] Starting reconstruction dashboard only, activation hard-disa
 sudo docker compose -f "$dir/compose.yaml" --project-directory "$dir" \
   --profile reconstruction-dashboard up --no-deps -d hub
 # Authenticated-only health endpoint must return 401 to an anonymous caller.
-status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:8081/health || true)"
+status=000
+for i in $(seq 1 30); do
+  status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://127.0.0.1:8081/health || true)"
+  [ "$status" = 401 ] && break
+  sleep 1
+done
 if [ "$status" != 401 ]; then
   echo "[HUB PREVIEW] FAIL: health endpoint HTTP $status, expected 401"
   exit 2
