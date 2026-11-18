@@ -44,10 +44,10 @@ try{
       publication:{selected_provider:null,providers:[]}
     })
   };
-  const process=spawn(processExecPath(),starts,{cwd:process.cwd(),env,stdio:['ignore','pipe','pipe']});
+  const childProc=spawn(process.execPath,starts,{cwd:process.cwd(),env,stdio:['ignore','pipe','pipe']});
   let log='';
-  for(const stream of [process.stdout,process.stderr])stream.on('data',part=>{log=(log+part.toString()).slice(-4000)});
-  children.push({c,process,logs:()=>log});
+  for(const stream of [childProc.stdout,childProc.stderr])stream.on('data',part=>{log=(log+part.toString()).slice(-4000)});
+  children.push({c,process:childProc,logs:()=>log});
  }
  for(const row of children){
   let ok=false;
@@ -92,4 +92,3 @@ try{
  for(const row of children)if(row.process.exitCode===null)row.process.kill('SIGKILL');
  fs.rmSync(root,{recursive:true,force:true});
 }
-function processExecPath(){return process.execPath}
