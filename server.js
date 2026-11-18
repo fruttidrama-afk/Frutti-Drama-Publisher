@@ -741,8 +741,10 @@ app.get('/facebook/oauth/callback',async(req,res)=>{
     });
     setPublicationProvider('facebook');
     if(same?.access_token){
-      facebookPublication.resumeAuthWait?.();
-      void facebookPublication.tick().catch(()=>{});
+      if(centralGateOpen()&&metaGet('automation:operatorActivated','false')==='true'){
+        facebookPublication.resumeAuthWait?.();
+        void facebookPublication.tick().catch(()=>{});
+      }
       return res.redirect('/?facebook=reconnected');
     }
     res.redirect('/integrations/facebook');
@@ -755,8 +757,10 @@ app.post('/integrations/facebook/page',secure,async(req,res)=>{
     const verified=await metaGraph(page.id,{params:{fields:'id,name'},token:page.access_token});
     saveFbSecrets({page_id:String(verified.id||page.id),page_name:String(verified.name||page.name||page.id),page_access_token:String(page.access_token)});
     setPublicationProvider('facebook');
-    facebookPublication.resumeAuthWait?.();
-    void facebookPublication.tick().catch(()=>{});
+    if(centralGateOpen()&&metaGet('automation:operatorActivated','false')==='true'){
+      facebookPublication.resumeAuthWait?.();
+      void facebookPublication.tick().catch(()=>{});
+    }
     res.redirect('/?facebook=reconnected');
   }catch(e){res.status(400).send('Facebook Page connection failed: '+String(e?.message||e))}
 });
