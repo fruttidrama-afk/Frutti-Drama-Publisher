@@ -10,6 +10,13 @@ assert(server.includes('La activación queda reservada'),'Legacy enable route mu
 assert(server.includes('Live Flow submit is forbidden during reconstruction'),'Live test forbidden');
 assert(server.includes("if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return false"),'Readiness must not activate');
 assert(provider.includes("if(meta(db,'automation:operatorActivated','false')!=='true'||!centralGateOpen())return;"),'Flow worker must exit when paused');
+assert(provider.includes("import { createFlowMutex } from './flow-global-mutex.mjs'"),'All channel providers must use the kernel-backed shared Flow account mutex');
+assert(provider.includes('if(!await acquireGlobalFlowLock())return;'),'Flow worker must acquire cross-container kernel mutex before opening Flow');
+assert(provider.includes('assertGlobalFlowLock();'),'Generate button must require live kernel mutex ownership');
+assert(!provider.includes('fs.unlinkSync(GLOBAL_FLOW_LOCK_PATH)'),'No stale-file deletion is allowed to steal an in-flight Flow account lock');
+assert(read('flow-global-mutex.mjs').includes("spawn('flock',['-F','-n'"),'Flow lock must be OS flock with no-fork holder');
+assert(read('flow-global-mutex.mjs').includes('exec cat >/dev/null'),'Kernel lock holder must terminate on parent process EOF');
+
 assert(provider.includes("runtimeEnabled=centralGateOpen()&&meta(db,'automation:factoryEnabled','false')==='true'&&meta(db,'automation:operatorActivated','false')==='true'"),'Submit boundary must be gated');
 assert(supervisor.includes("reason:'manual-operator-activation-required'"),'Supervisor must stay paused');
 assert(!supervisor.includes("setMeta(db,'automation:factoryEnabled','true')"),'Supervisor must never reactivate');
