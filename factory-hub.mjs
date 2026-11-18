@@ -6,6 +6,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { handleReconciliation } from './reconciliation-studio.mjs';
 const PORT=Number(process.env.HUB_PORT||8081);
 const MANIFEST=String(process.env.PUBLISHER_HUB_MANIFEST||'/data/factory-hub/channels.json');
 const HUB_USER=String(process.env.PUBLISHER_HUB_USER||'operator');
@@ -13,6 +14,8 @@ const HUB_PASSWORD=String(process.env.PUBLISHER_HUB_PASSWORD||'');
 const READY_FILE=String(process.env.PUBLISHER_HUB_READY_FILE||'/data/factory-hub/activation-readiness.json');
 const GLOBAL_FILE=String(process.env.PUBLISHER_GLOBAL_ACTIVATION_FILE||'').trim();
 const ACTIVATION_ARMED=String(process.env.PUBLISHER_HUB_ACTIVATION_ARMED||'false').toLowerCase()==='true';
+const RECON_MEDIA=String(process.env.PUBLISHER_RECONCILIATION_MEDIA_ROOT||'/data/reconciliation-media');
+const RECON_STORE=String(process.env.PUBLISHER_RECONCILIATION_STORE_ROOT||'/data/reconciliation');
 const eq=(a,b)=>{const A=createHash('sha256').update(String(a)).digest(),B=createHash('sha256').update(String(b)).digest();return timingSafeEqual(A,B)};
 const escapeHtml=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;');
 function basic(req,res){
@@ -82,7 +85,7 @@ function html(status,ready){
   const active=status.some(x=>x.enabled===true);
   const card=x=>{
     const link=/^https:\/\//.test(x.panelUrl)?'<a target="_blank" rel="noopener" href="'+escapeHtml(x.panelUrl)+'">Abrir panel individual</a>':'<span>Panel pendiente de enlace</span>';
-    return '<section class="card"><div class="eyebrow">'+escapeHtml(x.id)+'</div><h2>'+escapeHtml(x.name)+'</h2><p class="state">'+escapeHtml(x.state)+'</p><p>'+link+'</p></section>';
+    return '<section class="card"><div class="eyebrow">'+escapeHtml(x.id)+'</div><h2>'+escapeHtml(x.name)+'</h2><p class="state">'+escapeHtml(x.state)+'</p><p>'+link+'</p><p><a href="/reconciliation?channel='+encodeURIComponent(x.id)+'">Conciliación histórica</a></p></section>';
   };
   return '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Cache-Control" content="no-store"><title>Publisher Factory · Recuperación</title><style>' +
     'body{margin:0;background:#0d1724;color:#ecf2f7;font-family:system-ui,sans-serif;padding:28px}main{max-width:1100px;margin:auto}h1{font-size:clamp(2rem,5vw,3.4rem);margin:8px 0}.eyebrow{font-size:11px;letter-spacing:.2em;color:#b7a078;text-transform:uppercase}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:15px;margin:22px 0}.card{border:1px solid #46536a;background:#142336;border-radius:16px;padding:20px}.card h2{margin:10px 0}.state{font-weight:700}.help{color:#b5c3d1;line-height:1.6}a{color:#d9c497}.activate{background:#27394b;color:#b5c3d1;padding:16px;border:1px solid #46536a;border-radius:12px;font-weight:700;opacity:.7;cursor:not-allowed}' +
@@ -94,6 +97,10 @@ const server=http.createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store, private');
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('X-Frame-Options','DENY');
+  if(String(req.url||'').startsWith('/reconciliation')){
+    const handled=await handleReconciliation(req,res,{channels:channels(),mediaRoot:RECON_MEDIA,storeRoot:RECON_STORE});
+    if(handled)return;
+  }
   if(req.method==='POST'&&req.url==='/api/stop'){
     if(req.headers['x-publisher-operator']!=='explicit-click'){res.writeHead(403);res.end('Forbidden');return}
     const origin=String(req.headers.origin||'');
