@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
+import {spawn} from 'node:child_process';
 import {createFlowMutex} from '../flow-global-mutex.mjs';
 
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'publisher-flock-test-'));
@@ -37,11 +38,49 @@ try{
   }
   assert.equal(recovered,true,'Kernel Flow lock leaked after release');
   third.release();
+
+  // Crash test: a separately spawned publisher process is killed with
+  // SIGKILL, not a graceful release(). Its inherited stdin pipe must close
+  // so the no-fork kernel lock holder exits automatically.
+  const crashCode=[
+    "import {createFlowMutex} from './flow-global-mutex.mjs';",
+    "const m=createFlowMutex(process.argv[1]);",
+    "if(!await m.acquire())process.exit(22);",
+    "process.stdout.write('HOLDER_LOCKED\\n');",
+    "await new Promise(()=>{});"
+  ].join('\n');
+  const holder=spawn(process.execPath,['--input-type=module','-e',crashCode,file],{
+    cwd:process.cwd(),stdio:['ignore','pipe','pipe']
+  });
+  let seen=false,detail='';
+  await Promise.race([
+    new Promise((resolve,reject)=>{
+      holder.stdout.on('data',b=>{
+        detail+=String(b);
+        if(detail.includes('HOLDER_LOCKED')){seen=true;resolve()}
+      });
+      holder.on('exit',(code)=>reject(Error('Holder exited before lock confirmation: '+code)));
+      holder.on('error',reject);
+    }),
+    delay(4000).then(()=>{throw Error('Timed out waiting for crash fixture')})
+  ]);
+  assert.equal(seen,true,'Crash fixture never held kernel lock');
+  assert.equal(await first.acquire(),false,'Concurrent publisher entered crashed holder lock');
+  holder.kill('SIGKILL');
+  await new Promise(resolve=>holder.once('close',resolve));
+  let crashReleased=false;
+  for(let i=0;i<50;i++){
+    await delay(50);
+    if(await first.acquire()){crashReleased=true;break}
+  }
+  assert.equal(crashReleased,true,'OS lock survived parent SIGKILL (orphan holder)');
+  first.release();
+
   const absent=createFlowMutex('');
   assert.equal(await absent.acquire(),false,'No shared lock path must fail closed');
   console.log('[GLOBAL FLOW MUTEX OFFLINE] PASS',JSON.stringify({
     providers:3,simultaneous_owners:1,stale_mtime:'cannot_reclaim',
-    release:'kernel_lock_released',empty_path:'fail_closed',external_calls:0
+    release:'kernel_lock_released',parent_sigkill:'auto_released',empty_path:'fail_closed',external_calls:0
   }));
 }catch(e){
   console.error('[GLOBAL FLOW MUTEX OFFLINE] FAIL',String(e?.stack||e));
