@@ -15,7 +15,9 @@ RUN apt-get update \
 COPY package.json ./
 RUN npm install --omit=dev
 COPY activation-gate.mjs factory-hub.mjs unattended-supervisor.js runtime-config.js runtime-init.js free-browser-provider.js flow-bootstrap.js server.js publication.js publication-facebook.js publication-copy.js frutti-creative-package.js frutti-autonomous-source.js review-storage.js publisher-selftest.mjs facebook-publication-selftest.mjs verify-runtime-contract.mjs runtime-fresh-start-selftest.mjs publisher.config.schema.json ./
-COPY scripts/flow-security-signals.mjs scripts/flow-unusual-cooldown.mjs scripts/safety-gate-selftest.mjs scripts/operator-gate.test.mjs scripts/oci-browser-offline-probe.mjs scripts/oci-runtime-offline-probe.mjs ./scripts/
+COPY reconciliation-studio.mjs ./
+COPY public/reconciliation.html ./public/reconciliation.html
+COPY scripts/flow-security-signals.mjs scripts/flow-unusual-cooldown.mjs scripts/safety-gate-selftest.mjs scripts/operator-gate.test.mjs scripts/oci-browser-offline-probe.mjs scripts/oci-runtime-offline-probe.mjs scripts/hub-offline-probe.mjs scripts/reconciliation-offline-probe.mjs ./scripts/
 # Include non-secret deployment policy for in-image fail-closed safety assertion.
 COPY deploy/oracle-free/compose.yaml ./deploy/oracle-free/compose.yaml
 COPY GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md GOOGLE_FLOW_AUTOMATION_SOP.json FLOW_AI_IMPLEMENTATION_BRIEF.md FLOW_RECOVERY_RUNBOOK.md FLOW_GOLDEN_TEST.md FLOW_FAILURE_CATALOG.md FLOW_CHANGELOG.md FLOW_SOP_KNOWLEDGE_MANIFEST.json ./
@@ -40,7 +42,9 @@ RUN node --test scripts/operator-gate.test.mjs \
   && node verify-runtime-contract.mjs \
   && node runtime-fresh-start-selftest.mjs \
   && node publisher-selftest.mjs \
-  && node facebook-publication-selftest.mjs
+  && node facebook-publication-selftest.mjs \
+  && node scripts/hub-offline-probe.mjs \
+  && node scripts/reconciliation-offline-probe.mjs
 COPY public ./public
 ENV NODE_ENV=production
 ENV CHROMIUM_PATH=/usr/bin/chromium
