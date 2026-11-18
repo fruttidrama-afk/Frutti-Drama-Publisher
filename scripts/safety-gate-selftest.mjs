@@ -45,6 +45,8 @@ assert(server.includes("res.status(423).json({ok:false,error:'La reconstrucción
 const facebookResume=facebook.indexOf('function resumeAuthWait(){');
 assert(facebookResume>=0&&facebook.slice(facebookResume,facebookResume+500).includes('if(!centralGateOpen()'), 'Facebook reconnect must not reschedule stock during pause');
 const compose=read('deploy/oracle-free/compose.yaml');
+assert(compose.includes('profiles: ["explicit-publisher"]'),'Publisher must not launch with bare docker compose up');
+assert(compose.includes('profiles: ["reconstruction-dashboard"]'),'Hub must require intentional profile selection');
 assert(compose.includes('PUBLISHER_ENABLED: "false"'),'OCI draft must default hard OFF independent of durable gate');
 assert(compose.includes('PUBLISHER_HUB_ACTIVATION_ARMED: "false"'),'OCI hub activation must not be armed by default');
 console.log('[SAFETY GATE] Static checks pass. No network, videos, or secrets used.');
