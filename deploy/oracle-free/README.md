@@ -58,6 +58,16 @@ The remaining root filesystem is too limited for unbounded MP4 retention across 
 
 Official reference: https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm
 
+## Always Free validation against Oracle's official documentation (November 18, 2026)
+
+Oracle's current Always Free eligibility describes **2 Ampere A1 OCPUs and 12 GB RAM total** across the tenancy (1,500 OCPU-hours and 9,000 GB-hours per month), **200 GB combined boot and block storage**, up to **five Always Free volume backups**, and **10 TB outbound traffic per month**. These are eligibility caps, not extra disk, a free backup service with unlimited retention, or proof that this specific account has those quotas available. Resources need to be Always Free eligible in the home region, and non-eligible volumes or backup counts can incur charges. No extra volumes, paid database, tunnel provider or object storage may be provisioned without actual tenancy quota and billing verification.
+
+Oracle's idle reclamation terms can apply after seven days of very low CPU, memory and network utilization. **Never generate synthetic load to avoid reclamation.** This project has a genuine business workload, but that does not guarantee the VM will remain allocated permanently. A recovery plan with a verified backup is required before declaring production readiness.
+
+Sources:
+- https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm
+- https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm
+
 ## Secret and remote access policy
 
 `PUBLISHER_SESSION_SECRET` must be a unique random value of at least 32 characters; the old known fallback is disabled. `PUBLISHER_SETUP_TOKEN` and `PUBLISHER_HUB_PASSWORD` must also be unique and confidential. A `.gitignore` blocks local `.env`, OAuth tokens, private keys, SQLite, Chromium profile state and media from new commits. The publisher/hub draft binds their host ports to 127.0.0.1; use an **SSH tunnel** while staging, not a public inbound 8080/8081 rule. Do not paste secrets into chat or GitHub.
