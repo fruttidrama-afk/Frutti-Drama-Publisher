@@ -1,6 +1,7 @@
 # Draft OCI Always Free deployment. Never deploy until audits pass.
 services:
   publisher:
+    profiles: ["explicit-publisher"]
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -36,6 +37,7 @@ services:
       start_period: 90s
 
   hub:
+    profiles: ["reconstruction-dashboard"]
     image: node:24-alpine
     restart: unless-stopped
     command: ["node","/app/factory-hub.mjs"]
