@@ -54,6 +54,12 @@ jobs:
             --security-opt no-new-privileges \
             --entrypoint node publisher-factory-a1-safety:ci \
             ./scripts/oci-runtime-offline-probe.mjs
+      - name: Verify all three child runtimes stay paused and isolated across background worker ticks
+        run: |
+          docker run --rm --network none --cap-drop=ALL \
+            --security-opt no-new-privileges \
+            --entrypoint node publisher-factory-a1-safety:ci \
+            ./scripts/oci-three-child-paused-offline-probe.mjs
       - name: Test isolated read-only dashboard preview on disposable ARM runner
         shell: bash
         run: |
