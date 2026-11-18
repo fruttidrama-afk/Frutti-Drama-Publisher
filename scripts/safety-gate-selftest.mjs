@@ -25,6 +25,14 @@ for(const name of ['repairLegacyEarthReviewMetadata','repairPendingPublicationMe
   assert(server.slice(start,start+350).includes("if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return;"),'Paused startup mutation gate missing: '+name);
 }
 assert(server.includes("if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return row;"),'Paused creative-copy inspection must not mutate ledger');
+const init=read('runtime-init.js');
+assert(init.includes("if(centralGateOpen())cleanupRecreatableStorage();"),'Paused init must never delete browser cache/profile');
+assert(init.includes('DESTRUCTIVE_INSTANCE_RESET_DISABLED'),'Destructive redeploy reset must be prohibited');
+assert(init.includes("if(centralGateOpen()&&db.prepare(\"SELECT value FROM factory_meta WHERE key='automation:operatorActivated'\").get()?.value==='true')"),'Paused init must never seed historical episodes');
+const bootstrap=read('flow-bootstrap.js');
+assert(bootstrap.includes("app.use('/flow/bootstrap'"),'Sensitive remote browser routes must be guarded');
+assert(bootstrap.includes('globalThis.__publisherSecureMiddleware'),'Bootstrap needs session middleware');
+assert(server.includes('globalThis.__publisherSecureMiddleware=secure;'),'Publisher session middleware not passed to bootstrap');
 const compose=read('deploy/oracle-free/compose.yaml');
 assert(compose.includes('PUBLISHER_ENABLED: "false"'),'OCI draft must default hard OFF independent of durable gate');
 assert(compose.includes('PUBLISHER_HUB_ACTIVATION_ARMED: "false"'),'OCI hub activation must not be armed by default');
