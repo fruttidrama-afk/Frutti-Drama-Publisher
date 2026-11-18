@@ -64,7 +64,15 @@ const compose=read('deploy/oracle-free/compose.yaml');
 assert(compose.includes('profiles: ["explicit-publisher"]'),'Publisher must not launch with bare docker compose up');
 assert(compose.includes('profiles: ["reconstruction-dashboard"]'),'Hub must require intentional profile selection');
 const envRef=compose.split('env_file:').slice(1).filter(x=>x.trimStart().startsWith('- .env'));
-assert.equal(envRef.length,2,'Both services must require a real .env before an intentional deployment');
+assert.equal(envRef.length,7,'Three child services must each require common and private per-channel env, plus the hub common env');
+for(const id of ['fruttidrama','earth-in-10','dinnie']){
+  assert(compose.includes('publisher-'+id+':'),'All three established show publishers must have separate services: '+id);
+  assert(compose.includes('PUBLISHER_CHANNEL_ID: '+id),'Channel identity must be explicit: '+id);
+  assert(compose.includes('./channels/'+id+'.env'),'Each channel requires isolated private config: '+id);
+  assert(compose.includes('./data/'+id+':/data'),'Each channel must use a separate SQLite/browser volume: '+id);
+  assert(read('deploy/oracle-free/channels/'+id+'.env.example').includes('PUBLISHER_CONFIG_JSON='),'Safe identity example missing: '+id);
+}
+assert(read('operator-preflight.mjs').includes('PUBLISHER_CHANNEL_IDENTITY_MISMATCH'),'Wrong show identity must abort before SQLite migration');
 const composeProbe=read('scripts/oci-compose-offline-probe.sh');
 assert(composeProbe.includes('root="$(mktemp -d)"'),'Compose dry-run must generate an isolated temporary workspace');
 assert(composeProbe.includes('chmod 600 "$root/deploy/oracle-free/.env"'),'Synthetic Compose .env must remain private and outside source');
