@@ -20,6 +20,8 @@ jobs:
         run: node scripts/safety-gate-selftest.mjs
       - name: Verify paused fresh runtime and synthetic creative metadata
         run: node runtime-fresh-start-selftest.mjs
+      - name: Verify three-channel operator preflight and fail-closed secrets
+        run: node scripts/operator-preflight.test.mjs
       - name: Unit test operator gate without network
         run: node --test scripts/operator-gate.test.mjs
       - name: Verify central dashboard stays locked while unready
@@ -46,12 +48,18 @@ jobs:
           node --check scripts/hub-offline-probe.mjs
           node --check scripts/reconciliation-offline-probe.mjs
           node --check scripts/hub-activation-offline-probe.mjs
+          node --check scripts/operator-preflight.test.mjs
+          node --check operator-preflight.mjs
           node --check reconciliation-studio.mjs
           bash -n scripts/oci-host-preflight.sh
           bash -n scripts/oci-compose-offline-probe.sh
       - name: Verify no credentials or private runtime artifacts are tracked
         run: |
           test -f .gitignore
+          if git ls-files 'deploy/oracle-free/channels/*.env' | grep .; then
+            echo "Private channel configuration was accidentally tracked"
+            exit 1
+          fi
           if git ls-files | grep -Ei '(^|/)(\\.env|secrets\\.json|auth\\.json|youtube-token\\.json|flow-auth-verified\\.json|operator-activation\\.json|factory\\.sqlite|[^/]+\\.(pem|key|p12|pfx|mp4))
 ; then
             echo "Refusing tracked secrets or raw media in the repository."
