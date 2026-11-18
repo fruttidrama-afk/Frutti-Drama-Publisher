@@ -30,6 +30,8 @@ jobs:
         run: node scripts/hub-activation-offline-probe.mjs
       - name: Verify independent historical video and post reconciliation
         run: node scripts/reconciliation-offline-probe.mjs
+      - name: Validate three-show Compose layout without any containers or credentials
+        run: bash scripts/oci-compose-offline-probe.sh
       - name: Verify mocked Facebook flow only after synthetic operator gate
         run: node facebook-publication-selftest.mjs
       - name: Syntax check modified Node modules
