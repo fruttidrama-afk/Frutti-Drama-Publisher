@@ -10,6 +10,14 @@ export function centralGateOpen(){
       &&typeof x?.activation_id==='string'&&/^[a-f0-9-]{36}$/.test(x.activation_id);
   }catch{return false}
 }
+// The OCI image starts with PUBLISHER_ENABLED=false, but can honor a later
+// *explicit human click* only when both durable per-channel gates and the
+// central gate have been opened. This is never a timed/background activation.
+export function operatorGenerationEnvEnabled({operatorActivated=false,factoryEnabled=false}={}){
+  if(String(process.env.PUBLISHER_ENABLED||'false').toLowerCase()==='true')return true;
+  return String(process.env.PUBLISHER_ENABLE_AFTER_MANUAL_ACTIVATION||'false').toLowerCase()==='true'
+    &&operatorActivated===true&&factoryEnabled===true&&centralGateOpen();
+}
 export function assertCentralGate(){
   if(!centralGateOpen())throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE');
 }
