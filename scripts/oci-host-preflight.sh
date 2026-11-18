@@ -22,7 +22,7 @@ sudo docker system df || true
 running="$(sudo docker ps --format '{{.Names}}' | grep -Ei '(^|[-_])(publisher|factory|frutti|dinnie|earth)([-_]|$)' || true)"
 if [ -n "$running" ]; then
   echo "[OCI HOST] FAIL: potential live Publisher containers detected (no stop performed)"
-  printf '%s\\n' "$running"
+  printf '%s\n' "$running"
   exit 2
 fi
 # No HTTP server should be exposed on the internal draft runtime ports.
@@ -30,7 +30,7 @@ if command -v ss >/dev/null; then
   listening="$(ss -lntH | awk '$4 ~ /:(8080|8081)$/ {print $4}' || true)"
   if [ -n "$listening" ]; then
     echo "[OCI HOST] WARN: draft service port already listening; inspect before any future deployment"
-    printf '%s\\n' "$listening"
+    printf '%s\n' "$listening"
   else
     echo "[OCI HOST] no draft ports 8080/8081 listening"
   fi
