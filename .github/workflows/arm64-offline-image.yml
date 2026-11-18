@@ -69,6 +69,12 @@ jobs:
           test ! -e deploy/oracle-free/activation/operator-activation.json
           test "$(sudo docker ps --format '{{.Names}}' | grep -Ec '(^|[-_])publisher-(fruttidrama|earth-in-10|dinnie)' || true)" -eq 0
           echo 'ARM64_HUB_PREVIEW_PASS: no publisher containers or automation, localhost Basic auth required'
+      - name: Validate arm64 Caddy TLS config in disconnected container
+        run: |
+          docker run --rm --network none -e PUBLISHER_HTTPS_HOSTNAME=example.com \
+            -v "$PWD/deploy/oracle-free/https/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile
+          bash scripts/https-gateway-offline-probe.sh
       - name: Verify no production activation or deployment occurred
         run: |
           test ! -e deploy/oracle-free/activation/operator-activation.json
