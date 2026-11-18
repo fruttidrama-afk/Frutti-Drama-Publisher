@@ -71,8 +71,8 @@ const api={
      const videoId=String(id?.[0]||id||'');
      remoteReads.push(videoId);
      if(videoId==='yt-legacy-private')legacyPrivateReads++;
-     return {data:{items:[{id:videoId,snippet:{channelId:activeChannelId},status:{
-       privacyStatus:remotePrivacy.get(videoId)||'private',uploadStatus:'processed'
+     return {data:{items:[{id:videoId,snippet:{channelId:videoId==='yt-foreign-public'?'UC'+'b'.repeat(22):activeChannelId},status:{
+       privacyStatus:videoId==='yt-foreign-public'?'public':(remotePrivacy.get(videoId)||'private'),uploadStatus:'processed'
      }}]}};
    },
    update:async ({part,requestBody})=>{
@@ -180,10 +180,23 @@ try{
  assert.equal(row(blocked.id).status,'attention','Existing direct-public fence bypassed');
  assert.equal(httpCalls.filter(x=>x.method==='POST').length,1,'Legacy fence triggered duplicate YouTube insert');
  assert.equal(fs.existsSync(srcBlocked),true);
+ // A foreign PUBLIC ID must never count as our publication or trigger
+ // destruction of the only approved source MP4.
+ clock=OriginalDate.parse('2026-11-21T22:03:00Z');
+ const foreignMedia=sourceFile('foreign-id-backup.mp4');
+ const foreign=item(5,foreignMedia,'FOREIGN ID TEST');
+ db.prepare("UPDATE publication_items SET videoId='yt-foreign-public',status='uploaded',uploadMode='private-staging-v1',scheduledAt=?,uploadAt=? WHERE id=?")
+   .run('2026-11-21T22:00:00Z','2026-11-21T15:30:00Z',foreign.id);
+ await runtime.tick();
+ assert.notEqual(row(foreign.id).status,'published','Foreign public video was falsely accepted as our episode');
+ assert.equal(fs.existsSync(foreignMedia),true,'Foreign public verification deleted our backup');
+ assert.equal(videoUpdates,1,'Foreign public video must never receive status updates');
+ assert.equal(httpCalls.filter(x=>x.method==='POST').length,1,'Foreign public video triggered a fresh upload');
+ assert.match(String(row(foreign.id).error||''),/YOUTUBE_REMOTE_VIDEO_CHANNEL_MISMATCH/);
  console.log('[YOUTUBE TWO-STAGE SELFTEST] PASS',JSON.stringify({
   private_inserts:1,release_updates:1,same_video_id:true,
   no_publishAt:true,wrong_oauth_channel:'blocked',
-  unrecognized_private:'quarantined',legacy_direct_insert:'fenced',offline:true
+  unrecognized_private:'quarantined',legacy_direct_insert:'fenced',foreign_public_id:'blocked_without_cleanup',offline:true
  }));
 }catch(e){
  console.error('[YOUTUBE PUBLICATION SELFTEST] FAIL',String(e?.stack||e));
