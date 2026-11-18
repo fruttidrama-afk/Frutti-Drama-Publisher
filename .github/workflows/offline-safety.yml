@@ -33,6 +33,7 @@ jobs:
           node --check runtime-init.js
           node --check factory-hub.mjs
           node --check activation-gate.mjs
+          node --check scripts/oci-browser-offline-probe.mjs
       - name: Verify no cloud deployment secrets or host interaction
         run: |
           test ! -f deploy/oracle-free/.env
