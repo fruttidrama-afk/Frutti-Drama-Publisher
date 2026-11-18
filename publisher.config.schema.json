@@ -399,7 +399,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 1440,
-          "description": "YouTube uses a zero-minute lead: one direct PUBLIC upload at the configured release slot, no earlier PRIVATE staging or later visibility change; never use publishAt."
+          "description": "For YouTube, upload the approved video PRIVATE at 12:30 America/Argentina/Buenos_Aires (390 minutes before the 19:00 same-day release); explicitly update the SAME YouTube videoId to PUBLIC at 19:00 without publishAt or native scheduling."
         }
       }
     },
@@ -462,7 +462,7 @@
                     "const": "youtube"
                   },
                   "privacy_before_publish": {
-                    "const": "not-uploaded"
+                    "const": "private"
                   },
                   "playlist_strategy": {
                     "type": "string"
@@ -483,7 +483,7 @@
                     "const": true
                   },
                   "release_mode": {
-                    "const": "single_public_insert"
+                    "const": "same_day_private_to_public_api_update"
                   },
                   "use_publish_at": {
                     "const": false
@@ -492,10 +492,10 @@
                     "const": true
                   },
                   "preserve_private_lead_window": {
-                    "const": false
+                    "const": true
                   },
                   "upload_lead_minutes": {
-                    "const": 0
+                    "const": 390
                   }
                 }
               },
