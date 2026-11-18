@@ -68,19 +68,34 @@ try{
     assert.equal(blocked.status,423,'Paused runtime accepted mutation '+target+': HTTP '+blocked.status);
   }
 
+  // The app schedules a supervisor tick at 8s and a provider tick at 12s.
+  // Wait through both boundaries and assert the factory is *still* inert.
+  const stateBefore=await get('/factory/health');
+  const snapshotBefore=await stateBefore.json();
+  await sleep(14300);
+  assert.equal(child.exitCode,null,'Paused runtime exited during scheduled worker ticks');
+  const stateAfter=await get('/factory/health');
+  assert.equal(stateAfter.status,200,'Paused runtime became unavailable after worker ticks');
+  const snapshotAfter=await stateAfter.json();
+  assert.equal(snapshotBefore.operator_activated,false,'Fixture unexpectedly activated before timer checks');
+  assert.equal(snapshotAfter.operator_activated,false,'Supervisor/provider timers activated paused factory');
+  assert.equal(snapshotAfter.publisher_enabled,false,'Supervisor/provider timers enabled publisher');
+
   const dbFile=path.join(temp,'publisher-runtime','factory.sqlite');
   assert.ok(fs.existsSync(dbFile),'Factory offline fixture DB missing');
   const db=new DatabaseSync(dbFile);
   try{
     const activated=db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value;
     assert.notEqual(activated,'true','Synthetic factory was auto-activated');
+    const episodes=db.prepare('SELECT COUNT(*) as n FROM factory_items').get()?.n;
+    assert.equal(Number(episodes),0,'Paused scheduler seeded or scheduled new episode rows');
     const generations=db.prepare('SELECT COUNT(*) as n FROM factory_generations').get()?.n;
     assert.equal(Number(generations),0,'Synthetic offline factory created generation runs');
     const publications=db.prepare('SELECT COUNT(*) as n FROM publication_items').get()?.n;
     assert.equal(Number(publications),0,'Synthetic offline factory created publications');
   }finally{db.close()}
   console.log('[OCI OFFLINE RUNTIME] PASS',JSON.stringify({
-    health:'reachable',operator_activated:false,flow_controls:'authenticated',manual_mutation_endpoints:'locked',unknown_signed_cookies:'rejected',new_generations:0,new_publications:0,network:'Docker none',flowVisited:false
+    health:'reachable',operator_activated:false,flow_controls:'authenticated',manual_mutation_endpoints:'locked',unknown_signed_cookies:'rejected',scheduled_worker_ticks:'verified_paused',new_episodes:0,new_generations:0,new_publications:0,network:'Docker none',flowVisited:false
   }));
 }catch(e){
   console.error('[OCI OFFLINE RUNTIME] FAIL',String(e?.message||e));
