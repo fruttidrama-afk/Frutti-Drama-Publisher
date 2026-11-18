@@ -5,6 +5,11 @@ const key=String(process.env.PUBLISHER_SESSION_SECRET||'').trim();
 if(key.length<32||/^REPLACE_WITH_/i.test(key)){
   throw new Error('PUBLISHER_SESSION_SECRET_REQUIRED: configure a unique high-entropy secret before starting the runtime');
 }
+// Setup links are authentication credentials, not configuration examples.
+const setup=String(process.env.PUBLISHER_SETUP_TOKEN||'').trim();
+if(setup&&(/^REPLACE_WITH_/i.test(setup)||setup.length<32)){
+  throw new Error('PUBLISHER_SETUP_TOKEN_UNSAFE: use a separate random setup token or leave it unset after enrollment');
+}
 // A child Publisher must never load another show's persisted identities or
 // accidentally use a generic fallback configuration after a redeployment.
 const channel=String(process.env.PUBLISHER_CHANNEL_ID||'').trim();
