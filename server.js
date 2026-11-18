@@ -109,6 +109,10 @@ function secure(req,res,next){
   return res.status(401).json({error:'Access required.',login:loginPath});
 }
 
+// The Flow bootstrap integration attaches routes during app.listen; it must
+// inherit the publisher's existing authenticated-session middleware.
+globalThis.__publisherSecureMiddleware=secure;
+
 const rp=()=>String(process.env.RAILWAY_PUBLIC_DOMAIN||process.env.PUBLISHER_PUBLIC_DOMAIN||'localhost').replace(/^https?:\/\//,'').split('/')[0];
 const origin=req=>{
   const configured=String(process.env.PUBLISHER_PUBLIC_URL||'').trim().replace(/\/$/,'');
