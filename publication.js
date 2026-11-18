@@ -177,7 +177,7 @@ function publicItem(r){
   };
 }
 function hist(row,status,message=''){const h=JSON.parse(row.history||'[]');h.push({status,at:now(),message});row.history=JSON.stringify(h.slice(-120));row.status=status;row.updatedAt=now()}
-function save(db,row){db.prepare(`UPDATE publication_items SET title=?,description=?,scheduledAt=?,uploadAt=?,status=?,filePath=?,fileSize=?,videoId=?,resumableSession=?,playlistId=?,attempts=?,retryAt=?,error=?,history=?,updatedAt=?,aiDisclosureSyncedAt=?,remotePrivacyStatus=?,remotePublishAt=?,remoteStatusCheckedAt=? WHERE id=?`).run(row.title,row.description,row.scheduledAt,row.uploadAt,row.status,row.filePath,row.fileSize,row.videoId,row.resumableSession,row.playlistId,row.attempts,row.retryAt,row.error,row.history,row.updatedAt,row.aiDisclosureSyncedAt||null,row.remotePrivacyStatus||null,row.remotePublishAt||null,row.remoteStatusCheckedAt||null,row.id)}
+function save(db,row){db.prepare(`UPDATE publication_items SET title=?,description=?,scheduledAt=?,uploadAt=?,status=?,filePath=?,fileSize=?,videoId=?,resumableSession=?,playlistId=?,attempts=?,retryAt=?,error=?,history=?,updatedAt=?,aiDisclosureSyncedAt=?,remotePrivacyStatus=?,remotePublishAt=?,remoteStatusCheckedAt=?,uploadMode=? WHERE id=?`).run(row.title,row.description,row.scheduledAt,row.uploadAt,row.status,row.filePath,row.fileSize,row.videoId,row.resumableSession,row.playlistId,row.attempts,row.retryAt,row.error,row.history,row.updatedAt,row.aiDisclosureSyncedAt||null,row.remotePrivacyStatus||null,row.remotePublishAt||null,row.remoteStatusCheckedAt||null,row.uploadMode||null,row.id)}
 
 export function installPublication({app,db,config,youtubeApi,authedClient,loadToken,dataDir,isEnabled=()=>true}){
   const publicationDir=path.join(dataDir,'publication');fs.mkdirSync(publicationDir,{recursive:true,mode:0o700});
@@ -198,7 +198,8 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     "ALTER TABLE publication_items ADD COLUMN remotePrivacyStatus TEXT",
     "ALTER TABLE publication_items ADD COLUMN remotePublishAt TEXT",
     "ALTER TABLE publication_items ADD COLUMN remoteStatusCheckedAt TEXT",
-    "ALTER TABLE publication_items ADD COLUMN provider TEXT"
+    "ALTER TABLE publication_items ADD COLUMN provider TEXT",
+    "ALTER TABLE publication_items ADD COLUMN uploadMode TEXT"
   ]){try{db.exec(sql)}catch{}}
   const remotePollNext=new Map(),aiDisclosureNext=new Map();
   let connectedChannelId=null;
@@ -243,7 +244,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       const dupFile=db.prepare("SELECT episode,itemId FROM publication_items WHERE filePath=? AND status NOT IN ('cancelled','deleted')").get(filePath);
       if(dupFile)throw new Error('DUPLICATE_MEDIA_BLOCKED: media object/path is already assigned to episode '+dupFile.episode+'.');
     }
-    const item={id,itemId:row.id,episode:Number(row.episode),title,description,scheduledAt,uploadAt,status:'queued',filePath,fileSize,videoId,resumableSession:null,playlistId:null,attempts:0,retryAt:0,error:null,history:JSON.stringify([{status:'queued',at:now(),message:'Approved for publication.'}]),createdAt:now(),updatedAt:now()};
+    const item={id,itemId:row.id,episode:Number(row.episode),title,description,scheduledAt,uploadAt,status:'queued',filePath,fileSize,videoId,resumableSession:null,uploadMode:null,playlistId:null,attempts:0,retryAt:0,error:null,history:JSON.stringify([{status:'queued',at:now(),message:'Approved for publication.'}]),createdAt:now(),updatedAt:now()};
     db.prepare('INSERT INTO publication_items(id,itemId,episode,title,description,scheduledAt,uploadAt,status,filePath,fileSize,videoId,resumableSession,playlistId,attempts,retryAt,error,history,createdAt,updatedAt) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
       .run(item.id,item.itemId,item.episode,item.title,item.description,item.scheduledAt,item.uploadAt,item.status,item.filePath,item.fileSize,item.videoId,item.resumableSession,item.playlistId,item.attempts,item.retryAt,item.error,item.history,item.createdAt,item.updatedAt);
     db.prepare("UPDATE publication_items SET provider='youtube' WHERE id=?").run(item.id);
