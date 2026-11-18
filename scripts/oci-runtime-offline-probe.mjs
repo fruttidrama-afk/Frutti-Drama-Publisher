@@ -48,6 +48,15 @@ try{
     await sleep(100);
   }
   assert.ok(ready,'Offline runtime did not respond on localhost; last log: '+output.slice(-1800));
+  const publicHealth=await (await get('/factory/health')).json();
+  for(const sensitive of ['review_copy','publication_copy','security','knowledge','current_job',
+    'prompt_integrity','last_review_ready','last_publication','queue','credit_cycle','storage']){
+    assert.equal(Object.hasOwn(publicHealth,sensitive),false,
+      'Public health leaked confidential publisher field: '+sensitive);
+  }
+  assert.deepEqual(Object.keys(publicHealth.flow||{}).sort(),['authenticated','configured'],
+    'Public health exposed Flow project identity');
+
   const auth=await get('/flow/bootstrap/status');
   assert.equal(auth.status,401,'Flow remote-control status must require publisher authentication');
   const img=await get('/flow/bootstrap/screen.png');
