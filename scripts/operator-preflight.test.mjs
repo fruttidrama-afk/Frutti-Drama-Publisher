@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 const validSecret=randomBytes(48).toString('hex');
-function run({secret=validSecret,channel='',show='',setupToken=''}={}){
+function run({secret=validSecret,channel='',show='',setupToken='',sharedLock='/flow-lock/flow.lock'}={}){
   const env={...process.env,PUBLISHER_SESSION_SECRET:secret,
     PUBLISHER_CHANNEL_ID:channel,
+    PUBLISHER_GLOBAL_FLOW_LOCK_PATH:sharedLock,
     PUBLISHER_SETUP_TOKEN:setupToken,
     PUBLISHER_CONFIG_JSON:show?JSON.stringify({identity:{show_name:show}}):''};
   return spawnSync(process.execPath,['--import=./operator-preflight.mjs','-e','console.log("PRECHECK_ACCEPTED")'],{
@@ -22,6 +23,8 @@ for(const candidate of [
   {channel:'fruttidrama',show:'Dinnie the Dinosaur',error:'PUBLISHER_CHANNEL_IDENTITY_MISMATCH'},
   {channel:'earth-in-10',show:'FruttiDrama',error:'PUBLISHER_CHANNEL_IDENTITY_MISMATCH'},
   {channel:'dinnie',show:'',error:'PUBLISHER_CHANNEL_CONFIG_REQUIRED'},
+  {channel:'fruttidrama',show:'FruttiDrama',sharedLock:'',error:'PUBLISHER_SHARED_FLOW_LOCK_REQUIRED'},
+  {channel:'earth-in-10',show:'Earth in 10',sharedLock:'/data/not-shared.lock',error:'PUBLISHER_SHARED_FLOW_LOCK_REQUIRED'},
   {channel:'unregistered',show:'Unknown',error:'PUBLISHER_UNKNOWN_CHANNEL_ID'},
   {setupToken:'REPLACE_WITH_FAKE_SETUP_TOKEN_12345678',error:'PUBLISHER_SETUP_TOKEN_UNSAFE'},
   {setupToken:'short',error:'PUBLISHER_SETUP_TOKEN_UNSAFE'}
@@ -30,4 +33,4 @@ for(const candidate of [
   assert.notEqual(result.status,0,'Fail-closed preflight accepted invalid input: '+candidate.error);
   assert.match(result.stderr,new RegExp(candidate.error));
 }
-console.log('[OPERATOR PREFLIGHT OFFLINE] PASS',JSON.stringify({correct_channels:3,invalid_cases_rejected:8,external_calls:0}));
+console.log('[OPERATOR PREFLIGHT OFFLINE] PASS',JSON.stringify({correct_channels:3,invalid_cases_rejected:10,external_calls:0}));
