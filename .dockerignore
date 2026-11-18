@@ -53,6 +53,7 @@
 !scripts/oci-browser-offline-probe.mjs
 !scripts/oci-compose-offline-probe.sh
 !scripts/oci-runtime-offline-probe.mjs
+!scripts/oci-three-child-paused-offline-probe.mjs
 !scripts/operator-gate.test.mjs
 !scripts/operator-preflight.test.mjs
 !scripts/reconciliation-offline-probe.mjs
