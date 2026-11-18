@@ -59,10 +59,24 @@ media=[v for v in mounts if v.get('target')=='/data/reconciliation-media']
 assert len(media)==1 and media[0].get('read_only') is True, 'Historical source MP4 mount must be read-only'
 assert hub.get('restart')=='unless-stopped','Hub needs explicit restart policy'
 assert sum(float(service.get('cpus',0)) for service in services.values())<=2.0,'A1 CPU allocation would exceed 2 available OCPUs'
+def memory_bytes(value):
+ if isinstance(value,(int,float)):return int(value)
+ raw=str(value or '0').strip().lower()
+ multipliers={'':1,'b':1,'k':1024,'kb':1024,'ki':1024,'kib':1024,
+  'm':1024**2,'mb':1024**2,'mi':1024**2,'mib':1024**2,
+  'g':1024**3,'gb':1024**3,'gi':1024**3,'gib':1024**3}
+ import re
+ m=re.fullmatch(r'(\d+(?:\.\d+)?)([a-z]*)',raw)
+ assert m and m.group(2) in multipliers,f'Unrecognized memory limit: {raw}'
+ return int(float(m.group(1))*multipliers[m.group(2)])
+ram={name:memory_bytes(service.get('mem_limit',0)) for name,service in services.items()}
+assert all(x>0 for x in ram.values()),'Every service requires a strict memory cap'
+assert sum(ram.values())<10*1024**3,'Aggregate container limits leave too little headroom for the 11 GiB host'
 print('[OCI COMPOSE OFFLINE] PASS',json.dumps({
  'services':sorted(services),'isolated_children':3,
  'publisher_profile':'explicit-publisher','hub_profile':'reconstruction-dashboard',
  'operator_activation':'OFF','publisher_generation':'OFF','shared_flow_lock':True,
- 'host_ports':'loopback-only','source_media':'read-only','containers_started':0
+ 'host_ports':'loopback-only','source_media':'read-only','containers_started':0,
+ 'memory_budget_gib':round(sum(ram.values())/1024**3,2)
 },sort_keys=True))
 PY
