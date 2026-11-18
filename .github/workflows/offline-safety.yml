@@ -70,6 +70,7 @@ jobs:
           bash -n scripts/oci-compose-offline-probe.sh
           bash -n scripts/oci-image-acceptance-offline.sh
           bash -n scripts/oci-stage-paused-children.sh
+          bash -n scripts/oci-refresh-paused-hub.sh
           node --check scripts/oci-three-child-paused-offline-probe.mjs
           bash -n scripts/oci-hub-preview-only.sh
       - name: Verify no credentials or private runtime artifacts are tracked
