@@ -53,6 +53,19 @@ for(const line of dockerCopyLines){
     assert(fs.existsSync(source),'OCI Dockerfile references a missing build-context source: '+source);
   }
 }
+// Docker must send only reviewed source files to the builder. Local operator
+// credentials, Browser profiles and source MP4 may exist in the working tree.
+const dockerIgnore=read('.dockerignore').split(/\r?\n/).map(x=>x.trim());
+assert(dockerIgnore.includes('**'),'Docker build context must default to deny-all');
+const allowedDocker=new Set(dockerIgnore.filter(x=>x.startsWith('!')).map(x=>x.slice(1)));
+for(const line of dockerCopyLines){
+  const paths=line.trim().split(/\s+/).slice(1,-1);
+  for(const source of paths)assert(allowedDocker.has(source),'Docker source missing explicit allowlist: '+source);
+}
+for(const name of ['public/index.html','public/login.html','public/security.html','public/dinnie-touch-icon.b64'])
+  assert(allowedDocker.has(name),'A public static asset needs an explicit reviewed allowlist: '+name);
+assert(dockerIgnore.filter(x=>x.startsWith('!')).every(x=>!/[?*]/.test(x)),
+  'Docker allowlist must never contain directory-wide wildcards that could carry credentials');
 const central=read('activation-gate.mjs');assert(central.includes('if(!file)return false')&&central.includes('x?.enabled===true'),'Global switch must fail closed');
 // Historical state must remain frozen on startup and during read-only panel inspection.
 for(const name of ['repairLegacyEarthReviewMetadata','repairPendingPublicationMetadata','repairObsoleteFlowSettingsErrors']){
