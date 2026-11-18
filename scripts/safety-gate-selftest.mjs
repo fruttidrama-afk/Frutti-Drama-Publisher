@@ -29,6 +29,8 @@ const init=read('runtime-init.js');
 assert(init.includes("if(centralGateOpen())cleanupRecreatableStorage();"),'Paused init must never delete browser cache/profile');
 assert(init.includes('DESTRUCTIVE_INSTANCE_RESET_DISABLED'),'Destructive redeploy reset must be prohibited');
 assert(init.includes("if(centralGateOpen()&&db.prepare(\"SELECT value FROM factory_meta WHERE key='automation:operatorActivated'\").get()?.value==='true')"),'Paused init must never seed historical episodes');
+assert(server.includes('PIN_MAX_ATTEMPTS=6'),'Operator PIN authentication must enforce brute-force limits');
+assert(server.includes("secure:Boolean(req.secure||"),'HTTPS sessions should use secure cookies');
 assert(server.includes("if(SESSION_SECRET.length<32"),'Runtime must not use known fallback session encryption key');
 assert(server.includes("if(!r||r.revokedAt||r.expiresAt<Date.now())return false"),'Unknown or revoked signed sessions must be rejected');
 const bootstrap=read('flow-bootstrap.js');
