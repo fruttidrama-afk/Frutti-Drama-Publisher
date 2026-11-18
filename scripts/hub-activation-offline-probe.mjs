@@ -84,6 +84,9 @@ try{
  assert.equal(fs.existsSync(gate),false,'Rejected attempt must not write activation gate');
  fs.writeFileSync(readyFile,JSON.stringify({schema:1,all_tests_passed:true,
    historical_reconciliation_completed:true,operator_preactivation_review_complete:true,
+   live_golden_test:{flow_generated:true,recovered_to_review:true,operator_approved_review:true,
+     youtube_private_uploaded:true,operator_verified_on_youtube:true,
+     youtube_video_id:'abcdefghijk',operator_verified_at:new Date().toISOString()},
    channel_ids:chs.map(c=>c.id)}));
  html=await (await get('/')).text();
  assert.ok(html.includes('id="activate"'),'Explicitly ready fixture must show the activation control');
