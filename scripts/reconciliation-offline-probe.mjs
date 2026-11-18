@@ -67,6 +67,9 @@ try{
  const url=q+'assign?channel=fruttidrama';
  const denied=await http(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(record)});
  assert.equal(denied.status,403,'Manual attestation header is mandatory');
+ const invalidSource=await http(url,{method:'POST',headers:{'Content-Type':'application/json','X-Reconciliation-Operator':'manual-verified'},
+   body:JSON.stringify({...record,flowPrompt:prompt+' altered after copying'})});
+ assert.equal(invalidSource.status,422,'Altered prompt must never be attributed to an exact historical source post');
  const save=await http(url,{method:'POST',headers:{'Content-Type':'application/json','X-Reconciliation-Operator':'manual-verified'},body:JSON.stringify(record)});
  assert.equal(save.status,200,'Operator assignment could not be saved');
  const saved=await save.json();
@@ -88,7 +91,7 @@ try{
  const cannotOverwrite=await http(url,{method:'POST',headers:{'Content-Type':'application/json','X-Reconciliation-Operator':'manual-verified'},body:JSON.stringify(record)});
  assert.equal(cannotOverwrite.status,400,'Damaged historical ledger must reject mutation');
  assert.equal(fs.readFileSync(assignmentsFile,'utf8'),'{invalid-json','Damaged ledger was overwritten with fresh state');
- console.log('[RECONCILIATION OFFLINE] PASS',JSON.stringify({real_videos:2,imported_posts:1,guessed_links:0,operator_verified:1,duplicate_episode:'rejected',video_range:'206',publisher_db_writes:0,corrupt_ledger:'protected'}));
+ console.log('[RECONCILIATION OFFLINE] PASS',JSON.stringify({real_videos:2,imported_posts:1,guessed_links:0,operator_verified:1,duplicate_episode:'rejected',video_range:'206',publisher_db_writes:0,corrupt_ledger:'protected',source_prompt_mismatch:'rejected'}));
 }catch(e){
  console.error('[RECONCILIATION OFFLINE] FAIL',String(e?.stack||e));
  console.error('[RECONCILIATION OFFLINE] HUB',output);
