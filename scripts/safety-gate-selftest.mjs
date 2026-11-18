@@ -32,6 +32,15 @@ const preload=read('operator-preflight.mjs');
 assert(preload.includes('PUBLISHER_SESSION_SECRET_REQUIRED'),'First runtime preload must reject absent operator session secrets');
 const dockerfile=read('Dockerfile');
 assert(dockerfile.includes('CMD ["node","--import=./operator-preflight.mjs","--import=./unattended-supervisor.js"'),'Credential preflight must run before any stateful Node preload');
+assert(!dockerfile.includes('youtube-direct-public-selftest.mjs'),'Outdated direct-public YouTube selftest must not break the OCI build');
+assert(dockerfile.includes('node youtube-private-public-selftest.mjs'),'OCI image build must verify PRIVATE 12:30 -> PUBLIC 19:00 on the same video');
+const dockerCopyLines=dockerfile.replace(/\\\n\\s*/g,' ').split('\n').filter(x=>/^COPY\s+/.test(x));
+for(const line of dockerCopyLines){
+  const paths=line.trim().split(/\s+/).slice(1,-1);
+  for(const source of paths){
+    assert(fs.existsSync(source),'OCI Dockerfile references a missing build-context source: '+source);
+  }
+}
 const central=read('activation-gate.mjs');assert(central.includes('if(!file)return false')&&central.includes('x?.enabled===true'),'Global switch must fail closed');
 // Historical state must remain frozen on startup and during read-only panel inspection.
 for(const name of ['repairLegacyEarthReviewMetadata','repairPendingPublicationMetadata','repairObsoleteFlowSettingsErrors']){
