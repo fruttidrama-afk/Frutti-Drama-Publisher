@@ -79,6 +79,17 @@ try{
   assert.ok(cookie.includes('publisher_session='),'Synthetic session cookie missing');
   const authenticated=await fetch('http://127.0.0.1:'+port+'/auth/sessions',{headers:{Cookie:cookie},signal:AbortSignal.timeout(1000)});
   assert.equal(authenticated.status,200,'Issued signed session must be accepted');
+  for(let i=0;i<6;i++){
+    const bad=await fetch('http://127.0.0.1:'+port+'/auth/pin',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({pin:'000000bad'}),signal:AbortSignal.timeout(2500)});
+    assert.equal(bad.status,i<5?401:429,'PIN rate-limit failed at attempt '+(i+1));
+  }
+  const blockedPin=await fetch('http://127.0.0.1:'+port+'/auth/pin',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({pin:'000000bad'}),signal:AbortSignal.timeout(2000)});
+  assert.equal(blockedPin.status,429,'PIN rate-limit did not persist over repeated requests');
+
   for(const target of ['/factory/run','/publication/run','/api/schedule','/api/show-bible','/integrations/platform',
     '/factory/example-id/approve','/factory/example-id/reject','/factory/import-stock/1','/publication/example-id/recover-video']){
     const blocked=await fetch('http://127.0.0.1:'+port+target,{
@@ -114,7 +125,7 @@ try{
     assert.equal(Number(publications),0,'Synthetic offline factory created publications');
   }finally{db.close()}
   console.log('[OCI OFFLINE RUNTIME] PASS',JSON.stringify({
-    health:'reachable',operator_activated:false,flow_controls:'authenticated',manual_mutation_endpoints:'locked',unknown_signed_cookies:'rejected',scheduled_worker_ticks:'verified_paused',new_episodes:0,new_generations:0,new_publications:0,network:'Docker none',flowVisited:false
+    health:'reachable',operator_activated:false,flow_controls:'authenticated',manual_mutation_endpoints:'locked',unknown_signed_cookies:'rejected',pin_guessing:'throttled',scheduled_worker_ticks:'verified_paused',new_episodes:0,new_generations:0,new_publications:0,network:'Docker none',flowVisited:false
   }));
 }catch(e){
   console.error('[OCI OFFLINE RUNTIME] FAIL',String(e?.message||e));
