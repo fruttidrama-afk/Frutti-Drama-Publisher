@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 const validSecret=randomBytes(48).toString('hex');
-function run({secret=validSecret,channel='',show=''}={}){
+function run({secret=validSecret,channel='',show='',setupToken=''}={}){
   const env={...process.env,PUBLISHER_SESSION_SECRET:secret,
     PUBLISHER_CHANNEL_ID:channel,
+    PUBLISHER_SETUP_TOKEN:setupToken,
     PUBLISHER_CONFIG_JSON:show?JSON.stringify({identity:{show_name:show}}):''};
   return spawnSync(process.execPath,['--import=./operator-preflight.mjs','-e','console.log("PRECHECK_ACCEPTED")'],{
     cwd:process.cwd(),env,encoding:'utf8',timeout:5000});
@@ -21,10 +22,12 @@ for(const candidate of [
   {channel:'fruttidrama',show:'Dinnie the Dinosaur',error:'PUBLISHER_CHANNEL_IDENTITY_MISMATCH'},
   {channel:'earth-in-10',show:'FruttiDrama',error:'PUBLISHER_CHANNEL_IDENTITY_MISMATCH'},
   {channel:'dinnie',show:'',error:'PUBLISHER_CHANNEL_CONFIG_REQUIRED'},
-  {channel:'unregistered',show:'Unknown',error:'PUBLISHER_UNKNOWN_CHANNEL_ID'}
+  {channel:'unregistered',show:'Unknown',error:'PUBLISHER_UNKNOWN_CHANNEL_ID'},
+  {setupToken:'REPLACE_WITH_FAKE_SETUP_TOKEN_12345678',error:'PUBLISHER_SETUP_TOKEN_UNSAFE'},
+  {setupToken:'short',error:'PUBLISHER_SETUP_TOKEN_UNSAFE'}
 ]){
   const result=run(candidate);
   assert.notEqual(result.status,0,'Fail-closed preflight accepted invalid input: '+candidate.error);
   assert.match(result.stderr,new RegExp(candidate.error));
 }
-console.log('[OPERATOR PREFLIGHT OFFLINE] PASS',JSON.stringify({correct_channels:3,invalid_cases_rejected:6,external_calls:0}));
+console.log('[OPERATOR PREFLIGHT OFFLINE] PASS',JSON.stringify({correct_channels:3,invalid_cases_rejected:8,external_calls:0}));
