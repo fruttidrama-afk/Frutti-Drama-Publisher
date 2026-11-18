@@ -38,6 +38,8 @@ jobs:
         run: node scripts/reconciliation-offline-probe.mjs
       - name: Validate three-show Compose layout without any containers or credentials
         run: bash scripts/oci-compose-offline-probe.sh
+      - name: Verify separately opted-in HTTPS gateway cannot start without authenticated Hub
+        run: bash scripts/https-gateway-offline-probe.sh
       - name: Verify two-step YouTube private 12:30 then same-video public 19:00 with mocked API
         run: node youtube-private-public-selftest.mjs
       - name: Verify mocked Facebook flow only after synthetic operator gate
