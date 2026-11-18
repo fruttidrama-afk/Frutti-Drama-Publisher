@@ -20,6 +20,8 @@ jobs:
         run: node scripts/safety-gate-selftest.mjs
       - name: Verify paused fresh runtime and synthetic creative metadata
         run: node runtime-fresh-start-selftest.mjs
+      - name: Verify exclusive kernel Flow lock across three offline workers
+        run: node scripts/flow-global-mutex.test.mjs
       - name: Verify three-channel operator preflight and fail-closed secrets
         run: node scripts/operator-preflight.test.mjs
       - name: Unit test operator gate without network
@@ -51,6 +53,8 @@ jobs:
           node --check scripts/reconciliation-offline-probe.mjs
           node --check scripts/hub-activation-offline-probe.mjs
           node --check scripts/operator-preflight.test.mjs
+          node --check scripts/flow-global-mutex.test.mjs
+          node --check flow-global-mutex.mjs
           node --check operator-preflight.mjs
           node --check reconciliation-studio.mjs
           bash -n scripts/oci-host-preflight.sh
