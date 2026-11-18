@@ -508,6 +508,12 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
 
   async function reconcileAmbiguous(item){
     if(!item.resumableSession)return false;
+    if(item.uploadMode!=='direct-public'){
+      item.error='LEGACY_PRIVATE_UPLOAD_REQUIRES_MANUAL_RECONCILIATION';
+      hist(item,'attention','Legacy PRIVATE upload session is quarantined; no external request or privacy mutation.');
+      save(db,item);
+      return true;
+    }
     const r=await request(item.resumableSession,{method:'PUT',headers:{'Content-Length':'0','Content-Range':'bytes */'+item.fileSize}});
     if(r.ok){const j=await r.json();if(j.id){item.videoId=j.id;item.resumableSession=null;hist(item,'uploaded','Recovered completed ambiguous resumable upload.');save(db,item);return true}}
     if(r.status===308)return false;
