@@ -4,21 +4,23 @@
     {
       "id": "fruttidrama",
       "name": "FruttiDrama",
-      "status_url": "http://publisher:8080/factory/health",
-      "panel_url": "",
-      "db_path": "/data/publisher/publisher-runtime/factory.sqlite"
+      "status_url": "http://publisher-fruttidrama:8080/factory/health",
+      "panel_url": "http://127.0.0.1:8080/",
+      "db_path": "/data/publisher/fruttidrama/publisher-runtime/factory.sqlite"
     },
     {
       "id": "earth-in-10",
       "name": "Earth in 10",
-      "status_url": "",
-      "panel_url": ""
+      "status_url": "http://publisher-earth-in-10:8080/factory/health",
+      "panel_url": "http://127.0.0.1:8082/",
+      "db_path": "/data/publisher/earth-in-10/publisher-runtime/factory.sqlite"
     },
     {
       "id": "dinnie",
       "name": "Dinnie the Dinosaur",
-      "status_url": "",
-      "panel_url": ""
+      "status_url": "http://publisher-dinnie:8080/factory/health",
+      "panel_url": "http://127.0.0.1:8083/",
+      "db_path": "/data/publisher/dinnie/publisher-runtime/factory.sqlite"
     }
   ]
 }
