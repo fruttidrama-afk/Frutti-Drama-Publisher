@@ -19,13 +19,31 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Install production dependency tree without lifecycle scripts
-        run: npm install --omit=dev --ignore-scripts --no-audit --package-lock=false
+      - name: Install a disposable production lockfile without lifecycle scripts
+        run: npm install --omit=dev --ignore-scripts --no-audit
       - name: Request public npm security advisories (no credentials)
         shell: bash
         run: |
           npm audit --omit=dev --json > audit-report.json || true
-          node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync("audit-report.json")); if(p.error){ console.error("AUDIT ERROR",p.error.message); process.exitCode=1;}else{ console.log("AUDIT COUNTS",JSON.stringify(p.metadata?.vulnerabilities||{})); for(const [k,v] of Object.entries(p.vulnerabilities||{}))console.log("ADVISORY",JSON.stringify({package:k,severity:v.severity,isDirect:v.isDirect,range:v.range,fixAvailable:v.fixAvailable,via:v.via.map(x=>typeof x==="string"?x:{name:x.name,title:x.title,url:x.url,range:x.range})})); }}'
+          node <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('audit-report.json'));
+          if (report.error) {
+            console.error('AUDIT ERROR', report.error.message);
+            process.exitCode = 1;
+          } else {
+            console.log('AUDIT COUNTS', JSON.stringify(report.metadata?.vulnerabilities || {}));
+            for (const [pkg, value] of Object.entries(report.vulnerabilities || {})) {
+              console.log('ADVISORY', JSON.stringify({
+                package: pkg, severity: value.severity, isDirect: value.isDirect,
+                range: value.range, fixAvailable: value.fixAvailable,
+                via: value.via.map(item => typeof item === 'string' ? item : {
+                  name: item.name, title: item.title, url: item.url, range: item.range
+                })
+              }));
+            }
+          }
+          NODE
       - name: Delete report from runner
         if: always()
         run: rm -f audit-report.json package-lock.json
