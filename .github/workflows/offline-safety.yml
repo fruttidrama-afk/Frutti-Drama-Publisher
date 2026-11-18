@@ -40,6 +40,7 @@ jobs:
           node --check scripts/oci-browser-offline-probe.mjs
           node --check scripts/oci-runtime-offline-probe.mjs
           node --check scripts/hub-offline-probe.mjs
+          bash -n scripts/oci-host-preflight.sh
       - name: Verify no cloud deployment secrets or host interaction
         run: |
           test ! -f deploy/oracle-free/.env
