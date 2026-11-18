@@ -5,6 +5,12 @@ on:
     paths:
       - ".github/workflows/arm64-offline-image.yml"
       - "Dockerfile"
+      - ".dockerignore"
+      - "public/**"
+      - "deploy/oracle-free/compose.yaml"
+      - "GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md"
+      - "GOOGLE_FLOW_AUTOMATION_SOP.json"
+      - "FLOW_SOP_KNOWLEDGE_MANIFEST.json"
       - "package.json"
       - "publisher.config.schema.json"
       - "publisher-selftest.mjs"
