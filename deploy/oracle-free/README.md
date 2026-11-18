@@ -92,6 +92,36 @@ The Dockerfile now invokes the static safety contract along with existing tests.
 - Isolated runtime boot selftest passed with read-only health, authentication enforced, manual mutation routes locked, no generation/publication jobs, and no Flow visit. The delayed supervisor/provider timer boundary has a new test but still requires host rerun.
 - These checks do **not** prove Flow login, a saved project, profile portability, OAuth integrations, real media retrieval, uninterrupted 24/7 operation or a long-term zero-cost guarantee.
 
+## Read-only dashboard preview (optional, never publishers)
+
+The real OCI VM **passed** the one-command host acceptance on November 18, 2026:
+local ARM64 Docker build, internal-browser Playwright+sharp, full paused runtime,
+three-channel Compose policy, zero network during probes, zero new generations or
+publications. The final user-supplied log ended with:
+
+```
+[OCI ACCEPTANCE] PASS: safe ARM64 build, Chrome, paused runtime, multi-show Compose; factory still OFF
+```
+
+A separate, explicit operator-only command can start **only the dashboard** on
+the already-validated host: `bash scripts/oci-hub-preview-only.sh`. This is
+not part of acceptance, does not start publisher services, and only binds
+127.0.0.1:8081. It refuses an activation file and refuses to overwrite an
+existing operational `.env`. A fresh dashboard preview generates a private
+64-character random password kept in `deploy/oracle-free/.env`; do not send
+that file or password to chat or GitHub. The preview does not generate, recover,
+schedule or publish content. The activation button is hard-disarmed. Because
+none of the three publisher children is deployed, individual service status
+cards may show `SIN RESPUESTA` until they are independently staged. This is
+not evidence of a failed dashboard.
+
+Access only through SSH local forwarding, e.g. `ssh -L 8081:127.0.0.1:8081`
+with the preexisting user, host and private key; then browse
+`http://127.0.0.1:8081/`. Never open a public OCI ingress rule for 8081.
+The password can be read privately from the host .env, but must not be
+included in shared logs. This preview is explicitly non-production and is not
+an invitation to reconcile history or activate scheduling.
+
 ## Persistent storage and cost risk
 
 The remaining root filesystem is too limited for unbounded MP4 retention across all shows. Before migration, inventory the actual historical media sizes and make a documented retention/backup plan; **never delete historical media without verified independent copies**. The Oracle Always Free allocation permits 2 A1 OCPUs/12 GB RAM, 200 GB of combined eligible boot/block storage and limited free volume backups subject to eligibility and policy. Any new volume, public network component or backup must be checked against the actual tenancy's current Always Free quotas before creation. Oracle can reclaim idle Always Free instances. Do not generate artificial workload to evade reclamation. A zero-swap host should not receive three unconstrained Chromium publishers until resource limits and failure recovery have been tested.
