@@ -3,6 +3,11 @@
 # .env. Never read or create deploy/oracle-free/.env in the actual repository.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Compose points at the real code only after manual deployment; this probe
+# validates syntax and required mounts but never reads any local secrets.
+for file in Dockerfile factory-hub.mjs reconciliation-studio.mjs public/reconciliation.html; do
+  test -f "$file" || { echo "[OCI COMPOSE OFFLINE] FAIL: missing mount/build source $file"; exit 1; }
+done
 root="$(mktemp -d)"
 trap 'rm -rf "$root"' EXIT
 mkdir -p "$root/deploy/oracle-free"
@@ -10,8 +15,8 @@ cp deploy/oracle-free/compose.yaml "$root/deploy/oracle-free/compose.yaml"
 : > "$root/deploy/oracle-free/.env"
 chmod 600 "$root/deploy/oracle-free/.env"
 out="$root/composed.json"
-sudo docker compose --profile explicit-publisher --profile reconstruction-dashboard \
-  -f "$root/deploy/oracle-free/compose.yaml" config --no-env-resolution --format json > "$out"
+(cd "$root" && sudo docker compose --profile explicit-publisher --profile reconstruction-dashboard \
+  -f deploy/oracle-free/compose.yaml config --no-env-resolution --format json > "$out")
 python3 - "$out" <<'PY'
 import json,sys
 with open(sys.argv[1],encoding='utf-8') as f: doc=json.load(f)
