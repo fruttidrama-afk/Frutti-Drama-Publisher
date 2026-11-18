@@ -15,7 +15,11 @@ echo "[OCI HOST] cpu_count=$(getconf _NPROCESSORS_ONLN)"
 echo "[OCI HOST] memory:"
 free -h | head -n 3
 echo "[OCI HOST] filesystems:"
-df -h / /home/ubuntu | awk '!seen[$1]++'
+if [ -d /home/ubuntu ]; then
+  df -h / /home/ubuntu | awk '!seen[$1]++'
+else
+  df -h / | awk '!seen[$1]++'
+fi
 echo "[OCI HOST] docker_disk:"
 sudo docker system df || true
 # The Factory must remain unstarted during reconstruction.
