@@ -20,6 +20,8 @@ jobs:
         run: node scripts/safety-gate-selftest.mjs
       - name: Unit test operator gate without network
         run: node --test scripts/operator-gate.test.mjs
+      - name: Verify mocked Facebook flow only after synthetic operator gate
+        run: node facebook-publication-selftest.mjs
       - name: Syntax check modified Node modules
         run: |
           node --check server.js
