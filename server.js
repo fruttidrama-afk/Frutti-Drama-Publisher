@@ -385,6 +385,26 @@ app.use((req,res,next)=>{
  return secure(req,res,next);
 });
 
+// During reconstruction, inspect/authenticate/reconcile without mutating
+// publication schedules, deleting Review media, staging stock, or approving
+// videos. Manual source-of-truth reconciliation gets separate endpoints.
+app.use((req,res,next)=>{
+ if(req.method!=='POST')return next();
+ const pathname=String(req.path||'');
+ const frozen=pathname==='/publication/run'
+   ||pathname==='/factory/run'
+   ||pathname==='/api/schedule'
+   ||pathname==='/api/show-bible'
+   ||pathname==='/integrations/platform'
+   ||/^\\/factory\\/[^/]+\\/(?:approve|reject)$/.test(pathname)
+   ||/^\\/factory\\/import-stock\\/[^/]+$/.test(pathname)
+   ||/^\\/publication\\/[^/]+\\/recover-video$/.test(pathname);
+ if(frozen&&(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')){
+   return res.status(423).json({ok:false,error:'La reconstrucción está pausada: los cambios de stock, revisión, horario y publicación requieren activación posterior.'});
+ }
+ return next();
+});
+
 function ytSecrets(){const s=secrets();return s.youtube||{}}
 function saveYtSecrets(v){const s=secrets();s.youtube={...(s.youtube||{}),...v};saveSecrets(s)}
 function loadToken(){try{return unseal(readJson(YT_TOKEN_PATH,null))}catch{return null}}
