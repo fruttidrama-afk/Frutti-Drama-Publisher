@@ -396,9 +396,9 @@ app.use((req,res,next)=>{
    ||pathname==='/api/schedule'
    ||pathname==='/api/show-bible'
    ||pathname==='/integrations/platform'
-   ||/^\\/factory\\/[^/]+\\/(?:approve|reject)$/.test(pathname)
-   ||/^\\/factory\\/import-stock\\/[^/]+$/.test(pathname)
-   ||/^\\/publication\\/[^/]+\\/recover-video$/.test(pathname);
+   ||/^\/factory\/[^/]+\/(?:approve|reject)$/.test(pathname)
+   ||/^\/factory\/import-stock\/[^/]+$/.test(pathname)
+   ||/^\/publication\/[^/]+\/recover-video$/.test(pathname);
  if(frozen&&(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')){
    return res.status(423).json({ok:false,error:'La reconstrucción está pausada: los cambios de stock, revisión, horario y publicación requieren activación posterior.'});
  }
