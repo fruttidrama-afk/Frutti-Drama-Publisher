@@ -15,9 +15,10 @@ const secret=randomBytes(48).toString('hex');
 const setupToken=randomBytes(32).toString('hex');
 const env={
   ...process.env, DATA_DIR:temp, PORT:String(port), PUBLISHER_SESSION_SECRET:secret, PUBLISHER_SETUP_TOKEN:setupToken,
+  PUBLISHER_CHANNEL_ID:'fruttidrama',
   PUBLISHER_ENABLED:'false',PUBLISHER_GLOBAL_ACTIVATION_FILE:path.join(temp,'gate-not-present.json'),
   PUBLISHER_CONFIG_JSON:JSON.stringify({
-    identity:{publisher_name:'Offline Probe',show_name:'Offline Probe',timezone:'UTC'},
+    identity:{publisher_name:'FruttiDrama',show_name:'FruttiDrama',timezone:'UTC'},
     content:{creative_bible:'Offline probe. No real content or production output is authorized.',initial_episodes:[]},
     publication:{selected_provider:null,providers:[]}
   })
@@ -40,6 +41,16 @@ try{
   assert.notEqual(denied.status,0,'Runtime accepted a missing operator session key');
   assert.match(String(denied.stderr||''),/PUBLISHER_SESSION_SECRET_REQUIRED/);
   assert.equal(fs.existsSync(noSecretDir),false,'Invalid secret should not create any /data state before first preflight');
+  const wrongChannelDir=path.join(temp,'reject-cross-show');
+  const crossShow=spawnSync(process.execPath,parts,{
+    env:{...env,DATA_DIR:wrongChannelDir,
+      PUBLISHER_CONFIG_JSON:JSON.stringify({identity:{show_name:'Dinnie the Dinosaur'}})},
+    cwd:process.cwd(),encoding:'utf8',timeout:8000
+  });
+  assert.notEqual(crossShow.status,0,'Publisher accepted another channel identity');
+  assert.match(String(crossShow.stderr||''),/PUBLISHER_CHANNEL_IDENTITY_MISMATCH/);
+  assert.equal(fs.existsSync(wrongChannelDir),false,'Wrong show identity created persisted child state');
+
   assert.equal(fs.existsSync(path.join(noSecretDir,'publisher-runtime','factory.sqlite')),false,
     'Runtime created historical database before rejecting an absent signing key');
   let ready=false;
@@ -126,7 +137,7 @@ try{
     assert.equal(Number(publications),0,'Synthetic offline factory created publications');
   }finally{db.close()}
   console.log('[OCI OFFLINE RUNTIME] PASS',JSON.stringify({
-    health:'reachable',operator_activated:false,flow_controls:'authenticated',manual_mutation_endpoints:'locked',unknown_signed_cookies:'rejected',pin_guessing:'throttled',scheduled_worker_ticks:'verified_paused',new_episodes:0,new_generations:0,new_publications:0,network:'Docker none',flowVisited:false
+    health:'reachable',operator_activated:false,channel_identity:'verified',flow_controls:'authenticated',manual_mutation_endpoints:'locked',unknown_signed_cookies:'rejected',pin_guessing:'throttled',scheduled_worker_ticks:'verified_paused',new_episodes:0,new_generations:0,new_publications:0,network:'Docker none',flowVisited:false
   }));
 }catch(e){
   console.error('[OCI OFFLINE RUNTIME] FAIL',String(e?.message||e));
