@@ -15,7 +15,7 @@ RUN apt-get update \
 COPY package.json ./
 RUN npm install --omit=dev
 COPY Dockerfile ./Dockerfile
-COPY flow-global-mutex.mjs operator-preflight.mjs activation-gate.mjs factory-hub.mjs unattended-supervisor.js runtime-config.js runtime-init.js free-browser-provider.js flow-bootstrap.js server.js publication.js publication-facebook.js publication-copy.js frutti-creative-package.js frutti-autonomous-source.js review-storage.js publisher-selftest.mjs facebook-publication-selftest.mjs youtube-direct-public-selftest.mjs verify-runtime-contract.mjs runtime-fresh-start-selftest.mjs publisher.config.schema.json ./
+COPY flow-global-mutex.mjs operator-preflight.mjs activation-gate.mjs factory-hub.mjs unattended-supervisor.js runtime-config.js runtime-init.js free-browser-provider.js flow-bootstrap.js server.js publication.js publication-facebook.js publication-copy.js frutti-creative-package.js frutti-autonomous-source.js review-storage.js publisher-selftest.mjs facebook-publication-selftest.mjs youtube-private-public-selftest.mjs verify-runtime-contract.mjs runtime-fresh-start-selftest.mjs publisher.config.schema.json ./
 COPY reconciliation-studio.mjs ./
 COPY public/reconciliation.html ./public/reconciliation.html
 COPY scripts/flow-security-signals.mjs scripts/flow-unusual-cooldown.mjs scripts/safety-gate-selftest.mjs scripts/operator-gate.test.mjs scripts/oci-browser-offline-probe.mjs scripts/oci-runtime-offline-probe.mjs scripts/hub-offline-probe.mjs scripts/reconciliation-offline-probe.mjs scripts/hub-activation-offline-probe.mjs scripts/oci-compose-offline-probe.sh scripts/operator-preflight.test.mjs scripts/flow-global-mutex.test.mjs ./scripts/
@@ -48,7 +48,7 @@ RUN node --test scripts/operator-gate.test.mjs \
   && node runtime-fresh-start-selftest.mjs \
   && node publisher-selftest.mjs \
   && node facebook-publication-selftest.mjs \
-  && node youtube-direct-public-selftest.mjs \
+  && node youtube-private-public-selftest.mjs \
   && node scripts/hub-offline-probe.mjs \
   && node scripts/reconciliation-offline-probe.mjs \
   && node scripts/hub-activation-offline-probe.mjs
