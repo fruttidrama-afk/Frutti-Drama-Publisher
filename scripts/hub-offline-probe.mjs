@@ -12,7 +12,7 @@ const pass='offline-'+randomBytes(20).toString('hex');
 const file=path.join(folder,'channels.json');
 const activation=path.join(folder,'operator-activation.json');
 fs.writeFileSync(file,JSON.stringify({phase:'reconstruction',channels:[
-  {id:'fruttidrama',name:'FruttiDrama',status_url:'',panel_url:''},
+  {id:'fruttidrama',name:'FruttiDrama',status_url:'',panel_url:'http://127.0.0.1:8080/'},
   {id:'dinnie',name:'Dinnie the Dinosaur',status_url:'',panel_url:''},
   {id:'earth-in-10',name:'Earth in 10',status_url:'',panel_url:''}
 ]}));
@@ -48,6 +48,7 @@ try{
  const html=await home.text();
  assert.ok(html.includes('FruttiDrama')&&html.includes('Dinnie the Dinosaur')&&html.includes('Earth in 10'),'Hub channel cards missing');
  assert.ok(html.includes('disabled aria-disabled="true"'),'Activation must visibly remain disabled before reconciliation');
+ assert.ok(html.includes('href="http://127.0.0.1:8080/"')&&html.includes('Abrir panel individual'),'SSH-tunnel channel links must remain usable while paused');
  const attempt=await get('/api/activate',{method:'POST',headers:{
    authorization:auth,'Content-Type':'application/json','X-Publisher-Operator':'explicit-click'
  },body:JSON.stringify({confirm:'ACTIVAR AUTOMATIZACIÓN'})});
