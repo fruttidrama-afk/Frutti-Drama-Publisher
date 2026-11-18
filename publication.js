@@ -105,17 +105,20 @@ function metadata(row,config,db){
 function canonicalPublicationState(r){
   const s=String(r?.status||'').toLowerCase(),remote=String(r?.remotePrivacyStatus||'').toLowerCase(),hasVideo=Boolean(r?.videoId);
   const platform=String(r?.provider||'youtube').toLowerCase()==='facebook'?'Facebook':'YouTube';
-  if(remote==='public'||s==='published')return{
+  if(remote==='public'||(s==='published'&&remote!=='private'))return{
     key:'public',label:'PÚBLICO',
     message:platform+' confirma que este video ya está público.',
     resolution:'none',actionRequired:false
   };
-  if(hasVideo&&(remote==='private'||['uploaded','scheduled','quota_wait'].includes(s)))return{
+  if(platform==='YouTube'&&hasVideo&&(remote==='private'||(!remote&&['uploaded','scheduled'].includes(s))))return{
+    key:'private',label:'PRIVADO — REVISIÓN MANUAL',
+    message:'El video existe en YouTube como privado o no tiene confirmación PUBLIC. La fábrica no lo cambiará a público automáticamente.',
+    resolution:'action_required',actionRequired:true
+  };
+  if(platform==='Facebook'&&hasVideo&&(remote==='private'||['uploaded','scheduled','quota_wait'].includes(s)))return{
     key:'private',label:'PRIVADO',
-    message:s==='quota_wait'
-      ?'El video ya está en '+platform+' y sigue privado. El sistema volverá a sincronizarlo automáticamente.'
-      :'El video ya está en '+platform+' y permanece privado hasta la hora de publicación.',
-    resolution:s==='quota_wait'?'automatic':'none',actionRequired:false
+    message:'Facebook todavía no confirmó que este Reel esté público.',
+    resolution:'action_required',actionRequired:true
   };
   if(!hasVideo&&s==='queued')return{
     key:'stock',label:'EN STOCK',
@@ -284,19 +287,15 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       await cleanupPublicationMedia(item);
       return'published';
     }
-    if(privacy==='private'&&st.publishAt){
-      item.remotePublishAt=st.publishAt;
-      if(String(item.status)!=='uploaded')hist(item,'uploaded',source+' found forbidden legacy publishAt; runtime will remove it and keep the video plain PRIVATE until the release-time edit.');
-      else item.updatedAt=now();
-      item.error=null;item.retryAt=0;save(db,item);
-      console.log('[PUBLICATION FORBIDDEN PUBLISH_AT DETECTED]',JSON.stringify({episode:item.episode,videoId:item.videoId,publishAt:st.publishAt,scheduledAt:item.scheduledAt,source}));
-      return'uploaded';
-    }
     if(privacy==='private'){
-      if(String(item.status)!=='uploaded')hist(item,'uploaded',source+' confirms PRIVATE; scheduling is not yet confirmed.');
+      // Historical PRIVATE uploads and account-side forced-private results
+      // require operator review; never switch their privacy by automation.
+      const reason='LEGACY_PRIVATE_UPLOAD_REQUIRES_MANUAL_RECONCILIATION';
+      item.error=reason;
+      if(String(item.status)!=='attention')hist(item,'attention',source+' confirms PRIVATE. Manual YouTube reconciliation required; no API privacy update.');
       else item.updatedAt=now();
-      item.error=null;save(db,item);
-      return'uploaded';
+      save(db,item);
+      return 'attention';
     }
     throw new Error('Unexpected YouTube privacy status: '+(privacy||'missing'));
   }
