@@ -6,7 +6,11 @@ import { installFacebookPublication } from './publication-facebook.js';
 
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'publisher-fb-selftest-'));
 const db=new DatabaseSync(path.join(root,'test.sqlite'));
+const previousGatePath=process.env.PUBLISHER_GLOBAL_ACTIVATION_FILE;
+const mockGatePath=path.join(root,'mock-operator-activation.json');
+process.env.PUBLISHER_GLOBAL_ACTIVATION_FILE=mockGatePath;
 db.exec(`
+CREATE TABLE factory_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE publication_items(
  id TEXT PRIMARY KEY,itemId TEXT NOT NULL UNIQUE,episode INTEGER NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,
  scheduledAt TEXT NOT NULL,uploadAt TEXT NOT NULL,status TEXT NOT NULL,filePath TEXT,fileSize INTEGER,videoId TEXT,resumableSession TEXT,
@@ -42,11 +46,23 @@ try{
 
   const item=runtime.enqueue({id:'approved-1',status:'review',episode:1,hook:'RAINBOW DOOR',story:'Dinnie opens a glowing leaf door.',title:'RAINBOW DOOR',description:'Dinnie finds a glowing leaf door.',prompt:'test',videoPath:src});
   if(item.provider!=='facebook'||item.status!=='queued')throw new Error('Approved Facebook item was not queued.');
-  const beforeCalls=calls.length;
+  // Verify the reconstructed factory remains inert even with an overdue Reel.
+  const overdue=new Date(Date.now()-1000).toISOString();
+  db.prepare("UPDATE publication_items SET scheduledAt=?,uploadAt=? WHERE id=?").run(overdue,overdue,item.id);
   await runtime.tick();
-  if(calls.length!==beforeCalls)throw new Error('Facebook publisher attempted remote upload before scheduled time.');
+  if(calls.length!==0)throw new Error('Facebook made Graph calls while global activation gate was missing.');
 
-  db.prepare("UPDATE publication_items SET scheduledAt=?,uploadAt=? WHERE id=?").run(new Date(Date.now()-1000).toISOString(),new Date(Date.now()-1000).toISOString(),item.id);
+  // A per-channel gate alone must never override the global pause.
+  db.prepare("INSERT INTO factory_meta(key,value) VALUES('automation:operatorActivated','true')").run();
+  await runtime.tick();
+  if(calls.length!==0)throw new Error('Facebook published despite missing global operator authorization.');
+
+  // Isolated synthetic fixture only: no actual credentials and every Graph call
+  // is intercepted by the in-memory fetch mock above. Production stays paused.
+  fs.writeFileSync(mockGatePath,JSON.stringify({
+    schema:1,enabled:true,activated_by:'operator',
+    activation_id:'123e4567-e89b-12d3-a456-426614174000'
+  }),{mode:0o600});
   await runtime.tick();
   // Meta may report a transcoded, upload-ready video while the Reel's
   // publishing phase is still incomplete. That is NOT proof of publication.
@@ -68,5 +84,7 @@ try{
 }finally{
   runtime.close();
   globalThis.fetch=realFetch;
+  if(previousGatePath===undefined)delete process.env.PUBLISHER_GLOBAL_ACTIVATION_FILE;
+  else process.env.PUBLISHER_GLOBAL_ACTIVATION_FILE=previousGatePath;
   try{fs.rmSync(root,{recursive:true,force:true})}catch{}
 }
