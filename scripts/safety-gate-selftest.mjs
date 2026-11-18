@@ -22,7 +22,12 @@ assert(supervisor.includes("reason:'manual-operator-activation-required'"),'Supe
 assert(!supervisor.includes("setMeta(db,'automation:factoryEnabled','true')"),'Supervisor must never reactivate');
 assert(youtube.includes("if(centralGateOpen()&&db.prepare(\"SELECT value FROM factory_meta WHERE key='automation:operatorActivated'\").get()?.value==='true')normalizeTimedYoutubePublicationPolicy();"),'Paused startup must not alter YouTube schedule');
 for(const src of [youtube,facebook])assert(src.includes("if(!centralGateOpen()||!isEnabled()||running||db.prepare(\"SELECT value FROM factory_meta WHERE key='automation:operatorActivated'\").get()?.value!=='true')return"),'Publication tick must check activation');
-for(const src of [server,provider,supervisor,youtube,facebook])assert(src.includes("import { centralGateOpen } from './activation-gate.mjs'"),'Missing global operator gate import');
+for(const [i,src] of [server,provider,supervisor,youtube,facebook].entries()){
+  // Allow extra named imports (the provider also imports the explicit operator gate helper).
+  // Require a real named import from the activation module, not an unrelated string mention.
+  assert(/import\s*\{[^}]*\bcentralGateOpen\b[^}]*\}\s*from\s*['"]\.\/activation-gate\.mjs['"]/.test(src),
+    'Missing global operator gate import: '+files[i]);
+}
 const preload=read('operator-preflight.mjs');
 assert(preload.includes('PUBLISHER_SESSION_SECRET_REQUIRED'),'First runtime preload must reject absent operator session secrets');
 const dockerfile=read('Dockerfile');
