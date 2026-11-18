@@ -1,0 +1,16 @@
+# HTTPS-only, opt-in external access for the central control dashboard.
+# Never forward public traffic to OAuth/Flow/publisher child ports.
+# The domain is accepted only after the operator's host DNS/IP preflight.
+{$PUBLISHER_HTTPS_HOSTNAME} {
+    encode zstd gzip
+    reverse_proxy hub:8081
+    header Strict-Transport-Security "max-age=31536000"
+    header X-Content-Type-Options "nosniff"
+    header X-Frame-Options "DENY"
+    header Referrer-Policy "no-referrer"
+    header Cache-Control "no-store"
+    log {
+        output stdout
+        format console
+    }
+}
