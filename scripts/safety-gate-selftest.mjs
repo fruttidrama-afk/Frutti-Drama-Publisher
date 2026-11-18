@@ -17,4 +17,7 @@ assert(youtube.includes("if(centralGateOpen()&&db.prepare(\"SELECT value FROM fa
 for(const src of [youtube,facebook])assert(src.includes("if(!centralGateOpen()||!isEnabled()||running||db.prepare(\"SELECT value FROM factory_meta WHERE key='automation:operatorActivated'\").get()?.value!=='true')return"),'Publication tick must check activation');
 for(const src of [server,provider,supervisor,youtube,facebook])assert(src.includes("import { centralGateOpen } from './activation-gate.mjs'"),'Missing global operator gate import');
 const central=read('activation-gate.mjs');assert(central.includes('if(!file)return false')&&central.includes('x?.enabled===true'),'Global switch must fail closed');
+const compose=read('deploy/oracle-free/compose.yaml');
+assert(compose.includes('PUBLISHER_ENABLED: "false"'),'OCI draft must default hard OFF independent of durable gate');
+assert(compose.includes('PUBLISHER_HUB_ACTIVATION_ARMED: "false"'),'OCI hub activation must not be armed by default');
 console.log('[SAFETY GATE] Static checks pass. No network, videos, or secrets used.');
