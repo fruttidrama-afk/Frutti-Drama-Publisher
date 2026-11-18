@@ -7,11 +7,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
+import {randomBytes,createHash,createHmac} from 'node:crypto';
 
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'oci-runtime-offline-'));
 const port=49881;
+const secret=randomBytes(48).toString('hex');
 const env={
-  ...process.env, DATA_DIR:temp, PORT:String(port),
+  ...process.env, DATA_DIR:temp, PORT:String(port), PUBLISHER_SESSION_SECRET:secret,
   PUBLISHER_ENABLED:'false',PUBLISHER_GLOBAL_ACTIVATION_FILE:path.join(temp,'gate-not-present.json'),
   PUBLISHER_CONFIG_JSON:JSON.stringify({
     identity:{publisher_name:'Offline Probe',show_name:'Offline Probe',timezone:'UTC'},
@@ -41,6 +43,14 @@ try{
   assert.equal(img.status,401,'Flow screenshot must require publisher authentication');
   const root=await get('/flow/bootstrap','text/html');
   assert.equal(root.status,302,'Flow bootstrap panel must redirect anonymous users');
+  // A correctly signed cookie still must be rejected if the session was never
+  // issued/registered. This protects revoked sessions from being resurrected.
+  const exp=Date.now()+3600000;
+  const nonce=randomBytes(18).toString('base64url');
+  const payload=String(exp)+'.'+nonce;
+  const signature=createHmac('sha256',createHash('sha256').update(secret).digest()).update(payload).digest('base64url');
+  const forged=await fetch('http://127.0.0.1:'+port+'/auth/sessions',{headers:{Cookie:'publisher_session='+payload+'.'+signature},redirect:'manual',signal:AbortSignal.timeout(1000)});
+  assert.equal(forged.status,401,'Unknown signed session cookie must not auto-register itself');
   const dbFile=path.join(temp,'publisher-runtime','factory.sqlite');
   assert.ok(fs.existsSync(dbFile),'Factory offline fixture DB missing');
   const db=new DatabaseSync(dbFile);
