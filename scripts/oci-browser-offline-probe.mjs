@@ -10,13 +10,13 @@ try{
     args:['--no-sandbox','--disable-dev-shm-usage','--disable-background-networking','--no-first-run','--disable-default-apps','--disable-extensions']
   });
   const context=await browser.newContext({serviceWorkers:'block'});
-  await context.route(/https?:\\/\\//,route=>route.abort());
+  await context.route('**/*',route=>route.abort());
   const page=await context.newPage();
   await page.setContent('<!doctype html><html><body><h1 id="offline">ARM64_OFFLINE_BROWSER_OK</h1></body></html>');
   const seen=await page.locator('#offline').innerText();
   assert.equal(seen,'ARM64_OFFLINE_BROWSER_OK');
   const version=browser.version();
-  assert.match(version,/^\\d+\\./);
+  assert.match(version,/^[0-9]+[.]/);
   console.log('[OCI CHROMIUM OFFLINE] PASS',JSON.stringify({version,executablePath,network:'isolated',flowVisited:false}));
   await context.close();
 }catch(e){
