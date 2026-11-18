@@ -31,10 +31,12 @@ db.exec(`
   createdAt TEXT NOT NULL,updatedAt TEXT NOT NULL
  );
 `);
+const expectedChannelId='UC'+'a'.repeat(22);
+let activeChannelId=expectedChannelId;
 const config={
  identity:{show_name:'Isolated YouTube Test Show',timezone:'UTC'},
  schedule:{timezone:'UTC',posting_times:['19:00'],upload_lead_minutes:0},
- publication:{selected_provider:'youtube',providers:[{type:'youtube'}],ai_disclosure_required:true}
+ publication:{selected_provider:'youtube',expected_youtube_channel_id:expectedChannelId,providers:[{type:'youtube'}],ai_disclosure_required:true}
 };
 const sourceFile=(name)=>{const file=path.join(root,name);fs.writeFileSync(file,Buffer.alloc(4096,77));return file};
 const httpCalls=[],remoteReads=[];
@@ -61,13 +63,13 @@ globalThis.fetch=async (url,options={})=>{
  throw new Error('UNEXPECTED_EXTERNAL_HTTP_REQUEST_BLOCKED:'+target);
 };
 const api={
- channels:{list:async()=>({data:{items:[{id:'fixture-channel'}]}})},
+ channels:{list:async()=>({data:{items:[{id:activeChannelId}]}})},
  videos:{
    list:async ({id})=>{
      const videoId=String(id?.[0]||id||'');
      remoteReads.push(videoId);
      if(videoId==='yt-legacy-private')legacyPrivateReads++;
-     return {data:{items:[{id:videoId,snippet:{channelId:'fixture-channel'},status:{
+     return {data:{items:[{id:videoId,snippet:{channelId:activeChannelId},status:{
        privacyStatus:videoId==='yt-legacy-private'?'private':
          videoId==='yt-fixture-2'?'private':'public',uploadStatus:'processed'
      }}]}};
@@ -104,6 +106,16 @@ try{
  await runtime.tick();
  assert.equal(httpCalls.length,0,'YouTube bypassed central pause through local operator gate');
  unlockGlobal();
+ // A connected OAuth token for a different YouTube channel must be refused
+ // before any videos.insert request or permanent upload fence.
+ activeChannelId='UC'+'b'.repeat(22);
+ await runtime.tick();
+ assert.equal(httpCalls.length,0,'Wrong YouTube account uploaded externally');
+ assert.equal(db.prepare("SELECT COUNT(*) n FROM publication_safety_fences").get().n,0,
+   'Wrong YouTube account consumed the irreversible upload fence');
+ assert.match(String(row(queued.id).error||''),/YOUTUBE_CHANNEL_IDENTITY_MISMATCH/);
+ activeChannelId=expectedChannelId;
+ db.prepare("UPDATE publication_items SET status='queued',error=NULL,retryAt=0 WHERE id=?").run(queued.id);
  await runtime.tick();
  let result=row(queued.id);
  assert.equal(result.status,'published','Mock PUBLIC upload never verified published');
@@ -146,7 +158,7 @@ try{
  assert.equal(fs.existsSync(srcLegacy),true,'Legacy unreconciled MP4 must be preserved');
  console.log('[YOUTUBE PUBLICATION SELFTEST] PASS',JSON.stringify({
   platform_calls:httpCalls.length,direct_public_inserts:2,
-  private_staging_inserts:0,privacy_switch_updates:videoUpdates,
+  private_staging_inserts:0,wrong_oauth_channel:'blocked',privacy_switch_updates:videoUpdates,
   public_verified:true,private_result:'manual_hold_with_original',
   legacy_private:'read_only',offline:true
  }));
