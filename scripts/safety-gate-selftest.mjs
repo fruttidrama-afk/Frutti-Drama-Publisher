@@ -16,6 +16,10 @@ assert(!supervisor.includes("setMeta(db,'automation:factoryEnabled','true')"),'S
 assert(youtube.includes("if(centralGateOpen()&&db.prepare(\"SELECT value FROM factory_meta WHERE key='automation:operatorActivated'\").get()?.value==='true')normalizeTimedYoutubePublicationPolicy();"),'Paused startup must not alter YouTube schedule');
 for(const src of [youtube,facebook])assert(src.includes("if(!centralGateOpen()||!isEnabled()||running||db.prepare(\"SELECT value FROM factory_meta WHERE key='automation:operatorActivated'\").get()?.value!=='true')return"),'Publication tick must check activation');
 for(const src of [server,provider,supervisor,youtube,facebook])assert(src.includes("import { centralGateOpen } from './activation-gate.mjs'"),'Missing global operator gate import');
+const preload=read('operator-preflight.mjs');
+assert(preload.includes('PUBLISHER_SESSION_SECRET_REQUIRED'),'First runtime preload must reject absent operator session secrets');
+const dockerfile=read('Dockerfile');
+assert(dockerfile.includes('CMD ["node","--import=./operator-preflight.mjs","--import=./unattended-supervisor.js"'),'Credential preflight must run before any stateful Node preload');
 const central=read('activation-gate.mjs');assert(central.includes('if(!file)return false')&&central.includes('x?.enabled===true'),'Global switch must fail closed');
 // Historical state must remain frozen on startup and during read-only panel inspection.
 for(const name of ['repairLegacyEarthReviewMetadata','repairPendingPublicationMetadata','repairObsoleteFlowSettingsErrors']){
