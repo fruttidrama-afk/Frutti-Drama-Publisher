@@ -188,6 +188,9 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   // most one boundary per local calendar day, across process crashes and restarts.
   // A timeout never grants permission to issue the external request a second time.
   db.exec("CREATE TABLE IF NOT EXISTS publication_safety_fences (day TEXT NOT NULL,kind TEXT NOT NULL,itemId TEXT NOT NULL,createdAt TEXT NOT NULL,PRIMARY KEY(day,kind))");
+  // The same approved MP4 may never initialize a second direct PUBLIC upload
+  // on any later day after an ambiguous response or lost session URL.
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS publication_one_public_insert_per_item ON publication_safety_fences(itemId) WHERE kind='youtube-direct-public-upload'");
   function reserveExternalAction(kind,day,itemId){
     const r=db.prepare("INSERT OR IGNORE INTO publication_safety_fences(day,kind,itemId,createdAt) VALUES(?,?,?,?)").run(day,kind,String(itemId),now());
     if(Number(r.changes||0)!==1)throw new Error('PUBLICATION_ACTION_ALREADY_RESERVED:'+kind+':'+day);
