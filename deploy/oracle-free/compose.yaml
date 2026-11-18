@@ -150,3 +150,26 @@ services:
       - no-new-privileges:true
     mem_limit: "256m"
     cpus: "0.25"
+
+  # Opt-in PUBLIC HTTPS gateway only. NEVER starts automatically and never
+  # exposes any child runtime, OAuth profile, Flow port, or SQLite storage.
+  # Caddy terminates TLS; Hub remains authenticated and localhost-bound.
+  https-gateway:
+    profiles: ["explicit-https-gateway"]
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    depends_on:
+      - hub
+    environment:
+      PUBLISHER_HTTPS_HOSTNAME: "${PUBLISHER_HTTPS_HOSTNAME:-not-configured.invalid}"
+    volumes:
+      - ./https/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./https/caddy-data:/data
+      - ./https/caddy-config:/config
+    ports:
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: "256m"
+    cpus: "0.25"
