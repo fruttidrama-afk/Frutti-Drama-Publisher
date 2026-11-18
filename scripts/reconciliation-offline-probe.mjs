@@ -81,7 +81,14 @@ try{
  assert.equal(final.assignments.length,1,'Rejected duplicate assignment changed the ledger');
  assert.equal(h(fs.readFileSync(path.join(files,'video-a.mp4'))),h(a),'Source MP4 was modified');
  assert.equal(fs.existsSync(path.join(root,'publisher-runtime','factory.sqlite')),false,'Reconciliation must never create a production DB');
- console.log('[RECONCILIATION OFFLINE] PASS',JSON.stringify({real_videos:2,imported_posts:1,guessed_links:0,operator_verified:1,duplicate_episode:'rejected',video_range:'206',publisher_db_writes:0}));
+ const assignmentsFile=path.join(store,'assignments','fruttidrama.json');
+ fs.writeFileSync(assignmentsFile,'{invalid-json',{mode:0o600});
+ const corrupt=await http(q+'assignments?channel=fruttidrama');
+ assert.equal(corrupt.status,400,'Malformed historical ledger must not silently appear empty');
+ const cannotOverwrite=await http(url,{method:'POST',headers:{'Content-Type':'application/json','X-Reconciliation-Operator':'manual-verified'},body:JSON.stringify(record)});
+ assert.equal(cannotOverwrite.status,400,'Damaged historical ledger must reject mutation');
+ assert.equal(fs.readFileSync(assignmentsFile,'utf8'),'{invalid-json','Damaged ledger was overwritten with fresh state');
+ console.log('[RECONCILIATION OFFLINE] PASS',JSON.stringify({real_videos:2,imported_posts:1,guessed_links:0,operator_verified:1,duplicate_episode:'rejected',video_range:'206',publisher_db_writes:0,corrupt_ledger:'protected'}));
 }catch(e){
  console.error('[RECONCILIATION OFFLINE] FAIL',String(e?.stack||e));
  console.error('[RECONCILIATION OFFLINE] HUB',output);
