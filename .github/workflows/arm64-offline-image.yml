@@ -54,6 +54,19 @@ jobs:
             --security-opt no-new-privileges \
             --entrypoint node publisher-factory-a1-safety:ci \
             ./scripts/oci-runtime-offline-probe.mjs
+      - name: Test isolated read-only dashboard preview on disposable ARM runner
+        shell: bash
+        run: |
+          cleanup() {
+            sudo docker compose -f deploy/oracle-free/compose.yaml --project-directory deploy/oracle-free \
+              --profile reconstruction-dashboard down --remove-orphans || true
+            rm -f deploy/oracle-free/.env
+          }
+          trap cleanup EXIT
+          bash scripts/oci-hub-preview-only.sh
+          test ! -e deploy/oracle-free/activation/operator-activation.json
+          test "$(sudo docker ps --format '{{.Names}}' | grep -Ec '(^|[-_])publisher-(fruttidrama|earth-in-10|dinnie)' || true)" -eq 0
+          echo 'ARM64_HUB_PREVIEW_PASS: no publisher containers or automation, localhost Basic auth required'
       - name: Verify no production activation or deployment occurred
         run: |
           test ! -e deploy/oracle-free/activation/operator-activation.json
