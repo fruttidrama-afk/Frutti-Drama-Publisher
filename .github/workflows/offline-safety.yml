@@ -60,8 +60,7 @@ jobs:
             echo "Private channel configuration was accidentally tracked"
             exit 1
           fi
-          if git ls-files | grep -Ei '(^|/)(\\.env|secrets\\.json|auth\\.json|youtube-token\\.json|flow-auth-verified\\.json|operator-activation\\.json|factory\\.sqlite|[^/]+\\.(pem|key|p12|pfx|mp4))
-; then
+          if git ls-files | grep -Ei '(^|/)(\.env|secrets\.json|auth\.json|youtube-token\.json|flow-auth-verified\.json|operator-activation\.json|factory\.sqlite|[^/]+\.(pem|key|p12|pfx|mp4))$'; then
             echo "Refusing tracked secrets or raw media in the repository."
             exit 1
           fi
