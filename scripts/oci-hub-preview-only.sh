@@ -33,6 +33,7 @@ else
   chmod 600 "$dir/.env"
 fi
 mkdir -p "$dir/activation" "$dir/reconciliation" "$dir/reconciliation-media" "$dir/data"
+command -v curl >/dev/null || { echo '[HUB PREVIEW] Missing curl'; exit 2; }
 echo '[HUB PREVIEW] Starting reconstruction dashboard only, activation hard-disarmed'
 sudo docker compose -f "$dir/compose.yaml" --project-directory "$dir" \
   --profile reconstruction-dashboard up --no-deps -d hub
@@ -49,5 +50,5 @@ publisher_count="$(sudo docker ps --format '{{.Names}}' | grep -Ec '(^|[-_])(pub
 test "$publisher_count" -eq 0 || { echo '[HUB PREVIEW] FAIL: publisher containers present'; exit 2; }
 echo '[HUB PREVIEW] PASS: localhost-only; password required; 0 publishers; automation OFF'
 echo 'HUB PREVIEW USER: operator'
-echo "HUB PREVIEW PASSWORD (PRIVATE; never paste in chat): $password"
+echo 'HUB PREVIEW PASSWORD: stored privately in deploy/oracle-free/.env; do not include it in support logs or chat'
 echo 'To view from Windows, connect an SSH local tunnel (-L 8081:127.0.0.1:8081), then open http://127.0.0.1:8081/'
