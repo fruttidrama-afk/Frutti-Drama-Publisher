@@ -43,7 +43,7 @@ async function inspect(ch){
   if(!/^https?:\/\//.test(ch.statusUrl))return{...ch,state:'sin-configurar'};
   try{
     const url=new URL(ch.statusUrl);
-    if(url.protocol!=='https:'&&url.hostname!=='127.0.0.1'&&url.hostname!=='localhost'&&url.hostname!=='publisher')throw Error('HTTPS required outside explicit Docker peer');
+    if(url.protocol!=='https:'&&!['127.0.0.1','localhost','publisher-'+ch.id].includes(url.hostname))throw Error('HTTPS required outside explicit Docker peer');
     const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(4000)});
     if(!response.ok)throw Error('HTTP '+response.status);
     const body=await response.json();
@@ -121,7 +121,8 @@ function setChildGate(ch,enabled){
 function html(status,ready){
   const active=status.some(x=>x.enabled===true);
   const card=x=>{
-    const link=/^https:\/\//.test(x.panelUrl)?'<a target="_blank" rel="noopener" href="'+escapeHtml(x.panelUrl)+'">Abrir panel individual</a>':'<span>Panel pendiente de enlace</span>';
+    const safePanel=/^https:\/\//.test(x.panelUrl)||/^http:\/\/(?:127\.0\.0\.1|localhost):\d{2,5}\/\??$/.test(x.panelUrl);
+    const link=safePanel?'<a target="_blank" rel="noopener noreferrer" href="'+escapeHtml(x.panelUrl)+'">Abrir panel individual</a>':'<span>Panel pendiente de enlace</span>';
     return '<section class="card"><div class="eyebrow">'+escapeHtml(x.id)+'</div><h2>'+escapeHtml(x.name)+'</h2><p class="state">'+escapeHtml(x.state)+'</p><p>'+link+'</p><p><a href="/reconciliation?channel='+encodeURIComponent(x.id)+'">Conciliación histórica</a></p></section>';
   };
   return '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Cache-Control" content="no-store"><title>Publisher Factory · Recuperación</title><style>' +
