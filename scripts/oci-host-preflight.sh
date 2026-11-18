@@ -17,9 +17,9 @@ free -h | head -n 3
 echo "[OCI HOST] filesystems:"
 df -h / /home/ubuntu | awk '!seen[$1]++'
 echo "[OCI HOST] docker_disk:"
-docker system df || true
+sudo docker system df || true
 # The Factory must remain unstarted during reconstruction.
-running="$(docker ps --format '{{.Names}}' | grep -Ei '(^|[-_])(publisher|factory|frutti|dinnie|earth)([-_]|$)' || true)"
+running="$(sudo docker ps --format '{{.Names}}' | grep -Ei '(^|[-_])(publisher|factory|frutti|dinnie|earth)([-_]|$)' || true)"
 if [ -n "$running" ]; then
   echo "[OCI HOST] FAIL: potential live Publisher containers detected (no stop performed)"
   printf '%s\\n' "$running"
