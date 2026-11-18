@@ -332,33 +332,10 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     }
   }
 
-  async function stageMetadata(item){
-    if(!item.videoId)return null;
-    const yt=youtubeApi(),channel=await connectedChannel();
-    const v=(await yt.videos.list({part:['snippet','status'],id:[item.videoId]})).data.items?.[0];
-    if(!v||v.snippet?.channelId!==channel)throw new Error('El video de staging no pertenece al canal conectado.');
-    if(v.status?.privacyStatus==='public')return await applyRemoteStatus(item,v,'YouTube API');
-    if(v.status?.privacyStatus!=='private')throw new Error('YouTube returned an unexpected staging privacy state.');
-    const remotePublishAt=v.status?.publishAt?new Date(v.status.publishAt).toISOString():null;
-    const copyDiff=String(v.snippet?.title||'')!==String(item.title||'')||String(v.snippet?.description||'')!==String(item.description||'');
-    const mustUnschedule=Boolean(remotePublishAt);
-    if(!copyDiff&&!mustUnschedule){
-      item.remotePrivacyStatus='private';item.remotePublishAt=null;item.remoteStatusCheckedAt=now();
-      if(String(item.status)!=='uploaded')hist(item,'uploaded','YouTube confirms plain PRIVATE staging with final metadata; no publishAt is set.');
-      else item.updatedAt=now();
-      item.error=null;save(db,item);
-      return'uploaded';
-    }
-    const updated=(await yt.videos.update({part:['snippet','status'],requestBody:{
-      id:item.videoId,
-      snippet:{title:item.title,description:item.description,categoryId:v.snippet?.categoryId||'24',tags:[...(v.snippet?.tags||[]).filter(x=>!String(x).startsWith('publisher-runtime-')),'publisher-runtime-'+item.id]},
-      status:{privacyStatus, selfDeclaredMadeForKids:false,containsSyntheticMedia:true}
-    }})).data;
-    item.aiDisclosureSyncedAt=now();
-    item.remotePublishAt=null;
-    item.history=JSON.stringify([...(JSON.parse(item.history||'[]')),{status:'uploaded',at:now(),message:mustUnschedule?'Old YouTube publishAt removed. Video remains plain PRIVATE until the runtime flips it PUBLIC at release time.':'Final metadata confirmed while video remains plain PRIVATE until release time.'}].slice(-120));
-    item.status='uploaded';item.updatedAt=now();item.error=null;item.retryAt=0;save(db,item);
-    return await applyRemoteStatus(item,updated||{status:{privacyStatus:'private'}},'YouTube private staging update');
+  // Historical PRIVATE YouTube videos remain completely read-only until
+  // reconciliation. No automatic metadata edit may implicitly reschedule them.
+  async function stageMetadata(_item){
+    throw new Error('LEGACY_PRIVATE_YOUTUBE_METADATA_MUTATION_DISABLED');
   }
 
   async function ensureAiDisclosure(item){
@@ -454,8 +431,10 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       }
       // Only sync YouTube immediately when copy actually changed. Routine publication
       // scheduling remains in tick(), avoiding needless API calls against daily quota.
-      if(changed&&item.videoId&&loadToken()&&!['published','cancelled','deleted'].includes(String(item.status||''))){
-        try{await stageMetadata(item);synced++}catch{}
+      if(changed&&item.videoId&&!['published','cancelled','deleted'].includes(String(item.status||''))){
+        // Local source-of-truth metadata is updated, but changes to a legacy
+        // remote PRIVATE video require operator verification, not an API edit.
+        console.log('[YOUTUBE LEGACY REMOTE COPY NOT MUTATED]',JSON.stringify({episode:item.episode,videoId:item.videoId}));
       }
     }
     if(quotaRetryAt)shiftPendingQueueAfter(quotaRetryAt);
@@ -500,29 +479,10 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     }
   }
 
-  async function publishNowLikeManual(item){
-    if(!centralGateOpen())throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE_BEFORE_PUBLICATION');
-    if(!item?.videoId)throw new Error('No hay videoId para publicar.');
-    const yt=youtubeApi(),channel=await connectedChannel();
-    const v=(await yt.videos.list({part:['snippet','status'],id:[item.videoId]})).data.items?.[0];
-    if(!v||v.snippet?.channelId!==channel)throw new Error('El video no pertenece al canal conectado.');
-    if(v.status?.privacyStatus==='public')return await applyRemoteStatus(item,v,'YouTube API');
-    if(v.status?.privacyStatus!=='private')throw new Error('El video dejó de estar privado antes de su hora de publicación.');
-    const st=v.status||{};
-    const next={
-      privacyStatus:'public',
-      license:st.license||'youtube',
-      embeddable:st.embeddable!==false,
-      publicStatsViewable:st.publicStatsViewable!==false,
-      selfDeclaredMadeForKids:st.selfDeclaredMadeForKids===true,
-      containsSyntheticMedia:true
-    };
-    const updated=(await yt.videos.update({part:['status'],requestBody:{id:item.videoId,status:next}})).data;
-    item.aiDisclosureSyncedAt=now();
-    item.remotePublishAt=null;
-    hist(item,item.status||'uploaded','Release executed as a direct PRIVATE → PUBLIC transition at the configured posting time; no prior publishAt schedule.');
-    save(db,item);
-    return await applyRemoteStatus(item,updated||{status:{privacyStatus:'public'}},'YouTube direct release');
+  // A PRIVATE -> PUBLIC API update from an earlier hidden upload is forbidden.
+  // The new path publishes directly when YouTube first receives the MP4.
+  async function publishNowLikeManual(_item){
+    throw new Error('LEGACY_PRIVATE_TO_PUBLIC_AUTOMATION_DISABLED');
   }
 
   async function verify(item){
