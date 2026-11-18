@@ -18,6 +18,10 @@ jobs:
           node-version: '24'
       - name: Assert default-deny activation safety
         run: node scripts/safety-gate-selftest.mjs
+      - name: Verify complete runtime and publisher contracts without network
+        run: |
+          node verify-runtime-contract.mjs
+          node publisher-selftest.mjs
       - name: Verify paused fresh runtime and synthetic creative metadata
         run: node runtime-fresh-start-selftest.mjs
       - name: Verify exclusive kernel Flow lock across three offline workers
