@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# Parse Docker Compose draft without loading .env, creating containers,
-# connecting networks, modifying host state, or reading production secrets.
+# Validate a disposable copy of the deployment file with an empty fixture
+# .env. Never read or create deploy/oracle-free/.env in the actual repository.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-out="$(mktemp)"
-trap 'rm -f "$out"' EXIT
+root="$(mktemp -d)"
+trap 'rm -rf "$root"' EXIT
+mkdir -p "$root/deploy/oracle-free"
+cp deploy/oracle-free/compose.yaml "$root/deploy/oracle-free/compose.yaml"
+: > "$root/deploy/oracle-free/.env"
+chmod 600 "$root/deploy/oracle-free/.env"
+out="$root/composed.json"
 sudo docker compose --profile explicit-publisher --profile reconstruction-dashboard \
-  -f deploy/oracle-free/compose.yaml config --no-env-resolution --format json > "$out"
+  -f "$root/deploy/oracle-free/compose.yaml" config --no-env-resolution --format json > "$out"
 python3 - "$out" <<'PY'
 import json,sys
 with open(sys.argv[1],encoding='utf-8') as f: doc=json.load(f)
