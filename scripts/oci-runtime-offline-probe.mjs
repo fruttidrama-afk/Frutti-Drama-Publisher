@@ -22,7 +22,7 @@ const env={
     publication:{selected_provider:null,providers:[]}
   })
 };
-const parts=['--import=./unattended-supervisor.js','--import=./runtime-init.js','--import=./free-browser-provider.js','--import=./flow-bootstrap.js','server.js'];
+const parts=['--import=./operator-preflight.mjs','--import=./unattended-supervisor.js','--import=./runtime-init.js','--import=./free-browser-provider.js','--import=./flow-bootstrap.js','server.js'];
 const child=spawn(process.execPath,parts,{env,cwd:process.cwd(),stdio:['ignore','pipe','pipe']});
 let output='';
 for(const stream of [child.stdout,child.stderr])stream.on('data',b=>{output=(output+String(b)).slice(-16000)});
@@ -33,12 +33,13 @@ async function get(endpoint,accept='application/json'){
 try{
   // Missing signing key must abort before even creating a SQLite database.
   const noSecretDir=path.join(temp,'reject-no-secret');
-  const denied=spawnSync(process.execPath,['server.js'],{
+  const denied=spawnSync(process.execPath,parts,{
     env:{...env,DATA_DIR:noSecretDir,PUBLISHER_SESSION_SECRET:''},
     cwd:process.cwd(),encoding:'utf8',timeout:8000
   });
   assert.notEqual(denied.status,0,'Runtime accepted a missing operator session key');
   assert.match(String(denied.stderr||''),/PUBLISHER_SESSION_SECRET_REQUIRED/);
+  assert.equal(fs.existsSync(noSecretDir),false,'Invalid secret should not create any /data state before first preflight');
   assert.equal(fs.existsSync(path.join(noSecretDir,'publisher-runtime','factory.sqlite')),false,
     'Runtime created historical database before rejecting an absent signing key');
   let ready=false;
