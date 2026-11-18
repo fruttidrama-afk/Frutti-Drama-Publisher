@@ -40,7 +40,10 @@
 !verify-runtime-contract.mjs
 !youtube-private-public-selftest.mjs
 !deploy/oracle-free
-!public/**
+!public/dinnie-touch-icon.b64
+!public/index.html
+!public/login.html
+!public/security.html
 !public/reconciliation.html
 !scripts/flow-global-mutex.test.mjs
 !scripts/flow-security-signals.mjs
