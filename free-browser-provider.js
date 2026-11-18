@@ -1,4 +1,5 @@
 import { centralGateOpen } from './activation-gate.mjs';
+import { createFlowMutex } from './flow-global-mutex.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
@@ -539,42 +540,19 @@ function releaseLock() {
     if(String(raw?.instance_id||'')===INSTANCE_ID)fs.unlinkSync(LOCK_FILE);
   }catch{}
 }
-// Shared host-wide Flow account mutex. Mount the same parent directory into ALL
-// publisher containers on OCI A1. No fake workload or provider-side polling.
-// This is additional to the existing per-publisher browser/profile lock.
+// Kernel-owned cross-container mutex. File mtime never confers ownership;
+// Linux releases flock automatically when the holder process/group exits.
+// No stale-file unlink may allow a second publisher during a live Flow submit.
 const GLOBAL_FLOW_LOCK_PATH=String(process.env.PUBLISHER_GLOBAL_FLOW_LOCK_PATH||'').trim();
-let GLOBAL_FLOW_LOCK_HEARTBEAT=null,GLOBAL_FLOW_LOCK_OWNED=false;
-function acquireGlobalFlowLock(){
-  if(!GLOBAL_FLOW_LOCK_PATH)return true; // Backward compatible single-publisher runtime.
-  try{
-    fs.mkdirSync(path.dirname(GLOBAL_FLOW_LOCK_PATH),{recursive:true,mode:0o700});
-    if(fs.existsSync(GLOBAL_FLOW_LOCK_PATH)){
-      const age=Date.now()-fs.statSync(GLOBAL_FLOW_LOCK_PATH).mtimeMs;
-      if(age<120000)return false;
-      try{fs.unlinkSync(GLOBAL_FLOW_LOCK_PATH)}catch{return false}
-    }
-    const fd=fs.openSync(GLOBAL_FLOW_LOCK_PATH,'wx',0o600);
-    try{fs.writeFileSync(fd,JSON.stringify({instance_id:INSTANCE_ID,pid:process.pid,at:now()}))}finally{fs.closeSync(fd)}
-    GLOBAL_FLOW_LOCK_OWNED=true;
-    GLOBAL_FLOW_LOCK_HEARTBEAT=setInterval(()=>{
-      try{
-        const state=json(fs.readFileSync(GLOBAL_FLOW_LOCK_PATH,'utf8'),{});
-        if(state.instance_id===INSTANCE_ID)fs.utimesSync(GLOBAL_FLOW_LOCK_PATH,new Date(),new Date());
-      }catch{}
-    },30000);
-    GLOBAL_FLOW_LOCK_HEARTBEAT.unref?.();
-    return true;
-  }catch{return false}
+const GLOBAL_FLOW_MUTEX=createFlowMutex(GLOBAL_FLOW_LOCK_PATH);
+async function acquireGlobalFlowLock(){
+  if(!GLOBAL_FLOW_LOCK_PATH)return !process.env.PUBLISHER_CHANNEL_ID;
+  return GLOBAL_FLOW_MUTEX.acquire();
 }
-function releaseGlobalFlowLock(){
-  clearInterval(GLOBAL_FLOW_LOCK_HEARTBEAT);
-  GLOBAL_FLOW_LOCK_HEARTBEAT=null;
-  if(!GLOBAL_FLOW_LOCK_OWNED||!GLOBAL_FLOW_LOCK_PATH)return;
-  GLOBAL_FLOW_LOCK_OWNED=false;
-  try{
-    const state=json(fs.readFileSync(GLOBAL_FLOW_LOCK_PATH,'utf8'),{});
-    if(state.instance_id===INSTANCE_ID)fs.unlinkSync(GLOBAL_FLOW_LOCK_PATH);
-  }catch{}
+function releaseGlobalFlowLock(){GLOBAL_FLOW_MUTEX.release()}
+function assertGlobalFlowLock(){
+  if(!GLOBAL_FLOW_LOCK_PATH && !process.env.PUBLISHER_CHANNEL_ID)return;
+  if(!GLOBAL_FLOW_MUTEX.owned())throw Error('GLOBAL_FLOW_KERNEL_MUTEX_NOT_OWNED: Flow submit forbidden');
 }
 
 function registry(){return configRegistry();}
@@ -3897,6 +3875,7 @@ async function processRow(db,row){
     const boundary=reserveGenerateBoundary(db,row,genId);
     if(!boundary.allowed)throw new Error('GENERATE_SUBMIT_BOUNDARY_THROTTLED:'+boundary.reason);
     if(!centralGateOpen())throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE_BEFORE_FLOW_SUBMIT');
+    assertGlobalFlowLock();
     const submit=await clickSubmitExactlyOnce(page,baselineInventory,baseline,baselineBusy);
     const submitMode=String(submit?.mode||'start-generation-direct');
     const priorConsent=meta(db,'flow:consentMode','UNKNOWN');
@@ -4561,7 +4540,7 @@ async function runProvider(){
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
     db=dbOpen();
     if(meta(db,'automation:operatorActivated','false')!=='true'||!centralGateOpen())return;
-    if(!acquireGlobalFlowLock())return;
+    if(!await acquireGlobalFlowLock())return;
     purgeRemovedProviderMetadata(db);ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);resumeRecoverableManualHold(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);repairProviderBackoffAfterConfirmedSuccessV2(db);normalizeLiveNoChargeCooldown(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
@@ -4717,7 +4696,7 @@ async function recoverApprovedPublicationMedia(){
   const recoveryKey='operator:approved-flow-recovery:'+sha(raw).slice(0,20);
   let db=null,session=null;
   if(!acquireLock()){publish('APPROVED_MEDIA_RECOVERY_WAIT',{message:'Flow browser is busy; approved-media recovery will retry later.'});return}
-  if(!acquireGlobalFlowLock()){releaseLock();return;}
+  if(!await acquireGlobalFlowLock()){releaseLock();return;}
   try{
     db=dbOpen();
     if(meta(db,recoveryKey,'')==='done')return;
