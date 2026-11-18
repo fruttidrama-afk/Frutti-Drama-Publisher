@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
+import { centralGateOpen } from './activation-gate.mjs';
 import { CONFIG, seedInitial, ensureBacklog } from './runtime-config.js';
 
 const DATA_DIR=path.resolve(process.env.DATA_DIR||'/data');
@@ -56,17 +57,13 @@ function cleanupRecreatableStorage(){
   const after=freeBytes(DATA_DIR);
   if(removed>0||before!==after)console.log('[STORAGE CLEANUP]',JSON.stringify({removed_bytes:removed,free_before:before,free_after:after}));
 }
-cleanupRecreatableStorage();
+// Preserve browser profiles and unverified review assets during reconstruction.
+if(centralGateOpen())cleanupRecreatableStorage();
 
+// Changing a deployment marker must never erase the only copy of historical
+// videos, auth profiles or the episode database. Require an operator-led migration.
 if(INSTANCE_ID&&RESET_ON_CHANGE){
-  let previous=null;
-  try{previous=JSON.parse(fs.readFileSync(INSTANCE_MARKER,'utf8'))?.id||null}catch{}
-  if(previous!==INSTANCE_ID){
-    fs.rmSync(DIR,{recursive:true,force:true});
-  }
-  if(previous!==INSTANCE_ID){
-    fs.writeFileSync(INSTANCE_MARKER,JSON.stringify({id:INSTANCE_ID,initializedAt:new Date().toISOString()},null,2),{mode:0o600});
-  }
+  throw new Error('DESTRUCTIVE_INSTANCE_RESET_DISABLED: explicit verified migration required');
 }
 
 fs.mkdirSync(path.join(DIR,'generated'),{recursive:true,mode:0o700});
@@ -276,6 +273,10 @@ put('automation:nativeAiDisclosureRequired','true');
 put('automation:youtubeContainsSyntheticMediaAlways','true');
 put('automation:facebookIsAiGeneratedAlways','true');
 put('automation:legacyAiDisclosureRepairEnabled','true');
-seedInitial(db);
-ensureBacklog(db);
+// No episode seeding, stock creation or backfill is permitted in paused mode.
+// A per-channel gate AND global operator authorization are both required.
+if(centralGateOpen()&&db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value==='true'){
+  seedInitial(db);
+  ensureBacklog(db);
+}
 db.close();
