@@ -16,14 +16,14 @@ const manifest=path.join(root,'channels.json'),readyFile=path.join(root,'ready.j
 const gate=path.join(root,'operator-activation.json');
 const port=30000+Math.floor(Math.random()*12000);
 const password='fixture-'+randomBytes(24).toString('hex');
-const chs=['fruttidrama','dinnie'].map(id=>{
+const chs=['fruttidrama','earth-in-10','dinnie'].map(id=>{
  const dirname=path.join(dataRoot,id);
  fs.mkdirSync(dirname,{recursive:true});
  const file=path.join(dirname,'factory.sqlite');
  const db=new DatabaseSync(file);
  try{db.exec('CREATE TABLE factory_meta (key TEXT PRIMARY KEY,value TEXT NOT NULL)')}
  finally{db.close()}
- return{id,name:id==='dinnie'?'Dinnie the Dinosaur':'FruttiDrama',db_path:file};
+ return{id,name:id==='dinnie'?'Dinnie the Dinosaur':id==='earth-in-10'?'Earth in 10':'FruttiDrama',db_path:file};
 });
 const fakeHealth=http.createServer((req,res)=>{
  res.setHeader('Content-Type','application/json');
@@ -129,7 +129,7 @@ try{
    'Rejected unsafe DB path unexpectedly reopened global activation');
  console.log('[HUB ACTIVATION OFFLINE] PASS',JSON.stringify({
    source:'synthetic',activation:'explicit-only',ready_fixture:'true',
-   child_db_gates:2,submit_gates:'closed',stop:'global-and-children',
+   child_db_gates:3,submit_gates:'closed',stop:'global-and-children',
    audit:'three-verified-entries',escape_symlink:'rejected',real_publishers_affected:0
  }));
 }catch(e){
