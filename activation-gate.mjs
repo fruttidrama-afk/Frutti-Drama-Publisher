@@ -14,9 +14,9 @@ export function centralGateOpen(){
 // *explicit human click* only when both durable per-channel gates and the
 // central gate have been opened. This is never a timed/background activation.
 export function operatorGenerationEnvEnabled({operatorActivated=false,factoryEnabled=false}={}){
-  if(String(process.env.PUBLISHER_ENABLED||'false').toLowerCase()==='true')return true;
-  return String(process.env.PUBLISHER_ENABLE_AFTER_MANUAL_ACTIVATION||'false').toLowerCase()==='true'
-    &&operatorActivated===true&&factoryEnabled===true&&centralGateOpen();
+  const explicitEnv=String(process.env.PUBLISHER_ENABLED||'false').toLowerCase()==='true'
+    ||String(process.env.PUBLISHER_ENABLE_AFTER_MANUAL_ACTIVATION||'false').toLowerCase()==='true';
+  return explicitEnv&&operatorActivated===true&&factoryEnabled===true&&centralGateOpen();
 }
 export function assertCentralGate(){
   if(!centralGateOpen())throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE');
