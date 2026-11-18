@@ -255,6 +255,13 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     if(['failed','rejected','deleted'].includes(uploadStatus))throw new Error('YouTube rejected the video.');
     item.remotePrivacyStatus=privacy||null;item.remotePublishAt=st.publishAt||null;item.remoteStatusCheckedAt=now();
     if(privacy==='public'){
+      const due=Date.parse(String(item.scheduledAt||''));
+      if(item.uploadMode==='private-staging-v1'&&(!Number.isFinite(due)||Date.now()<due)){
+        item.error='YOUTUBE_PREMATURE_PUBLIC_BEFORE_1900_REQUIRES_OPERATOR';
+        if(item.status!=='attention')hist(item,'attention',source+' detected PUBLIC before the authorized 19:00 release; keep approved backup.');
+        else item.updatedAt=now();
+        save(db,item);return'attention';
+      }
       if(String(item.status)!=='published')hist(item,'published',source+' confirms PUBLIC on the same videoId.');
       else item.updatedAt=now();
       item.error=null;item.retryAt=0;save(db,item);
