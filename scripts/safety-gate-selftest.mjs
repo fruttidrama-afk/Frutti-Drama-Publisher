@@ -44,9 +44,18 @@ assert(server.includes('const frozen=pathname'), 'No pre-activation freeze for m
 assert(server.includes("res.status(423).json({ok:false,error:'La reconstrucción"),'Paused mutation routes must explicitly reject');
 const facebookResume=facebook.indexOf('function resumeAuthWait(){');
 assert(facebookResume>=0&&facebook.slice(facebookResume,facebookResume+500).includes('if(!centralGateOpen()'), 'Facebook reconnect must not reschedule stock during pause');
+const reconciliation=read('reconciliation-studio.mjs');
+assert(reconciliation.includes('operator-verified-exact-prompt'),'Historical prompt linkage must be operator-verified');
+assert(reconciliation.includes('pending-canonical-copy-review'),'Historical metadata must remain unverified until canonical copy checks');
+assert(reconciliation.includes("mediaCache=new Map()"),'Video inventory must use source media identity');
+const hub=read('factory-hub.mjs');
+assert(hub.includes('handleReconciliation(req,res'),'Reconciliation studio must be wired behind Hub authentication');
 const compose=read('deploy/oracle-free/compose.yaml');
 assert(compose.includes('profiles: ["explicit-publisher"]'),'Publisher must not launch with bare docker compose up');
 assert(compose.includes('profiles: ["reconstruction-dashboard"]'),'Hub must require intentional profile selection');
 assert(compose.includes('PUBLISHER_ENABLED: "false"'),'OCI draft must default hard OFF independent of durable gate');
+assert(compose.includes('reconciliation-media:/data/reconciliation-media:ro'),'Historical source videos must be mounted read-only');
+assert(compose.includes('reconciliation:/data/reconciliation'),'Reconciliation assignments must be written outside production databases');
+assert(compose.includes('reconciliation-studio.mjs:/app/reconciliation-studio.mjs:ro'),'Hub reconciliation module must be mounted read-only');
 assert(compose.includes('PUBLISHER_HUB_ACTIVATION_ARMED: "false"'),'OCI hub activation must not be armed by default');
 console.log('[SAFETY GATE] Static checks pass. No network, videos, or secrets used.');
