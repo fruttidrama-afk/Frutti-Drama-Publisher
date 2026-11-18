@@ -658,9 +658,9 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
           }
           if(item.status==='published'||item.status==='backup_hold'||item.status==='attention')continue;
           if(Number(item.retryAt||0)>Date.now())continue;
-          const releaseAt=Date.parse(String(item.scheduledAt||'')),uploadAt=Date.parse(String(item.uploadAt||'')),clock=Date.now();
-          if(!Number.isFinite(releaseAt)||!Number.isFinite(uploadAt))throw new Error('PUBLICATION_INVALID_CLOCK');
-          // No backlog catch-up and no unintended extra publication on a later day.
+          const releaseAt=Date.parse(String(item.scheduledAt||'')),clock=Date.now();
+          if(!Number.isFinite(releaseAt))throw new Error('PUBLICATION_INVALID_CLOCK');
+          // A missed day is NOT silently caught up or backdated.
           if(!isSamePublicationDay(item)){
             if(clock>=releaseAt){
               item.error='MISSED_PUBLICATION_DAY_NO_AUTOMATIC_CATCHUP';
@@ -674,34 +674,30 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
             if(resolved&&item.status==='attention')continue;
           }
 
-          // Two distinct, dated external actions:
-          // 12:30-13:00 ART: upload EXACTLY ONE approved video as PRIVATE.
-          // 19:00 ART: re-read its exact YouTube videoId, then explicitly
-          // transition PRIVATE -> PUBLIC. NEVER use publishAt.
+          // A single PUBLIC upload begins only at the configured release slot.
+          // Never pre-upload PRIVATE and never issue a second privacy mutation.
           if(!item.videoId){
-            if(clock<uploadAt)continue;
-            if(!item.resumableSession&&clock-uploadAt>30*60*1000){
-              item.error='MISSED_12_30_PRIVATE_UPLOAD_WINDOW';
+            if(clock<releaseAt)continue;
+            if(!item.resumableSession&&clock-releaseAt>30*60*1000){
+              item.error='MISSED_DIRECT_PUBLIC_UPLOAD_WINDOW';
               hist(item,'attention',item.error);save(db,item);continue;
             }
-            if(clock>=releaseAt){
-              item.error='CANNOT_RELEASE_WITHOUT_PREVIOUS_PRIVATE_UPLOAD';
-              hist(item,'attention',item.error);save(db,item);continue;
-            }
-            await upload(item,'private');
+            await upload(item,'public');
             await verify(item);
-            item.attempts=0;item.retryAt=0;item.error=null;save(db,item);
+            if(item.status!=='attention'){
+              item.attempts=0;item.retryAt=0;item.error=null;save(db,item);
+            }
             continue;
           }
-          if(clock<releaseAt)continue;
-          // A release timeout is ambiguous until YouTube confirms PUBLIC;
-          // only a human can authorize a new privacy mutation.
-          const current=await readRemoteStatus(item);
-          if(current==='published')continue;
-          reserveExternalAction('youtube-public-release',dayKey(new Date(),config.schedule.timezone),item.id);
-          await publishNowLikeManual(item);
-          await verify(item);
-          item.attempts=0;item.retryAt=0;item.error=null;save(db,item);
+
+          // Any existing uploaded but non-public YouTube video is a historical
+          // private/staged record. Inspect only; human must reconcile it.
+          const state=await readRemoteStatus(item);
+          if(state!=='published'&&item.status!=='attention'){
+            item.error='LEGACY_PRIVATE_UPLOAD_REQUIRES_MANUAL_RECONCILIATION';
+            hist(item,'attention','Existing non-public YouTube video cannot be automatically made public.');
+            save(db,item);
+          }
         }catch(e){
           const raw=String(e?.message||e);item.attempts=Number(item.attempts||0)+1;
           if(isQuotaExceeded(e)){
@@ -714,7 +710,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
             console.log('[PUBLICATION QUOTA WAIT]',JSON.stringify({episode:item.episode,videoId:Boolean(item.videoId),status:item.status,retryAt:new Date(retryAt).toISOString()}));
           }else if(raw==='YOUTUBE_AUTH_REQUIRED'){
             item.error=raw;if(!['scheduled','published'].includes(String(item.status||'')))item.status='auth_wait';item.retryAt=0;hist(item,item.status,raw);save(db,item);
-          }else if(raw==='UPLOAD_SESSION_AMBIGUOUS'||/^PUBLICATION_ACTION_ALREADY_RESERVED:|^YOUTUBE_PRIVATE_UPLOAD_WINDOW_CLOSED|^YOUTUBE_WRONG_PUBLICATION_DAY|^CANNOT_RELEASE_WITHOUT_PREVIOUS_PRIVATE_UPLOAD|^YOUTUBE_DIRECT_PUBLIC_UPLOAD_FORBIDDEN/.test(raw)){
+          }else if(raw==='UPLOAD_SESSION_AMBIGUOUS'||/^PUBLICATION_ACTION_ALREADY_RESERVED:|^YOUTUBE_DIRECT_PUBLIC_UPLOAD_WINDOW_CLOSED|^YOUTUBE_WRONG_PUBLICATION_DAY|^LEGACY_PRIVATE_UPLOAD_REQUIRES_MANUAL_RECONCILIATION|^YOUTUBE_PRIVATE_STAGING_FORBIDDEN/.test(raw)){
             item.error=raw;item.status='attention';item.retryAt=0;hist(item,item.status,raw);save(db,item);
           }else{
             item.error=raw;if(!['scheduled','published'].includes(String(item.status||'')))item.status='error';item.retryAt=Date.now()+Math.min(60*60*1000,60000*Math.pow(2,Math.min(item.attempts,6)));
