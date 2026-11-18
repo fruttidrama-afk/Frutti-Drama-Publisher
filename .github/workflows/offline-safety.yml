@@ -18,6 +18,8 @@ jobs:
           node-version: '24'
       - name: Assert default-deny activation safety
         run: node scripts/safety-gate-selftest.mjs
+      - name: Verify paused fresh runtime and synthetic creative metadata
+        run: node runtime-fresh-start-selftest.mjs
       - name: Unit test operator gate without network
         run: node --test scripts/operator-gate.test.mjs
       - name: Verify mocked Facebook flow only after synthetic operator gate
