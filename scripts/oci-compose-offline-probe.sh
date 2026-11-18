@@ -5,12 +5,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 # Compose points at the real code only after manual deployment; this probe
 # validates syntax and required mounts but never reads any local secrets.
-for file in Dockerfile factory-hub.mjs reconciliation-studio.mjs public/reconciliation.html; do
+for file in Dockerfile factory-hub.mjs reconciliation-studio.mjs public/reconciliation.html deploy/oracle-free/https/Caddyfile; do
   test -f "$file" || { echo "[OCI COMPOSE OFFLINE] FAIL: missing mount/build source $file"; exit 1; }
 done
 root="$(mktemp -d)"
 trap 'rm -rf "$root"' EXIT
-mkdir -p "$root/deploy/oracle-free/channels"
+mkdir -p "$root/deploy/oracle-free/channels" "$root/deploy/oracle-free/https"
+cp deploy/oracle-free/https/Caddyfile "$root/deploy/oracle-free/https/Caddyfile"
 cp deploy/oracle-free/compose.yaml "$root/deploy/oracle-free/compose.yaml"
 : > "$root/deploy/oracle-free/.env"
 chmod 600 "$root/deploy/oracle-free/.env"
@@ -19,18 +20,28 @@ for id in fruttidrama earth-in-10 dinnie; do
   chmod 600 "$root/deploy/oracle-free/channels/$id.env"
 done
 out="$root/composed.json"
-(cd "$root" && sudo docker compose --profile explicit-publisher --profile reconstruction-dashboard \
+(cd "$root" && sudo docker compose --profile explicit-publisher --profile reconstruction-dashboard --profile explicit-https-gateway \
   -f deploy/oracle-free/compose.yaml config --no-env-resolution --format json > "$out")
 python3 - "$out" <<'PY'
 import json,sys
 with open(sys.argv[1],encoding='utf-8') as f: doc=json.load(f)
 services=doc.get('services') or {}
-required={'publisher-fruttidrama','publisher-earth-in-10','publisher-dinnie','hub'}
+required={'publisher-fruttidrama','publisher-earth-in-10','publisher-dinnie','hub','https-gateway'}
 assert set(services)==required, f'Unexpected service list: {list(services)}'
 hub=services['hub']
 assert 'reconstruction-dashboard' in hub.get('profiles',[]),'Hub requires opt-in profile'
 assert hub.get('environment',{}).get('PUBLISHER_HUB_ACTIVATION_ARMED')=='false','Hub must stay disarmed'
 assert hub.get('environment',{}).get('PUBLISHER_HUB_DATA_ROOT')=='/data/publisher','Hub child DBs must be contained in isolated data root'
+gateway=services['https-gateway']
+assert 'explicit-https-gateway' in gateway.get('profiles',[]), 'HTTPS gateway requires separate opt-in'
+assert gateway.get('environment',{}).get('PUBLISHER_HTTPS_HOSTNAME')=='not-configured.invalid', 'Domain must be unset by default'
+assert gateway.get('image','').startswith('caddy:'), 'HTTPS gateway requires Caddy'
+assert gateway.get('depends_on',{}).get('hub'), 'HTTPS gateway must proxy only Hub'
+assert len(gateway.get('ports') or [])==2, 'HTTPS gateway must expose only 80/443'
+assert sorted(int(p.get('published')) for p in gateway['ports'])==[80,443], 'HTTPS gateway ports must be 80/443'
+assert all(p.get('host_ip')=='0.0.0.0' for p in gateway['ports']), 'HTTPS gateway public host binding mismatch'
+assert all(p.get('protocol','tcp')=='tcp' for p in gateway['ports']), 'Public UDP exposure forbidden'
+assert any(v.get('target')=='/etc/caddy/Caddyfile' and v.get('read_only') for v in gateway.get('volumes',[])), 'HTTPS config must be immutable'
 hostports={'hub':8081}
 for channel,port in [('fruttidrama',8080),('earth-in-10',8082),('dinnie',8083)]:
  label='publisher-'+channel;publisher=services[label];hostports[label]=port
@@ -76,7 +87,7 @@ print('[OCI COMPOSE OFFLINE] PASS',json.dumps({
  'services':sorted(services),'isolated_children':3,
  'publisher_profile':'explicit-publisher','hub_profile':'reconstruction-dashboard',
  'operator_activation':'OFF','publisher_generation':'OFF','shared_flow_lock':True,
- 'host_ports':'loopback-only','source_media':'read-only','containers_started':0,
+ 'host_ports':'hub+children=loopback; https=opt-in-80/443','source_media':'read-only','containers_started':0,
  'memory_budget_gib':round(sum(ram.values())/1024**3,2)
 },sort_keys=True))
 PY
