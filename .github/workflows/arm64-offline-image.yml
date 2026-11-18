@@ -58,8 +58,10 @@ jobs:
         shell: bash
         run: |
           cleanup() {
-            sudo docker compose -f deploy/oracle-free/compose.yaml --project-directory deploy/oracle-free \
-              --profile reconstruction-dashboard down --remove-orphans || true
+            if [ -f deploy/oracle-free/.env ]; then
+              sudo docker compose -f deploy/oracle-free/compose.yaml --project-directory deploy/oracle-free \
+                --profile reconstruction-dashboard down --remove-orphans || true
+            fi
             rm -f deploy/oracle-free/.env
           }
           trap cleanup EXIT
