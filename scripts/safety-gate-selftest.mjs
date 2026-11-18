@@ -34,7 +34,12 @@ const dockerfile=read('Dockerfile');
 assert(dockerfile.includes('CMD ["node","--import=./operator-preflight.mjs","--import=./unattended-supervisor.js"'),'Credential preflight must run before any stateful Node preload');
 assert(!dockerfile.includes('youtube-direct-public-selftest.mjs'),'Outdated direct-public YouTube selftest must not break the OCI build');
 assert(dockerfile.includes('node youtube-private-public-selftest.mjs'),'OCI image build must verify PRIVATE 12:30 -> PUBLIC 19:00 on the same video');
-const dockerCopyLines=dockerfile.replace(/\\\n\\s*/g,' ').split('\n').filter(x=>/^COPY\s+/.test(x));
+const dockerCopyLines=dockerfile.split('\n').reduce((acc,line)=>{
+  const last=acc.length-1;
+  if(last>=0&&acc[last].trimEnd().endsWith('\\'))acc[last]=acc[last].trimEnd().slice(0,-1)+' '+line.trim();
+  else acc.push(line);
+  return acc;
+},[]).filter(x=>/^COPY\s+/.test(x));
 for(const line of dockerCopyLines){
   const paths=line.trim().split(/\s+/).slice(1,-1);
   for(const source of paths){
