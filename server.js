@@ -1344,7 +1344,20 @@ function repairObsoleteFlowSettingsErrors(){
 }
 setTimeout(repairObsoleteFlowSettingsErrors,1800).unref?.();
 
-app.get('/factory/health',(req,res)=>res.json(health()));
+// Unauthenticated health is consumed by the private Hub network. Never
+// include unreleased prompts, episode copy, OAuth details or historical stock.
+app.get('/factory/health',(req,res)=>{
+  const status=health();
+  res.set('Cache-Control','no-store');
+  res.json({
+    ok:status.ok,at:status.at,
+    operator_activated:status.operator_activated,
+    publisher_enabled:status.publisher_enabled,
+    flow:{configured:Boolean(status.flow?.configured),authenticated:Boolean(status.flow?.authenticated)},
+    publication_connected:status.publication_connected,
+    worker_alive:status.worker_alive
+  });
+});
 app.get('/factory/knowledge',(req,res)=>{
   const rows=db.prepare('SELECT key,version,sha256,source,updatedAt,length(content) bytes FROM runtime_knowledge ORDER BY key').all();
   res.json({ok:true,knowledge:health().knowledge,documents:rows});
