@@ -864,6 +864,8 @@ function ensureCopy(row){
      maxTitleLength:100
    });
  }
+ // Render inspection must never repair or rewrite historical creative packages.
+ if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return row;
  if(expected){
    let expectedDescription=String(expected.description||'');
    while(Buffer.byteLength(expectedDescription,'utf8')>4800)expectedDescription=expectedDescription.slice(0,-30).trimEnd();
@@ -894,6 +896,8 @@ function ensureCopy(row){
      maxTitleLength:100
    });
  }
+ // Keep the historical row untouched even when metadata is incomplete.
+ if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return row;
  let description=String(copy.description||'');
  while(Buffer.byteLength(description,'utf8')>4800)description=description.slice(0,-30).trimEnd();
  const title=String(copy.title||'').slice(0,100),packageHash=creativePackageDigest(row,title,description),packageId=String(row.creativePackageId||('creative-package-legacy-'+randomBytes(12).toString('hex')));
@@ -914,6 +918,8 @@ function card(row){
  }
  const hasReviewMedia=row.status==='review'&&((row.videoPath&&fs.existsSync(row.videoPath))||isReviewStorageUri(row.remoteUrl));return{id:row.id,episode:row.episode,hook:row.hook,story:row.story,title:row.title,description:row.description,status:row.status,creativePackageStatus:packageStatus,videoUrl:hasReviewMedia?'/factory/video/'+encodeURIComponent(row.id):null,archivedOriginal:isReviewStorageUri(row.remoteUrl),updatedAt:row.updatedAt,error:row.error}}
 function repairLegacyEarthReviewMetadata(){
+ // Do not rewrite historical episode metadata during paused reconstruction.
+ if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return;
  if(!/earth\s*in\s*10/i.test(String(CONFIG.identity?.show_name||'')))return;
  const tags='#EarthIn10 #Nature #Travel #Shorts #ViralShorts';
  const repairs={
@@ -963,6 +969,8 @@ function auditReviewMetadata(){
 setTimeout(()=>{try{auditReviewMetadata()}catch(e){console.error('[REVIEW COPY AUDIT ERROR]',String(e?.message||e))}},1100).unref?.();
 
 function repairPendingPublicationMetadata(){
+ // Historical publication metadata is frozen until operator activation.
+ if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return;
  const showName=String(CONFIG.identity?.show_name||'');
  if(!/dinnie\s*(?:the\s*)?dinosaur|dinnie/i.test(showName))return;
  const rows=db.prepare("SELECT p.id publicationId,p.status publicationStatus,f.* FROM publication_items p JOIN factory_items f ON f.id=p.itemId WHERE p.status NOT IN ('published','cancelled','deleted') ORDER BY p.episode").all();
@@ -1280,6 +1288,8 @@ function health(){
  return{ok:true,at:now(),runtime_version:'publisher-runtime-v1',operator_activated:centralGateOpen()&&metaGet('automation:operatorActivated','false')==='true',publisher_enabled:metaGet('automation:factoryEnabled','false')==='true',publication_connected:publicationConnected(),show:CONFIG.identity.show_name,scheduler_alive:true,scheduler:publication.status(),scheduler_no_end_date:true,worker_alive:workerAlive,automation_provider:'FreeBrowserProvider',generation_provider:'GoogleFlowProvider',publication_provider:selectedPublicationProvider()==='facebook'?'FacebookReelsProvider':selectedPublicationProvider()==='youtube'?'YouTubeProvider':'NotSelected',knowledge,flow:(()=>{const lf=liveFlowConfig();return{configured:Boolean(lf.project_id),authenticated:Boolean(flowAuth()?.ok),project_id:lf.project_id||null,project_name:lf.project_name||null,project_url:lf.project_url||null}})(),current_job:current||null,queue:counts,completed_today:generationCounter,calendar_completed_today:completed,daily_target:dailyTarget,remaining_today:Math.max(0,dailyTarget-generationCounter),daily_override_active:dailyTarget!==DAILY_LIMIT,provider_health:p?.state||null,last_generation:db.prepare("SELECT createdAt FROM factory_generations ORDER BY createdAt DESC LIMIT 1").get()?.createdAt||null,last_review_ready:db.prepare("SELECT updatedAt FROM factory_items WHERE status='review' ORDER BY updatedAt DESC LIMIT 1").get()?.updatedAt||null,last_publication:db.prepare("SELECT updatedAt,status,videoId FROM publication_items ORDER BY updatedAt DESC LIMIT 1").get()||null,serial_gate:{enabled:true,creative_serialized:Boolean(CONFIG.content.serialized),gate:'review_ready',strict:true},automation_safety:{exactly_once_submit:metaGet('automation:exactlyOnceSubmit','false')==='true',strict_serial_generation:metaGet('automation:strictSerialGeneration','false')==='true',project_grid_recovery:metaGet('automation:projectGridRecovery','false')==='true',review_metadata_required:metaGet('automation:reviewMetadataRequired','false')==='true',golden_test_required:metaGet('automation:goldenTestRequired','false')==='true',stable_composer_handoff:true,frutti_browser_launch_parity:true,native_no_charge_retry:false,immediate_native_retry_disabled:true,adaptive_no_charge_backoff:true,unusual_activity_exponential_backoff:true,provider_wide_unusual_activity_backoff:true,monotonic_provider_cooldown:true,successful_render_resets_provider_backoff:true,successful_redos_count_toward_daily_target:true,legacy_streak_resurrection_guard:true,strict_post_submit_recovery_match:true,catalog_wide_creative_uniqueness:true,no_landscape_repeat_cycle:true,youtube_preapproval_private_staging_disabled:true,cloud_stock_until_upload_window:true,private_upload_at_1230:true,direct_private_to_public_at_1900:true,direct_public_upload_at_1900:false,native_publish_at_disabled:true,youtube_upload_lead_minutes_390:true,zero_use_credit_rollover_self_heal:true,quarantined_submit_recovery_self_heal:true,manual_stock_recovery_upload:true,recovery_upload_cloud_required:true,flow_asset_identity_gate:true,recovered_asset_reuse_blocked:true,duplicate_content_hash_guard:true,fixed_grid_multiset_recovery:true,post_click_asset_identity_verified:true,recovery_token_never_submits:true,adjacent_submit_temporal_bracket:true,download_reopen_by_asset_identity:true,zero_copy_approval_handoff:true,approval_enospc_copy_eliminated:true,show_specific_repairs_isolated:true,prompt_show_bible_gate:true,atomic_creative_package:true,approval_before_external_storage:true,reject_purges_external_artifacts:true,semantic_ai_redo_interpretation:true,post_submit_timeout_never_resubmits:true,daily_flow_credit_refresh_gate:true,calendar_midnight_does_not_open_batch:true,paid_monthly_credits_protected_until_daily_refresh:true,native_ai_disclosure_required:true,youtube_contains_synthetic_media_always:true,facebook_is_ai_generated_always:true,legacy_ai_disclosure_repair_enabled:true},credit_cycle:creditCycleHealth,prompt_integrity:promptIntegrity,review_copy:reviewCopy,publication_copy:publicationCopy,storage:storage(),security:{configured:configured(),passkeys:authState().passkeys.length,active_sessions:authState().sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).length}};
 }
 function repairObsoleteFlowSettingsErrors(){
+ // Never change recoverable Flow rows or request worker restarts while paused.
+ if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return;
   try{
     const stamp=now();
     const out=db.prepare(`UPDATE factory_items
