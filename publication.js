@@ -277,6 +277,15 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
   }
   async function readRemoteStatus(item){
     const yt=youtubeApi(),v=(await yt.videos.list({part:['status','snippet'],id:[item.videoId]})).data.items?.[0];
+    // A public video ID is not proof that it belongs to the configured Publisher.
+    // Never delete the only approved MP4 on the strength of an unrelated channel's
+    // public video. The expected channel must be the operator-verified exact ID.
+    const expected=String(process.env.PUBLISHER_EXPECTED_YOUTUBE_CHANNEL_ID||
+      config.publication?.expected_youtube_channel_id||'').trim();
+    if(!/^UC[a-zA-Z0-9_-]{22}$/.test(expected))
+      throw new Error('YOUTUBE_EXPECTED_CHANNEL_ID_REQUIRED: remote verification cannot proceed');
+    if(!v||String(v.snippet?.channelId||'')!==expected)
+      throw new Error('YOUTUBE_REMOTE_VIDEO_CHANNEL_MISMATCH: refuse foreign or unverified remote video');
     return await applyRemoteStatus(item,v,'YouTube API');
   }
   async function publicPageFallback(item){
