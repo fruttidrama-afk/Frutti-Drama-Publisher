@@ -16,6 +16,7 @@ const setupToken=randomBytes(32).toString('hex');
 const env={
   ...process.env, DATA_DIR:temp, PORT:String(port), PUBLISHER_SESSION_SECRET:secret, PUBLISHER_SETUP_TOKEN:setupToken,
   PUBLISHER_CHANNEL_ID:'fruttidrama',
+  PUBLISHER_GLOBAL_FLOW_LOCK_PATH:'/flow-lock/flow.lock',
   PUBLISHER_ENABLED:'false',PUBLISHER_GLOBAL_ACTIVATION_FILE:path.join(temp,'gate-not-present.json'),
   PUBLISHER_CONFIG_JSON:JSON.stringify({
     identity:{publisher_name:'FruttiDrama',show_name:'FruttiDrama',timezone:'UTC'},
