@@ -45,13 +45,19 @@ services:
       HUB_PORT: "8081"
       HUB_LISTEN_HOST: "0.0.0.0"
       PUBLISHER_HUB_MANIFEST: /data/factory-hub/channels.json
+      PUBLISHER_RECONCILIATION_MEDIA_ROOT: /data/reconciliation-media
+      PUBLISHER_RECONCILIATION_STORE_ROOT: /data/reconciliation
       PUBLISHER_GLOBAL_ACTIVATION_FILE: /activation/operator-activation.json
       PUBLISHER_HUB_ACTIVATION_ARMED: "false"
     env_file:
       - .env
     volumes:
       - ../../factory-hub.mjs:/app/factory-hub.mjs:ro
+      - ../../reconciliation-studio.mjs:/app/reconciliation-studio.mjs:ro
+      - ../../public/reconciliation.html:/app/public/reconciliation.html:ro
       - ./hub:/data/factory-hub:ro
+      - ./reconciliation-media:/data/reconciliation-media:ro
+      - ./reconciliation:/data/reconciliation
       - ./data:/data/publisher
       - ./activation:/activation
     ports:
