@@ -64,7 +64,9 @@ const compose=read('deploy/oracle-free/compose.yaml');
 assert(compose.includes('profiles: ["explicit-publisher"]'),'Publisher must not launch with bare docker compose up');
 assert(compose.includes('profiles: ["reconstruction-dashboard"]'),'Hub must require intentional profile selection');
 const envRef=compose.split('env_file:').slice(1).filter(x=>x.trimStart().startsWith('- .env'));
-assert.equal(envRef.length,7,'Three child services must each require common and private per-channel env, plus the hub common env');
+const childEnvRefs=(compose.match(/^\s+- \.\/channels\/(?:fruttidrama|earth-in-10|dinnie)\.env$/gm)||[]);
+assert.equal(envRef.length,4,'Three child publishers and the hub must each require the common private env file');
+assert.equal(childEnvRefs.length,3,'Each child publisher must require its own private show config env file');
 for(const id of ['fruttidrama','earth-in-10','dinnie']){
   assert(compose.includes('publisher-'+id+':'),'All three established show publishers must have separate services: '+id);
   assert(compose.includes('PUBLISHER_CHANNEL_ID: '+id),'Channel identity must be explicit: '+id);
