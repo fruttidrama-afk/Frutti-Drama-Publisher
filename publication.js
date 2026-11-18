@@ -697,7 +697,7 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
             console.log('[PUBLICATION QUOTA WAIT]',JSON.stringify({episode:item.episode,videoId:Boolean(item.videoId),status:item.status,retryAt:new Date(retryAt).toISOString()}));
           }else if(raw==='YOUTUBE_AUTH_REQUIRED'){
             item.error=raw;if(!['scheduled','published'].includes(String(item.status||'')))item.status='auth_wait';item.retryAt=0;hist(item,item.status,raw);save(db,item);
-          }else if(raw==='UPLOAD_SESSION_AMBIGUOUS'||/^PUBLICATION_ACTION_ALREADY_RESERVED:|^YOUTUBE_PRIVATE_UPLOAD_WINDOW_CLOSED|^YOUTUBE_WRONG_PUBLICATION_DAY|^CANNOT_RELEASE_WITHOUT_PREVIOUS_PRIVATE_UPLOAD|^YOUTUBE_DIRECT_PUBLIC_UPLOAD_FORBIDDEN/.test(raw)){
+          }else if(raw==='UPLOAD_SESSION_AMBIGUOUS'||/^PUBLICATION_ACTION_ALREADY_RESERVED:|^YOUTUBE_PRIVATE_UPLOAD_WINDOW_CLOSED|^YOUTUBE_WRONG_PUBLICATION_DAY|^CANNOT_RELEASE_WITHOUT_PREVIOUS_PRIVATE_UPLOAD|^YOUTUBE_DIRECT_PUBLIC_UPLOAD_FORBIDDEN|^LEGACY_DIRECT_PUBLIC_UPLOAD_REQUIRES_MANUAL_RECONCILIATION|^LEGACY_YOUTUBE_PUBLISH_AT_REQUIRES_RECONCILIATION/.test(raw)){
             item.error=raw;item.status='attention';item.retryAt=0;hist(item,item.status,raw);save(db,item);
           }else{
             item.error=raw;if(!['scheduled','published'].includes(String(item.status||'')))item.status='error';item.retryAt=Date.now()+Math.min(60*60*1000,60000*Math.pow(2,Math.min(item.attempts,6)));
