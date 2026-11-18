@@ -8,7 +8,7 @@ import sharp from 'sharp';
 import { DatabaseSync } from 'node:sqlite';
 import { google } from 'googleapis';
 import {
-  randomBytes,createHash,createHmac,timingSafeEqual,pbkdf2Sync,
+  randomBytes,randomInt,createHash,createHmac,timingSafeEqual,pbkdf2Sync,
   createCipheriv,createDecipheriv
 } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -83,7 +83,13 @@ try{applyForcedNewIntentsAtStartup()}catch(e){console.error('[FORCED NEW EPISODE
 
 const now=()=>new Date().toISOString();
 const safeEq=(a,b)=>{const A=Buffer.from(String(a)),B=Buffer.from(String(b));return A.length===B.length&&timingSafeEqual(A,B)};
-const master=()=>createHash('sha256').update(String(process.env.PUBLISHER_SESSION_SECRET||'publisher-runtime-local')).digest();
+// Never use the previous publicly-known fallback signing/encryption key.
+// A missing or placeholder key must prevent the runtime from becoming reachable.
+const SESSION_SECRET=String(process.env.PUBLISHER_SESSION_SECRET||'').trim();
+if(SESSION_SECRET.length<32||/^REPLACE_WITH_/i.test(SESSION_SECRET)){
+  throw new Error('PUBLISHER_SESSION_SECRET_REQUIRED: configure a unique high-entropy secret before starting the runtime');
+}
+const master=()=>createHash('sha256').update(SESSION_SECRET).digest();
 function seal(v){const iv=randomBytes(12),c=createCipheriv('aes-256-gcm',master(),iv),data=Buffer.concat([c.update(JSON.stringify(v),'utf8'),c.final()]);return{v:1,iv:iv.toString('base64url'),tag:c.getAuthTag().toString('base64url'),data:data.toString('base64url')}}
 function unseal(o){const d=createDecipheriv('aes-256-gcm',master(),Buffer.from(o.iv,'base64url'));d.setAuthTag(Buffer.from(o.tag,'base64url'));return JSON.parse(Buffer.concat([d.update(Buffer.from(o.data,'base64url')),d.final()]).toString('utf8'))}
 function readJson(file,fallback){try{return JSON.parse(fs.readFileSync(file,'utf8'))}catch{return structuredClone(fallback)}}
@@ -99,7 +105,7 @@ function sign(v){return createHmac('sha256',master()).update(v).digest('base64ur
 function sessionParse(req){const t=cookie(req)[SESSION_COOKIE];if(!t)return null;const p=t.split('.');if(p.length!==3)return null;const exp=Number(p[0]);if(!Number.isFinite(exp)||exp<Date.now()||!safeEq(p[2],sign(p[0]+'.'+p[1])))return null;return{id:createHash('sha256').update(p[1]).digest('base64url'),exp,nonce:p[1]}}
 function device(req){const ua=String(req.headers['user-agent']||'');if(/iPhone/i.test(ua))return'iPhone';if(/iPad/i.test(ua))return'iPad';if(/Android/i.test(ua))return /Mobile/i.test(ua)?'Android':'Android tablet';if(/Windows/i.test(ua))return'Windows PC';if(/Macintosh/i.test(ua))return'Mac';return'Browser'}
 function issue(req,res,method='pin'){const exp=Date.now()+TTL,nonce=randomBytes(18).toString('base64url'),payload=String(exp)+'.'+nonce;res.cookie(SESSION_COOKIE,payload+'.'+sign(payload),{httpOnly:true,sameSite:'lax',secure:Boolean(process.env.RAILWAY_ENVIRONMENT),path:'/',maxAge:TTL});const s=authState(),id=createHash('sha256').update(nonce).digest('base64url');s.sessions=(s.sessions||[]).filter(x=>x.expiresAt>Date.now()&&!x.revokedAt);s.sessions.push({id,device:device(req),createdAt:now(),lastSeenAt:now(),expiresAt:exp,method});saveAuth(s)}
-function valid(req){const x=sessionParse(req);if(!x)return false;const s=authState(),r=s.sessions.find(y=>y.id===x.id);if(r?.revokedAt)return false;if(!r){s.sessions.push({id:x.id,device:device(req),createdAt:now(),lastSeenAt:now(),expiresAt:x.exp,method:'existing'});saveAuth(s)}else if(Date.now()-Date.parse(r.lastSeenAt||0)>5*60*1000){r.lastSeenAt=now();saveAuth(s)}return true}
+function valid(req){const x=sessionParse(req);if(!x)return false;const s=authState(),r=s.sessions.find(y=>y.id===x.id);if(!r||r.revokedAt||r.expiresAt<Date.now())return false;if(Date.now()-Date.parse(r.lastSeenAt||0)>5*60*1000){r.lastSeenAt=now();saveAuth(s)}return true}
 function configured(){const s=authState();return Boolean(s.pinHash||s.passkeys.length)}
 function htmlReq(req){return req.method==='GET'&&String(req.headers.accept||'').includes('text/html')}
 function secure(req,res,next){
@@ -179,7 +185,7 @@ async function createKey(){
 })();
 key.onclick=createKey;cont.onclick=()=>location.replace('/');
 </script></body></html>`)});
-app.post('/setup/activate',(req,res)=>{const expected=String(process.env.PUBLISHER_SETUP_TOKEN||''),token=String(req.body?.token||'');if(!expected||!safeEq(token,expected))return res.status(401).json({error:'Activation link is invalid or expired.'});if(!configured())setPin(String(Math.floor(100000+Math.random()*900000)));issue(req,res,'factory-open');res.json({ok:true,passkeysRegistered:authState().passkeys.length,device:device(req)})});
+app.post('/setup/activate',(req,res)=>{const expected=String(process.env.PUBLISHER_SETUP_TOKEN||''),token=String(req.body?.token||'');if(!expected||!safeEq(token,expected))return res.status(401).json({error:'Activation link is invalid or expired.'});if(!configured())setPin(String(randomInt(100000,1000000)));issue(req,res,'factory-open');res.json({ok:true,passkeysRegistered:authState().passkeys.length,device:device(req)})});
 app.get('/login',(req,res)=>res.sendFile('login.html',{root:'public'}));
 app.get('/auth/public-info',(req,res)=>{const a=authState();res.json({publisherName:CONFIG.identity.publisher_name,showName:CONFIG.identity.show_name,passkeysRegistered:a.passkeys.length,brand:brandPublic()})});
 app.post('/auth/pin',(req,res)=>{const pin=String(req.body.pin||'');if(!pinOk(pin))return res.status(401).json({error:'Incorrect PIN.'});issue(req,res,'pin');res.json({ok:true})});
