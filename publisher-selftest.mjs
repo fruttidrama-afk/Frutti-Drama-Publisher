@@ -257,11 +257,11 @@ const ytSchema=providerSchemas.find(x=>x?.properties?.type?.const==='youtube');
 const fbSchema=providerSchemas.find(x=>x?.properties?.type?.const==='facebook');
 must(ytSchema?.properties?.contains_synthetic_media?.const===true,'YouTube synthetic-media disclosure invariant');
 must(fbSchema?.properties?.contains_synthetic_media?.const===true,'Facebook AI disclosure invariant');
-must(ytSchema?.properties?.privacy_before_publish?.const==='private','YouTube schema off-platform-before-release policy');
-must(ytSchema?.properties?.release_mode?.const==='same_day_private_to_public_api_update','YouTube schema direct-public release');
+must(ytSchema?.properties?.privacy_before_publish?.const==='not-uploaded','YouTube stock must remain outside YouTube until release');
+must(ytSchema?.properties?.release_mode?.const==='single_public_insert','YouTube schema requires only one PUBLIC insert');
 must(ytSchema?.properties?.use_publish_at?.const===false,'YouTube schema forbids publishAt');
-must(ytSchema?.properties?.preserve_private_lead_window?.const===true,'YouTube schema forbids private lead window');
-must(ytSchema?.properties?.upload_lead_minutes?.const===390,'YouTube schema zero-minute lead');
+must(ytSchema?.properties?.preserve_private_lead_window?.const===false,'YouTube schema must forbid any private pre-upload lead window');
+must(ytSchema?.properties?.upload_lead_minutes?.const===0,'YouTube schema has zero-minute direct-public lead');
 
 console.log(JSON.stringify({
   ok:true,
