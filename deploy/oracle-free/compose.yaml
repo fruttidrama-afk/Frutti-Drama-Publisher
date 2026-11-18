@@ -8,7 +8,7 @@ services:
     environment:
       DATA_DIR: /data
       PORT: "8080"
-      PUBLISHER_ENABLED: "true"
+      PUBLISHER_ENABLED: "false"
       CHROMIUM_PATH: /usr/bin/chromium
       FLOW_CHROME_PATH: /usr/bin/chromium
       PUBLISHER_GLOBAL_FLOW_LOCK_PATH: /flow-lock/flow.lock
