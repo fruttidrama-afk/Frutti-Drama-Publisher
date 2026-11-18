@@ -25,6 +25,8 @@ In this branch, the DB key automation:operatorActivated must be strictly true fo
 
 The OCI Docker Compose draft binds the runtime to localhost only. A separately secured TLS reverse proxy / tunnel and authentication must be added before users can access it remotely. Each show must receive a distinct persistent data path; never share browser profiles or SQLite between unrelated channels.
 
+The OCI Compose draft intentionally requires a real `.env` for each service before deployment. **Do not create that file just to inspect Compose.** The offline probe `bash scripts/oci-compose-offline-probe.sh` copies the Compose YAML into a temporary directory, uses a disposable empty fixture `.env`, validates safety settings, and removes that temporary directory. It never reads or creates credentials in the actual repository.
+
 Build-only safety checks (DO NOT run compose up):
 - node scripts/safety-gate-selftest.mjs
 - node --check server.js
