@@ -35,12 +35,13 @@ function channels(){
     if(!Array.isArray(doc.channels))return [];
     return doc.channels.filter(x=>x&&/^[a-z0-9_-]{1,50}$/i.test(String(x.id||''))).slice(0,20).map(x=>({
       id:String(x.id),name:String(x.name||x.id).slice(0,80),
-      statusUrl:String(x.status_url||''),panelUrl:String(x.panel_url||''),dbPath:String(x.db_path||'')
+      statusUrl:String(x.status_url||''),panelUrl:String(x.panel_url||''),dbPath:String(x.db_path||''),
+      stagingState:x.staging_state==='not_deployed'?'not_deployed':'unknown'
     }));
   }catch{return []}
 }
 async function inspect(ch){
-  if(!/^https?:\/\//.test(ch.statusUrl))return{...ch,state:'sin-configurar'};
+  if(!/^https?:\/\//.test(ch.statusUrl))return{...ch,state:'SIN CONFIGURAR',online:false};
   try{
     const url=new URL(ch.statusUrl);
     if(url.protocol!=='https:'&&!['127.0.0.1','localhost','publisher-'+ch.id].includes(url.hostname))throw Error('HTTPS required outside explicit Docker peer');
@@ -49,7 +50,9 @@ async function inspect(ch){
     const body=await response.json();
     const enabled=body.operator_activated===true&&body.publisher_enabled===true;
     return{...ch,state:enabled?'ACTIVA':'PAUSADA',online:true,flowReady:Boolean(body.flow?.authenticated&&body.flow?.configured),publicationReady:body.publication_connected===true,enabled};
-  }catch(e){return{...ch,state:'SIN RESPUESTA',online:false,error:String(e.message||e).slice(0,100)}}
+  }catch(e){return{...ch,state:ch.stagingState==='not_deployed'?'NO DESPLEGADO':'SIN RESPUESTA',online:false,
+    detail:ch.stagingState==='not_deployed'?'Ejecutor intencionalmente detenido durante la reconstrucción.':'El ejecutor no responde; requiere diagnóstico.',
+    error:String(e.message||e).slice(0,100)}}
 }
 // Require an already-existing regular database inside the private data mount;
 // reject symlinks escaping the root and never create missing child databases.
@@ -71,6 +74,13 @@ function readiness(chs,states=[]){
     return x.schema===1&&x.all_tests_passed===true&&x.historical_reconciliation_completed===true
       &&Array.isArray(x.channel_ids)&&JSON.stringify([...x.channel_ids].sort())===JSON.stringify(ids)
       &&x.operator_preactivation_review_complete===true
+      &&x.live_golden_test?.flow_generated===true
+      &&x.live_golden_test?.recovered_to_review===true
+      &&x.live_golden_test?.operator_approved_review===true
+      &&x.live_golden_test?.youtube_private_uploaded===true
+      &&x.live_golden_test?.operator_verified_on_youtube===true
+      &&/^[a-zA-Z0-9_-]{11}$/.test(String(x.live_golden_test?.youtube_video_id||''))
+      &&Number.isFinite(Date.parse(String(x.live_golden_test?.operator_verified_at||'')))
       &&chs.every(c=>allowedChildDb(c.dbPath));
   }catch{return false}
 }
@@ -122,13 +132,13 @@ function html(status,ready){
   const active=status.some(x=>x.enabled===true);
   const card=x=>{
     const safePanel=/^https:\/\//.test(x.panelUrl)||/^http:\/\/(?:127\.0\.0\.1|localhost):\d{2,5}\/\??$/.test(x.panelUrl);
-    const link=safePanel?'<a target="_blank" rel="noopener noreferrer" href="'+escapeHtml(x.panelUrl)+'">Abrir panel individual</a>':'<span>Panel pendiente de enlace</span>';
+    const link=(x.online===true&&safePanel)?'<a target="_blank" rel="noopener noreferrer" href="'+escapeHtml(x.panelUrl)+'">Abrir panel individual</a>':'<span>Panel individual pendiente del despliegue seguro</span>';
     return '<section class="card"><div class="eyebrow">'+escapeHtml(x.id)+'</div><h2>'+escapeHtml(x.name)+'</h2><p class="state">'+escapeHtml(x.state)+'</p><p>'+link+'</p><p><a href="/reconciliation?channel='+encodeURIComponent(x.id)+'">Conciliación histórica</a></p></section>';
   };
   return '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Cache-Control" content="no-store"><title>Publisher Factory · Recuperación</title><style>' +
     'body{margin:0;background:#0d1724;color:#ecf2f7;font-family:system-ui,sans-serif;padding:28px}main{max-width:1100px;margin:auto}h1{font-size:clamp(2rem,5vw,3.4rem);margin:8px 0}.eyebrow{font-size:11px;letter-spacing:.2em;color:#b7a078;text-transform:uppercase}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:15px;margin:22px 0}.card{border:1px solid #46536a;background:#142336;border-radius:16px;padding:20px}.card h2{margin:10px 0}.state{font-weight:700}.help{color:#b5c3d1;line-height:1.6}a{color:#d9c497}.activate{background:#27394b;color:#b5c3d1;padding:16px;border:1px solid #46536a;border-radius:12px;font-weight:700;opacity:.7;cursor:not-allowed}' +
     '</style></head><body><main><div class="eyebrow">Publisher Factory / Modo reconstrucción</div><h1>Panel general</h1><p class="help">La fábrica permanece pausada. El estado de cada canal se consulta sin ejecutar ninguna acción externa. Railway no forma parte del nuevo runtime.</p><div class="grid">' +
-    status.map(card).join('') + '</div>' + (ready?'<button class="activate" id="activate" type="button" style="cursor:pointer;opacity:1">Activar automatización</button>':'<button class="activate" type="button" disabled aria-disabled="true">Activar automatización — bloqueado hasta validación y conciliación</button>') + (active?'<button class="activate" id="stop" type="button" style="opacity:1;cursor:pointer;margin-left:12px">Detener automatización</button>':'')+'<p class="help">El botón solo se habilita después de pruebas aprobadas, revisión y conciliación histórica completadas. Nunca se activa automáticamente.</p><script>const b=document.querySelector("#activate");if(b)b.onclick=async()=>{if(!confirm("¿Confirmás activar ambas automatizaciones en todos los canales?") )return;const r=await fetch("/api/activate",{method:"POST",headers:{"Content-Type":"application/json","X-Publisher-Operator":"explicit-click"},body:JSON.stringify({confirm:"ACTIVAR AUTOMATIZACIÓN"})});const x=await r.json().catch(()=>({}));alert(x.ok?"Activación solicitada":"Activación rechazada: "+(x.error||r.status));location.reload()};const stop=document.querySelector("#stop");if(stop)stop.onclick=async()=>{if(!confirm("¿Detener inmediatamente todas las automatizaciones?"))return;const r=await fetch("/api/stop",{method:"POST",headers:{"Content-Type":"application/json","X-Publisher-Operator":"explicit-click"},body:"{}"});const x=await r.json().catch(()=>({}));alert(x.ok?"Fábrica detenida":"No se pudo detener: "+(x.error||r.status));location.reload()};</script></main></body></html>';
+    status.map(card).join('') + '</div>' + (ready?'<button class="activate" id="activate" type="button" style="cursor:pointer;opacity:1">Activar automatización</button>':'<button class="activate" type="button" disabled aria-disabled="true">Activar automatización — bloqueado hasta validación y conciliación</button>') + (active?'<button class="activate" id="stop" type="button" style="opacity:1;cursor:pointer;margin-left:12px">Detener automatización</button>':'')+'<p class="help">La activación requiere una prueba real de Flow→Review→YouTube privado, verificación humana y decisión explícita sobre el historial. Nunca se activa automáticamente.</p><script>const b=document.querySelector("#activate");if(b)b.onclick=async()=>{if(!confirm("¿Confirmás activar ambas automatizaciones en todos los canales?") )return;const r=await fetch("/api/activate",{method:"POST",headers:{"Content-Type":"application/json","X-Publisher-Operator":"explicit-click"},body:JSON.stringify({confirm:"ACTIVAR AUTOMATIZACIÓN"})});const x=await r.json().catch(()=>({}));alert(x.ok?"Activación solicitada":"Activación rechazada: "+(x.error||r.status));location.reload()};const stop=document.querySelector("#stop");if(stop)stop.onclick=async()=>{if(!confirm("¿Detener inmediatamente todas las automatizaciones?"))return;const r=await fetch("/api/stop",{method:"POST",headers:{"Content-Type":"application/json","X-Publisher-Operator":"explicit-click"},body:"{}"});const x=await r.json().catch(()=>({}));alert(x.ok?"Fábrica detenida":"No se pudo detener: "+(x.error||r.status));location.reload()};</script></main></body></html>';
 }
 const server=http.createServer(async(req,res)=>{
   if(!basic(req,res))return;
