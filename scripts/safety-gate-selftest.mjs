@@ -59,6 +59,11 @@ assert(hub.includes('handleReconciliation(req,res'),'Reconciliation studio must 
 const compose=read('deploy/oracle-free/compose.yaml');
 assert(compose.includes('profiles: ["explicit-publisher"]'),'Publisher must not launch with bare docker compose up');
 assert(compose.includes('profiles: ["reconstruction-dashboard"]'),'Hub must require intentional profile selection');
+const envRef=compose.match(/env_file:\\n\s+- \.env/g)||[];
+assert.equal(envRef.length,2,'Both services must require a real .env before an intentional deployment');
+const composeProbe=read('scripts/oci-compose-offline-probe.sh');
+assert(composeProbe.includes('root="$(mktemp -d)"'),'Compose dry-run must generate an isolated temporary workspace');
+assert(composeProbe.includes('chmod 600 "$root/deploy/oracle-free/.env"'),'Synthetic Compose .env must remain private and outside source');
 assert(compose.includes('PUBLISHER_ENABLED: "false"'),'OCI draft must default hard OFF independent of durable gate');
 assert(compose.includes('reconciliation-media:/data/reconciliation-media:ro'),'Historical source videos must be mounted read-only');
 assert(compose.includes('reconciliation:/data/reconciliation'),'Reconciliation assignments must be written outside production databases');
