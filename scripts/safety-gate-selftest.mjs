@@ -8,6 +8,13 @@ for(const [i,src] of [server,provider,supervisor,youtube,facebook].entries())
 assert(server.includes("app.post('/factory/enable',secure"),'Legacy enable route not secured');
 assert(server.includes('La activación queda reservada'),'Legacy enable route must be disabled');
 assert(server.includes('Live Flow submit is forbidden during reconstruction'),'Live test forbidden');
+assert(server.includes('private_upload_at_1230:true,direct_private_to_public_at_1900:true,direct_public_upload_at_1900:false'),'Operator panel must accurately report the two-stage YouTube contract');
+assert(server.includes('native_publish_at_disabled:true,youtube_upload_lead_minutes_390:true,youtube_single_direct_public_at_release:false'),'YouTube scheduling safety flags must match the tested runtime');
+assert(youtube.includes("reserveExternalAction('youtube-private-upload'"),'PRIVATE upload must be durably fenced');
+assert(youtube.includes("reserveExternalAction('youtube-public-release'"),'Same-video PUBLIC release must be durably fenced');
+assert(youtube.includes("item.uploadMode='private-staging-v1'"),'Only new known PRIVATE staging may be released automatically');
+assert(youtube.includes("if(item.uploadMode!=='private-staging-v1')"),'Legacy PRIVATE uploads must not be converted automatically');
+
 assert(server.includes("if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return false"),'Readiness must not activate');
 assert(provider.includes("if(meta(db,'automation:operatorActivated','false')!=='true'||!centralGateOpen())return;"),'Flow worker must exit when paused');
 assert(provider.includes("import { createFlowMutex } from './flow-global-mutex.mjs'"),'All channel providers must use the kernel-backed shared Flow account mutex');
