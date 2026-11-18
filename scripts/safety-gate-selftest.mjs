@@ -48,6 +48,7 @@ const reconciliation=read('reconciliation-studio.mjs');
 assert(reconciliation.includes('operator-verified-exact-prompt'),'Historical prompt linkage must be operator-verified');
 assert(reconciliation.includes('pending-canonical-copy-review'),'Historical metadata must remain unverified until canonical copy checks');
 assert(reconciliation.includes("mediaCache=new Map()"),'Video inventory must use source media identity');
+assert(read('factory-hub.mjs').includes("function allowedChildDb("),'Child database path containment must be verified');
 const hub=read('factory-hub.mjs');
 assert(hub.includes('handleReconciliation(req,res'),'Reconciliation studio must be wired behind Hub authentication');
 const compose=read('deploy/oracle-free/compose.yaml');
