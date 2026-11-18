@@ -13,7 +13,8 @@ const file=path.join(folder,'channels.json');
 const activation=path.join(folder,'operator-activation.json');
 fs.writeFileSync(file,JSON.stringify({phase:'reconstruction',channels:[
   {id:'fruttidrama',name:'FruttiDrama',status_url:'',panel_url:''},
-  {id:'dinnie',name:'Dinnie the Dinosaur',status_url:'',panel_url:''}
+  {id:'dinnie',name:'Dinnie the Dinosaur',status_url:'',panel_url:''},
+  {id:'earth-in-10',name:'Earth in 10',status_url:'',panel_url:''}
 ]}));
 const child=spawn(process.execPath,['factory-hub.mjs'],{
  cwd:process.cwd(),env:{...process.env,
@@ -45,7 +46,7 @@ try{
  const home=await get('/',{headers:{authorization:auth}});
  assert.equal(home.status,200);
  const html=await home.text();
- assert.ok(html.includes('FruttiDrama')&&html.includes('Dinnie the Dinosaur'),'Hub channel cards missing');
+ assert.ok(html.includes('FruttiDrama')&&html.includes('Dinnie the Dinosaur')&&html.includes('Earth in 10'),'Hub channel cards missing');
  assert.ok(html.includes('disabled aria-disabled="true"'),'Activation must visibly remain disabled before reconciliation');
  const attempt=await get('/api/activate',{method:'POST',headers:{
    authorization:auth,'Content-Type':'application/json','X-Publisher-Operator':'explicit-click'
@@ -63,7 +64,7 @@ try{
  const {recordHash,...data}=audit;
  assert.equal(data.action,'emergency_stop','Wrong operator audit action');
  assert.equal(recordHash,createHash('sha256').update(data.previousHash+'\n'+JSON.stringify(data)).digest('hex'),'Operator audit hash chain mismatch');
- console.log('[HUB OFFLINE] PASS',JSON.stringify({unauthenticated:'401',wrong_password:'401',cards:2,activation:'locked',emergency_stop:'closed_global_gate',audit:'hash_verified'}));
+ console.log('[HUB OFFLINE] PASS',JSON.stringify({unauthenticated:'401',wrong_password:'401',cards:3,activation:'locked',emergency_stop:'closed_global_gate',audit:'hash_verified'}));
 }catch(e){
  console.error('[HUB OFFLINE] FAIL',String(e?.stack||e));
  console.error('[HUB OFFLINE] PROCESS',output);
