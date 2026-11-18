@@ -359,6 +359,9 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     finally{lastHeartbeat=now();running=false}
   }
   function resumeAuthWait(){
+    // Reconnecting credentials during reconstruction must not change historic
+    // stock states or publication slots, and must not schedule a publisher tick.
+    if(!centralGateOpen()||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return 0;
     const tz=config.schedule?.timezone||config.identity?.timezone||'America/Argentina/Buenos_Aires';
     const today=dayKey(new Date(),tz);
     const rows=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'')='facebook' AND status IN ('auth_wait','error') AND status NOT IN ('published','cancelled','deleted') ORDER BY scheduledAt").all();
