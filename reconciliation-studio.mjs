@@ -7,7 +7,7 @@ const mediaCache=new Map();
 const sha=s=>createHash('sha256').update(s).digest('hex');
 const okId=x=>/^[a-z0-9_-]{1,50}$/i.test(String(x||''));
 const json=(res,status,obj)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(obj))};
-const safeRead=(f,fallback)=>{try{return JSON.parse(fs.readFileSync(f,'utf8'))}catch{return fallback}};
+const safeRead=(f,fallback)=>{if(!fs.existsSync(f))return fallback;return JSON.parse(fs.readFileSync(f,'utf8'))};
 function safeDir(root,id){if(!okId(id))throw Error('Canal inválido');return path.join(path.resolve(root),id)}
 function assignmentsPath(root,id){return path.join(safeDir(root,'assignments'),id+'.json')}
 function store(root,id){
