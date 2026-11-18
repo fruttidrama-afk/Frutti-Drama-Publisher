@@ -12,6 +12,7 @@ services:
       DATA_DIR: /data
       PORT: "8080"
       PUBLISHER_ENABLED: "false"
+      PUBLISHER_ENABLE_AFTER_MANUAL_ACTIVATION: "true"
       PUBLISHER_CHANNEL_ID: fruttidrama
       CHROMIUM_PATH: /usr/bin/chromium
       FLOW_CHROME_PATH: /usr/bin/chromium
@@ -50,6 +51,7 @@ services:
       DATA_DIR: /data
       PORT: "8080"
       PUBLISHER_ENABLED: "false"
+      PUBLISHER_ENABLE_AFTER_MANUAL_ACTIVATION: "true"
       PUBLISHER_CHANNEL_ID: earth-in-10
       CHROMIUM_PATH: /usr/bin/chromium
       FLOW_CHROME_PATH: /usr/bin/chromium
@@ -88,6 +90,7 @@ services:
       DATA_DIR: /data
       PORT: "8080"
       PUBLISHER_ENABLED: "false"
+      PUBLISHER_ENABLE_AFTER_MANUAL_ACTIVATION: "true"
       PUBLISHER_CHANNEL_ID: dinnie
       CHROMIUM_PATH: /usr/bin/chromium
       FLOW_CHROME_PATH: /usr/bin/chromium
