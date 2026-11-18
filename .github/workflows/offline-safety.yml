@@ -24,6 +24,8 @@ jobs:
         run: node --test scripts/operator-gate.test.mjs
       - name: Verify central dashboard stays locked while unready
         run: node scripts/hub-offline-probe.mjs
+      - name: Verify independent historical video and post reconciliation
+        run: node scripts/reconciliation-offline-probe.mjs
       - name: Verify mocked Facebook flow only after synthetic operator gate
         run: node facebook-publication-selftest.mjs
       - name: Syntax check modified Node modules
@@ -40,6 +42,8 @@ jobs:
           node --check scripts/oci-browser-offline-probe.mjs
           node --check scripts/oci-runtime-offline-probe.mjs
           node --check scripts/hub-offline-probe.mjs
+          node --check scripts/reconciliation-offline-probe.mjs
+          node --check reconciliation-studio.mjs
           bash -n scripts/oci-host-preflight.sh
       - name: Verify no credentials or private runtime artifacts are tracked
         run: |
