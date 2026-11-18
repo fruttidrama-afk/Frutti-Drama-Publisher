@@ -14,6 +14,7 @@ const HUB_PASSWORD=String(process.env.PUBLISHER_HUB_PASSWORD||'');
 const READY_FILE=String(process.env.PUBLISHER_HUB_READY_FILE||'/data/factory-hub/activation-readiness.json');
 const GLOBAL_FILE=String(process.env.PUBLISHER_GLOBAL_ACTIVATION_FILE||'').trim();
 const ACTIVATION_ARMED=String(process.env.PUBLISHER_HUB_ACTIVATION_ARMED||'false').toLowerCase()==='true';
+const DATA_ROOT=path.resolve(String(process.env.PUBLISHER_HUB_DATA_ROOT||'/data'));
 const RECON_MEDIA=String(process.env.PUBLISHER_RECONCILIATION_MEDIA_ROOT||'/data/reconciliation-media');
 const RECON_STORE=String(process.env.PUBLISHER_RECONCILIATION_STORE_ROOT||'/data/reconciliation');
 const AUDIT_FILE=String(process.env.PUBLISHER_HUB_AUDIT_FILE||(GLOBAL_FILE?path.join(path.dirname(GLOBAL_FILE),'operator-audit.ndjson'):'')).trim();
@@ -50,6 +51,17 @@ async function inspect(ch){
     return{...ch,state:enabled?'ACTIVA':'PAUSADA',online:true,flowReady:Boolean(body.flow?.authenticated&&body.flow?.configured),publicationReady:body.publication_connected===true,enabled};
   }catch(e){return{...ch,state:'SIN RESPUESTA',online:false,error:String(e.message||e).slice(0,100)}}
 }
+// Require an already-existing regular database inside the private data mount;
+// reject symlinks escaping the root and never create missing child databases.
+function allowedChildDb(dbPath){
+  if(typeof dbPath!=='string'||!path.isAbsolute(dbPath))return false;
+  const resolved=path.resolve(dbPath);
+  if(!resolved.startsWith(DATA_ROOT+path.sep))return false;
+  try{
+    const base=fs.realpathSync(DATA_ROOT),actual=fs.realpathSync(resolved);
+    return actual.startsWith(base+path.sep)&&fs.statSync(actual).isFile();
+  }catch{return false}
+}
 function readiness(chs,states=[]){
   if(states.length!==chs.length||states.some(s=>s.online!==true||s.flowReady!==true||s.publicationReady!==true||s.enabled===true))return false;
   if(!ACTIVATION_ARMED||!GLOBAL_FILE||!chs.length)return false;
@@ -59,7 +71,7 @@ function readiness(chs,states=[]){
     return x.schema===1&&x.all_tests_passed===true&&x.historical_reconciliation_completed===true
       &&Array.isArray(x.channel_ids)&&JSON.stringify([...x.channel_ids].sort())===JSON.stringify(ids)
       &&x.operator_preactivation_review_complete===true
-      &&chs.every(c=>c.dbPath.startsWith('/data/')&&fs.existsSync(c.dbPath));
+      &&chs.every(c=>allowedChildDb(c.dbPath));
   }catch{return false}
 }
 function writeActivation(enabled,activationId){
@@ -94,7 +106,7 @@ function appendAudit(action,activationId,channelIds=[],details={}){
   return recordHash;
 }
 function setChildGate(ch,enabled){
-  if(!ch.dbPath.startsWith('/data/'))throw Error('Invalid child DB path');
+  if(!allowedChildDb(ch.dbPath))throw Error('Missing or unsafe child DB path');
   const db=new DatabaseSync(ch.dbPath,{timeout:5000});
   try{
     db.exec('BEGIN IMMEDIATE');
