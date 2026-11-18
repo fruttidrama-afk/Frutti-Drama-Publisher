@@ -34,6 +34,8 @@ jobs:
         run: node scripts/reconciliation-offline-probe.mjs
       - name: Validate three-show Compose layout without any containers or credentials
         run: bash scripts/oci-compose-offline-probe.sh
+      - name: Verify direct public YouTube publication with mocked API and no private staging
+        run: node youtube-direct-public-selftest.mjs
       - name: Verify mocked Facebook flow only after synthetic operator gate
         run: node facebook-publication-selftest.mjs
       - name: Syntax check modified Node modules
@@ -43,6 +45,7 @@ jobs:
           node --check unattended-supervisor.js
           node --check flow-bootstrap.js
           node --check publication.js
+          node --check youtube-direct-public-selftest.mjs
           node --check publication-facebook.js
           node --check runtime-init.js
           node --check factory-hub.mjs
