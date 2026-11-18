@@ -21,7 +21,7 @@ const AUDIT_FILE=String(process.env.PUBLISHER_HUB_AUDIT_FILE||(GLOBAL_FILE?path.
 const eq=(a,b)=>{const A=createHash('sha256').update(String(a)).digest(),B=createHash('sha256').update(String(b)).digest();return timingSafeEqual(A,B)};
 const escapeHtml=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;');
 function basic(req,res){
-  if(!HUB_PASSWORD||HUB_PASSWORD.length<20){res.writeHead(503);res.end('Hub not configured');return false}
+  if(!HUB_PASSWORD||HUB_PASSWORD.length<20||/^REPLACE_WITH_/i.test(HUB_PASSWORD)){res.writeHead(503);res.end('Hub not configured');return false}
   const value=String(req.headers.authorization||'');
   if(!value.startsWith('Basic ')){res.writeHead(401,{'WWW-Authenticate':'Basic realm="Publisher Factory"'});res.end('Authentication required');return false}
   let credentials='';try{credentials=Buffer.from(value.slice(6),'base64').toString('utf8')}catch{}
