@@ -122,6 +122,55 @@ The password can be read privately from the host .env, but must not be
 included in shared logs. This preview is explicitly non-production and is not
 an invitation to reconcile history or activate scheduling.
 
+
+## Independent HTTPS gateway and three paused children — preactivation staging
+
+The opt-in Caddy gateway is a fifth Compose service, separate from the three publishers.
+The root Hub retains local-only port 8081, while HTTPS gateway exclusively exposes TCP
+80/443 and proxies the password-protected Hub. Child ports 8080, 8082, 8083 stay
+bound to localhost. Neither HTTPS setup nor paused-child staging creates an
+operator activation file, starts a production Flow action or publishes content.
+
+Candidate no-cost DNS name for the recorded Oracle public IPv4:
+https://129-146-3-38.sslip.io/. The sslip.io domain is third-party-owned; it
+derives the public IP from its hostname, so durability depends on that DNS
+service and preservation of the Oracle IP. Caddy provisions and renews ACME
+certificates only when TCP 80 and TCP 443 are publicly reachable. No HTTPS
+certificate or Internet reachability has yet been verified on the real host.
+This is not a guarantee of indefinite uptime or ongoing zero cost.
+
+Manual staging commands (in the existing SSH session, after updating branch):
+
+- bash scripts/oci-https-gateway.sh check
+- bash scripts/oci-https-gateway.sh enable
+- bash scripts/oci-https-gateway.sh status
+- bash scripts/oci-stage-paused-children.sh
+
+The operator must first verify Oracle VCN security list/NSG permits inbound
+TCP 80/443, and host firewall agrees. Never open ports 8080–8083 to public ingress.
+Do not bypass TLS certificate checks. The gateway command refuses a missing
+password, foreign preview .env, activation file, public 8081, unexpected
+publisher container or DNS resolving to the wrong IPv4. Running the HTTPS
+command does not activate the factory.
+
+The child staging script creates independent, high-entropy session/setup
+credentials per channel, without sharing the Hub's password with any
+publisher. It refuses unmanaged child configs or pre-existing historical
+state and does not migrate or overwrite any real historical episodes.
+A successful result requires all three health responses to prove
+operator_activated=false and publisher_enabled=false, even after the
+background worker tick. Children then appear as PAUSADA rather than the
+explicit staging label NO DESPLEGADO.
+
+A running paused child is NOT ready for production: real saved Flow projects,
+persistent authenticated profiles, YouTube/Facebook OAuth identities, backups,
+verified historical dispositions and a one-off LIVE Golden Test are separate
+acceptance criteria. The Golden Test must show exactly one real Flow video
+recovered into Review, approved by the operator and uploaded privately to
+the expected YouTube channel. The operator must independently verify
+the private video ID on YouTube. No CI mock or invented project/title/token
+can fulfill that criterion. Auto activation remains forbidden.
+
 ## Persistent storage and cost risk
 
 The remaining root filesystem is too limited for unbounded MP4 retention across all shows. Before migration, inventory the actual historical media sizes and make a documented retention/backup plan; **never delete historical media without verified independent copies**. The Oracle Always Free allocation permits 2 A1 OCPUs/12 GB RAM, 200 GB of combined eligible boot/block storage and limited free volume backups subject to eligibility and policy. Any new volume, public network component or backup must be checked against the actual tenancy's current Always Free quotas before creation. Oracle can reclaim idle Always Free instances. Do not generate artificial workload to evade reclamation. A zero-swap host should not receive three unconstrained Chromium publishers until resource limits and failure recovery have been tested.
