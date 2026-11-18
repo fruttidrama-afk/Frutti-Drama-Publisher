@@ -33,6 +33,7 @@ const bootstrap=read('flow-bootstrap.js');
 assert(bootstrap.includes("app.use('/flow/bootstrap'"),'Sensitive remote browser routes must be guarded');
 assert(bootstrap.includes('globalThis.__publisherSecureMiddleware'),'Bootstrap needs session middleware');
 assert(server.includes('globalThis.__publisherSecureMiddleware=secure;'),'Publisher session middleware not passed to bootstrap');
+assert(provider.includes("async function runProvider(){\\n  // Freeze *all* provider activity"),'Provider must return immediately while paused');
 const compose=read('deploy/oracle-free/compose.yaml');
 assert(compose.includes('PUBLISHER_ENABLED: "false"'),'OCI draft must default hard OFF independent of durable gate');
 assert(compose.includes('PUBLISHER_HUB_ACTIVATION_ARMED: "false"'),'OCI hub activation must not be armed by default');
