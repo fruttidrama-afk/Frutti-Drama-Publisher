@@ -37,6 +37,13 @@ assert(bootstrap.includes('globalThis.__publisherSecureMiddleware'),'Bootstrap n
 assert(server.includes('globalThis.__publisherSecureMiddleware=secure;'),'Publisher session middleware not passed to bootstrap');
 const providerStart=provider.indexOf('async function runProvider(){');
 assert(providerStart>=0 && provider.slice(providerStart,providerStart+450).includes('if(!centralGateOpen())return;'),'Provider must return immediately while paused');
+for(const endpoint of ["'/publication/run'","'/api/schedule'","'/api/show-bible'","'/integrations/platform'"]){
+  assert(server.includes(endpoint),'Paused mutation endpoint missing from route safety audit: '+endpoint);
+}
+assert(server.includes('const frozen=pathname'), 'No pre-activation freeze for manual stock/review/schedule mutation routes');
+assert(server.includes("res.status(423).json({ok:false,error:'La reconstrucción"),'Paused mutation routes must explicitly reject');
+const facebookResume=facebook.indexOf('function resumeAuthWait(){');
+assert(facebookResume>=0&&facebook.slice(facebookResume,facebookResume+500).includes('if(!centralGateOpen()'), 'Facebook reconnect must not reschedule stock during pause');
 const compose=read('deploy/oracle-free/compose.yaml');
 assert(compose.includes('PUBLISHER_ENABLED: "false"'),'OCI draft must default hard OFF independent of durable gate');
 assert(compose.includes('PUBLISHER_HUB_ACTIVATION_ARMED: "false"'),'OCI hub activation must not be armed by default');
