@@ -604,19 +604,21 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       const rows=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'youtube')='youtube' AND status NOT IN ('published','cancelled','deleted') ORDER BY scheduledAt").all();
       const changed=[];
       for(const item of rows){
+        // Never rewrite existing remote videos or ambiguous in-flight uploads.
+        if(item.videoId||item.resumableSession||!['queued','quota_wait'].includes(String(item.status||'')))continue;
         const base=Date.parse(String(item.scheduledAt||''));
         if(!Number.isFinite(base))continue;
         const localDay=dayKey(new Date(base),tz);
         const release=zonedLocal(localDay,'19:00',tz);
         const scheduledAt=release.toISOString();
-        const uploadAt=zonedLocal(localDay,'12:30',tz).toISOString();
+        const uploadAt=scheduledAt;
         if(String(item.scheduledAt)!==scheduledAt||String(item.uploadAt)!==uploadAt){
           item.scheduledAt=scheduledAt;item.uploadAt=uploadAt;
-          hist(item,item.status,'YouTube clock normalized: private upload 12:30 ART and explicit PRIVATE to PUBLIC transition 19:00 ART, same local day. No YouTube publishAt.');
+          hist(item,item.status,'Future YouTube slot normalized: one direct PUBLIC upload at the configured release time, no prior PRIVATE staging.');
           save(db,item);changed.push({episode:item.episode,uploadAt,scheduledAt,videoId:Boolean(item.videoId)});
         }
       }
-      if(changed.length)console.log('[PUBLICATION_SAME_DAY_PRIVATE_TO_PUBLIC_NORMALIZED]',JSON.stringify({timezone:tz,changed}));
+      if(changed.length)console.log('[PUBLICATION_DIRECT_PUBLIC_SLOT_NORMALIZED]',JSON.stringify({timezone:tz,changed}));
     }catch(e){console.log('[PUBLICATION TIMED POLICY NORMALIZE WARNING]',String(e?.message||e).slice(0,500))}
   }
   // Paused factory: never rewrite historical publication schedules at import time.
