@@ -264,9 +264,15 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
     return await fetch(url,{...options,redirect:'manual',signal:AbortSignal.timeout(90000),headers:{...(options.headers||{}),Authorization:'Bearer '+access}});
   }
   async function connectedChannel(){
-    if(connectedChannelId)return connectedChannelId;
+    // Every real public upload must be bound to a human-verified exact channel
+    // ID, not the first channel returned from whichever OAuth token is cached.
+    const expected=String(process.env.PUBLISHER_EXPECTED_YOUTUBE_CHANNEL_ID||
+      config.publication?.expected_youtube_channel_id||'').trim();
+    if(!/^UC[a-zA-Z0-9_-]{22}$/.test(expected))
+      throw new Error('YOUTUBE_EXPECTED_CHANNEL_ID_REQUIRED: verified destination channel missing');
     const yt=youtubeApi(),id=(await yt.channels.list({part:['id'],mine:true})).data.items?.[0]?.id;
     if(!id)throw new Error('Connected YouTube channel could not be resolved.');
+    if(String(id)!==expected)throw new Error('YOUTUBE_CHANNEL_IDENTITY_MISMATCH: refusing wrong-channel upload');
     connectedChannelId=String(id);return connectedChannelId;
   }
   async function cleanupPublicationMedia(item){
@@ -460,6 +466,9 @@ export function installPublication({app,db,config,youtubeApi,authedClient,loadTo
       const elapsed=Date.now()-releaseAt;
       if(!Number.isFinite(releaseAt)||elapsed<0||elapsed>30*60*1000)
         throw new Error('YOUTUBE_DIRECT_PUBLIC_UPLOAD_WINDOW_CLOSED');
+      // Read-only OAuth channel identity check precedes the durable external
+      // insert reservation. Wrong credentials cannot consume an episode slot.
+      await connectedChannel();
       // Fence the only external video insert for the configured posting day.
       // A crash or ambiguous response must NEVER initialize a second upload.
       reserveExternalAction('youtube-direct-public-upload',dayKey(new Date(),config.schedule.timezone),item.id);
