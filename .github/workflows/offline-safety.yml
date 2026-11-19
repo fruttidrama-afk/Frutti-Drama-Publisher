@@ -40,6 +40,8 @@ jobs:
         run: bash scripts/oci-compose-offline-probe.sh
       - name: Verify separately opted-in HTTPS gateway cannot start without authenticated Hub
         run: bash scripts/https-gateway-offline-probe.sh
+      - name: Verify no-OCI-console HTTPS preview needs email PIN and stays paused
+        run: bash scripts/oci-quick-tunnel-offline-probe.sh
       - name: Verify two-step YouTube private 12:30 then same-video public 19:00 with mocked API
         run: node youtube-private-public-selftest.mjs
       - name: Verify mocked Facebook flow only after synthetic operator gate
@@ -69,6 +71,8 @@ jobs:
           bash -n scripts/oci-host-preflight.sh
           bash -n scripts/oci-compose-offline-probe.sh
           bash -n scripts/oci-image-acceptance-offline.sh
+          bash -n scripts/oci-quick-tunnel-preview.sh
+          bash -n scripts/oci-quick-tunnel-offline-probe.sh
           bash -n scripts/oci-stage-paused-children.sh
           bash -n scripts/oci-refresh-paused-hub.sh
           node --check scripts/oci-three-child-paused-offline-probe.mjs
