@@ -56,3 +56,6 @@ node_modules/
 # Historical source archives and manual verified assignments (never in Git).
 deploy/oracle-free/reconciliation-media/
 deploy/oracle-free/reconciliation/
+
+# Temporary Cloudflare preview: PID and access URL must remain private.
+deploy/oracle-free/.quick-tunnel/
