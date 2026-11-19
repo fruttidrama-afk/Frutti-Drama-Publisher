@@ -83,7 +83,7 @@ async function start(){
  await sleep(550);
  if(xvfb.exitCode!==null){clear();throw new Error('No pude iniciar la pantalla remota. '+compact(xvfbErr,300))}
  let chromeErr='';
- chrome=spawn('/usr/bin/google-chrome-stable',[
+ chrome=spawn(String(process.env.FLOW_CHROME_PATH||process.env.CHROMIUM_PATH||'/usr/bin/chromium'),[
    '--user-data-dir='+PROFILE_DIR,
    '--remote-debugging-address=127.0.0.1','--remote-debugging-port='+DEBUG_PORT,'--remote-allow-origins=*',
    '--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-software-rasterizer',
@@ -214,6 +214,13 @@ if(!globalThis.__publisherFlowBootstrapInstalled){
  const original=express.application.listen;
  express.application.listen=function(...args){
   const app=this;
+  // Fail closed: browser controller exposes logged-in Google pages and inputs.
+  // Do not let unauthenticated visitors inspect screenshots or issue clicks.
+  app.use('/flow/bootstrap',(req,res,next)=>{
+    const secure=globalThis.__publisherSecureMiddleware;
+    if(typeof secure!=='function')return res.status(503).type('text').send('Publisher authentication unavailable');
+    return secure(req,res,next);
+  });
   app.get('/flow/bootstrap',(req,res)=>res.type('html').send(pageHtml(String(req.query.msg||''),String(req.query.error||''))));
   app.post('/flow/bootstrap/demo-start',async(_req,res)=>{demoActive=true;demoStartedAt=new Date().toISOString();demoStep=0;console.log('[FLOW SOP DEMO] '+JSON.stringify({step:0,at:demoStartedAt,action:'DEMO_START'}));await demoState('INITIAL_STATE');go(res,'Grabación SOP iniciada. Hacé una generación manual completa; voy a registrar cada clic y cambio de estado.')});
   app.post('/flow/bootstrap/demo-stop',async(_req,res)=>{await demoState('FINAL_STATE');console.log('[FLOW SOP DEMO] '+JSON.stringify({step:demoStep+1,at:new Date().toISOString(),action:'DEMO_STOP',started_at:demoStartedAt}));demoActive=false;go(res,'Grabación SOP detenida. Ya quedaron registrados los pasos de la demostración.')});

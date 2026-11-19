@@ -1,3 +1,4 @@
+import { centralGateOpen } from './activation-gate.mjs';
 // RELEASE: approval-gated review media + rejection purge v1
 
 import fs from 'node:fs';
@@ -7,7 +8,7 @@ import sharp from 'sharp';
 import { DatabaseSync } from 'node:sqlite';
 import { google } from 'googleapis';
 import {
-  randomBytes,createHash,createHmac,timingSafeEqual,pbkdf2Sync,
+  randomBytes,randomInt,createHash,createHmac,timingSafeEqual,pbkdf2Sync,
   createCipheriv,createDecipheriv
 } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -20,6 +21,15 @@ import { installPublication } from './publication.js';
 import { installFacebookPublication } from './publication-facebook.js';
 import { buildPublicationCopy } from './publication-copy.js';
 import { signedReviewUrl, deleteReviewObject, isReviewStorageUri, uploadReviewFile } from './review-storage.js';
+
+// Validate authentication before any historical SQLite migration or operator
+// override can touch persistent state; invalid secret means zero side effects.
+// Never use the previous publicly-known fallback signing/encryption key.
+// A missing or placeholder key must prevent the runtime from becoming reachable.
+const SESSION_SECRET=String(process.env.PUBLISHER_SESSION_SECRET||'').trim();
+if(SESSION_SECRET.length<32||/^REPLACE_WITH_/i.test(SESSION_SECRET)){
+  throw new Error('PUBLISHER_SESSION_SECRET_REQUIRED: configure a unique high-entropy secret before starting the runtime');
+}
 
 google.options({timeout:90000,retry:false});
 const app=express(),PORT=Number(process.env.PORT||8080);
@@ -50,6 +60,7 @@ app.use(express.json({limit:'2mb'}));
 app.use(express.urlencoded({extended:false,limit:'256kb'}));
 
 function applyForcedNewIntentsAtStartup(){
+  if(!centralGateOpen()||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;
   let forced={};
   try{forced=JSON.parse(String(process.env.PUBLISHER_FORCE_NEW_INTENTS_JSON||'{}'))||{}}catch{return}
   for(const [episodeKey,intent] of Object.entries(forced)){
@@ -81,7 +92,7 @@ try{applyForcedNewIntentsAtStartup()}catch(e){console.error('[FORCED NEW EPISODE
 
 const now=()=>new Date().toISOString();
 const safeEq=(a,b)=>{const A=Buffer.from(String(a)),B=Buffer.from(String(b));return A.length===B.length&&timingSafeEqual(A,B)};
-const master=()=>createHash('sha256').update(String(process.env.PUBLISHER_SESSION_SECRET||'publisher-runtime-local')).digest();
+const master=()=>createHash('sha256').update(SESSION_SECRET).digest();
 function seal(v){const iv=randomBytes(12),c=createCipheriv('aes-256-gcm',master(),iv),data=Buffer.concat([c.update(JSON.stringify(v),'utf8'),c.final()]);return{v:1,iv:iv.toString('base64url'),tag:c.getAuthTag().toString('base64url'),data:data.toString('base64url')}}
 function unseal(o){const d=createDecipheriv('aes-256-gcm',master(),Buffer.from(o.iv,'base64url'));d.setAuthTag(Buffer.from(o.tag,'base64url'));return JSON.parse(Buffer.concat([d.update(Buffer.from(o.data,'base64url')),d.final()]).toString('utf8'))}
 function readJson(file,fallback){try{return JSON.parse(fs.readFileSync(file,'utf8'))}catch{return structuredClone(fallback)}}
@@ -96,9 +107,27 @@ function cookie(req){const out={};for(const x of String(req.headers.cookie||'').
 function sign(v){return createHmac('sha256',master()).update(v).digest('base64url')}
 function sessionParse(req){const t=cookie(req)[SESSION_COOKIE];if(!t)return null;const p=t.split('.');if(p.length!==3)return null;const exp=Number(p[0]);if(!Number.isFinite(exp)||exp<Date.now()||!safeEq(p[2],sign(p[0]+'.'+p[1])))return null;return{id:createHash('sha256').update(p[1]).digest('base64url'),exp,nonce:p[1]}}
 function device(req){const ua=String(req.headers['user-agent']||'');if(/iPhone/i.test(ua))return'iPhone';if(/iPad/i.test(ua))return'iPad';if(/Android/i.test(ua))return /Mobile/i.test(ua)?'Android':'Android tablet';if(/Windows/i.test(ua))return'Windows PC';if(/Macintosh/i.test(ua))return'Mac';return'Browser'}
-function issue(req,res,method='pin'){const exp=Date.now()+TTL,nonce=randomBytes(18).toString('base64url'),payload=String(exp)+'.'+nonce;res.cookie(SESSION_COOKIE,payload+'.'+sign(payload),{httpOnly:true,sameSite:'lax',secure:Boolean(process.env.RAILWAY_ENVIRONMENT),path:'/',maxAge:TTL});const s=authState(),id=createHash('sha256').update(nonce).digest('base64url');s.sessions=(s.sessions||[]).filter(x=>x.expiresAt>Date.now()&&!x.revokedAt);s.sessions.push({id,device:device(req),createdAt:now(),lastSeenAt:now(),expiresAt:exp,method});saveAuth(s)}
-function valid(req){const x=sessionParse(req);if(!x)return false;const s=authState(),r=s.sessions.find(y=>y.id===x.id);if(r?.revokedAt)return false;if(!r){s.sessions.push({id:x.id,device:device(req),createdAt:now(),lastSeenAt:now(),expiresAt:x.exp,method:'existing'});saveAuth(s)}else if(Date.now()-Date.parse(r.lastSeenAt||0)>5*60*1000){r.lastSeenAt=now();saveAuth(s)}return true}
+function issue(req,res,method='pin'){const exp=Date.now()+TTL,nonce=randomBytes(18).toString('base64url'),payload=String(exp)+'.'+nonce;res.cookie(SESSION_COOKIE,payload+'.'+sign(payload),{httpOnly:true,sameSite:'lax',secure:Boolean(req.secure||/^https:\/\//i.test(String(process.env.PUBLISHER_PUBLIC_URL||''))),path:'/',maxAge:TTL});const s=authState(),id=createHash('sha256').update(nonce).digest('base64url');s.sessions=(s.sessions||[]).filter(x=>x.expiresAt>Date.now()&&!x.revokedAt);s.sessions.push({id,device:device(req),createdAt:now(),lastSeenAt:now(),expiresAt:exp,method});saveAuth(s)}
+function valid(req){const x=sessionParse(req);if(!x)return false;const s=authState(),r=s.sessions.find(y=>y.id===x.id);if(!r||r.revokedAt||r.expiresAt<Date.now())return false;if(Date.now()-Date.parse(r.lastSeenAt||0)>5*60*1000){r.lastSeenAt=now();saveAuth(s)}return true}
 function configured(){const s=authState();return Boolean(s.pinHash||s.passkeys.length)}
+const pinFailures=new Map(),PIN_MAX_ATTEMPTS=6,PIN_WINDOW_MS=15*60*1000;
+function pinAttemptGuard(req,ok){
+  const key=String(req.socket?.remoteAddress||'unknown');
+  const t=Date.now(),prev=pinFailures.get(key);
+  const item=prev&&prev.until>t?prev:{count:0,until:t+PIN_WINDOW_MS};
+  if(ok){pinFailures.delete(key);return true}
+  item.count+=1;pinFailures.set(key,item);
+  if(pinFailures.size>2048){
+    for(const [k,v] of pinFailures){if(v.until<t)pinFailures.delete(k)}
+    if(pinFailures.size>2048)pinFailures.delete(pinFailures.keys().next().value);
+  }
+  return item.count<PIN_MAX_ATTEMPTS;
+}
+function pinBlocked(req){
+  const item=pinFailures.get(String(req.socket?.remoteAddress||'unknown'));
+  return Boolean(item&&item.until>Date.now()&&item.count>=PIN_MAX_ATTEMPTS);
+}
+
 function htmlReq(req){return req.method==='GET'&&String(req.headers.accept||'').includes('text/html')}
 function secure(req,res,next){
   if(valid(req))return next();
@@ -106,6 +135,10 @@ function secure(req,res,next){
   if(htmlReq(req))return res.redirect(loginPath);
   return res.status(401).json({error:'Access required.',login:loginPath});
 }
+
+// The Flow bootstrap integration attaches routes during app.listen; it must
+// inherit the publisher's existing authenticated-session middleware.
+globalThis.__publisherSecureMiddleware=secure;
 
 const rp=()=>String(process.env.RAILWAY_PUBLIC_DOMAIN||process.env.PUBLISHER_PUBLIC_DOMAIN||'localhost').replace(/^https?:\/\//,'').split('/')[0];
 const origin=req=>{
@@ -173,10 +206,19 @@ async function createKey(){
 })();
 key.onclick=createKey;cont.onclick=()=>location.replace('/');
 </script></body></html>`)});
-app.post('/setup/activate',(req,res)=>{const expected=String(process.env.PUBLISHER_SETUP_TOKEN||''),token=String(req.body?.token||'');if(!expected||!safeEq(token,expected))return res.status(401).json({error:'Activation link is invalid or expired.'});if(!configured())setPin(String(Math.floor(100000+Math.random()*900000)));issue(req,res,'factory-open');res.json({ok:true,passkeysRegistered:authState().passkeys.length,device:device(req)})});
+app.post('/setup/activate',(req,res)=>{const expected=String(process.env.PUBLISHER_SETUP_TOKEN||''),token=String(req.body?.token||'');if(!expected||!safeEq(token,expected))return res.status(401).json({error:'Activation link is invalid or expired.'});if(!configured())setPin(String(randomInt(100000,1000000)));issue(req,res,'factory-open');res.json({ok:true,passkeysRegistered:authState().passkeys.length,device:device(req)})});
 app.get('/login',(req,res)=>res.sendFile('login.html',{root:'public'}));
 app.get('/auth/public-info',(req,res)=>{const a=authState();res.json({publisherName:CONFIG.identity.publisher_name,showName:CONFIG.identity.show_name,passkeysRegistered:a.passkeys.length,brand:brandPublic()})});
-app.post('/auth/pin',(req,res)=>{const pin=String(req.body.pin||'');if(!pinOk(pin))return res.status(401).json({error:'Incorrect PIN.'});issue(req,res,'pin');res.json({ok:true})});
+app.post('/auth/pin',(req,res)=>{
+  if(pinBlocked(req))return res.status(429).set('Retry-After','900').json({error:'Demasiados intentos; acceso con PIN temporalmente bloqueado.'});
+  const pin=String(req.body?.pin||'');
+  if(!pinOk(pin)){
+    const remaining=pinAttemptGuard(req,false);
+    return res.status(remaining?401:429).json({error:remaining?'Incorrect PIN.':'Demasiados intentos; acceso con PIN temporalmente bloqueado.'});
+  }
+  pinAttemptGuard(req,true);
+  issue(req,res,'pin');res.json({ok:true});
+});
 app.post('/auth/logout',secure,(req,res)=>{const x=sessionParse(req),s=authState();if(x){const r=s.sessions.find(y=>y.id===x.id);if(r)r.revokedAt=now();saveAuth(s)}res.clearCookie(SESSION_COOKIE,{path:'/'});res.json({ok:true})});
 
 app.post('/auth/passkeys/register/options',secure,async(req,res)=>{try{const s=authState();if(!s.webauthnUserID){s.webauthnUserID=randomBytes(32).toString('base64url');saveAuth(s)}const options=await generateRegistrationOptions({rpName:CONFIG.identity.publisher_name,rpID:rp(),userID:Buffer.from(s.webauthnUserID,'base64url'),userName:'publisher-owner',userDisplayName:CONFIG.identity.show_name,attestationType:'none',excludeCredentials:s.passkeys.map(x=>({id:x.id,transports:x.transports||[]})),authenticatorSelection:{residentKey:'required',userVerification:'required'}});const key=sessionParse(req)?.id||randomBytes(12).toString('hex');regChallenges.set(key,{challenge:options.challenge,expires:Date.now()+5*60*1000});res.json({...options,_binding:key})}catch(e){res.status(500).json({error:e.message})}});
@@ -373,6 +415,26 @@ app.use((req,res,next)=>{
  return secure(req,res,next);
 });
 
+// During reconstruction, inspect/authenticate/reconcile without mutating
+// publication schedules, deleting Review media, staging stock, or approving
+// videos. Manual source-of-truth reconciliation gets separate endpoints.
+app.use((req,res,next)=>{
+ if(req.method!=='POST')return next();
+ const pathname=String(req.path||'');
+ const frozen=pathname==='/publication/run'
+   ||pathname==='/factory/run'
+   ||pathname==='/api/schedule'
+   ||pathname==='/api/show-bible'
+   ||pathname==='/integrations/platform'
+   ||/^\/factory\/[^/]+\/(?:approve|reject)$/.test(pathname)
+   ||/^\/factory\/import-stock\/[^/]+$/.test(pathname)
+   ||/^\/publication\/[^/]+\/recover-video$/.test(pathname);
+ if(frozen&&(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')){
+   return res.status(423).json({ok:false,error:'La reconstrucción está pausada: los cambios de stock, revisión, horario y publicación requieren activación posterior.'});
+ }
+ return next();
+});
+
 function ytSecrets(){const s=secrets();return s.youtube||{}}
 function saveYtSecrets(v){const s=secrets();s.youtube={...(s.youtube||{}),...v};saveSecrets(s)}
 function loadToken(){try{return unseal(readJson(YT_TOKEN_PATH,null))}catch{return null}}
@@ -533,6 +595,7 @@ function diagnosticConfiguredEpisodes(){
 }
 setTimeout(()=>{try{diagnosticConfiguredEpisodes()}catch(e){console.error('[EPISODE RECOVERY DIAGNOSTIC ERROR]',String(e?.message||e))}},2500).unref?.();
 async function purgeConfiguredRejectedPrivateVideos(){
+  if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return;
   const raw=String(process.env.PUBLISHER_PURGE_PRIVATE_TITLES||'').trim();
   if(!raw)return;
   const key='operator:purge-private-titles:'+createHash('sha256').update(raw).digest('hex').slice(0,20);
@@ -708,8 +771,10 @@ app.get('/facebook/oauth/callback',async(req,res)=>{
     });
     setPublicationProvider('facebook');
     if(same?.access_token){
-      facebookPublication.resumeAuthWait?.();
-      void facebookPublication.tick().catch(()=>{});
+      if(centralGateOpen()&&metaGet('automation:operatorActivated','false')==='true'){
+        facebookPublication.resumeAuthWait?.();
+        void facebookPublication.tick().catch(()=>{});
+      }
       return res.redirect('/?facebook=reconnected');
     }
     res.redirect('/integrations/facebook');
@@ -722,8 +787,10 @@ app.post('/integrations/facebook/page',secure,async(req,res)=>{
     const verified=await metaGraph(page.id,{params:{fields:'id,name'},token:page.access_token});
     saveFbSecrets({page_id:String(verified.id||page.id),page_name:String(verified.name||page.name||page.id),page_access_token:String(page.access_token)});
     setPublicationProvider('facebook');
-    facebookPublication.resumeAuthWait?.();
-    void facebookPublication.tick().catch(()=>{});
+    if(centralGateOpen()&&metaGet('automation:operatorActivated','false')==='true'){
+      facebookPublication.resumeAuthWait?.();
+      void facebookPublication.tick().catch(()=>{});
+    }
     res.redirect('/?facebook=reconnected');
   }catch(e){res.status(400).send('Facebook Page connection failed: '+String(e?.message||e))}
 });
@@ -861,6 +928,8 @@ function ensureCopy(row){
      maxTitleLength:100
    });
  }
+ // Render inspection must never repair or rewrite historical creative packages.
+ if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return row;
  if(expected){
    let expectedDescription=String(expected.description||'');
    while(Buffer.byteLength(expectedDescription,'utf8')>4800)expectedDescription=expectedDescription.slice(0,-30).trimEnd();
@@ -891,6 +960,8 @@ function ensureCopy(row){
      maxTitleLength:100
    });
  }
+ // Keep the historical row untouched even when metadata is incomplete.
+ if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return row;
  let description=String(copy.description||'');
  while(Buffer.byteLength(description,'utf8')>4800)description=description.slice(0,-30).trimEnd();
  const title=String(copy.title||'').slice(0,100),packageHash=creativePackageDigest(row,title,description),packageId=String(row.creativePackageId||('creative-package-legacy-'+randomBytes(12).toString('hex')));
@@ -911,6 +982,8 @@ function card(row){
  }
  const hasReviewMedia=row.status==='review'&&((row.videoPath&&fs.existsSync(row.videoPath))||isReviewStorageUri(row.remoteUrl));return{id:row.id,episode:row.episode,hook:row.hook,story:row.story,title:row.title,description:row.description,status:row.status,creativePackageStatus:packageStatus,videoUrl:hasReviewMedia?'/factory/video/'+encodeURIComponent(row.id):null,archivedOriginal:isReviewStorageUri(row.remoteUrl),updatedAt:row.updatedAt,error:row.error}}
 function repairLegacyEarthReviewMetadata(){
+ // Do not rewrite historical episode metadata during paused reconstruction.
+ if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return;
  if(!/earth\s*in\s*10/i.test(String(CONFIG.identity?.show_name||'')))return;
  const tags='#EarthIn10 #Nature #Travel #Shorts #ViralShorts';
  const repairs={
@@ -960,6 +1033,8 @@ function auditReviewMetadata(){
 setTimeout(()=>{try{auditReviewMetadata()}catch(e){console.error('[REVIEW COPY AUDIT ERROR]',String(e?.message||e))}},1100).unref?.();
 
 function repairPendingPublicationMetadata(){
+ // Historical publication metadata is frozen until operator activation.
+ if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return;
  const showName=String(CONFIG.identity?.show_name||'');
  if(!/dinnie\s*(?:the\s*)?dinosaur|dinnie/i.test(showName))return;
  const rows=db.prepare("SELECT p.id publicationId,p.status publicationStatus,f.* FROM publication_items p JOIN factory_items f ON f.id=p.itemId WHERE p.status NOT IN ('published','cancelled','deleted') ORDER BY p.episode").all();
@@ -976,6 +1051,7 @@ function repairPendingPublicationMetadata(){
 setTimeout(()=>{try{repairPendingPublicationMetadata()}catch(e){console.error('[PENDING PUBLICATION COPY REPAIR ERROR]',String(e?.message||e))}},1400).unref?.();
 
 function applyForcedPublicationNow(){
+  if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return;
   const episode=Number(process.env.PUBLISHER_FORCE_PUBLICATION_NOW_EPISODE||0);
   const token=String(process.env.PUBLISHER_FORCE_PUBLICATION_NOW_TOKEN||'').trim();
   if(!Number.isInteger(episode)||episode<1||!token)return;
@@ -1052,8 +1128,8 @@ app.post('/publication/:id/recover-video',express.raw({type:['video/mp4','applic
     let history=[];try{history=JSON.parse(String(item.history||'[]'))||[]}catch{}
     history.push({status:'queued',at:now(),message:'MP4 recuperado manualmente desde Google Flow, validado y guardado en cloud privado. El video vuelve a Stock y retomará el flujo normal de publicación.'});
     const scheduledAt=String(item.scheduledAt||'');
-    const uploadAt=scheduledAt?new Date(Date.parse(scheduledAt)-390*60000).toISOString():String(item.uploadAt||'');
-    db.prepare("UPDATE publication_items SET status='queued',filePath=?,fileSize=?,videoId=NULL,resumableSession=NULL,attempts=0,retryAt=0,error=NULL,history=?,updatedAt=?,remotePrivacyStatus=NULL,remotePublishAt=NULL,remoteStatusCheckedAt=NULL,uploadAt=? WHERE id=?")
+    const uploadAt=scheduledAt?String(scheduledAt):String(item.uploadAt||'');
+    db.prepare("UPDATE publication_items SET status='queued',filePath=?,fileSize=?,videoId=NULL,resumableSession=NULL,uploadMode=NULL,attempts=0,retryAt=0,error=NULL,history=?,updatedAt=?,remotePrivacyStatus=NULL,remotePublishAt=NULL,remoteStatusCheckedAt=NULL,uploadAt=? WHERE id=?")
       .run(cloud.uri,Number(cloud.size||valid.size),JSON.stringify(history.slice(-120)),now(),uploadAt,item.id);
 
     let flow={};try{flow=JSON.parse(String(row.flowResult||'{}'))||{}}catch{}
@@ -1127,12 +1203,13 @@ app.post('/factory/:id/reject',async(req,res)=>{
  res.json({ok:true,regenerating:true,aiPending:true,retryStrategy:'ai_pending',retryToken:token});
  setTimeout(()=>{try{globalThis.__publisherRunProvider?.()}catch{}},50).unref?.();
 });
-app.post('/factory/enable',(req,res)=>{metaSet('automation:factoryEnabled','true');res.json({ok:true,enabled:true})});
-app.post('/factory/disable',(req,res)=>{metaSet('automation:factoryEnabled','false');res.json({ok:true,enabled:false})});
-app.post('/factory/preflight',(req,res)=>{metaSet('automation:allowSubmit','0');const r=db.prepare("SELECT id,episode,status FROM factory_items WHERE status IN ('draft','regen_wait') ORDER BY episode LIMIT 1").get();res.status(202).json({ok:true,next:r||null,note:'Provider will run preflight only; Generate remains disabled.'})});
-app.post('/factory/test-generation',(req,res)=>{metaSet('automation:factoryEnabled','false');metaSet('automation:allowSubmit','1');res.status(202).json({ok:true,one_test_submit_authorized:true})});
-app.post('/factory/run',(req,res)=>{res.status(202).json({ok:true})});
-app.post('/factory/generate-extra',(req,res)=>{
+app.post('/factory/enable',secure,(req,res)=>{res.status(409).json({ok:false,error:'La activación queda reservada al botón general después de la conciliación histórica.'})});
+app.post('/factory/disable',secure,(req,res)=>{metaSet('automation:operatorActivated','false');metaSet('automation:factoryEnabled','false');metaSet('automation:allowSubmit','0');res.json({ok:true,enabled:false})});
+app.post('/factory/preflight',secure,(req,res)=>{metaSet('automation:allowSubmit','0');const r=db.prepare("SELECT id,episode,status FROM factory_items WHERE status IN ('draft','regen_wait') ORDER BY episode LIMIT 1").get();res.status(202).json({ok:true,next:r||null,note:'Provider will run preflight only; Generate remains disabled.'})});
+app.post('/factory/test-generation',secure,(req,res)=>{res.status(409).json({ok:false,error:'Live Flow submit is forbidden during reconstruction. Use isolated mock tests.'})});
+app.post('/factory/run',secure,(req,res)=>{res.status(202).json({ok:true})});
+app.post('/factory/generate-extra',secure,(req,res)=>{
+ if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return res.status(423).json({error:'Factory is paused until explicit operator activation.'});
  try{
   const count=Math.max(1,Math.min(20,Math.trunc(Number(req.body?.count)||1)));
   const day=publisherDay(),current=activeDailyTarget(day),target=current+count;
@@ -1162,6 +1239,8 @@ function liveFlowConfig(){
 function metaGet(k,f=''){return db.prepare('SELECT value FROM factory_meta WHERE key=?').get(k)?.value??f}
 function metaSet(k,v){db.prepare("INSERT INTO factory_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k,String(v))}
 function activateReadyAutomation(){
+  // Readiness must NEVER be interpreted as authorization to start production.
+  if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return false;
   try{
     const lf=liveFlowConfig();
     const knowledgeReady=metaGet('knowledge:flowSopLoaded','false')==='true';
@@ -1270,9 +1349,11 @@ function health(){
    target_in_cycle:Number(metaGet('flow:dailyCreditCycleTarget',String(CONFIG.content?.videos_per_day||3))||0)
  };
  const generationCounter=Math.max(Number(completed||0),Number(creditCycleHealth.used_in_cycle||0));
- return{ok:true,at:now(),runtime_version:'publisher-runtime-v1',publisher_enabled:metaGet('automation:factoryEnabled','false')==='true',show:CONFIG.identity.show_name,scheduler_alive:true,scheduler:publication.status(),scheduler_no_end_date:true,worker_alive:workerAlive,automation_provider:'FreeBrowserProvider',generation_provider:'GoogleFlowProvider',publication_provider:selectedPublicationProvider()==='facebook'?'FacebookReelsProvider':selectedPublicationProvider()==='youtube'?'YouTubeProvider':'NotSelected',knowledge,flow:(()=>{const lf=liveFlowConfig();return{configured:Boolean(lf.project_id),authenticated:Boolean(flowAuth()?.ok),project_id:lf.project_id||null,project_name:lf.project_name||null,project_url:lf.project_url||null}})(),current_job:current||null,queue:counts,completed_today:generationCounter,calendar_completed_today:completed,daily_target:dailyTarget,remaining_today:Math.max(0,dailyTarget-generationCounter),daily_override_active:dailyTarget!==DAILY_LIMIT,provider_health:p?.state||null,last_generation:db.prepare("SELECT createdAt FROM factory_generations ORDER BY createdAt DESC LIMIT 1").get()?.createdAt||null,last_review_ready:db.prepare("SELECT updatedAt FROM factory_items WHERE status='review' ORDER BY updatedAt DESC LIMIT 1").get()?.updatedAt||null,last_publication:db.prepare("SELECT updatedAt,status,videoId FROM publication_items ORDER BY updatedAt DESC LIMIT 1").get()||null,serial_gate:{enabled:true,creative_serialized:Boolean(CONFIG.content.serialized),gate:'review_ready',strict:true},automation_safety:{exactly_once_submit:metaGet('automation:exactlyOnceSubmit','false')==='true',strict_serial_generation:metaGet('automation:strictSerialGeneration','false')==='true',project_grid_recovery:metaGet('automation:projectGridRecovery','false')==='true',review_metadata_required:metaGet('automation:reviewMetadataRequired','false')==='true',golden_test_required:metaGet('automation:goldenTestRequired','false')==='true',stable_composer_handoff:true,frutti_browser_launch_parity:true,native_no_charge_retry:false,immediate_native_retry_disabled:true,adaptive_no_charge_backoff:true,unusual_activity_exponential_backoff:true,provider_wide_unusual_activity_backoff:true,monotonic_provider_cooldown:true,successful_render_resets_provider_backoff:true,successful_redos_count_toward_daily_target:true,legacy_streak_resurrection_guard:true,strict_post_submit_recovery_match:true,catalog_wide_creative_uniqueness:true,no_landscape_repeat_cycle:true,youtube_preapproval_private_staging_disabled:true,cloud_stock_until_upload_window:true,private_upload_at_1230:true,direct_private_to_public_at_1900:true,direct_public_upload_at_1900:false,native_publish_at_disabled:true,youtube_upload_lead_minutes_390:true,zero_use_credit_rollover_self_heal:true,quarantined_submit_recovery_self_heal:true,manual_stock_recovery_upload:true,recovery_upload_cloud_required:true,flow_asset_identity_gate:true,recovered_asset_reuse_blocked:true,duplicate_content_hash_guard:true,fixed_grid_multiset_recovery:true,post_click_asset_identity_verified:true,recovery_token_never_submits:true,adjacent_submit_temporal_bracket:true,download_reopen_by_asset_identity:true,zero_copy_approval_handoff:true,approval_enospc_copy_eliminated:true,show_specific_repairs_isolated:true,prompt_show_bible_gate:true,atomic_creative_package:true,approval_before_external_storage:true,reject_purges_external_artifacts:true,semantic_ai_redo_interpretation:true,post_submit_timeout_never_resubmits:true,daily_flow_credit_refresh_gate:true,calendar_midnight_does_not_open_batch:true,paid_monthly_credits_protected_until_daily_refresh:true,native_ai_disclosure_required:true,youtube_contains_synthetic_media_always:true,facebook_is_ai_generated_always:true,legacy_ai_disclosure_repair_enabled:true},credit_cycle:creditCycleHealth,prompt_integrity:promptIntegrity,review_copy:reviewCopy,publication_copy:publicationCopy,storage:storage(),security:{configured:configured(),passkeys:authState().passkeys.length,active_sessions:authState().sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).length}};
+ return{ok:true,at:now(),runtime_version:'publisher-runtime-v1',operator_activated:centralGateOpen()&&metaGet('automation:operatorActivated','false')==='true',publisher_enabled:metaGet('automation:factoryEnabled','false')==='true',publication_connected:publicationConnected(),show:CONFIG.identity.show_name,scheduler_alive:true,scheduler:publication.status(),scheduler_no_end_date:true,worker_alive:workerAlive,automation_provider:'FreeBrowserProvider',generation_provider:'GoogleFlowProvider',publication_provider:selectedPublicationProvider()==='facebook'?'FacebookReelsProvider':selectedPublicationProvider()==='youtube'?'YouTubeProvider':'NotSelected',knowledge,flow:(()=>{const lf=liveFlowConfig();return{configured:Boolean(lf.project_id),authenticated:Boolean(flowAuth()?.ok),project_id:lf.project_id||null,project_name:lf.project_name||null,project_url:lf.project_url||null}})(),current_job:current||null,queue:counts,completed_today:generationCounter,calendar_completed_today:completed,daily_target:dailyTarget,remaining_today:Math.max(0,dailyTarget-generationCounter),daily_override_active:dailyTarget!==DAILY_LIMIT,provider_health:p?.state||null,last_generation:db.prepare("SELECT createdAt FROM factory_generations ORDER BY createdAt DESC LIMIT 1").get()?.createdAt||null,last_review_ready:db.prepare("SELECT updatedAt FROM factory_items WHERE status='review' ORDER BY updatedAt DESC LIMIT 1").get()?.updatedAt||null,last_publication:db.prepare("SELECT updatedAt,status,videoId FROM publication_items ORDER BY updatedAt DESC LIMIT 1").get()||null,serial_gate:{enabled:true,creative_serialized:Boolean(CONFIG.content.serialized),gate:'review_ready',strict:true},automation_safety:{exactly_once_submit:metaGet('automation:exactlyOnceSubmit','false')==='true',strict_serial_generation:metaGet('automation:strictSerialGeneration','false')==='true',project_grid_recovery:metaGet('automation:projectGridRecovery','false')==='true',review_metadata_required:metaGet('automation:reviewMetadataRequired','false')==='true',golden_test_required:metaGet('automation:goldenTestRequired','false')==='true',stable_composer_handoff:true,frutti_browser_launch_parity:true,native_no_charge_retry:false,immediate_native_retry_disabled:true,adaptive_no_charge_backoff:true,unusual_activity_exponential_backoff:true,provider_wide_unusual_activity_backoff:true,monotonic_provider_cooldown:true,successful_render_resets_provider_backoff:true,successful_redos_count_toward_daily_target:true,legacy_streak_resurrection_guard:true,strict_post_submit_recovery_match:true,catalog_wide_creative_uniqueness:true,no_landscape_repeat_cycle:true,youtube_preapproval_private_staging_disabled:true,cloud_stock_until_upload_window:true,private_upload_at_1230:true,direct_private_to_public_at_1900:true,direct_public_upload_at_1900:false,native_publish_at_disabled:true,youtube_upload_lead_minutes_390:true,youtube_single_direct_public_at_release:false,legacy_private_videos_require_manual_review:true,zero_use_credit_rollover_self_heal:true,quarantined_submit_recovery_self_heal:true,manual_stock_recovery_upload:true,recovery_upload_cloud_required:true,flow_asset_identity_gate:true,recovered_asset_reuse_blocked:true,duplicate_content_hash_guard:true,fixed_grid_multiset_recovery:true,post_click_asset_identity_verified:true,recovery_token_never_submits:true,adjacent_submit_temporal_bracket:true,download_reopen_by_asset_identity:true,zero_copy_approval_handoff:true,approval_enospc_copy_eliminated:true,show_specific_repairs_isolated:true,prompt_show_bible_gate:true,atomic_creative_package:true,approval_before_external_storage:true,reject_purges_external_artifacts:true,semantic_ai_redo_interpretation:true,post_submit_timeout_never_resubmits:true,daily_flow_credit_refresh_gate:true,calendar_midnight_does_not_open_batch:true,paid_monthly_credits_protected_until_daily_refresh:true,native_ai_disclosure_required:true,youtube_contains_synthetic_media_always:true,facebook_is_ai_generated_always:true,legacy_ai_disclosure_repair_enabled:true},credit_cycle:creditCycleHealth,prompt_integrity:promptIntegrity,review_copy:reviewCopy,publication_copy:publicationCopy,storage:storage(),security:{configured:configured(),passkeys:authState().passkeys.length,active_sessions:authState().sessions.filter(x=>x.expiresAt>Date.now()&&!x.revokedAt).length}};
 }
 function repairObsoleteFlowSettingsErrors(){
+ // Never change recoverable Flow rows or request worker restarts while paused.
+ if(!centralGateOpen()||metaGet('automation:operatorActivated','false')!=='true')return;
   try{
     const stamp=now();
     const out=db.prepare(`UPDATE factory_items
@@ -1290,7 +1371,20 @@ function repairObsoleteFlowSettingsErrors(){
 }
 setTimeout(repairObsoleteFlowSettingsErrors,1800).unref?.();
 
-app.get('/factory/health',(req,res)=>res.json(health()));
+// Unauthenticated health is consumed by the private Hub network. Never
+// include unreleased prompts, episode copy, OAuth details or historical stock.
+app.get('/factory/health',(req,res)=>{
+  const status=health();
+  res.set('Cache-Control','no-store');
+  res.json({
+    ok:status.ok,at:status.at,
+    operator_activated:status.operator_activated,
+    publisher_enabled:status.publisher_enabled,
+    flow:{configured:Boolean(status.flow?.configured),authenticated:Boolean(status.flow?.authenticated)},
+    publication_connected:status.publication_connected,
+    worker_alive:status.worker_alive
+  });
+});
 app.get('/factory/knowledge',(req,res)=>{
   const rows=db.prepare('SELECT key,version,sha256,source,updatedAt,length(content) bytes FROM runtime_knowledge ORDER BY key').all();
   res.json({ok:true,knowledge:health().knowledge,documents:rows});
@@ -1341,7 +1435,7 @@ function reschedulePendingPublications(){
   let day=scheduleDayKey(new Date(),tz),cursor=null,changed=0;
   for(const row of rows){
     const provider=String(row.provider||CONFIG.publication?.selected_provider||'youtube');
-    const lead=provider==='facebook'?0:390*60000;
+    const lead=0; // Both providers start uploading only at their actual publication slot.
     let next;
     while(true){
       const d=scheduleLocalDate(day,time,tz);

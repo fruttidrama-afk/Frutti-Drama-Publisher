@@ -11,7 +11,7 @@ process.env.PUBLISHER_ENABLED='true';
 process.env.PUBLISHER_FLOW_SOP_VERSION='FLOW-SOP-v1.0';
 process.env.PUBLISHER_FLOW_SOP_SHA256='b857758bc2f46b0759a1327a39a32566e4168b6629dfa0103357ad1ec58ffab1';
 process.env.PUBLISHER_INSTANCE_ID='fresh-start-selftest';
-process.env.PUBLISHER_RESET_ON_INSTANCE_CHANGE='true';
+process.env.PUBLISHER_RESET_ON_INSTANCE_CHANGE='false';
 process.env.PUBLISHER_CONFIG_JSON=JSON.stringify({
   runtime_version:'publisher-runtime-v1',
   identity:{publisher_name:'Factory Selftest',show_name:'Factory Selftest',language:'en-US',timezone:'UTC'},
@@ -47,8 +47,17 @@ try{
   if(knowledgeCount!==8)fail('expected 8 runtime knowledge docs, found '+knowledgeCount);
   if(CONFIG.schedule.generation_strategy!=='sequential')fail('fresh runtime is not sequential');
   if(CONFIG.schedule.indefinite!==true)fail('fresh runtime scheduler is not indefinite');
-  const episodeRows=db.prepare("SELECT episode,prompt,title,description,creativePackageHash FROM factory_items ORDER BY episode").all();
-  if(!episodeRows.length)fail('fresh runtime did not create backlog episodes');
+  const untouched=db.prepare('SELECT COUNT(*) n FROM factory_items').get()?.n;
+  if(Number(untouched)!==0)fail('paused startup must not create any episodes, despite configured seed ideas');
+  db.close();
+  // Deliberately exercise creative packaging in this disposable offline SQLite
+  // fixture, never through an automatically activated production worker.
+  const fixtureDb=new DatabaseSync(dbPath);
+  const {seedInitial,ensureBacklog}=await import('./runtime-config.js');
+  seedInitial(fixtureDb);
+  ensureBacklog(fixtureDb);
+  const episodeRows=fixtureDb.prepare("SELECT episode,prompt,title,description,creativePackageHash FROM factory_items ORDER BY episode").all();
+  if(!episodeRows.length)fail('isolated creative-package fixture did not create episode ideas');
   for(const row of episodeRows){
     if(!String(row.prompt||'').trim())fail('episode '+row.episode+' has an empty prompt');
     if(!String(row.prompt||'').includes('Selftest Creative Bible'))fail('episode '+row.episode+' prompt does not contain the Show Bible');
@@ -56,7 +65,15 @@ try{
     if(!String(row.description||'').trim())fail('episode '+row.episode+' has no description in its creative package');
     if(!String(row.creativePackageHash||'').trim())fail('episode '+row.episode+' has no creative package hash');
   }
-  db.close();
+  fixtureDb.close();
+  // Reject the old destructive redeploy reset without deleting existing assets.
+  process.env.PUBLISHER_RESET_ON_INSTANCE_CHANGE='true';
+  let rejected=false;
+  try{await import('./runtime-init.js?reset-attempt='+Date.now())}
+  catch(e){rejected=String(e?.message||e).includes('DESTRUCTIVE_INSTANCE_RESET_DISABLED')}
+  if(!rejected)fail('unsafe instance reset was not rejected');
+  if(!fs.existsSync(dbPath))fail('instance reset removed historical database');
+  process.env.PUBLISHER_RESET_ON_INSTANCE_CHANGE='false';
   console.log(JSON.stringify({
     ok:true,
     contract:'publisher-runtime-fresh-start-v1',
@@ -65,10 +82,13 @@ try{
     knowledge_documents:knowledgeCount,
     durable_gate_initial:'false',
     env_authorization:'true',
-    automatic_activation_requires_readiness:true,
+    automatic_activation_requires_readiness:false,
+    explicit_operator_activation_required:true,
+    paused_runtime_seeded_episodes:0,
+    legacy_destructive_reset_rejected:true,
     generation_strategy:CONFIG.schedule.generation_strategy,
     scheduler_indefinite:CONFIG.schedule.indefinite,
-    backlog_episodes_with_nonempty_prompts:episodeRows.length,
+    synthetic_fixture_episodes_with_nonempty_prompts:episodeRows.length,
     prompt_show_bible_gate:true,
     atomic_creative_packages:true
   },null,2));

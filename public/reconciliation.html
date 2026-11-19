@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>Conciliación histórica | Publisher Factory</title>
+<style>
+:root{color-scheme:dark;--bg:#0a1623;--surface:#142339;--line:#3a506b;--text:#f0f4fc;--muted:#aebed1;--accent:#e2c38a}
+*{box-sizing:border-box}body{margin:0;padding:24px;background:var(--bg);color:var(--text);font:14px/1.55 system-ui,-apple-system,Arial}main{max-width:1500px;margin:auto}
+h1{font-size:clamp(27px,3vw,43px);line-height:1.1;margin:4px 0 15px}h2{font-size:19px;margin:0 0 9px}
+a{color:var(--accent)}.top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:18px}
+.eyebrow{font-size:11px;font-weight:750;letter-spacing:.17em;color:var(--accent)}.small{font-size:12px}.muted{color:var(--muted)}
+.notice{margin:15px 0;border-left:3px solid var(--accent);padding:13px 17px;background:#1b3149;border-radius:0 9px 9px 0}
+.layout{display:grid;grid-template-columns:minmax(280px,1.2fr) minmax(300px,1fr);gap:17px;margin:22px 0}
+.panel{border:1px solid var(--line);background:var(--surface);border-radius:15px;padding:18px;min-width:0}
+.list{max-height:280px;min-height:120px;overflow:auto;border:1px solid var(--line);border-radius:10px;margin:13px 0}
+.item{padding:11px 13px;border-bottom:1px solid #34455d;cursor:pointer;word-break:break-word}
+.item:hover,.item.sel{background:#264366}.item:last-child{border-bottom:0}.item strong{display:block;font-weight:650}
+.video{width:100%;max-height:370px;background:#030a12;border-radius:10px;margin:7px 0}
+label{display:block;font-weight:650;margin:14px 0 6px}
+input,textarea,select{border:1px solid #556d8b;border-radius:8px;background:#081626;color:#fff;font:inherit;padding:10px;width:100%}
+textarea{min-height:175px;resize:vertical;font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap}
+input[type=number]{width:118px}.row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+button{padding:11px 14px;border-radius:9px;background:var(--accent);border:1px solid #e9d3a5;color:#172131;font-weight:750;cursor:pointer}
+button:disabled{cursor:not-allowed;opacity:.45}.preview{background:#091729;border-radius:9px;min-height:100px;max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:13px}
+.footer{margin-top:24px;color:var(--muted)}#message{margin-top:9px}#channel{width:min(300px,80vw)}
+@media(max-width:800px){body{padding:13px}.layout{grid-template-columns:1fr}.top{align-items:stretch}}
+</style>
+</head>
+<body>
+<main>
+<div class="top"><div><div class="eyebrow">PUBLISHER FACTORY · MODO RECONSTRUCCIÓN</div><h1>Conciliación histórica</h1><a href="/">Volver al panel general</a></div>
+<div><label for="channel">Canal</label><select id="channel"></select></div></div>
+<div class="notice"><b>Dos fuentes independientes.</b> Los videos y los posts/prompts no se relacionan automáticamente. La temporada, el episodio y el prompt exacto solo quedan verificados después de comprobarlos manualmente y guardar el vínculo. Nada se modifica en el stock productivo.</div>
+<div class="layout">
+<section class="panel">
+<h2>1. Videos recuperados</h2>
+<div class="small muted">Archivos MP4 reales, identificados por su contenido SHA-256. Seleccioná el video, reproducilo y verificá los datos.</div>
+<div id="videos" class="list"></div>
+<video id="player" class="video" controls playsinline preload="metadata"></video>
+<div id="videoInfo" class="small muted">Ningún video seleccionado.</div>
+<div class="row">
+<div><label for="season">Temporada</label><input id="season" type="number" min="1" max="99" placeholder="Ej.: 2"></div>
+<div><label for="episode">Episodio</label><input id="episode" type="number" min="1" max="9999" placeholder="Ej.: 8"></div>
+</div>
+<label for="flowPrompt">Prompt exacto utilizado en Google Flow</label>
+<textarea id="flowPrompt" spellcheck="false" placeholder="Pegá el prompt de generación completo y exacto; no se aceptan reconstrucciones inferidas ni descripciones genéricas."></textarea>
+<div class="row"><button id="save" disabled>Guardar vínculo verificado</button><span id="message" class="small muted">Seleccioná un video.</span></div>
+</section>
+<section class="panel">
+<h2>2. Posts y prompts históricos</h2>
+<div class="small muted">Se muestran hasta 100 registros provenientes de archivos históricos importados, sin atribuirlos a ningún video.</div>
+<div id="posts" class="list"></div>
+<label>Post seleccionado</label><div id="preview" class="preview small muted">Ningún post seleccionado.</div>
+<div class="row" style="margin-top:11px"><button id="usePrompt" disabled>Usar este prompt como candidato</button></div>
+<div class="notice small">Copiar un prompt al formulario no demuestra que corresponda al video. Comprobá el contenido antes de guardar.</div>
+</section>
+</div>
+<p class="footer">Las asignaciones se guardan en un registro de reconstrucción separado. Generación, recuperación automática, programación y publicación permanecen desactivadas.</p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const channel=$('channel'),videoList=$('videos'),postList=$('posts'),player=$('player');
+let allVideos=[],allPosts=[],assignments=[],selectedVideo=null,selectedPost=null,usedPostId=null;
+function item(parent,title,sub,click,selected){
+  const el=document.createElement('div');el.className='item'+(selected?' sel':'');
+  const heading=document.createElement('strong');heading.textContent=title;
+  const detail=document.createElement('span');detail.className='small muted';detail.textContent=sub;
+  el.append(heading,detail);el.onclick=click;parent.append(el);
+}
+const size=n=>n<1048576?Math.round(n/1024)+' KB':(n/1048576).toFixed(1)+' MB';
+const url=(kind)=>'/reconciliation/api/'+kind+'?channel='+encodeURIComponent(channel.value);
+async function api(endpoint,options){
+  const resp=await fetch(endpoint,{cache:'no-store',...(options||{})});
+  let body={};try{body=await resp.json()}catch{}
+  if(!resp.ok)throw Error(body.error||'HTTP '+resp.status);
+  return body;
+}
+function renderVideos(){
+  videoList.replaceChildren();
+  if(!allVideos.length)videoList.textContent='Todavía no hay MP4 reales importados para este canal.';
+  for(const v of allVideos){
+    const a=assignments.find(x=>x.videoHash===v.hash);
+    item(videoList,v.name,(a?'VERIFICADO · Temporada '+a.season+' Episodio '+a.episode:'Sin asignar')+' · '+size(v.size),
+      ()=>chooseVideo(v),selectedVideo?.hash===v.hash);
+  }
+}
+function renderPosts(){
+  postList.replaceChildren();
+  if(!allPosts.length)postList.textContent='Todavía no hay posts históricos importados para este canal.';
+  for(const p of allPosts)item(postList,p.title||p.id,(p.timestamp||'Fecha sin verificar')+' · No relacionado automáticamente',
+    ()=>choosePost(p),selectedPost?.id===p.id);
+}
+function chooseVideo(v){
+  selectedVideo=v;const a=assignments.find(x=>x.videoHash===v.hash);
+  player.src=url('video')+'&hash='+encodeURIComponent(v.hash);
+  $('videoInfo').textContent='SHA-256: '+v.hash+(a?' · Vínculo guardado':' · No asignado');
+  $('season').value=a?.season||'';$('episode').value=a?.episode||'';
+  $('flowPrompt').value=a?.flowPrompt||'';usedPostId=null;
+  $('save').disabled=false;$('message').textContent='';
+  renderVideos();
+}
+function choosePost(p){
+  selectedPost=p;
+  $('preview').textContent='REGISTRO: '+p.id+'\nFECHA: '+(p.timestamp||'Sin verificar')+
+    '\n\nTÍTULO:\n'+(p.title||'')+'\n\nPROMPT ORIGINAL:\n'+(p.prompt||'(No encontrado)')+
+    '\n\nDESCRIPCIÓN:\n'+(p.description||'');
+  $('usePrompt').disabled=!p.prompt;renderPosts();
+}
+async function reload(){
+  selectedVideo=null;selectedPost=null;usedPostId=null;
+  player.removeAttribute('src');player.load();
+  $('save').disabled=true;$('usePrompt').disabled=true;
+  $('videoInfo').textContent='Ningún video seleccionado.';$('preview').textContent='Ningún post seleccionado.';
+  $('flowPrompt').value='';$('season').value='';$('episode').value='';
+  try{
+    const [v,p,a]=await Promise.all([api(url('videos')),api(url('posts')),api(url('assignments'))]);
+    allVideos=v.videos;allPosts=p.posts;assignments=a.assignments;
+    renderVideos();renderPosts();
+  }catch(e){videoList.textContent=e.message;postList.textContent=e.message}
+}
+$('flowPrompt').addEventListener('input',()=>{usedPostId=null});
+$('usePrompt').onclick=()=>{
+  if(!selectedVideo){alert('Primero seleccioná un video real.');return}
+  if(!selectedPost?.prompt)return;
+  $('flowPrompt').value=selectedPost.prompt;usedPostId=selectedPost.id;
+  $('message').textContent='Prompt copiado como candidato. Verificá visualmente antes de guardar.';
+};
+$('save').onclick=async()=>{
+  if(!selectedVideo)return;
+  const season=Number($('season').value),episode=Number($('episode').value),flowPrompt=$('flowPrompt').value;
+  if(!Number.isInteger(season)||season<1||!Number.isInteger(episode)||episode<1||flowPrompt.trim().length<20){
+    $('message').textContent='Indicá temporada, episodio y prompt exacto completo.';return
+  }
+  if(!confirm('¿Verificaste que este prompt exacto generó este MP4 y que corresponde a Temporada '+season+' Episodio '+episode+'?'))return;
+  $('save').disabled=true;
+  try{
+    const data=await api(url('assign'),{
+      method:'POST',headers:{'Content-Type':'application/json','X-Reconciliation-Operator':'manual-verified'},
+      body:JSON.stringify({channel:channel.value,videoHash:selectedVideo.hash,season,episode,flowPrompt,sourcePostId:usedPostId})
+    });
+    assignments=data.assignments;
+    $('message').textContent='Vínculo verificado y guardado. Stock productivo intacto.';
+    renderVideos();
+  }catch(e){$('message').textContent=e.message}
+  finally{$('save').disabled=false}
+};
+channel.onchange=()=>{
+  const params=new URLSearchParams(location.search);params.set('channel',channel.value);
+  history.replaceState(null,'','/reconciliation?'+params.toString());reload();
+};
+(async()=>{
+  try{
+    const data=await api('/reconciliation/api/channels');
+    const selected=new URLSearchParams(location.search).get('channel');
+    for(const row of data.channels){
+      const opt=document.createElement('option');opt.value=row.id;opt.textContent=row.name;
+      if(row.id===selected)opt.selected=true;
+      channel.append(opt);
+    }
+    await reload();
+  }catch(e){videoList.textContent=e.message}
+})();
+</script>
+</body></html>

@@ -1,0 +1,95 @@
+name: Offline activation safety
+on:
+  push:
+    branches: [safety/manual-activation-gate-20261117]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  static-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Assert default-deny activation safety
+        run: node scripts/safety-gate-selftest.mjs
+      - name: Verify complete runtime and publisher contracts without network
+        run: |
+          node verify-runtime-contract.mjs
+          node publisher-selftest.mjs
+      - name: Verify paused fresh runtime and synthetic creative metadata
+        run: node runtime-fresh-start-selftest.mjs
+      - name: Verify exclusive kernel Flow lock across three offline workers
+        run: node scripts/flow-global-mutex.test.mjs
+      - name: Verify three-channel operator preflight and fail-closed secrets
+        run: node scripts/operator-preflight.test.mjs
+      - name: Unit test operator gate without network
+        run: node --test scripts/operator-gate.test.mjs
+      - name: Verify central dashboard stays locked while unready
+        run: node scripts/hub-offline-probe.mjs
+      - name: Simulate complete multi-channel operator activation and emergency stop
+        run: node scripts/hub-activation-offline-probe.mjs
+      - name: Verify independent historical video and post reconciliation
+        run: node scripts/reconciliation-offline-probe.mjs
+      - name: Validate three-show Compose layout without any containers or credentials
+        run: bash scripts/oci-compose-offline-probe.sh
+      - name: Verify separately opted-in HTTPS gateway cannot start without authenticated Hub
+        run: bash scripts/https-gateway-offline-probe.sh
+      - name: Verify no-OCI-console HTTPS preview needs email PIN and stays paused
+        run: bash scripts/oci-quick-tunnel-offline-probe.sh
+      - name: Verify two-step YouTube private 12:30 then same-video public 19:00 with mocked API
+        run: node youtube-private-public-selftest.mjs
+      - name: Verify mocked Facebook flow only after synthetic operator gate
+        run: node facebook-publication-selftest.mjs
+      - name: Syntax check modified Node modules
+        run: |
+          node --check server.js
+          node --check free-browser-provider.js
+          node --check unattended-supervisor.js
+          node --check flow-bootstrap.js
+          node --check publication.js
+          node --check youtube-private-public-selftest.mjs
+          node --check publication-facebook.js
+          node --check runtime-init.js
+          node --check factory-hub.mjs
+          node --check activation-gate.mjs
+          node --check scripts/oci-browser-offline-probe.mjs
+          node --check scripts/oci-runtime-offline-probe.mjs
+          node --check scripts/hub-offline-probe.mjs
+          node --check scripts/reconciliation-offline-probe.mjs
+          node --check scripts/hub-activation-offline-probe.mjs
+          node --check scripts/operator-preflight.test.mjs
+          node --check scripts/flow-global-mutex.test.mjs
+          node --check flow-global-mutex.mjs
+          node --check operator-preflight.mjs
+          node --check reconciliation-studio.mjs
+          bash -n scripts/oci-host-preflight.sh
+          bash -n scripts/oci-compose-offline-probe.sh
+          bash -n scripts/oci-image-acceptance-offline.sh
+          bash -n scripts/oci-quick-tunnel-preview.sh
+          bash -n scripts/oci-quick-tunnel-offline-probe.sh
+          bash -n scripts/oci-stage-paused-children.sh
+          bash -n scripts/oci-refresh-paused-hub.sh
+          node --check scripts/oci-three-child-paused-offline-probe.mjs
+          bash -n scripts/oci-hub-preview-only.sh
+      - name: Verify no credentials or private runtime artifacts are tracked
+        run: |
+          test -f .gitignore
+          if git ls-files 'deploy/oracle-free/channels/*.env' | grep .; then
+            echo "Private channel configuration was accidentally tracked"
+            exit 1
+          fi
+          if git ls-files | grep -Ei '(^|/)(\.env|secrets\.json|auth\.json|youtube-token\.json|flow-auth-verified\.json|operator-activation\.json|factory\.sqlite|[^/]+\.(pem|key|p12|pfx|mp4))$'; then
+            echo "Refusing tracked secrets or raw media in the repository."
+            exit 1
+          fi
+      - name: Verify no cloud deployment secrets or host interaction
+        run: |
+          test ! -f deploy/oracle-free/.env
+          test -f deploy/oracle-free/.env.example
+          echo "Offline checks only. No Flow, publication, Oracle or Railway actions."

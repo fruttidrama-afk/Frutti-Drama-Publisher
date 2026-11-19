@@ -1,0 +1,87 @@
+name: ARM64 offline Publisher image acceptance
+on:
+  push:
+    branches: [safety/manual-activation-gate-20261117]
+    paths:
+      - ".github/workflows/arm64-offline-image.yml"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "public/**"
+      - "deploy/oracle-free/compose.yaml"
+      - "GOOGLE_FLOW_AUTOMATION_MASTER_SOP.md"
+      - "GOOGLE_FLOW_AUTOMATION_SOP.json"
+      - "FLOW_SOP_KNOWLEDGE_MANIFEST.json"
+      - "package.json"
+      - "publisher.config.schema.json"
+      - "publisher-selftest.mjs"
+      - "verify-runtime-contract.mjs"
+      - "youtube-private-public-selftest.mjs"
+      - "publication.js"
+      - "server.js"
+      - "runtime-config.js"
+      - "scripts/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: offline-arm64-image-validation
+  cancel-in-progress: true
+jobs:
+  native-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Assert native ARM64 and offline-only test entrypoints
+        run: |
+          test "$(uname -m)" = aarch64
+          docker --version
+          bash -n scripts/oci-image-acceptance-offline.sh
+          test ! -f deploy/oracle-free/.env
+      - name: Build OCI-compatible ARM64 image without production accounts
+        run: docker build --pull=false --tag publisher-factory-a1-safety:ci .
+      - name: Native ARM64 Chromium synthetic probe without network
+        run: |
+          docker run --rm --network none --cap-drop=ALL \
+            --security-opt no-new-privileges \
+            --entrypoint node publisher-factory-a1-safety:ci \
+            ./scripts/oci-browser-offline-probe.mjs
+      - name: Native ARM64 full paused runtime probe without network
+        run: |
+          docker run --rm --network none --cap-drop=ALL \
+            --security-opt no-new-privileges \
+            --entrypoint node publisher-factory-a1-safety:ci \
+            ./scripts/oci-runtime-offline-probe.mjs
+      - name: Verify all three child runtimes stay paused and isolated across background worker ticks
+        run: |
+          docker run --rm --network none --cap-drop=ALL \
+            --security-opt no-new-privileges \
+            --entrypoint node publisher-factory-a1-safety:ci \
+            ./scripts/oci-three-child-paused-offline-probe.mjs
+      - name: Test isolated read-only dashboard preview on disposable ARM runner
+        shell: bash
+        run: |
+          cleanup() {
+            if [ -f deploy/oracle-free/.env ]; then
+              sudo docker compose -f deploy/oracle-free/compose.yaml --project-directory deploy/oracle-free \
+                --profile reconstruction-dashboard down --remove-orphans || true
+            fi
+            rm -f deploy/oracle-free/.env
+          }
+          trap cleanup EXIT
+          bash scripts/oci-hub-preview-only.sh
+          test ! -e deploy/oracle-free/activation/operator-activation.json
+          test "$(sudo docker ps --format '{{.Names}}' | grep -Ec '(^|[-_])publisher-(fruttidrama|earth-in-10|dinnie)' || true)" -eq 0
+          echo 'ARM64_HUB_PREVIEW_PASS: no publisher containers or automation, localhost Basic auth required'
+      - name: Validate arm64 Caddy TLS config in disconnected container
+        run: |
+          docker run --rm --network none -e PUBLISHER_HTTPS_HOSTNAME=example.com \
+            -v "$PWD/deploy/oracle-free/https/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile
+          bash scripts/https-gateway-offline-probe.sh
+      - name: Verify no production activation or deployment occurred
+        run: |
+          test ! -e deploy/oracle-free/activation/operator-activation.json
+          echo "ARM64_OFFLINE_ACCEPTANCE_PASS: no credentials, Flow access, publishing, live containers or deployment"

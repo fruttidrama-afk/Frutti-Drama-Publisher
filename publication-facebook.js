@@ -1,3 +1,4 @@
+import { centralGateOpen } from './activation-gate.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -208,6 +209,7 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     item.fileSize=data.length;item.remotePrivacyStatus='uploaded';hist(item,'publishing','Facebook received the Reel binary.');save(item);
   }
   async function ensureAiDisclosure(item){
+    if(!centralGateOpen())throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE_BEFORE_FACEBOOK_METADATA');
     if(!item?.videoId||item.aiDisclosureSyncedAt)return true;
     const c=connection();
     const current=await graph(item.videoId,{params:{fields:'id,is_ai_generated'},token:c.page_access_token});
@@ -256,6 +258,7 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     save(item);
   }
   async function publish(item){
+    if(!centralGateOpen())throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE_BEFORE_FACEBOOK_PUBLICATION');
     let c=connection();
     const run=async()=>{
       // Restart-safe phase machine:
@@ -314,7 +317,7 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     return{purged:items.length,remoteDeleted};
   }
   async function tick(){
-    if(!isEnabled()||running)return;
+    if(!centralGateOpen()||!isEnabled()||running||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return;
     running=true;lastHeartbeat=now();lastError=null;
     try{
       const items=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'')='facebook' AND status NOT IN ('cancelled','deleted') AND (status<>'published' OR aiDisclosureSyncedAt IS NULL) ORDER BY scheduledAt").all();
@@ -356,6 +359,9 @@ export function installFacebookPublication({db,config,dataDir,loadFacebookConnec
     finally{lastHeartbeat=now();running=false}
   }
   function resumeAuthWait(){
+    // Reconnecting credentials during reconstruction must not change historic
+    // stock states or publication slots, and must not schedule a publisher tick.
+    if(!centralGateOpen()||db.prepare("SELECT value FROM factory_meta WHERE key='automation:operatorActivated'").get()?.value!=='true')return 0;
     const tz=config.schedule?.timezone||config.identity?.timezone||'America/Argentina/Buenos_Aires';
     const today=dayKey(new Date(),tz);
     const rows=db.prepare("SELECT * FROM publication_items WHERE COALESCE(provider,'')='facebook' AND status IN ('auth_wait','error') AND status NOT IN ('published','cancelled','deleted') ORDER BY scheduledAt").all();

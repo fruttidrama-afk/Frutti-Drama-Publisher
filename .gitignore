@@ -1,0 +1,61 @@
+# Never commit secrets, connection tokens, or browser session state.
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.p8
+*.ppk
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
+**/secrets.json
+**/auth.json
+**/youtube-token.json
+**/flow-auth-verified.json
+**/flow-auth-bootstrap.active.json
+**/operator-activation.json
+**/activation-readiness.json
+
+# OCI host state and durable per-channel media are not source code.
+deploy/oracle-free/data/
+deploy/oracle-free/activation/
+deploy/oracle-free/flow-lock/
+deploy/oracle-free/.env
+deploy/oracle-free/channels/*.env
+**/flow-profile/
+**/browser-profile/
+**/generated/
+**/manual-imports/
+**/manual-recovery/
+**/approved-flow-recovery/
+**/publication/
+**/recovered/
+
+# Build outputs, local logs, temporary archives.
+node_modules/
+.DS_Store
+*.log
+*.tmp
+*.bak
+*.swp
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.mp4
+*.mov
+*.webm
+
+# Historical source archives and manual verified assignments (never in Git).
+deploy/oracle-free/reconciliation-media/
+deploy/oracle-free/reconciliation/
+
+# Temporary Cloudflare preview: PID and access URL must remain private.
+deploy/oracle-free/.quick-tunnel/

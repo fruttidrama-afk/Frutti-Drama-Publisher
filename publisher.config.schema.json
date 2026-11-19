@@ -399,7 +399,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 1440,
-          "description": "YouTube uses a 390-minute lead: PRIVATE upload at 12:30 and explicit PUBLIC privacy change at 19:00 on the same local publication day. Never use YouTube publishAt."
+          "description": "For YouTube, upload the approved video PRIVATE at 12:30 America/Argentina/Buenos_Aires (390 minutes before the 19:00 same-day release); explicitly update the SAME YouTube videoId to PUBLIC at 19:00 without publishAt or native scheduling."
         }
       }
     },

@@ -1,0 +1,49 @@
+name: Dependency advisory inventory (offline from production)
+on:
+  push:
+    branches: [safety/manual-activation-gate-20261117]
+    paths:
+      - "package.json"
+      - ".github/workflows/dependency-advisory-inventory.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  npm-inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install a disposable production lockfile without lifecycle scripts
+        run: npm install --omit=dev --ignore-scripts --no-audit
+      - name: Request public npm security advisories (no credentials)
+        shell: bash
+        run: |
+          npm audit --omit=dev --json > audit-report.json || true
+          node <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('audit-report.json'));
+          if (report.error) {
+            console.error('AUDIT ERROR', report.error.message);
+            process.exitCode = 1;
+          } else {
+            console.log('AUDIT COUNTS', JSON.stringify(report.metadata?.vulnerabilities || {}));
+            for (const [pkg, value] of Object.entries(report.vulnerabilities || {})) {
+              console.log('ADVISORY', JSON.stringify({
+                package: pkg, severity: value.severity, isDirect: value.isDirect,
+                range: value.range, fixAvailable: value.fixAvailable,
+                via: value.via.map(item => typeof item === 'string' ? item : {
+                  name: item.name, title: item.title, url: item.url, range: item.range
+                })
+              }));
+            }
+          }
+          NODE
+      - name: Delete report from runner
+        if: always()
+        run: rm -f audit-report.json package-lock.json

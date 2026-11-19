@@ -1,3 +1,5 @@
+import { centralGateOpen, operatorGenerationEnvEnabled } from './activation-gate.mjs';
+import { createFlowMutex } from './flow-global-mutex.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
@@ -538,6 +540,21 @@ function releaseLock() {
     if(String(raw?.instance_id||'')===INSTANCE_ID)fs.unlinkSync(LOCK_FILE);
   }catch{}
 }
+// Kernel-owned cross-container mutex. File mtime never confers ownership;
+// Linux releases flock automatically when the holder process/group exits.
+// No stale-file unlink may allow a second publisher during a live Flow submit.
+const GLOBAL_FLOW_LOCK_PATH=String(process.env.PUBLISHER_GLOBAL_FLOW_LOCK_PATH||'').trim();
+const GLOBAL_FLOW_MUTEX=createFlowMutex(GLOBAL_FLOW_LOCK_PATH);
+async function acquireGlobalFlowLock(){
+  if(!GLOBAL_FLOW_LOCK_PATH)return !process.env.PUBLISHER_CHANNEL_ID;
+  return GLOBAL_FLOW_MUTEX.acquire();
+}
+function releaseGlobalFlowLock(){GLOBAL_FLOW_MUTEX.release()}
+function assertGlobalFlowLock(){
+  if(!GLOBAL_FLOW_LOCK_PATH && !process.env.PUBLISHER_CHANNEL_ID)return;
+  if(!GLOBAL_FLOW_MUTEX.owned())throw Error('GLOBAL_FLOW_KERNEL_MUTEX_NOT_OWNED: Flow submit forbidden');
+}
+
 function registry(){return configRegistry();}
 function ensureSchema(db) {
   for (const sql of [
@@ -1466,7 +1483,7 @@ async function launchLocal() {
     if(xvfb.exitCode!==null)throw new Error('XVFB_START_FAILED:'+compact(xvfbErr,700));
 
     const env={...process.env,DISPLAY:display};
-    chrome=spawn('/usr/bin/google-chrome-stable',[
+    chrome=spawn(String(process.env.FLOW_CHROME_PATH||process.env.CHROMIUM_PATH||'/usr/bin/chromium'),[
       '--user-data-dir='+PROFILE_DIR,
       '--remote-debugging-address=127.0.0.1','--remote-debugging-port='+port,'--remote-allow-origins=*',
       '--no-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-software-rasterizer',
@@ -3815,9 +3832,12 @@ async function processRow(db,row){
       publish('SERIAL_GATE_BLOCKED',{episode:'E'+row.episode,job_id:row.id,blocking_episode:'E'+otherActive.episode,blocking_job_id:otherActive.id});
       return false;
     }
-    const envEnabled=String(process.env.PUBLISHER_ENABLED||'true').toLowerCase()!=='false';
+    const envEnabled=operatorGenerationEnvEnabled({
+      operatorActivated:meta(db,'automation:operatorActivated','false')==='true',
+      factoryEnabled:meta(db,'automation:factoryEnabled','false')==='true'
+    });
     const pauseAllowsSubmit=!generationPauseActive();
-    const manualSubmit=envEnabled&&pauseAllowsSubmit&&meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=meta(db,'automation:factoryEnabled','false')==='true',creditCycleOpen=meta(db,'flow:dailyCreditBatchOpen','false')==='true',cycleUsed=creditCycleUsage(db),extraAuthorized=dailyProductionLimit(db)>Number(BASE_DAILY_PRODUCTION_LIMIT||1)&&effectiveDailyCount(db)<dailyProductionLimit(db),autoSubmit=envEnabled&&pauseAllowsSubmit&&runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||extraAuthorized||(creditCycleOpen&&cycleUsed<Number(BASE_DAILY_PRODUCTION_LIMIT||1))),submitAuthorized=manualSubmit||autoSubmit;
+    const manualSubmit=envEnabled&&pauseAllowsSubmit&&centralGateOpen()&&meta(db,'automation:operatorActivated','false')==='true'&&meta(db,'automation:allowSubmit','0')==='1',runtimeEnabled=centralGateOpen()&&meta(db,'automation:factoryEnabled','false')==='true'&&meta(db,'automation:operatorActivated','false')==='true',creditCycleOpen=meta(db,'flow:dailyCreditBatchOpen','false')==='true',cycleUsed=creditCycleUsage(db),extraAuthorized=dailyProductionLimit(db)>Number(BASE_DAILY_PRODUCTION_LIMIT||1)&&effectiveDailyCount(db)<dailyProductionLimit(db),autoSubmit=envEnabled&&pauseAllowsSubmit&&runtimeEnabled&&meta(db,'automation:freeFactoryEnabled','0')==='1'&&(reviewerRetry||extraAuthorized||(creditCycleOpen&&cycleUsed<Number(BASE_DAILY_PRODUCTION_LIMIT||1))),submitAuthorized=manualSubmit||autoSubmit;
     publish('PREFLIGHT',{episode:'E'+row.episode,job_id:row.id});
     const pf=await preflight(page,row,cp);
     db.prepare('UPDATE factory_items SET transportPreflight=?,error=NULL,updatedAt=? WHERE id=?').run(JSON.stringify(pf).slice(0,20000),now(),row.id);
@@ -3857,6 +3877,8 @@ async function processRow(db,row){
     // other row/process has consumed the window since preflight.
     const boundary=reserveGenerateBoundary(db,row,genId);
     if(!boundary.allowed)throw new Error('GENERATE_SUBMIT_BOUNDARY_THROTTLED:'+boundary.reason);
+    if(!centralGateOpen())throw new Error('PUBLISHER_GLOBAL_OPERATOR_PAUSE_ACTIVE_BEFORE_FLOW_SUBMIT');
+    assertGlobalFlowLock();
     const submit=await clickSubmitExactlyOnce(page,baselineInventory,baseline,baselineBusy);
     const submitMode=String(submit?.mode||'start-generation-direct');
     const priorConsent=meta(db,'flow:consentMode','UNKNOWN');
@@ -4510,12 +4532,19 @@ async function configurePublisherFactorySupabasePasskeysIfRequested(db){
 }
 
 async function runProvider(){
+  // Freeze *all* provider activity while the operator has not activated the
+  // factory. Check before touching profile/bootstrap locks or opening a DB.
+  // The DB-level gate below remains a second independent authorization.
+  if(!centralGateOpen())return;
   if(ONESHOT_KIND==='publication'){publish('ONESHOT_PUBLICATION_ONLY',{message:'Generation worker disabled for publication-only ephemeral runner.'});return}
   if(bootstrapOwnsProfile()){publish('AUTH_BOOTSTRAP_ACTIVE',{message:'Flow bootstrap owns the persistent browser profile; provider is paused.'});return}
   if(!acquireLock())return;let db,row=null;
   try{
     if(!fs.existsSync(DB_PATH)){publish('WAITING_FOR_DB',{message:'Runtime database not ready yet.'});return}
-    db=dbOpen();purgeRemovedProviderMetadata(db);ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);resumeRecoverableManualHold(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);repairProviderBackoffAfterConfirmedSuccessV2(db);normalizeLiveNoChargeCooldown(db);
+    db=dbOpen();
+    if(meta(db,'automation:operatorActivated','false')!=='true'||!centralGateOpen())return;
+    if(!await acquireGlobalFlowLock())return;
+    purgeRemovedProviderMetadata(db);ensureSchema(db);ensureProductionPlan(db);reconcileGenerationCreditAccounting(db);ensureBacklog(db);normalizeUnconfirmedPreGenerationRows(db);normalizeReauthorizedReviewerRetries(db);normalizeConsumedReviewerRetries(db);auditRedoState(db);ensureConfirmedGenerationAccounting(db);normalizeRecoverableBrowserRetrievalCrash(db);quarantinePriorDayAmbiguous(db);quarantineStaleReviewerRetryAmbiguous(db);resumeRecoverableManualHold(db);normalizeOutOfOrderAmbiguous(db);repairLegacyBackoffAfterConfirmedSuccess(db);repairProviderBackoffAfterConfirmedSuccessV2(db);normalizeLiveNoChargeCooldown(db);
     setMeta(db,'automation:provider',PROVIDER);setMeta(db,'automation:paidDependencyDetected','false');setMeta(db,'automation:tinyfishRequired','false');setMeta(db,'automation:tinyfishFallback','disabled');setMeta(db,'automation:freeBrowserProfile',PROFILE_DIR);
     setMeta(db,'automation:serialFlowMode','true');
     setMeta(db,'automation:serialFlowSop','FLOW-SERIAL-GEN-RECOVER-001');
@@ -4652,12 +4681,14 @@ async function runProvider(){
   db.prepare("UPDATE factory_items SET status='manual_hold',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=0,updatedAt=? WHERE id=?").run(attempts,now(),message,now(),fresh.id);
   setLifecycle(db,fresh,'MANUAL_HOLD_CONSUMED_RETRY',{...lc,last_error:message,attempt_count:attempts,automatic_submit_forbidden:true,retry_token:String(fresh.reviewRetryToken||'')});
 }else{db.prepare("UPDATE factory_items SET status='draft',runtimeAttemptCount=?,lastProgressAt=?,error=?,nextTry=?,updatedAt=? WHERE id=?").run(attempts,now(),message,nextTry,now(),fresh.id);setLifecycle(db,fresh,'FAILED_BEFORE_GENERATE',{last_error:message,attempt_count:attempts,retry_at:new Date(nextTry).toISOString()})}}if(db&&!/FLOW_TRANSIENT_NO_CHARGE|FLOW_INSUFFICIENT_CREDITS/.test(message)){setMeta(db,'flow:state',/FLOW_AUTH/.test(message)?'REQUIERE REAUTENTICACIÓN':'ERROR');setMeta(db,'flow:message',message)}}catch{}publish(/FLOW_TRANSIENT_NO_CHARGE/.test(message)?'FLOW_COOLDOWN':'ERROR',{message,episode:row?('E'+row.episode):null});
-  }finally{try{db?.close()}catch{}releaseLock()}
+  }finally{try{db?.close()}catch{}releaseGlobalFlowLock();releaseLock()}
 }
 
 async function recoverApprovedPublicationMedia(){
   const raw=String(process.env.PUBLISHER_RECOVER_APPROVED_FLOW_JSON||'').trim();
   if(!raw)return;
+  if(!fs.existsSync(DB_PATH))return;
+  {const gateDb=dbOpen();try{if(meta(gateDb,'automation:operatorActivated','false')!=='true'||!centralGateOpen())return;}finally{gateDb.close();}}
   let spec={};try{spec=JSON.parse(raw)||{}}catch(e){publish('APPROVED_MEDIA_RECOVERY_CONFIG_ERROR',{message:compact(e?.message||e,400)});return}
   const targets=Object.entries(spec).map(([episode,v])=>({
     episode:Number(episode),
@@ -4668,6 +4699,7 @@ async function recoverApprovedPublicationMedia(){
   const recoveryKey='operator:approved-flow-recovery:'+sha(raw).slice(0,20);
   let db=null,session=null;
   if(!acquireLock()){publish('APPROVED_MEDIA_RECOVERY_WAIT',{message:'Flow browser is busy; approved-media recovery will retry later.'});return}
+  if(!await acquireGlobalFlowLock()){releaseLock();return;}
   try{
     db=dbOpen();
     if(meta(db,recoveryKey,'')==='done')return;
@@ -4783,6 +4815,7 @@ async function recoverApprovedPublicationMedia(){
   }finally{
     try{await session?.close()}catch{}
     try{db?.close()}catch{}
+    releaseGlobalFlowLock();
     releaseLock();
   }
 }
