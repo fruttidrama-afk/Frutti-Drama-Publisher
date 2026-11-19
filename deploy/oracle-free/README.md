@@ -204,3 +204,54 @@ Sources:
 Official documentation:
 - https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm
 - https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier.htm
+
+
+## Alternative if OCI MFA prevents network changes: protected temporary HTTPS preview
+
+If Oracle Console access is blocked by a broken MFA device, **do not modify the
+OCI firewall by guesswork**. The local Hub can still be viewed remotely by an
+**outbound-only Cloudflare Quick Tunnel**, requiring two independent checks:
+Cloudflare one-time email PIN restricted to one explicit email address, then
+Hub HTTP Basic authentication. This is temporary test access, not a stable
+hostname or a substitute for production security. Nothing publishes or generates.
+
+Cloudflare documentation (as of September/October 2026):
+https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/
+https://developers.cloudflare.com/tunnel/downloads/
+
+On the already accessible Oracle ARM64 VM, after updating the safety branch and
+refreshing the paused Hub, install the official Cloudflare ARM64 package
+only if `cloudflared` is missing:
+
+```bash
+curl -fL --retry 3 -o /tmp/cloudflared-linux-arm64.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb
+sudo dpkg -i /tmp/cloudflared-linux-arm64.deb
+```
+
+Then use the fail-closed scripts:
+
+```bash
+bash scripts/oci-quick-tunnel-preview.sh check
+bash scripts/oci-quick-tunnel-preview.sh start 'YOUR_ACTUAL_EMAIL@example.com'
+bash scripts/oci-quick-tunnel-preview.sh status
+# To disconnect remotely accessible dashboard:
+bash scripts/oci-quick-tunnel-preview.sh stop
+```
+
+The script refuses an absent managed Hub credential, password weaker than the
+preview policy, an already-created activation file, a public listener on port
+8081, an unauthenticated Hub health result other than HTTP 401, an unverified
+activation-armed Compose configuration, a missing email allowlist or a missing
+cloudflared installation. It starts no other application/container and opens
+no OCI inbound port. It never prints Hub credentials.
+
+**Important**: Cloudflare says Quick Tunnels have no uptime guarantee, random
+hostname each restart, up to 200 in-flight requests and no SSE. The cloudflared
+connector must remain running, and Cloudflare's email OTP must remain accessible.
+A permanent hostname will later require an authenticated, locally or remotely
+managed named tunnel and routing for a domain owned/controlled by the operator,
+or restoration of OCI MFA + TCP 80/443 + Caddy certificate issuance. Never
+pretend the random trycloudflare.com URL is a permanent production endpoint.
+
+Test without external traffic or account data:
+`bash scripts/oci-quick-tunnel-offline-probe.sh`.
